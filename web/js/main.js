@@ -82,9 +82,11 @@ async function openRun(id, t) {
   if (si) {
     // Say what is not real yet, in the log's own words.
     const lines = Object.entries(si).map(([k, v]) => (String(v).startsWith(k) ? v : `${k}: ${v}`));
-    const parts = Object.keys(si).join(", ");
-    $("standin-text").innerHTML = `Not real yet: ${parts}. Nothing was posted to Monad; the transaction hashes are fake. ` +
-      `The first-person frames are real renders. <details><summary>Details</summary><ul>${lines.map((l) => `<li>${l}</li>`).join("")}</ul></details>`;
+    const parts = Object.keys(si).map((k) => PART_NAMES[k] || k.replace(/_/g, " ")).join(", ");
+    // Say the chain is fake only when it is (run.fakeTx: a chain stand-in, or no explorer in the log).
+    const chainLine = run.fakeTx ? " Nothing is posted to Monad yet; the transaction hashes are fake." : " The chain is real: every hash links to Monad testnet.";
+    $("standin-text").innerHTML = `Stand-ins: ${parts}.${chainLine} Camera frames are real renders. ` +
+      `<details><summary>Details</summary><ul>${lines.map((l) => `<li>${l}</li>`).join("")}</ul></details>`;
   }
 
   const ch = run.chain || {};
@@ -107,6 +109,7 @@ async function openRun(id, t) {
   world.setVisibility(state.opts);
   map.setRun(run);
   $("loading").hidden = true;
+  reserveHeights(run);
   render(true);
 }
 
@@ -135,10 +138,27 @@ function bindControls() {
       world.setVisibility(state.opts);
       map.opts = state.opts;
       $("vnote").hidden = !state.opts.fill;
+      if (state.run) reserveHeights(state.run);
       render(true);
     };
   }
   map.opts = state.opts;
+  // Live boxes are sized for the page as laid out: measure again when the
+  // width changes or the web fonts arrive.
+  let resizeT = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(() => state.run && reserveHeights(state.run), 150);
+  });
+  if (document.fonts) document.fonts.ready.then(() => state.run && reserveHeights(state.run));
+  // Click the camera frame to enlarge it (the page styles .fp.big); a second
+  // click or Esc closes it. The rim canvas is redrawn at the new size.
+  const fp = document.querySelector(".fp");
+  const setBig = (on) => { fp.classList.toggle("big", on); render(true); };
+  if (fp) fp.addEventListener("click", () => setBig(!fp.classList.contains("big")));
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Escape" && fp && fp.classList.contains("big")) { e.preventDefault(); setBig(false); }
+  });
   window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT" && e.target.type !== "range" && e.target.type !== "checkbox") return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
@@ -205,7 +225,10 @@ function render(force = false) {
   world.update(t, state.opts);
   map.update(t);
   $("time").value = t;
-  $("clock").textContent = `${fmtClock(t)} · step ${k + 1}/${run.steps.length}`;
+  // Fixed length: the step number is padded with figure spaces (U+2007, the
+  // width of a digit, never collapsed), so the clock never changes width.
+  const n = String(run.steps.length);
+  $("clock").textContent = `${fmtClock(t)} · step ${String(k + 1).padStart(n.length, "\u2007")}/${n}`;
   hud(run, k);
   const fr = run.frameNear(state.cam, t);
   const camKey = `${state.cam}:${fr ? fr.src : "-"}`;
@@ -251,26 +274,21 @@ function camera(run, fr, k) {
       img.src = fr.src;
     }
   } else img.removeAttribute("src");
+  $("fp-cap").innerHTML = captionHtml(run, a, fr ? fr.k : k, !!(fr && fr.sub));
+  // Lidar panel: the scan taken with this step's live frame (run_demo.py --vision).
   const r = run.rover(a, fr ? fr.k : k);
-  // Say how far apart the recorded frames are, from the log.
-  const gapM = run.frameSpacing(a);
-  const every = gapM ? `, one frame per ${gapM < 10 ? gapM.toFixed(1).replace(/\.0$/, "") : Math.round(gapM)} m driven` : "";
-  $("fp-cap").innerHTML = `Rover ${a} camera${every}, as recorded. Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.` +
-    (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
-    (state.opts.rims && r.rims && r.rims.length && !(fr && fr.sub) ? ` ${r.rims.length} rim points${run.standin && run.standin.rims ? " (stand-in, from the crater map)" : " from the camera"}.` : "") +
-    (r.plan ? " Amber dots: the route it plans to drive, re-planned every 2 m." : "") + (r.lidar_frame && !(fr && fr.sub) ? " Red marks: lidar hazards." : "");
-  // Lidar panel: the scan taken with this step's live frame (run_demo.py with sensors).
   const li = $("lidar-img");
+  // Runs without --vision have no lidar: hide the panel rather than show an empty box.
+  if (run.hasLidar === undefined) run.hasLidar = run.agencies.some((ag) => run.steps.some((_, j) => run.rover(ag, j).lidar_frame));
+  li.parentElement.hidden = $("lidar-cap").hidden = !run.hasLidar;
   if (r.lidar_frame) {
     const src = run.dir + r.lidar_frame;
     if (li.dataset.src !== src) { li.dataset.src = src; li.src = src; }
-    const hz = r.lidar_hazards || {};
-    $("lidar-cap").textContent = `Rover ${a} lidar, beside the camera: 120° x 33°, near warm, far cool. ` +
-      `This scan: ${hz.crater || 0} crater cells, ${hz.slope || 0} steep cells.`;
   } else {
     li.removeAttribute("src");
-    $("lidar-cap").textContent = "No lidar in this run.";
+    delete li.dataset.src;
   }
+  $("lidar-cap").textContent = lidarCapText(run, a, fr ? fr.k : k);
   // Rim points are logged per step, in that step's pose: draw them only on a step's own frame.
   drawRims(run, a, fr ? fr.k : k, !!(fr && fr.sub));
   drawPlan(run, a, fr, k);
@@ -315,6 +333,62 @@ function drawPlan(run, a, fr, k) {
   }
 }
 
+function captionHtml(run, a, k, sub) {
+  const r = run.rover(a, k);
+  // Say how far apart the recorded frames are, from the log.
+  const gapM = run.frameSpacing(a);
+  const every = gapM ? `, one frame per ${gapM < 10 ? gapM.toFixed(1).replace(/\.0$/, "") : Math.round(gapM)} m` : "";
+  return `Recorded lamp-only view from rover ${a}${every}. 60° view, camera 2.5 m up. Click to enlarge.` +
+    (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
+    (state.opts.rims && r.rims && r.rims.length && !sub ? ` ${r.rims.length} rim points${run.standin && run.standin.rims ? " (stand-in, from the crater map)" : " from the camera"}.` : "") +
+    (r.lidar_frame && !sub ? " Amber dots: planned path. Red marks: lidar hazards." : "");
+}
+
+// Lidar panel caption: the scan taken with this step's live frame (run_demo.py --vision).
+function lidarCapText(run, a, k) {
+  const r = run.rover(a, k);
+  if (!r.lidar_frame) return "No lidar in this run.";
+  const hz = r.lidar_hazards || {};
+  return `Rover ${a} lidar, beside the camera: 120° x 33°, near warm, far cool. ` +
+    `This scan: ${hz.crater || 0} crater cells, ${hz.slope || 0} steep cells.`;
+}
+
+// Text that changes as a run plays must not move the page. Each live box is
+// given, as its min-height, the height of the tallest text it will show in
+// this run, measured on the page as laid out now. Called when the run, the
+// window size or a toggle changes; playing then never moves anything.
+function reserveHeights(run) {
+  const last = run.steps.length - 1;
+  const caps = new Set(), stories = new Set(), lidarCaps = new Set();
+  for (let k = 0; k <= last; k++) {
+    for (const a of run.agencies) for (const sub of [false, true]) caps.add(captionHtml(run, a, k, sub));
+    for (const a of run.agencies) lidarCaps.add(lidarCapText(run, a, k));
+    stories.add(story(run, k, run.findsAt(k)));
+  }
+  const evsAll = run.eventsUpTo(last).slice().reverse();
+  const boxes = [
+    [$("fp-cap"), caps],
+    [$("lidar-cap"), lidarCaps],
+    [$("story"), stories],
+    // Finds and transactions only accumulate: the run's end is the most.
+    [$("finds"), [findsHtml(run, []), findsHtml(run, run.findsAt(last))]],
+    [$("feed"), [feedHtml(run, [], null), feedHtml(run, evsAll, null)]],
+  ];
+  for (const [el, htmls] of boxes) {
+    if (!el) continue;
+    const keep = el.innerHTML;
+    el.style.minHeight = "";
+    let h = 0;
+    for (const html of htmls) { el.innerHTML = html; h = Math.max(h, el.getBoundingClientRect().height); }
+    el.innerHTML = keep;
+    const cs = getComputedStyle(el);
+    if (cs.boxSizing !== "border-box") {
+      h -= parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    }
+    el.style.minHeight = `${Math.ceil(h)}px`;
+  }
+}
+
 // Rim points [x_fwd, y_left] in the rover frame, projected into the image
 // with the scene's pinhole model and the ground height under each point.
 function drawRims(run, a, k, none = false) {
@@ -345,21 +419,28 @@ function drawRims(run, a, k, none = false) {
 
 function record(run, k) {
   const finds = run.findsAt(k);
-  const fl = $("finds");
-  if (!finds.length) fl.innerHTML = `<div class="empty">No finds yet.</div>`;
-  else fl.innerHTML = finds.map((f) => {
+  $("finds").innerHTML = findsHtml(run, finds);
+  const evs = run.eventsUpTo(k).slice().reverse();
+  const key = evs.map((e) => e.tx).join();
+  const fresh = key !== state.lastEventsKey && state.lastEventsKey !== "" ? evs[0] && evs[0].tx : null;
+  state.lastEventsKey = key;
+  $("feed").innerHTML = feedHtml(run, evs, fresh);
+  $("story").innerHTML = story(run, k, finds);
+}
+
+function findsHtml(run, finds) {
+  if (!finds.length) return `<div class="empty">No finds yet.</div>`;
+  return finds.map((f) => {
     const checks = f.checks.map((c) => `${c.agency} ${c.agrees ? "agrees" : "disagrees"} (reading ${c.reading.toFixed(2)}${run.unit})`).join(", ");
     return `<div class="find"><span class="id c-${f.agency}">#${f.find_id}</span>` +
       `<span>Ice found by ${f.agency}, ±${f.sigma.toFixed(1)} m</span><span class="status ${f.status}">${f.status}</span>` +
       `<span class="meta">reading ${f.reading.toFixed(2)}${run.unit}${checks ? " · " + checks : " · waiting for another agency"}</span></div>`;
   }).join("");
+}
 
-  const evs = run.eventsUpTo(k).slice().reverse();
-  const key = evs.map((e) => e.tx).join();
-  const fresh = key !== state.lastEventsKey && state.lastEventsKey !== "" ? evs[0] && evs[0].tx : null;
-  state.lastEventsKey = key;
+function feedHtml(run, evs, fresh) {
   const ex = run.chain && run.chain.explorer;
-  $("feed").innerHTML = evs.length ? evs.map((e) => {
+  return evs.length ? evs.map((e) => {
     const what = e.type === "find"
       ? `postFind #${e.find_id} · ±${e.sigma.toFixed(1)} m · reading ${e.reading.toFixed(2)}${run.unit}`
       : `checkFind #${e.find_id} · ${e.agrees ? "agrees" : "disagrees"} · reading ${e.reading.toFixed(2)}${run.unit}`;
@@ -369,8 +450,6 @@ function record(run, k) {
     return `<div class="ev${e.tx === fresh ? " new" : ""}"><span class="t">${fmtClock(e.t).slice(2)}</span>` +
       `<span class="who c-${e.agency}">${e.agency}</span><span>${what}</span><span class="tx">${tx}</span></div>`;
   }).join("") : `<div class="empty">No transactions yet.</div>`;
-
-  $("story").innerHTML = story(run, k, finds);
 }
 
 // One line that says what is happening, for someone who just walked up.

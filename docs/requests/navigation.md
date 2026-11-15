@@ -11,7 +11,7 @@ at `1067d15`.
 
 I read every remote branch at 11:43 and found no step 3 code. `origin/Calvin`
 (head `5faf5d4`) has the planner fix in `sim/rover.py`, `sim/nav_video.py`,
-and `request.md`. No branch has `sim/nav.py`, a particle filter, or code that
+and `docs/requests/navigation-fix.md`. No branch has `sim/nav.py`, a particle filter, or code that
 turns rim points into a position. You may have unpushed work, or "navigation"
 may mean something different to you than it does to us. These questions
 settle which.
@@ -132,7 +132,7 @@ The interface it must meet (`docs/handoffs.md`):
    find circle to read 20 m, sigma would need the largest-eigenvalue form
    (what Cauligi 2023 sec. 6B reports); that is a handoff change, yours.
 
-8. **Your two earlier questions** in `request.md`. My answers, pending
+8. **Your two earlier questions** in `docs/requests/navigation-fix.md`. My answers, pending
    Joseph's word: move run 1's `b_start` out of the crater, and keep the
    15° slope rule instead of keeping out of every mapped crater.
 

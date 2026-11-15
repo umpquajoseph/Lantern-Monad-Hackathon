@@ -125,7 +125,7 @@ a:hover { text-decoration: underline; }
 .ln.odom { border-color: #9aa0a6; border-top-style: dashed; }
 .ln.est { border-color: var(--ag-A); }
 .key { display: inline-block; flex: none; }
-.key.nogo { width: 10px; height: 10px; background: rgba(229, 87, 79, 0.55); }
+.key.nogo { width: 10px; height: 10px; border: 1px solid rgba(229, 87, 79, 0.8); background: repeating-linear-gradient(135deg, rgba(229, 87, 79, 0.85) 0 1px, transparent 1px 3px); }
 .key.dm { width: 8px; height: 8px; transform: rotate(45deg); background: var(--truth); margin-right: 1px; }
 .key.sq { width: 6px; height: 6px; background: var(--ag-A); box-shadow: 8px 0 0 var(--ag-B); margin-right: 8px; }
 .key.dots { width: 4px; height: 4px; border-radius: 50%; background: var(--ag-A); box-shadow: 6px -2px 0 1px var(--ag-A), 13px 1px 0 0 var(--ag-B); margin-right: 13px; }

@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from sim.terrain import TERRAIN_DIR, load_terrain  # noqa: E402
 
-DATA = TERRAIN_DIR  # $LANTERN_DATA/terrain, as sim/terrain.py; was a fixed C:\ path
+DATA = TERRAIN_DIR  # LANTERN_DATA/terrain, or the default in sim/terrain.py
 OUT = ROOT / "web" / "assets" / "terrain"
 TILE = 512          # cells per fine tile (128 m)
 COARSE = 4          # coarse grid keeps every 4th sample (1 m)

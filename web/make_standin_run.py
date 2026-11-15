@@ -26,9 +26,9 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from sim.terrain import load_terrain  # noqa: E402
+from sim.terrain import default_path, load_terrain  # noqa: E402
 
-TERRAIN = Path(r"C:\Monad-Hackathon-Project\data\terrain\shoemaker.npz")
+TERRAIN = default_path()  # LANTERN_DATA/terrain/shoemaker.npz, or the default in sim/terrain.py
 OUT = ROOT / "web" / "runs"
 
 # PROSPECT Team Brief, RASC-AL 2027 Theme 3: Scout must average about 7.4 cm/s.

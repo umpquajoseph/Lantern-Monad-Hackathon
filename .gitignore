@@ -5,10 +5,18 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-# foundry
+# foundry build output, for each of the three contract projects
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+registry/out/
+registry/cache/
+registry/broadcast/
+survey/out/
+survey/cache/
+survey/broadcast/
+# forge-std: restore with `cd contracts && forge install foundry-rs/forge-std --no-git`
+contracts/lib/
 # large data and outputs
 data/
 *.tif
@@ -17,3 +25,5 @@ frames/
 *.mp4
 # mailboxes: shared by all worktrees at an absolute path, never committed
 ops/mailboxes/
+# vercel cli project link
+.vercel/

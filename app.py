@@ -18,9 +18,11 @@ Pieces, in order (owners in docs/WORKING.md):
     5. viewer runs   (this file)                   -> web/runs/  (copies, viewer index format)
     6. viewer        web/serve.py                  -> http://localhost:<port>
 
-Data lives in the main checkout (C:\\Monad-Hackathon-Project\\data), or in
-LANTERN_DATA if set, as sim/terrain.py reads it. The chain is a stand-in
-until sim/chain.py has a deployed contract; the viewer labels it so.
+Data lives where sim/terrain.py says: LANTERN_DATA if set, else the main
+checkout (C:\\Monad-Hackathon-Project\\data), else ./data. Set
+LANTERN_DATA=lantern_data to use the committed terrain. The demo runs post to
+the Lantern contract on Monad testnet when both agency keys are in .env, and
+to a labelled stand-in otherwise.
 """
 from __future__ import annotations
 
@@ -36,7 +38,8 @@ import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-DATA = Path(os.environ.get("LANTERN_DATA", r"C:\Monad-Hackathon-Project\data"))
+sys.path.insert(0, str(ROOT))
+from sim.terrain import DATA, LOLA_SHOEMAKER  # noqa: E402  LANTERN_DATA, else the main checkout, else ./data
 TERRAIN = DATA / "terrain" / "shoemaker.npz"
 DISPLAY = DATA / "terrain" / "display" / "display.json"
 RUNS = DATA / "runs"
@@ -71,7 +74,12 @@ def build(fresh: bool):
     else:
         say(f"terrain: {TERRAIN} (kept)")
 
-    if stale(DISPLAY, TERRAIN):
+    # A git checkout stamps files in checkout order, so a committed display layer can look
+    # older than the terrain. It cannot be rebuilt without the LOLA tile; keep it then.
+    lola = Path(str(LOLA_SHOEMAKER).format("surf"))
+    if DISPLAY.exists() and stale(DISPLAY, TERRAIN) and not lola.exists():
+        say(f"display layer: {DISPLAY.parent} (kept; no LOLA tile to rebuild it from)")
+    elif stale(DISPLAY, TERRAIN):
         run(["sim/terrain_display.py", "build"], "display layer")
     else:
         say(f"display layer: {DISPLAY.parent} (kept)")

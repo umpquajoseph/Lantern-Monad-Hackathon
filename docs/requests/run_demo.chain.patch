@@ -1,9 +1,9 @@
---- a/run_demo.py	2026-11-15 11:51:17
-+++ b/run_demo.py	2026-11-15 11:53:35
-@@ -42,6 +42,10 @@
-                      FOOTPRINT_RADIUS_M)
+--- a/run_demo.py
++++ b/run_demo.py
+@@ -43,6 +43,10 @@
  from sim.rover import PLANNER_STANDIN, SPEED_M_S, STEP_M, Rover, SlopeMap
- from sim.standins import RIMS_STANDIN, ChainStandin, NavStandin, rims_standin
+ from sim.nav import ParticleNav
+ from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
 +try:
 +    from sim import chain as lantern   # step 1: the real contract on Monad testnet
 +except Exception:                    # no web3, or no deployment file: stay on the stand-in
@@ -11,7 +11,7 @@
  from sim.terrain import default_path, load_terrain
  
  RUNS_DIR = Path(r"C:\Monad-Hackathon-Project\data\runs")
-@@ -79,7 +83,11 @@
+@@ -80,7 +84,11 @@
      rims_rng = {"A": rng(3), "B": rng(13)}
      goal_a = (x0 + scn["a_goal"][0], y0 + scn["a_goal"][1])
      A.set_goal(goal_a)
@@ -24,7 +24,7 @@
      sensor = IceSensor(field, rng(7)) if field is not None else None
  
      mode = {"A": "survey", "B": "wait" if field is not None else "off"}
-@@ -291,12 +299,14 @@
+@@ -329,13 +337,14 @@
              "run_id": run_id,
              "label": scn["label"],
              "terrain": {"file": Path(tpath).name, "x0": x0, "y0": y0, "cell": cell},
@@ -34,11 +34,11 @@
              "truth": {"ice": field.to_log(),
                        "ice_units": "wt% water-equivalent hydrogen; radius is the 1 wt% contour",
                        "find_threshold_wt": FIND_THRESHOLD_WT},
--            "standins": {"nav": NavStandin.STANDIN, "rims": RIMS_STANDIN, "planner": PLANNER_STANDIN,
+             "nav": ParticleNav.NAME,
+-            "standins": {"rims": RIMS_STANDIN, "planner": PLANNER_STANDIN,
 -                         "chain": ChainStandin.STANDIN, "ice_sensor": IceSensor.STANDIN},
-+            "standins": {k: v for k, v in {"nav": NavStandin.STANDIN, "rims": RIMS_STANDIN,
-+                                           "planner": PLANNER_STANDIN, "chain": chain.STANDIN,
-+                                           "ice_sensor": IceSensor.STANDIN}.items() if v},
++            "standins": {k: v for k, v in {"rims": RIMS_STANDIN, "planner": PLANNER_STANDIN,
++                         "chain": chain.STANDIN, "ice_sensor": IceSensor.STANDIN}.items() if v},
              "dt_s": round(DT_S, 2),
+             "display": None if args.no_render else render.display,
              "steps": steps,
-             "final_finds": finds,

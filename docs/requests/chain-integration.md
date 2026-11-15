@@ -23,7 +23,9 @@ Checked on 2026-11-15 at 11:55 PST against `joseph` at `85221d9` and
 
 ## For the integrator: one patch to `run_demo.py`
 
-`docs/requests/run_demo.chain.patch`, 20 lines. After merging `step-1-chain`:
+`docs/requests/run_demo.chain.patch`, three hunks, made against `integration`
+at `c9c7931` (the version with `ParticleNav`). After merging `step-1-chain`
+into `integration`:
 
 ```bash
 git apply docs/requests/run_demo.chain.patch
@@ -41,12 +43,17 @@ What it does:
   hashes to the explorer instead of marking them fake (`web/js/data.js`,
   `fakeTx`). Nothing else in the log changes.
 
-Tested on this machine with the patch applied, then reverted:
+Tested on this machine with the patch applied to a scratch checkout of
+`integration` (`c9c7931`, Calvin's `ParticleNav` in the loop), 12:25 PST:
 
-| Keys in `.env` | Chain used | Run 1 | Run 2 | Hashes |
-|---|---|---|---|---|
-| both | live contract, finds 11 and 12 | confirmed | disputed | real, linked |
-| none | `ChainStandin` | confirmed | disputed | fake, labelled |
+| Keys in `.env` | Chain used | Run 1 | Run 2 | Hashes | `standins` left |
+|---|---|---|---|---|---|
+| both | live contract, finds 13 and 14 | confirmed | disputed | real, linked | ice_sensor, planner, rims |
+| none (earlier, pre-ParticleNav spine) | `ChainStandin` | confirmed | disputed | fake, labelled | plus chain |
+
+Run 2's rover A ended with sigma 15.4 m against a true error of 22.4 m,
+which is review point 1 (`sqrt(trace/2)` under-reports along the drift
+axis); the worst-axis form fixes that in `sim/nav.py`, not here.
 
 What the machine running the demo needs: `pip install web3 python-dotenv`,
 and a `.env` with `AGENCY_A_PRIVATE_KEY` and `AGENCY_B_PRIVATE_KEY` (the

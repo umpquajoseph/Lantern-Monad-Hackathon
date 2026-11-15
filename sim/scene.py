@@ -954,11 +954,26 @@ class Scene:
         Ps = Pr.copy()
         Ps[~off_ground, 2] = hP[~off_ground]
         if np.any(off_ground):  # another rover: normal from the depth image instead
+            # Central differences of the image's points (np.gradient's
+            # formulas, one-sided at the image edge), only at these pixels.
             Pimg = np.where(sky[..., None], np.nan, P)
-            nimg = np.cross(np.gradient(Pimg, axis=1), np.gradient(Pimg, axis=0))
-            nimg /= np.linalg.norm(nimg, axis=-1, keepdims=True) + 1e-12
-            nimg *= -np.sign(np.einsum("hwi,i->hw", nimg, fwd.astype(np.float32)))[..., None]
-            No = nimg[reach][off_ground]
+            pix = np.flatnonzero(reach.ravel())[off_ground]
+            rr, cc = pix // w, pix % w
+
+            def diff(i0, j0, i1, j1, den):
+                return (Pimg[i1, j1] - Pimg[i0, j0]) / den
+
+            in_c, in_r = (cc > 0) & (cc < w - 1), (rr > 0) & (rr < h - 1)
+            gx = np.where(in_c[:, None], diff(rr, np.maximum(cc - 1, 0), rr, np.minimum(cc + 1, w - 1), 2.0),
+                          np.where((cc == 0)[:, None], diff(rr, cc * 0, rr, cc * 0 + 1, 1.0),
+                                   diff(rr, cc * 0 + w - 2, rr, cc * 0 + w - 1, 1.0)))
+            gy = np.where(in_r[:, None], diff(np.maximum(rr - 1, 0), cc, np.minimum(rr + 1, h - 1), cc, 2.0),
+                          np.where((rr == 0)[:, None], diff(rr * 0, cc, rr * 0 + 1, cc, 1.0),
+                                   diff(rr * 0 + h - 2, cc, rr * 0 + h - 1, cc, 1.0)))
+            No = np.cross(gx, gy)[:, None, :]
+            No /= np.linalg.norm(No, axis=-1, keepdims=True) + 1e-12
+            No *= -np.sign(np.einsum("hwi,i->hw", No, fwd.astype(np.float32)))[..., None]
+            No = No[:, 0, :]
             N[off_ground] = np.where(np.isfinite(No), No, 0.0)
         E = np.zeros(len(Pr), dtype=np.float32)
         cam = self._cam_horizon(agency)

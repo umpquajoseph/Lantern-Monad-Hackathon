@@ -2,3 +2,4 @@
 # the deploy step uploads web/ as it is on disk.
 assets/
 runs/
+.vercel/

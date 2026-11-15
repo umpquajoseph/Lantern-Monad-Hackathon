@@ -35,10 +35,19 @@ stand-in, with its hashes marked fake and not linked. A `truth.ice` list
 ## Deploy
 
 `web/` is a static site with relative paths only. three.js comes from
-jsdelivr, pinned to 0.170.0. Upload the folder as it is on disk, with
-`assets/` and `runs/` in it, to any static host (Netlify, Vercel,
-GitHub Pages). Height tiles are gzip files named `.bin`; the page checks
-the bytes, so it works whether or not the host also gzips them.
+jsdelivr, pinned to 0.170.0. The host gets the folder as it is on disk, with
+`assets/` and `runs/` in it. `docs/hosting.md` has the routes; the short
+version:
+
+```
+python web/publish.py check      # every file the page fetches is there, sizes ok
+python web/publish.py vercel     # upload to Vercel (after `npx vercel login`, once)
+python web/publish.py branch     # or: push the site to the `deploy` branch for
+                                 # Vercel's GitHub integration and GitHub Pages
+```
+
+Height tiles are gzip files named `.bin`; the page checks the bytes, so it
+works whether or not the host also gzips them.
 
 ## URL
 

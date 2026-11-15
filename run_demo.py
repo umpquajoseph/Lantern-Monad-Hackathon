@@ -46,7 +46,7 @@ from sim.ice import (DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit,
 from sim.rover import PLANNER_STANDIN, SLOPE_LIMIT_DEG, SPEED_M_S, STEP_M, Rover, SlopeMap
 from sim.nav import ParticleNav
 from sim.lidar import Lidar
-from sim.vision import Vision, draw_plan, rover_to_world
+from sim.vision import Vision, rover_to_world
 from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
 try:
     from sim import chain as lantern   # step 1: the real contract on Monad testnet
@@ -442,9 +442,9 @@ class LiveCamera:
                 r.add_hazards(hz_world, kinds)
                 self.haz_count[ag] = {kk: kinds.count(kk) for kk in ("crater", "slope")}
                 if self.run_dir is not None:
-                    # Lidar hazards are marked on the saved frame; the planned
-                    # route is drawn live by the viewer from the logged "plan".
-                    shown = draw_plan(img, [], r.true, self.scene, _thin_marks(hz, kinds, hz_world))
+                    # The frame goes to disk as rendered: the 0.5 m display frames
+                    # carry no overlay, so a burnt-in plan would flash every 2 m.
+                    # The site draws the planned route from the log instead.
                     lname = f"lidar/{ag}_{k:04d}.jpg"
                     _write_jpg(self.run_dir / lname, self.lid[ag].view(rng_img))
                     self.last_lidar[ag] = lname
@@ -526,16 +526,24 @@ def render_sub_frames(jobs, shared, terrain, display, workers=None):
     from sim.scene import RENDER_THREADS
     cpus = os.cpu_count() or 1
 
-    def threads_for(w):  # the cores split between workers; each worker's Scene renders with this many threads
-        return max(1, min(RENDER_THREADS, cpus // w))
+    budget = None
+
+    def threads_for(w):
+        """Threads per worker: its share of the cores, and no more than the memory left allows."""
+        t = max(1, min(RENDER_THREADS, cpus // w))
+        if budget is not None:
+            while t > 1 and round(w * (WORKER_GB_ASSUMED + THREAD_GB_MEASURED * t), 6) > round(budget, 6):
+                t -= 1
+        return t
 
     if workers is None:
         free_gb = psutil.virtual_memory().available / 2 ** 30
         budget = free_gb - HEADROOM_GB
-        # Most workers whose memory fits, each with its share of the cores.
+        # Most workers whose memory fits at one thread each (processes scale
+        # better than threads), then as many threads each as still fit.
         # Round before comparing: in floats (3.4 - 2.0) // 0.7 is 1.0, not 2.
         workers = next((w for w in range(min(MAX_WORKERS, cpus), 0, -1)
-                        if round(w * (WORKER_GB_ASSUMED + THREAD_GB_MEASURED * threads_for(w)), 6) <= round(budget, 6)), 1)
+                        if round(w * (WORKER_GB_ASSUMED + THREAD_GB_MEASURED), 6) <= round(budget, 6)), 1)
         print(f"  pool: {free_gb:.1f} GB free, {workers} workers x {threads_for(workers)} threads")
     _, _, x0, y0, cell = terrain
     size = math.ceil(len(jobs) / (workers * 4))

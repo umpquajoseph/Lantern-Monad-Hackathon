@@ -81,6 +81,10 @@ SURVEY_STEPS = 6           # assumed: neutron survey dwell, one reading per step
 PROSPECT_STEPS = 10        # assumed: prospector instrument sequence length in steps
 CHECK_READS = 3            # assumed: readings averaged for the check (spine)
 TAIL_STEPS = 4             # assumed: idle steps after the check so the end state shows
+CLEAR_M = 6.0              # assumed: after posting its last find the Surveyor parks this far aside, so the
+                           # Prospector can stop on the find without the two rovers overlapping
+CLEAR_TRY_M = (6.0, 7.0, 5.0, 8.0)   # assumed: offsets tried, in order, until one lands on drivable ground
+CLEAR_CHECK_R_M = 1.5      # assumed: ground within this of the parking spot must be under the slope limit
 MAX_STEPS = 1500           # assumed: safety stop
 N_DECOYS = 4               # assumed: other deposits elsewhere, never under the routes
 # Instrument sequences the UI animates (names are the UI's; progress 0..1 per phase).
@@ -146,6 +150,29 @@ def instrument(phases, i, n):
     per = max(1, n // len(phases))
     j = min(i // per, len(phases) - 1)
     return {"name": phases[j], "progress": round(min(1.0, ((i % per) + 1) / per), 2), "step": i + 1, "of": n}
+
+
+def clear_spot(slope, find_xy, from_xy, here_xy):
+    """Where the Surveyor parks after posting its last find: CLEAR_M aside,
+    perpendicular to the Prospector's approach (from_xy -> find_xy), on ground
+    under the slope limit within CLEAR_CHECK_R_M. Of the two sides, the one
+    nearer the Surveyor. None if no offset in CLEAR_TRY_M is drivable."""
+    fx, fy = find_xy
+    ax, ay = fx - from_xy[0], fy - from_xy[1]
+    n = math.hypot(ax, ay) or 1.0
+    px, py = -ay / n, ax / n                     # unit vector across the approach
+    ring = np.linspace(0, 2 * np.pi, 16, endpoint=False)
+    for d in CLEAR_TRY_M:
+        ok = []
+        for sgn in (1, -1):
+            cx, cy = fx + sgn * d * px, fy + sgn * d * py
+            xs = np.concatenate([[cx], cx + CLEAR_CHECK_R_M * np.cos(ring)])
+            ys = np.concatenate([[cy], cy + CLEAR_CHECK_R_M * np.sin(ring)])
+            if float(np.max(slope.at(xs, ys))) <= SLOPE_LIMIT_DEG:
+                ok.append((math.hypot(cx - here_xy[0], cy - here_xy[1]), (cx, cy)))
+        if ok:
+            return min(ok)[1]
+    return None
 
 
 def place_ice(x0, y0, sites, rng, routes):
@@ -264,7 +291,7 @@ def simulate(scn, terrain, slope, field=None, cam=None):
             ag = r.agency
             s = st[ag]
             moved, reading, instr, rims = False, None, None, np.zeros((0, 2))
-            driving = s["phase"] in ("to", "goto")
+            driving = s["phase"] in ("to", "goto", "clear")
             if k > 0 and driving:
                 d, dh = r.follow()
                 seen = cam.shoot(k, r, d > 0) if cam is not None else None
@@ -325,8 +352,24 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                             r.set_goal((nxt["x"], nxt["y"]))
                             s["phase"] = "to"
                         else:
-                            s["phase"] = "done"
-                            note_state("A", k, "IDLE", "survey complete")
+                            # Its last site. If it posted a find there, the Prospector will come
+                            # and stop on it: drive aside first so the two do not overlap.
+                            spot = clear_spot(slope, (float(r.estimate[0]), float(r.estimate[1])),
+                                              (float(B.estimate[0]), float(B.estimate[1])),
+                                              (float(r.estimate[0]), float(r.estimate[1]))) if ice else None
+                            if spot is not None:
+                                r.set_goal(spot)
+                                s["phase"], s["clear"] = "clear", spot
+                                note_state("A", k, "NAVIGATING", f"clearing {site['id']} for the Prospector")
+                            else:
+                                s["phase"] = "done"
+                                note_state("A", k, "IDLE", "survey complete")
+                elif s["phase"] == "clear":
+                    cx, cy = s["clear"]
+                    dist = math.hypot(cx - r.estimate[0], cy - r.estimate[1])
+                    if dist < ARRIVE_M or (dist < BLOCKED_ARRIVE_M and r.goal_blocked()):
+                        s["phase"] = "done"
+                        note_state("A", k, "IDLE", "survey complete, parked clear of the find")
                 if k == 0:
                     note_state("A", 0, "NAVIGATING_TO_SITE", f"to {sites[0]['id']}")
 

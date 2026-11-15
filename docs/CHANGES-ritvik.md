@@ -19,6 +19,17 @@ the team's app, merge `ritvik` into `integration`.
 | Satellite relays the site; rover navigates itself | Shown in UI | A "Who knows what" panel explains it. See "not done" for the camera part. |
 | Science slowed down and zoomed in, data shown, chain explained | Yes | During a stop, playback drops to 1.5x and the camera moves in on the drill. "Data being recorded" fills water by depth every 10 cm. "On chain, in plain words" shows what went on chain, what stayed off, and a Verify button that re-hashes the evidence in the browser. |
 
+## 1b. Mission Control redesign (UI team)
+
+Laid out after NASA's "Experience Curiosity" (eyes.nasa.gov/apps/curiosity):
+
+- The 3D scene fills the window. One play bar along the bottom holds play/pause, reset, the clock, the timeline (blue = science stop, red = ice found, low red = obstacle), "Slow for science", speed, and zoom in/out (also `+`/`-`).
+- The rover camera and an overhead map sit in two small boxes bottom right, over the scene. Each has a button to fill the window; "Back to rover view" returns. The overhead box extends Joseph's `MapView` (`web/js/map.js`, not edited) with sites and obstacles.
+- A folding panel on the left with four icons: Rover, Science, Sites, On chain. During a drill stop it switches to Science by itself, then switches back.
+- Most explanation text is gone from the screen. What remains is short labels; the full legend, the simulation notes and the NASA model credit are behind the (i) button.
+- On a phone the camera boxes sit side by side and the panel starts folded.
+- Picking a camera or rover during a drill stop now ends that stop's close-up; before, the close-up took the camera straight back.
+
 ## 2. The larger build (master implementation prompt)
 
 The team agreed to extend Lantern, not rewrite it in React/TypeScript.

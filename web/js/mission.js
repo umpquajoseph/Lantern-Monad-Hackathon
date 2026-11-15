@@ -1,41 +1,54 @@
 // Lantern Mission Control: replays a Surveyor/Prospector registry mission
-// (sim/roles.py run log) on Joseph's terrain and 3D world (world.js), with
-// three cameras, a science close-up that slows the clock, and a plain-words
-// account of every record written on chain.
+// (sim/roles.py run log) on Joseph's terrain and 3D world (world.js).
+// Layout after NASA's "Experience Curiosity": the 3D scene fills the window,
+// the rover camera and an overhead map sit in small boxes over it, and one
+// play bar runs along the bottom. Science stops slow the clock and zoom in.
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { Terrain, Run, loadIndex, fmtClock } from "./data.js";
 import { World } from "./world.js";
+import { MapView } from "./map.js";
 import { ScienceRig, DRILL_DEPTH_M } from "./science_rig.js";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const short = (h, a = 8, b = 6) => (h ? `${h.slice(0, a)}…${h.slice(-b)}` : "");
 const ROLE = { A: "Surveyor", B: "Prospector" };
-const STATES = {
-  A: ["IDLE", "EXPLORING", "CANDIDATE_FOUND", "NAVIGATING_TO_SITE", "INSPECTING", "PUBLISHING", "RESUMING", "ERROR"],
-  B: ["IDLE", "FETCHING_TARGET", "PLANNING", "NAVIGATING", "REPLANNING", "ANALYZING", "REPORTING", "COMPLETED", "ERROR"],
+// The state machines' states, in words a visitor reads at a glance.
+const DOING = {
+  IDLE: "Waiting", EXPLORING: "Surveying", CANDIDATE_FOUND: "Candidate found", NAVIGATING_TO_SITE: "Lining up",
+  INSPECTING: "Drilling", PUBLISHING: "Publishing", RESUMING: "Resuming", ERROR: "Error",
+  FETCHING_TARGET: "Reading registry", PLANNING: "Planning", NAVIGATING: "Driving", REPLANNING: "Replanning",
+  ANALYZING: "Analysing", REPORTING: "Publishing", COMPLETED: "Done",
 };
 const PHASE = { park: "Park", nir_scan: "NIR scan", arm_deploy: "Arm out", drill: "Drill 1 m", sample_lift: "Core up",
   analyze: "Analyse", arm_stow: "Stow" };
 const CALL = {
   registerCandidate: "Candidate registered",
-  submitSurveyorInspection: "Surveyor inspection published",
-  submitProspectorAnalysis: "Prospector analysis published",
+  submitSurveyorInspection: "Surveyor result",
+  submitProspectorAnalysis: "Prospector analysis",
 };
+// What each kind of write puts on chain, and what stays off chain under its hash.
+const SPLIT = {
+  registerCandidate: ["Site, position, confidence, hash", "Neutron scan readings"],
+  submitSurveyorInspection: ["Result, hash, route ID", "Water by depth, route driven"],
+  submitProspectorAnalysis: ["Result, link to the Surveyor's report, hash", "Water by depth, NIR scan, route"],
+};
+const MODE_SHORT = { local: "Local chain", monad: "Monad testnet", offline: "Offline" };
 const STAGE_N = { None: 0, Candidate: 1, SurveyorInspected: 2, ProspectorAnalyzed: 3 };
-const SITE_COLOR = { Candidate: 0x9aa7b8, Positive: 0xff4d4d, Negative: 0xe5574f, Inconclusive: 0xd9b44a, Analyzed: 0x58b4ff };
+const SITE_COLOR = { Candidate: 0x9aa7b8, Positive: 0xff4d4d, Negative: 0x8d939b, Inconclusive: 0xd9b44a, Analyzed: 0x58b4ff };
 const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop
 const FOCUS_LEAD_S = 3;    // the close-up starts this many sim seconds before the stop
 const FOCUS_TAIL_S = 3;    // and holds this long after it
+const NARROW = matchMedia("(max-width: 760px)");
 
 const S = {
-  run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A",
+  run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
   opts: { routes: true, hazards: true, truth: false }, focus: true, focusEv: null, prev: null, lastPanel: "",
 };
-let terrain, world, rigs = {}, ov, sci = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
+let terrain, world, map, rigs = {}, ov, sci = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
 let satObjs = [], tagEls = {}, extras = {};
 // Rover camera, as sim/scene.py: 640x480, 60 deg wide, 15 deg down, 2.5 m up.
 const FP = { w: 640, h: 480, pitch: (15 * Math.PI) / 180, camH: 2.5, fx: 320 / Math.tan((30 * Math.PI) / 180) };
@@ -54,11 +67,13 @@ async function main() {
   world.buildTerrain();
   world.buildBackdrop();
   world.loadRocks();
+  map = new MissionMap($("map-cv"), terrain);
   const runs = await loadIndex("runs/");
   const want = params.get("run");
   const entry = runs.find((r) => r.run_id === want) || runs.find((r) => r.status === "mission") || runs[0];
   await openRun(entry);
   bind();
+  if (NARROW.matches) $("panel").classList.add("closed");
   window.lantern = { world, S, rigs };   // for poking at the scene from the browser console
   $("loading").hidden = true;
   requestAnimationFrame(loop);
@@ -75,21 +90,21 @@ async function openRun(entry) {
   const keys = [...terrain.keysNear(pts.filter((_, i) => i % 2 === 0), 4)];
   let done = 0;
   await Promise.all(keys.map((k) => terrain.loadTile(k).then(() => {
-    $("loading").textContent = `Loading ground under the tracks, ${++done} of ${keys.length}`;
+    $("loading").textContent = `Loading terrain ${++done} / ${keys.length}`;
   })));
   S.run = run;
   world.currentT = 0;
   world.setRun(run);
   world.setVisibility({ fill: true, tracks: S.opts.routes, truth: S.opts.truth });
-  $("run-title").textContent = log.label || entry.label;
+  map.setRun(run);
+  map.opts = { tracks: S.opts.routes, truth: S.opts.truth };
   document.title = `Lantern Mission Control · ${log.label || entry.label}`;
 
   sci = [];
   reg = [];
   run.steps.forEach((s) => {
     for (const e of s.science || []) {
-      const ag = e.agency;
-      sci.push({ ...e, agency: ag, t0: e.phases[0].t0, t1: e.phases.at(-1).t0 + e.phases.at(-1).dur });
+      sci.push({ ...e, t0: e.phases[0].t0, t1: e.phases.at(-1).t0 + e.phases.at(-1).dur });
     }
     for (const e of s.registry || []) reg.push(e);
   });
@@ -101,8 +116,8 @@ async function openRun(entry) {
   const R = log.registry || {};
   const badge = $("chain-badge");
   badge.className = `chain-badge ${R.mode || "offline"}`;
-  badge.textContent = R.label || "No registry in this run";
-  badge.title = R.contract ? `Registry contract ${R.contract}` : "";
+  badge.textContent = MODE_SHORT[R.mode] || "No registry";
+  badge.title = [R.label, R.contract ? `Contract ${R.contract}` : ""].filter(Boolean).join("\n");
 
   for (const a of run.agencies) {
     if (!rigs[a]) { rigs[a] = new ScienceRig(world.rovers[a].g, world.scene, { up: "z" }); dressRover(a); }
@@ -116,7 +131,7 @@ async function openRun(entry) {
 }
 
 // Each rover gets its own look and a name tag that also says what its
-// instrument is doing. Shapes are ours (simple boxes), not NASA models.
+// instrument is doing.
 function dressRover(a) {
   const g = world.rovers[a].g;
   g.traverse((o) => {
@@ -163,6 +178,7 @@ const MODELS = {
 const gltf = new GLTFLoader();
 // NASA's files are Draco-compressed; the decoder comes from the same pinned three.js release.
 gltf.setDRACOLoader(new DRACOLoader().setDecoderPath("https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/gltf/"));
+const modelNote = {};
 
 function loadModel(a) {
   const spec = MODELS[a];
@@ -197,10 +213,9 @@ function loadModel(a) {
     if (extras[a]) extras[a].sensors = [];
     g.add(fit);
     modelNote[a] = spec.name;
-    $("model-credit").textContent = `Rover models: NASA 3D Resources, ${Object.values(modelNote).join(" and ")} (Mars rovers, standing in for lunar ones).`;
+    $("model-credit").textContent = `Rover models: NASA 3D Resources, ${Object.values(modelNote).join(" and ")}. Mars rovers, standing in for lunar ones.`;
   }, undefined, (err) => console.warn(`NASA model for ${a} not loaded; keeping the simple rover`, err));
 }
-const modelNote = {};
 
 // ------------------------------------------------------------- overlays
 function buildOverlay() {
@@ -241,7 +256,8 @@ function buildOverlay() {
     g.add(world.ring(s.x, s.y, 6, world.lineMat(0xe0a83a, 2, { dashed: true, opacity: 0.9 })));
     const el = document.createElement("div");
     el.className = "lbl-sat";
-    el.textContent = `${s.id} · satellite: possible site`;
+    el.textContent = s.id;
+    el.title = "Possible site, relayed by the satellite";
     const lbl = new CSS2DObject(el);
     lbl.position.copy(world.groundL(s.x, s.y, 3.5));
     g.add(lbl);
@@ -266,10 +282,10 @@ function buildOverlay() {
     g.add(world.ring(h.x, h.y, h.radius + 0.5, world.lineMat(0xff5d5d, 2, { dashed: true })));
     const el = document.createElement("div");
     el.className = "lbl-haz";
-    el.textContent = `New obstacle: found by ${ROLE[h.seen_by]} ${h.seen_by}`;
+    el.textContent = "Obstacle";
+    el.title = `Found by ${ROLE[h.seen_by]} ${h.seen_by}`;
     const lbl = new CSS2DObject(el);
-    const p = world.groundL(h.x, h.y, 3);
-    lbl.position.copy(p);
+    lbl.position.copy(world.groundL(h.x, h.y, 3));
     g.add(lbl);
     g.userData.t = h.seen_t;
     ov.add(g);
@@ -284,6 +300,8 @@ function buildOverlay() {
   }
 }
 
+// Ticks on the play bar: blue for a science stop, red where ice was found,
+// a low red tick for a new obstacle. Hover for what each is.
 function buildTimeline() {
   const marks = $("tl-marks");
   marks.innerHTML = "";
@@ -295,46 +313,97 @@ function buildTimeline() {
     i.title = title;
     marks.appendChild(i);
   };
-  for (const e of sci) add(e.t0, "sci", `${ROLE[e.agency]} ${e.observation || "science"} at ${e.target_id}`);
-  for (const e of reg) add(e.t, "reg", `${CALL[e.call]}: ${e.target_id}`);
-  for (const h of hazards) add(h.seen_t, "haz", "New obstacle found");
+  for (const e of sci) add(e.t0, "sci", `${ROLE[e.agency]}: ${e.observation || "science"} at ${e.target_id}`);
+  for (const e of reg) if (e.result === "Positive") add(e.t, "ice", `Ice at ${e.target_id} (${ROLE[e.agency]})`);
+  for (const h of hazards) add(h.seen_t, "haz", "New obstacle");
 }
 
 // ---------------------------------------------------------------- controls
 function bind() {
   $("play").onclick = togglePlay;
-  $("restart").onclick = () => { S.t = 0; exitFocus(); render(true); };
+  $("restart").onclick = () => { S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; render(true); };
   $("speed").onchange = (e) => (S.speed = Number(e.target.value));
   $("focus").onchange = (e) => { S.focus = e.target.checked; if (!S.focus) exitFocus(); };
-  $("scrub").oninput = (e) => { S.t = (Number(e.target.value) / 1000) * S.run.tEnd; exitFocus(); render(true); };
-  document.querySelectorAll("#cam-seg button").forEach((b) => (b.onclick = () => { exitFocus(); setCam(b.dataset.cam); }));
-  document.querySelectorAll("#rover-seg button").forEach((b) => (b.onclick = () => { exitFocus(); setRover(b.dataset.rover); }));
+  $("scrub").oninput = (e) => { S.t = (Number(e.target.value) / 1000) * S.run.tEnd; exitFocus(); S.dismissed = null; render(true); };
+  $("zoom-in").onclick = () => zoom(1 / 1.35);
+  $("zoom-out").onclick = () => zoom(1.35);
+  document.querySelectorAll("#rover-seg button").forEach((b) => (b.onclick = () => { exitFocus(true); setRover(b.dataset.rover); }));
+  document.querySelectorAll("[data-expand]").forEach((b) => (b.onclick = () => { exitFocus(true); setCam(b.dataset.expand); }));
+  $("back-chip").onclick = () => setCam("third");
+  document.querySelectorAll(".rail button").forEach((b) => (b.onclick = () => {
+    const p = $("panel");
+    if (p.classList.contains("closed")) p.classList.remove("closed");
+    else if (S.tab === b.dataset.tab) { p.classList.add("closed"); return; }
+    S.tabBeforeFocus = null;
+    setTab(b.dataset.tab);
+  }));
+  $("collapse").onclick = () => $("panel").classList.toggle("closed");
   for (const k of ["routes", "hazards", "truth"]) {
     $("opt-" + k).onchange = (e) => {
       S.opts[k] = e.target.checked;
       world.setVisibility({ fill: true, tracks: S.opts.routes, truth: S.opts.truth });
+      map.opts = { tracks: S.opts.routes, truth: S.opts.truth };
       render(true);
     };
   }
+  $("layers-btn").onclick = (e) => {
+    e.stopPropagation();
+    const open = $("layers").hidden;
+    $("layers").hidden = !open;
+    $("layers-btn").setAttribute("aria-expanded", String(open));
+  };
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".pop-wrap")) { $("layers").hidden = true; $("layers-btn").setAttribute("aria-expanded", "false"); }
+  });
+  $("info-btn").onclick = () => $("about").showModal();
+  $("full-btn").onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
   $("dr-close").onclick = () => ($("drawer").hidden = true);
   addEventListener("keydown", (e) => {
     if (e.target.closest("input, select")) return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
     if (e.key === "Escape") $("drawer").hidden = true;
+    if (e.key === "+" || e.key === "=") zoom(1 / 1.35);
+    if (e.key === "-") zoom(1.35);
   });
+}
+
+function setPlayIcon() {
+  $("play").innerHTML = `<svg><use href="#i-${S.playing ? "pause" : "play"}"/></svg>`;
+  $("play").setAttribute("aria-label", S.playing ? "Pause" : "Play");
 }
 
 function togglePlay() {
   if (S.t >= S.run.tEnd) S.t = 0;
   S.playing = !S.playing;
-  $("play").textContent = S.playing ? "Pause" : (S.t > 0 ? "Resume" : "Start");
+  setPlayIcon();
 }
 
+// Move the 3D camera toward or away from what it is looking at. Works in
+// every 3D view, including a science close-up; the rover camera is a
+// recorded frame, so it has nothing to zoom.
+function zoom(f) {
+  if (S.cam === "first") return;
+  const c = world.controls, cam = world.camera;
+  const off = cam.position.clone().sub(c.target);
+  off.setLength(THREE.MathUtils.clamp(off.length() * f, c.minDistance, c.maxDistance));
+  cam.position.copy(c.target).add(off);
+  c.update();
+}
+
+function setTab(tab) {
+  S.tab = tab;
+  document.querySelectorAll(".rail button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+  document.querySelectorAll(".pane").forEach((p) => (p.hidden = p.dataset.pane !== tab));
+}
+
+// The big view is the third-person chase camera; either small box can be
+// blown up to fill the window, and "Back to rover view" returns.
 function setCam(cam) {
   S.cam = cam;
-  document.querySelectorAll("#cam-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.cam === cam)));
   $("fp").hidden = cam !== "first";
-  $("cam-note").hidden = cam === "first";
+  $("in-fp").hidden = cam === "first";
+  $("in-map").hidden = cam === "overhead";
+  $("back-chip").hidden = cam === "third";
   world.labels.domElement.style.display = cam === "first" ? "none" : "";
   if (cam === "third") world.setFollow(S.rover);
   if (cam === "overhead") overhead();
@@ -345,6 +414,7 @@ function setRover(a) {
   S.rover = a;
   document.querySelectorAll("#rover-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.rover === a)));
   if (S.cam === "third") world.setFollow(a);
+  S.lastPanel = "";
   render(true);
 }
 
@@ -380,22 +450,28 @@ function enterFocus(ev) {
   S.rover = ev.agency;
   document.querySelectorAll("#rover-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.rover === ev.agency)));
   S.cam = "third";
-  document.querySelectorAll("#cam-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.cam === "third")));
   $("fp").hidden = true;
+  $("in-fp").hidden = false;
+  $("in-map").hidden = false;
+  $("back-chip").hidden = true;
   world.labels.domElement.style.display = "";
   closeUp(ev);
-  const tag = $("focus-tag");
-  tag.hidden = false;
-  tag.textContent = `Slowed to ${FOCUS_SPEED}× · ${ROLE[ev.agency]} ${ev.agency}: ${ev.observation || "science"} at ${ev.target_id}`;
+  // Bring the science panel forward while the drill works, then put back whatever was open.
+  if (S.tab !== "science") { S.tabBeforeFocus = S.tab; setTab("science"); }
+  document.querySelector('.rail [data-tab="science"]').classList.add("live");
 }
 
-function exitFocus() {
+// byUser: the viewer picked another camera or rover mid-stop, so this stop
+// plays on at normal speed instead of pulling the camera back.
+function exitFocus(byUser = false) {
   if (!S.focusEv) return;
+  if (byUser) S.dismissed = S.focusEv;
   S.focusEv = null;
-  $("focus-tag").hidden = true;
+  document.querySelector('.rail [data-tab="science"]').classList.remove("live");
+  if (S.tabBeforeFocus) { setTab(S.tabBeforeFocus); S.tabBeforeFocus = null; }
   const p = S.prev;
   S.prev = null;
-  if (p) { S.rover = p.rover; setCam(p.cam); setRover(p.rover); }
+  if (p && !byUser) { S.rover = p.rover; setCam(p.cam); setRover(p.rover); }
 }
 
 const activeSci = (t) => sci.find((e) => t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + FOCUS_TAIL_S);
@@ -413,14 +489,15 @@ function loop(now) {
       if (next) adv = next.t0 - FOCUS_LEAD_S - S.t;
     }
     S.t = Math.min(S.run.tEnd, S.t + adv);
-    if (S.t >= S.run.tEnd) { S.playing = false; $("play").textContent = "Start"; }
+    if (S.t >= S.run.tEnd) { S.playing = false; setPlayIcon(); }
   }
   if (S.run) {
     const ev = S.focus ? activeSci(S.t) : null;
-    if (ev && ev !== S.focusEv) enterFocus(ev);
+    if (ev && ev !== S.focusEv && ev !== S.dismissed) enterFocus(ev);
     if (!ev && S.focusEv) exitFocus();
-    render(now - lastPanelAt > 150);
-    if (now - lastPanelAt > 150) lastPanelAt = now;
+    const panels = now - lastPanelAt > 150;
+    render(panels);
+    if (panels) lastPanelAt = now;
   }
   requestAnimationFrame(loop);
 }
@@ -439,33 +516,39 @@ function render(panels) {
     const busy = ev && !["idle", "done", "park"].includes(rigs[a].phaseAt(t).name);
     rigs[a].mount.visible = !!busy || (ev && rigs[a].phaseAt(t).name === "done" && t < ev.t1 + 1);
     // Name tag: what the instrument is doing right now.
-    const ph = ev ? rigs[a].phaseAt(t) : { name: "idle" };
-    const st = stateAt(a, t).state;
-    let txt = "";
-    if (ph.name === "drill") txt = `DRILLING ${(100 * rigs[a].depthAt(t)).toFixed(0)} cm`;
-    else if (ph.name === "nir_scan") txt = "NIR SCAN";
-    else if (ph.name === "analyze") txt = "ANALYSING CORE";
-    else if (ph.name === "arm_deploy" || ph.name === "arm_stow" || ph.name === "sample_lift") txt = "DRILL ARM";
-    else if (a === "A" && st === "EXPLORING") txt = "neutron survey";
+    const txt = instrumentNow(a, t, ev);
     if (tagEls[a] && tagEls[a].textContent !== txt) tagEls[a].textContent = txt;
-    const on = txt === "neutron survey" || ph.name === "nir_scan";
+    const ph = ev ? rigs[a].phaseAt(t).name : "idle";
+    const on = txt === "neutron survey" || ph === "nir_scan";
     for (const m of (extras[a] || {}).sensors || []) m.material.emissive.setHex(on ? (a === "A" ? 0x33aa66 : 0x7744ff) : 0);
   }
   updateOverlay(t);
   if (S.cam !== "first") world.render();
-  else showFrame();
+  else showFrame($("fp-img"), $("fp-ov"), $("fp-none"), false);
+  if (S.cam !== "first") showFrame($("fpi-img"), $("fpi-ov"), $("fpi-none"), true);
+  if (S.cam !== "overhead") map.update(t);
   $("clock").textContent = fmtClock(t);
   $("tl-fill").style.width = `${(100 * t) / run.tEnd}%`;
   $("scrub").value = String(Math.round((1000 * t) / run.tEnd));
   if (panels) renderPanels(t);
 }
 
-function showFrame() {
+function instrumentNow(a, t, ev) {
+  const ph = ev ? rigs[a].phaseAt(t).name : "idle";
+  if (ph === "drill") return `DRILLING ${(100 * rigs[a].depthAt(t)).toFixed(0)} cm`;
+  if (ph === "nir_scan") return "NIR SCAN";
+  if (ph === "analyze") return "ANALYSING CORE";
+  if (ph === "arm_deploy" || ph === "arm_stow" || ph === "sample_lift") return "DRILL ARM";
+  if (a === "A" && stateAt(a, t).state === "EXPLORING") return "neutron survey";
+  return "";
+}
+
+function showFrame(img, cv, none, small) {
   const fr = S.run.frameNear(S.rover, S.t);
-  $("fp-none").hidden = !!fr;
-  $("fp-img").hidden = !fr;
-  if (fr && $("fp-img").dataset.src !== fr.src) { $("fp-img").src = fr.src; $("fp-img").dataset.src = fr.src; }
-  drawFpOverlay(fr);
+  none.hidden = !!fr;
+  img.hidden = !fr;
+  if (fr && img.dataset.src !== fr.src) { img.src = fr.src; img.dataset.src = fr.src; }
+  drawFpOverlay(fr, cv, small);
 }
 
 // Project a world point into the recorded camera frame (pinhole, sim/scene.py camera_model()).
@@ -480,11 +563,14 @@ function project(pose, camZ, wx, wy, wz) {
 }
 
 // On the camera frame: the route the rover is following right now, any
-// obstacle it has found, and the site it is heading for.
-function drawFpOverlay(fr) {
-  const cv = $("fp-ov"), c = cv.getContext("2d");
+// obstacle it has found, and the sites ahead. In the small box the strokes
+// and text are drawn larger so they survive being scaled down.
+function drawFpOverlay(fr, cv, small) {
+  const c = cv.getContext("2d");
   c.clearRect(0, 0, FP.w, FP.h);
   if (!fr) return;
+  const k = small ? 2 : 1;
+  const font = (px) => `600 ${px * k}px Barlow, Helvetica, Arial, sans-serif`;
   const a = S.rover, run = S.run, tf = run.times[fr.k];
   const pose = run.steps[fr.k].rovers[a].true_pose;
   const camZ = terrain.heightAt(pose[0], pose[1]) + FP.camH;
@@ -500,11 +586,11 @@ function drawFpOverlay(fr) {
     let len = 0;
     for (let i = best + 1; i < pts.length && len < 40; i++) {
       const q = path.at(-1), d = Math.hypot(pts[i][0] - q[0], pts[i][1] - q[1]), n = Math.max(1, Math.ceil(d));
-      for (let k = 1; k <= n; k++) path.push([q[0] + ((pts[i][0] - q[0]) * k) / n, q[1] + ((pts[i][1] - q[1]) * k) / n]);
+      for (let j = 1; j <= n; j++) path.push([q[0] + ((pts[i][0] - q[0]) * j) / n, q[1] + ((pts[i][1] - q[1]) * j) / n]);
       len += d;
     }
     c.lineJoin = c.lineCap = "round";
-    for (const [w, style] of [[9, "rgba(0,0,0,.55)"], [4, col]]) {
+    for (const [w, style] of [[9 * k, "rgba(0,0,0,.55)"], [4 * k, col]]) {
       c.beginPath();
       let open = false;
       for (const p of path) {
@@ -515,9 +601,9 @@ function drawFpOverlay(fr) {
       }
       c.lineWidth = w; c.strokeStyle = style; c.stroke();
     }
-    c.fillStyle = col; c.font = "700 13px Helvetica, Arial";
-    const msg = st === "REPLANNING" ? "replanning around the obstacle" : `route to ${route.target_id}${route.kind === "replanned" ? " (replanned around the obstacle)" : ""}`;
-    c.textAlign = "right"; c.fillText(msg, FP.w - 12, 22); c.textAlign = "left";
+    c.fillStyle = col; c.font = font(14);
+    const msg = st === "REPLANNING" ? "Replanning" : route.kind === "replanned" ? `To ${route.target_id}, around obstacle` : `To ${route.target_id}`;
+    c.textAlign = "right"; c.fillText(msg, FP.w - 12, 12 + 14 * k); c.textAlign = "left";
   }
   for (const h of hazards) {
     if (!S.opts.hazards || tf < h.seen_t) continue;
@@ -530,22 +616,20 @@ function drawFpOverlay(fr) {
       open = true;
       if (!top || q[1] < top[1]) top = q;
     }
-    c.lineWidth = 3; c.strokeStyle = "#ff5d5d"; c.fillStyle = "rgba(255,93,93,.18)"; c.fill(); c.stroke();
-    if (top) { c.fillStyle = "#ff5d5d"; c.font = "700 13px Helvetica, Arial"; c.fillText("OBSTACLE: steering around", top[0] - 70, top[1] - 8); }
+    c.lineWidth = 3 * k; c.strokeStyle = "#ff5d5d"; c.fillStyle = "rgba(255,93,93,.18)"; c.fill(); c.stroke();
+    if (top) { c.fillStyle = "#ff5d5d"; c.font = font(13); c.fillText("OBSTACLE", top[0] - 34 * k, top[1] - 8); }
   }
-  const sites = registryAt(tf), marks = [];
+  const sites = registryAt(tf);
   for (const s of run.log.satellite_sites || []) {
     const r = [...sites.values()].find((v) => v.target === s.id);
     const ice = r && (r.surveyor === "Positive" || r.prospector === "Positive");
-    marks.push({ ...s, label: ice ? `${s.id}: ICE FOUND` : r ? `${s.id}` : `${s.id}: satellite site`, color: ice ? "#ff4d4d" : r ? "#9aa7b8" : "#e0a83a" });
-  }
-  for (const m of marks) {
-    const base = P(m.x, m.y), tip = P(m.x, m.y, 6);
+    const color = ice ? "#ff4d4d" : r ? "#9aa7b8" : "#e0a83a";
+    const base = P(s.x, s.y), tip = P(s.x, s.y, 6);
     if (!base || !tip || base[2] > 250) continue;
-    c.strokeStyle = m.color; c.lineWidth = 2;
+    c.strokeStyle = color; c.lineWidth = 2 * k;
     c.beginPath(); c.moveTo(base[0], base[1]); c.lineTo(tip[0], tip[1]); c.stroke();
-    c.fillStyle = m.color; c.font = "700 12px Helvetica, Arial";
-    c.fillText(`${m.label} · ${base[2].toFixed(0)} m`, tip[0] + 5, tip[1] + 4);
+    c.fillStyle = color; c.font = font(12);
+    c.fillText(`${s.id}${ice ? " ICE" : ""} · ${base[2].toFixed(0)} m`, tip[0] + 5, tip[1] + 4);
   }
 }
 
@@ -563,6 +647,11 @@ function registryAt(t) {
   return sites;
 }
 
+function siteStatus(s) {
+  const both = s.stage === "ProspectorAnalyzed";
+  return both ? (s.prospector === "Positive" ? "Positive" : "Analyzed") : s.stage === "SurveyorInspected" ? s.surveyor : "Candidate";
+}
+
 function updateOverlay(t) {
   const sites = registryAt(t);
   for (const [sid, o] of siteObjs) {
@@ -570,18 +659,17 @@ function updateOverlay(t) {
     o.g.visible = !!s;
     if (!s) continue;
     const both = s.stage === "ProspectorAnalyzed";
-    const status = both ? (s.prospector === "Positive" ? "Positive" : "Analyzed") : s.stage === "SurveyorInspected" ? s.surveyor : "Candidate";
+    const status = siteStatus(s);
     const key = `${status}${both}`;
     if (o.key !== key) {
       o.key = key;
       o.ring.material = o.mats[status];
-      const col = "#" + SITE_COLOR[status].toString(16).padStart(6, "0");
-      o.el.style.color = col;
+      o.el.style.color = "#" + SITE_COLOR[status].toString(16).padStart(6, "0");
       o.beam.material.color.set(SITE_COLOR[status]);
-      o.disc.visible = status === "Positive" || (status === "Analyzed" && s.prospector === "Positive");
-      const words = { Candidate: "candidate", Positive: both ? "ICE CONFIRMED by both rovers" : "ICE FOUND (Surveyor)", Negative: "Surveyor: negative",
-        Inconclusive: "Surveyor: inconclusive", Analyzed: `analysed: ${s.prospector.toLowerCase()}` }[status];
-      o.el.innerHTML = `${esc(o.target)} · ${words}`;
+      o.disc.visible = status === "Positive";
+      const words = { Candidate: "candidate", Positive: both ? "ICE CONFIRMED" : "ICE", Negative: "no ice",
+        Inconclusive: "unclear", Analyzed: s.prospector.toLowerCase() }[status];
+      o.el.textContent = `${o.target} · ${words}`;
     }
   }
   // During a close-up, clear the markers that would stand in front of the drill.
@@ -611,38 +699,92 @@ function stateAt(a, t) {
   return cur;
 }
 
+// The overhead box: Joseph's 2D map (hillshade, tracks, rovers), with this
+// mission's satellite sites, registry sites and obstacles drawn on top.
+class MissionMap extends MapView {
+  draw() {
+    super.draw();
+    const run = this.run;
+    if (!run || !this.view || !S.run) return;
+    const c = this.ctx, W = this.cv.clientWidth, H = this.cv.clientHeight;
+    const w = this.window(), s = this.view.s, cx = w.cx + this.pan[0], cy = w.cy + this.pan[1];
+    const X = (x) => W / 2 + (x - cx) * s, Y = (y) => H / 2 - (y - cy) * s;
+    const t = this.t || 0, sites = registryAt(t);
+    const done = new Set([...sites.values()].map((v) => v.target));
+    c.lineWidth = 1.5;
+    for (const o of S.run.log.satellite_sites || []) {
+      if (done.has(o.id)) continue;
+      c.setLineDash([3, 3]); c.strokeStyle = "#e0a83a";
+      c.beginPath(); c.arc(X(o.x), Y(o.y), 5, 0, Math.PI * 2); c.stroke();
+    }
+    c.setLineDash([]);
+    for (const v of sites.values()) {
+      const st = siteStatus(v), col = "#" + SITE_COLOR[st].toString(16).padStart(6, "0");
+      if (st === "Positive") {
+        c.fillStyle = "rgba(255,77,77,.28)";
+        c.beginPath(); c.arc(X(v.x), Y(v.y), 9, 0, Math.PI * 2); c.fill();
+      }
+      c.fillStyle = col;
+      c.beginPath(); c.arc(X(v.x), Y(v.y), 4, 0, Math.PI * 2); c.fill();
+    }
+    if (S.opts.hazards) {
+      c.strokeStyle = "#ff5d5d"; c.lineWidth = 2;
+      for (const h of hazards) {
+        if (t < h.seen_t) continue;
+        const r = Math.max(4, h.radius * s);
+        c.beginPath(); c.arc(X(h.x), Y(h.y), r, 0, Math.PI * 2); c.stroke();
+      }
+    }
+  }
+}
+
 // ------------------------------------------------------------------ panels
 function renderPanels(t) {
-  const run = S.run;
-  const k = run.stepAt(t);
-  // HUD for the selected rover.
-  const a = S.rover, r = run.rover(a, k), st = stateAt(a, t);
-  const [x, y, h] = run.poseAt(a, t);
-  const [x2, y2] = run.poseAt(a, Math.max(0, t - 20));
-  const v = Math.hypot(x - x2, y - y2) / Math.min(20, Math.max(t, 1e-6));
-  const bearing = ((90 - (h * 180) / Math.PI) % 360 + 360) % 360;
-  const soc = r.soc ?? null;
-  $("hud").innerHTML = `
-    <div class="role"><i class="dot ${a}"></i>${ROLE[a]} ${a}<span class="state">${esc(st.state)}</span></div>
-    <div class="obj">${esc(st.objective)}</div>
-    <dl>
-      <dt>Heading</dt><dd>${bearing.toFixed(0)}° from north</dd>
-      <dt>Speed</dt><dd>${v < 0.005 ? "stopped" : (100 * v).toFixed(1) + " cm/s"}</dd>
-      <dt>Battery</dt><dd>${soc == null ? "–" : (100 * soc).toFixed(0) + "%"}<div class="bar"><i style="width:${soc == null ? 0 : 100 * soc}%;background:${soc < 0.3 ? "var(--neg)" : "var(--pos)"}"></i></div></dd>
-      <dt>Position</dt><dd>${r.estimate[0].toFixed(1)}, ${r.estimate[1].toFixed(1)} m ±${r.sigma.toFixed(1)}</dd>
-    </dl>`;
-
-  // What's happening, both rovers, and the selected rover's state machine.
-  const now = run.agencies.map((ag) => {
-    const s = stateAt(ag, t);
-    return `<div class="row"><i class="dot ${ag}" style="margin-top:4px"></i><div><span class="who">${ROLE[ag]} ${ag}</span> · ${esc(s.state)}<br><span class="hint">${esc(s.objective)}</span></div></div>`;
-  }).join("");
-  const chips = STATES[a].map((s) => `<span class="chip ${s === st.state ? "on" : ""}">${s}</span>`).join("");
-  $("now").innerHTML = `${now}<div class="overline" style="margin-top:8px">${ROLE[a]} states</div><div class="states">${chips}</div>`;
-
+  renderRover(t);
+  renderToast(t);
   renderScience(t);
   renderChain(t);
   renderRegistry(t);
+}
+
+function renderRover(t) {
+  const run = S.run, k = run.stepAt(t);
+  $("now").innerHTML = run.agencies.map((a) => {
+    const r = run.rover(a, k), st = stateAt(a, t);
+    const [x, y] = run.poseAt(a, t), [x2, y2] = run.poseAt(a, Math.max(0, t - 20));
+    const v = Math.hypot(x - x2, y - y2) / Math.min(20, Math.max(t, 1e-6));
+    const soc = r.soc ?? null;
+    return `<div class="rv ${a === S.rover ? "sel" : ""}" data-rover="${a}">
+      <div class="rv-head"><i class="dot ${a}"></i>${ROLE[a]} ${a}<span class="doing">${esc(DOING[st.state] || st.state)}</span></div>
+      <div class="rv-obj">${esc(st.objective)}</div>
+      <div class="stats">
+        <div class="stat"><b>${v < 0.005 ? "0" : (100 * v).toFixed(0)}</b><span>cm/s</span></div>
+        <div class="stat"><b>${soc == null ? "–" : (100 * soc).toFixed(0) + "%"}</b><span>battery</span>${soc == null ? "" : `<div class="batt"><i style="width:${100 * soc}%;background:${soc < 0.3 ? "var(--neg)" : "var(--pos)"}"></i></div>`}</div>
+        <div class="stat"><b>±${r.sigma.toFixed(1)}</b><span>m position</span></div>
+      </div></div>`;
+  }).join("");
+  $("now").querySelectorAll(".rv").forEach((el) => (el.onclick = () => { exitFocus(true); setRover(el.dataset.rover); }));
+}
+
+// One line over the play bar: who is doing what, and how fast time runs.
+function renderToast(t) {
+  const run = S.run, el = $("toast");
+  let html;
+  if (S.focusEv) {
+    const ev = S.focusEv, a = ev.agency;
+    const what = instrumentNow(a, t, ev).toLowerCase() || "science";
+    html = `<i class="dot ${a}"></i> <b>${ROLE[a]} ${a}</b> · ${esc(what)} at ${esc(ev.target_id)}<span class="sp">${FOCUS_SPEED}× for science</span>`;
+  } else if (t >= run.tEnd) {
+    const ice = [...registryAt(t).values()].filter((s) => siteStatus(s) === "Positive").length;
+    html = `<b>Mission complete</b> · ice at ${ice} site${ice === 1 ? "" : "s"}`;
+  } else if (!S.playing && t === 0) {
+    html = `Press <b>play</b> to start · drag to look around`;
+  } else {
+    const a = S.rover, st = stateAt(a, t);
+    html = `<i class="dot ${a}"></i> <b>${ROLE[a]} ${a}</b> · ${esc(DOING[st.state] || st.state)}<span class="sp">${S.playing ? S.speed + "×" : "Paused"}</span>`;
+  }
+  if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
+  el.hidden = false;
 }
 
 async function evidence(cid) {
@@ -659,14 +801,15 @@ async function evidence(cid) {
 
 function renderScience(t) {
   const ev = S.focusEv || sci.filter((e) => e.t0 <= t).at(-1);
-  if (!ev) { $("sci-card").hidden = true; return; }
-  $("sci-card").hidden = false;
+  $("sci-empty").hidden = !!ev;
+  $("sci-body").hidden = !ev;
+  if (!ev) { $("sci-title").textContent = "Science"; return; }
   const rig = rigs[ev.agency];
   const ph = ev.phases;
   let cur = -1;
   ph.forEach((p, i) => { if (t >= p.t0) cur = i; });
   const finished = t >= ev.t1;
-  $("sci-title").textContent = `${ROLE[ev.agency]} ${ev.agency} · ${ev.observation || "science"} at ${ev.target_id}${finished ? " (done)" : ""}`;
+  $("sci-title").innerHTML = `<i class="dot ${ev.agency}"></i>${ROLE[ev.agency]} · ${esc(ev.target_id)}`;
   $("sci-phases").innerHTML = ph.map((p, i) =>
     `<li class="${finished || i < cur ? "done" : i === cur ? "now" : ""}">${PHASE[p.name] || p.name}</li>`).join("");
   const key = `${ev.record_id}|${cur}|${finished}|${Math.floor(rig.depthAt(t) * 10)}`;
@@ -687,45 +830,27 @@ function renderScience(t) {
     const analysed = ph.findIndex((p) => p.name === "analyze");
     const done = finished || cur > analysed;
     if (!done) {
-      $("sci-result").innerHTML = `<div class="overline">Result</div><div class="hint">${cur < drillIdx ? "Getting ready to drill." : cur === drillIdx ? `Drilling: ${(depth * 100).toFixed(0)} cm down. Water by depth fills in as the bit passes each 10 cm.` : "The mass spectrometer is reading the core."}</div>`;
+      $("sci-result").innerHTML = `<div class="hint">${cur < drillIdx ? "Getting ready" : cur === drillIdx ? `Drilling · ${(depth * 100).toFixed(0)} cm` : "Reading the core"}</div>`;
       return;
     }
-    const res = e ? e.json.result : { verdict: ev.verdict, reading_wt_pct: ev.reading, summary: ev.summary };
-    const conf = res.confidence ? `${res.confidence.level} (${res.confidence.margin_sigma}σ)` : "–";
-    $("sci-result").innerHTML = `<div class="overline">Result</div>
-      <div class="verdict ${res.verdict}">${{ ice: "Water ice", dry: "No ice", trace: "Trace only" }[res.verdict] || res.verdict}</div>
-      <div>${esc(res.summary)}</div>
-      <dl class="kv"><dt>Confidence</dt><dd>${esc(conf)}</dd>
-      <dt>Ilmenite</dt><dd>${e ? e.json.measurements.ilmenite_wt_pct + " wt%" : "–"}</dd>
-      <dt>Report</dt><dd class="mono">${ev.report_cid ? `<a href="${S.run.dir}evidence/${ev.report_cid}.json" target="_blank" rel="noopener">${short(ev.report_cid, 12, 6)}</a>` : "–"}</dd></dl>
-      <div class="hint small">Simulated measurement, not NASA data.</div>`;
+    const res = e ? e.json.result : { verdict: ev.verdict, reading_wt_pct: ev.reading };
+    const word = { ice: "Water ice", dry: "No ice", trace: "Trace only" }[res.verdict] || res.verdict;
+    const conf = res.confidence ? `${res.confidence.level} confidence` : "";
+    $("sci-result").innerHTML = `<div class="verdict ${res.verdict}">${word}<small>${esc(conf)}</small><span class="sim-tag" title="Simulated measurement, not NASA data">SIMULATED</span></div>
+      ${ev.report_cid ? `<div class="small hint" style="margin-top:4px">Report <a class="mono" href="${S.run.dir}evidence/${ev.report_cid}.json" target="_blank" rel="noopener">${short(ev.report_cid, 10, 6)}</a></div>` : ""}`;
   });
 }
 
 function writeHtml(e) {
   const R = S.run.log.registry || {};
   const mode = e.mode || R.mode;
-  const tag = `<span class="tag ${mode}">${{ local: "LOCAL CHAIN", monad: "MONAD TESTNET", offline: "OFFLINE MOCK" }[mode] || mode}</span>`;
-  const onChain = [`site id <span class="mono">${short(e.site_id, 10, 4)}</span>`];
-  if (e.call === "registerCandidate") onChain.push(`position ${e.x?.toFixed(1)}, ${e.y?.toFixed(1)} m (as whole cm)`, `confidence ${(100 * e.confidence).toFixed(0)}%`);
-  else onChain.push(`result <b class="res ${e.result}">${e.result}</b>`);
-  if (e.parent_report_id) onChain.push(`follows report #${e.parent_report_id}`);
-  onChain.push(`report hash <span class="mono">${short(e.evidence_hash, 10, 4)}</span>`, `report CID <span class="mono">${short(e.report_cid, 10, 4)}</span>`);
-  if (e.route_cid) onChain.push(`route CID <span class="mono">${short(e.route_cid, 10, 4)}</span>`);
-  const offChain = e.call === "registerCandidate"
-    ? ["the neutron scan: 7 readings around the site", "the confidence and how it was scored", "data sources"]
-    : ["water by depth, every 10 cm of the core", "ilmenite, regolith class, confidence", e.route_cid ? "the route driven, thinned" : null, "data sources, simulation flag"].filter(Boolean);
+  const [on, off] = SPLIT[e.call] || ["Hash", "Report"];
   const exp = S.run.chain && S.run.chain.explorer;
-  const tx = exp ? `<a href="${exp}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx)}</a>` : `<span class="mono">${short(e.tx)}</span>`;
+  const tx = exp ? `<a class="mono" href="${exp}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx, 6, 4)}</a>` : `<span class="mono">${short(e.tx, 6, 4)}</span>`;
   return `<div class="chain-item">
-    <div class="what">${esc(CALL[e.call])} ${tag}</div>
-    <div>${esc(e.explain || "")}</div>
-    <div class="cols">
-      <div class="box"><div class="overline">On chain (${e.gas_used ? e.gas_used.toLocaleString() + " gas" : "small"})</div><ul>${onChain.map((x) => `<li>${x}</li>`).join("")}</ul></div>
-      <div class="box"><div class="overline">Off chain, by its hash</div><ul>${offChain.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
-        <button class="btn verify-btn" data-cid="${e.report_cid}" data-hash="${e.evidence_hash}" style="margin-top:6px">Verify it</button><div class="verify"></div></div>
-    </div>
-    <div class="small hint" style="margin-top:4px">tx ${tx} · block ${e.block} · by the ${e.role}</div>
+    <div class="what">${esc(CALL[e.call])} · ${esc(e.target_id)}${e.result ? ` <span class="res ${e.result}">${e.result}</span>` : ""}<span class="tag ${mode}" style="margin-left:auto">${esc(MODE_SHORT[mode] || mode)}</span></div>
+    <div class="split"><div><span class="k">On chain</span>${esc(on)}</div><div><span class="k">Off chain</span>${esc(off)}</div></div>
+    <div class="verify-row"><button class="btn verify-btn" data-cid="${e.report_cid}" data-hash="${e.evidence_hash}" title="Re-hash the off-chain report and compare with the chain">Verify</button><span class="verify"></span><span class="hint small" style="margin-left:auto">tx ${tx} · block ${e.block}</span></div>
   </div>`;
 }
 
@@ -734,29 +859,23 @@ function renderChain(t) {
   const key = `chain|${done.length}`;
   if ($("chain-now").dataset.key === key) return;
   $("chain-now").dataset.key = key;
-  if (!done.length) {
-    $("chain-now").innerHTML = `<p class="hint">Nothing written yet. Records go on chain only at meaningful moments: a candidate found, a site inspected, a site analysed. Everything else (position, battery, readings) stays off chain.</p>`;
-  } else {
-    $("chain-now").innerHTML = done.slice(-2).reverse().map(writeHtml).join("") +
-      `<p class="hint small">The chain proves who published what, when, and that the evidence has not changed since. It does not prove the ice is there; that is what the second rover's analysis is for.</p>`;
-  }
+  $("chain-now").innerHTML = done.length ? writeHtml(done.at(-1))
+    : `<p class="hint">Nothing yet. A record is written when a site is found, drilled, or analysed.</p>`;
   bindVerify($("chain-now"));
-  $("txs").innerHTML = done.slice().reverse().map((e) =>
-    `<li><span class="t">${fmtClock(e.t).replace("T+", "")}</span><span><i class="dot ${e.agency}"></i> ${esc(CALL[e.call])}: <b>${esc(e.target_id)}</b>${e.result ? ` <span class="res ${e.result}">${e.result}</span>` : ""}<br><span class="mono hint">${short(e.tx)} · block ${e.block}</span></span></li>`).join("") ||
-    `<li class="hint">None yet.</li>`;
+  $("txs").innerHTML = done.slice(0, -1).reverse().map((e) =>
+    `<li><span class="t">${fmtClock(e.t).replace("T+", "")}</span><span><i class="dot ${e.agency}"></i> ${esc(CALL[e.call])} · <b>${esc(e.target_id)}</b>${e.result ? ` <span class="res ${e.result}">${e.result}</span>` : ""}</span></li>`).join("");
 }
 
 function bindVerify(root) {
   root.querySelectorAll(".verify-btn").forEach((b) => (b.onclick = async () => {
     const out = b.nextElementSibling;
-    out.textContent = "Fetching the evidence and hashing it…";
+    out.textContent = "Hashing…";
     const e = await evidence(b.dataset.cid);
-    if (!e) { out.innerHTML = `<span class="bad">Evidence file not found.</span>`; return; }
+    if (!e) { out.innerHTML = `<span class="bad">Report not found</span>`; return; }
     const got = "0x" + keccak256(e.buf);
     const ok = got.toLowerCase() === (b.dataset.hash || "").toLowerCase();
-    out.innerHTML = ok
-      ? `<span class="ok">Matches.</span> keccak256 of the file = the hash on chain.`
-      : `<span class="bad">Does not match.</span> ${short(got)} vs ${short(b.dataset.hash)}`;
+    out.innerHTML = ok ? `<span class="ok">✓ Matches the chain</span>` : `<span class="bad">✕ Does not match</span>`;
+    out.title = ok ? "keccak256 of the report file equals the hash stored on chain" : `${got} vs ${b.dataset.hash}`;
   }));
 }
 
@@ -765,14 +884,14 @@ function renderRegistry(t) {
   const key = `reg|` + sites.map((s) => `${s.target}${s.stage}${s.surveyor}${s.prospector}`).join();
   if ($("reg-body").dataset.key === key) return;
   $("reg-body").dataset.key = key;
-  $("reg-count").textContent = sites.length ? `${sites.length} site(s)` : "";
+  $("reg-count").textContent = sites.length ? String(sites.length) : "";
   $("reg-body").innerHTML = sites.map((s) => {
     const n = STAGE_N[s.stage];
     const pips = [1, 2, 3].map((i) => `<i class="${i <= n ? "on" : ""}"></i>`).join("");
     return `<tr data-site="${s.site_id}"><td><b>${esc(s.target)}</b></td><td><span class="pips" title="${s.stage}">${pips}</span></td>
       <td><span class="res ${s.surveyor}">${s.surveyor === "Unknown" ? "pending" : s.surveyor}</span></td>
       <td><span class="res ${s.prospector}">${s.stage === "ProspectorAnalyzed" ? s.prospector : s.surveyor === "Positive" ? "queued" : "–"}</span></td></tr>`;
-  }).join("") || `<tr><td colspan="4" class="hint">No sites registered yet.</td></tr>`;
+  }).join("") || `<tr><td colspan="4" class="hint">No sites yet.</td></tr>`;
   $("reg-body").querySelectorAll("tr[data-site]").forEach((tr) => (tr.onclick = () => openSite(tr.dataset.site)));
 }
 
@@ -791,13 +910,13 @@ async function openSite(sid) {
       <dt>Report</dt><dd class="mono"><a href="${S.run.dir}evidence/${r.report_cid}.json" target="_blank" rel="noopener">${esc(r.report_cid)}</a></dd>
       ${r.route_cid ? `<dt>Route</dt><dd class="mono"><a href="${S.run.dir}evidence/${r.route_cid}.json" target="_blank" rel="noopener">${esc(r.route_cid)}</a></dd>` : ""}
       <dt>Tx</dt><dd class="mono">${esc(w.tx || "")} (block ${w.block ?? "–"})</dd>
-      <dt>Submitter</dt><dd class="mono">${esc(r.submitter)}</dd></dl>
-      <button class="btn verify-btn" data-cid="${r.report_cid}" data-hash="${r.evidence_hash}">Verify the report</button><div class="verify"></div>
-      <details style="margin-top:6px"><summary class="hint">Show the report</summary><pre class="json" data-cid="${r.report_cid}">Loading…</pre></details>
+      <dt>By</dt><dd class="mono">${esc(r.submitter)}</dd></dl>
+      <div class="verify-row"><button class="btn verify-btn" data-cid="${r.report_cid}" data-hash="${r.evidence_hash}">Verify</button><span class="verify"></span></div>
+      <details style="margin-top:8px"><summary class="hint">Show the report</summary><pre class="json" data-cid="${r.report_cid}">Loading…</pre></details>
     </div>`;
   }).join("");
-  $("dr-body").innerHTML = (body || `<p class="hint">Nothing published for this site yet at this time.</p>`) +
-    `<p class="hint small">Each report is a new record that names the one before it. Nothing on chain is ever edited.</p>`;
+  $("dr-body").innerHTML = (body || `<p class="hint">Nothing published for this site yet.</p>`) +
+    `<p class="hint small">Each report is a new record that names the one before it; nothing on chain is edited.</p>`;
   bindVerify($("dr-body"));
   $("dr-body").querySelectorAll("details").forEach((d) => (d.ontoggle = async () => {
     const pre = d.querySelector("pre");

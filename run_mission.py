@@ -46,7 +46,7 @@ import numpy as np
 from scipy.ndimage import uniform_filter
 
 import run_demo as spine
-from run_demo import DT_S, FRAMES_NOTE, LiveCamera, _particles_log, render_sub_frames, sub_frame_jobs
+from run_demo import DT_S, FRAMES_NOTE, LiveCamera, _merge_index, _particles_log, render_sub_frames, sub_frame_jobs
 from sim.ice import DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit, IceField, IceSensor
 from sim.nav import ParticleNav
 from sim.rover import PLANNER_STANDIN, SLOPE_LIMIT_DEG, SPEED_M_S, STEP_M, Rover, SlopeMap
@@ -573,9 +573,10 @@ def main():
     with open(run_dir / "log.json", "w", encoding="utf8") as f:
         json.dump(log, f, separators=(",", ":"))
     index = [{"run_id": run_id, "label": scn["label"], "dir": run_id, "status": finds[0]["status"]}]
+    index += [e for e in _merge_index(out / "index.json", []) if e["run_id"].split("-")[0] != run_id.split("-")[0]]  # keep run1/run2, mission first
     with open(out / "index.json", "w", encoding="utf8") as f:
         json.dump(index, f, indent=1)
-    print(f"wrote {run_dir} in {time.perf_counter() - t0:.0f}s; index lists {run_id}")
+    print(f"wrote {run_dir} in {time.perf_counter() - t0:.0f}s; index lists {', '.join(e['run_id'] for e in index)}")
 
 
 if __name__ == "__main__":

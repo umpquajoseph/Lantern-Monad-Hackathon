@@ -118,3 +118,59 @@ Doorbells (SendMessage `to` = these addresses; all sessions share the name
 - 11:36 Realism push before Calvin nav import (Joseph: "as realistic as possible ... first and third person lighting and terrain"). scene: display layer + Hapke + exposure in sim/scene.py (approved, ~12:40). viewer: Hapke shader, rocks, near backdrop in web 3D. terrain: verify Hapke vs Xu 2020, reference stills, judge both (branch step-2-terrain-realism). Keep Scene interface stable for nav.
 
 - 11:38 Standing rule (Joseph): localhost site from app.py is the base; everything integrates into it; done = visible there. Broadcast to all workers; on the board. Calvin is building nav.
+
+- 11:52 Viewer realism (8f42c21) merged into joseph: Hapke 3D view, near backdrop, rocks, 1x/10x. Checked v1_vs_refs.png: matches terrain refs. App needs asset rebuild (integrator told).
+
+- 11:55 Joseph: 3rd person looks different from 1st, 1st has low fps. Cause: fp panel is a slideshow of scene.py jpgs (one per 2 m step), older shading. Viewer job: live first person in three.js, sensor frames behind a labelled toggle. Terrain checks rim shadows.
+
+- 12:00 Scene 2c0fbba merged into joseph (display layer + Hapke in fp, 0.49 s/frame). Rim shadows fainter than refs; scene told to strengthen (finer mesh approved), fix ripple, wait for terrain verdict.
+
+- 12:02 Integrator: integration 31261eb has viewer 8f42c21 + scene 2c0fbba, assets rebuilt, both runs play. Bug: 3D canvas overflows camera panel at 800 px (mailed to viewer). Waiting on host choice.
+
+- 12:05 RESET (Joseph unhappy: too fake, piecewise). Cancelled live browser first person. Priority now: replace fakes, in order: chain (Kellen, merge), vision (rims from scene frames, unowned, propose terrain), particle filter (Calvin or us), then looks. integration = the single merge point; leader merges integration into joseph. Waiting on Joseph: host choice, go-ahead on chain merge.
+
+- 12:07 Terrain: Hapke values verified against Xu 2020 Table 1 p.3, Eqs 5-12 pp.6-7 (PDF in docs/sources, commits 6e170ef, 59c7161 on step-2-terrain-realism). Scene/viewer told: rim arcs faint/missing. Terrain free -> vision candidate pending Joseph go.
+
+- 12:10 SCOPE (Joseph, angry): terrain + scene rendering ONLY. Chain, hosting, nav, vision OFF. Scene: rim arcs, brightness, rocks, fp frame every 0.5 m. Viewer: rim arc, pool brightness, overflow. Terrain: judge. Integrator: merge rendering fixes only.
+
+- 12:16 Joseph: separate renderers OK if 3rd person has same timing as 1st and same terrain. Viewer asked to sync frame/pose and confirm terrain source.
+
+- 12:18 Brightness dispute: terrain computed from shared constants; viewer near pool too bright at 262B (157 vs ~45 expected, ground 48.6 deg off lamp axis, outside 45 deg cone). Viewer to probe its lamp axis/cone. Terrain render tracks computed values within ~20 levels.
+
+- 12:21 Viewer: near-pool settled (camera aim mismatch, no lighting change; both match computed). Panel synced, worst gap 1.0 m (0.25 m once 0.5 m frames land), 70b4f72. Terrain source confirmed same npz/x0/y0/cell. Rim arc: adding fine patch with lips ahead of rovers.
+
+- 12:25 Calvin pushed sim/nav.py ParticleNav (43abedd) + answers. Verified constants vs Cauligi PDF (Ns 100, Neff 50 sec 6B; 2%, 3 m 3-sigma sec 1). Integrator assigned: checkout nav.py + rover.py from origin/Calvin (no branch merge), 3 run_demo edits, rerun, show on site. Scene cc. Note sigma reads 15 m vs 22 m true error, fixes off (Q7), handoff decision pending.
+
+- 12:28 Joseph likes Calvin slope-exclusion map (crater_fix_before_after.png; red = >15 deg across 2 m + half width). Viewer: add No-go layer to site map, built from SlopeMap in build_assets, after rim-arc fix, after integrator lands rover.py.
+
+- 12:07 CORRECTION: state lines stamped 12:10-12:28 above were guessed; real clock was ~11:58-12:06. Times from date only. Chain review pushed: docs/requests/chain-review.md (736a3c1).
+
+- 12:08 GO combined rerun: scene from step-6-scene 5ef8a24 (61af034 accepted by terrain, 0.5 m frames, ParticleNav via integration abb65cc). Integrator merges + reports from app.py. Viewer: 200x patch gap, then No-go layer; terrain flagged hard shadow streaks (2 cm penumbra).
+
+- 12:11 Joseph: why so slow. Rerun ~1.2 frames/s serial, ~45 min both runs (run1 ~12:25, run2 ~13:00). Scene next: parallel render from log, 8 workers, target <10 min. Integrator: show run 1 early.
+
+- 12:13 CORRECTION (Joseph caught it): fp frames at 2 m nav steps must stay in the sim loop (vision will read them). Only 0.5 m in-between display frames go parallel afterwards, labelled as display. Scene told.
+
+- 12:13 Viewer 8b61bbf: 200x patch gap closed (prefetch along track; 100% covered at 200x, 135 fps). Nav HUD line added. Now No-go layer. Sigma formula still Joseph decision (viewer shows unadjusted).
+
+- 12:16 Viewer 65c3dab No-go layer accepted (matches Calvin fig). Asked: sharper map hillshade at zoom; then check run 2 track after rerun.
+
+- 12:18 Viewer f0b94e2: zoomed map hillshade from 0.25 m tiles, sharp as Calvin fig. Holding for rerun. Pending Joseph: terrain answer-key job for vision; sigma formula.
+
+- 12:18 Terrain: rim answer key for vision (truth per frame from crater map + true pose + depth; score(); full vs detail lips question), branch step-6-rim-truth, docs/requests/rim-answer-key.md for Calvin.
+
+- 12:20 Joseph screenshot: track in red = OLD planner (app serves 11:43 logs). Measured: old A 74 m/B 85 m in no-go; Calvin planner run1-1203 A 0 m, B 2 m (start inside crater 700,250, 24.6 deg). Scene told to fix start for next rerun. Joseph reminder: workers have agency; brief goals not methods.
+
+- 12:22 Scene status: parallel display frames byte-identical (45/45), sensor frames live in loop, pool sized to RAM (0.61 GB/worker), run1 B start moved to (700,256.75), all tracks 0 m >15 deg. Uncommitted; asked to push. Rerun: run1 ~12:22, run2 ~12:50, then rerun with new code.
+
+- 12:23 Started: viewer = particle display (scene logs particles in run_demo); integrator = judge pass over app.py, mail owners. Scene 980e248 pushed (handoffs fp_sub/frames additions accepted).
+
+- 12:24 Run 1 with ParticleNav + Calvin planner live on app.py (integration c9c7931): A err 0.89 sigma 0.84, B 0.21/0.75, confirmed, tracks off No-go, banner drops nav. Checked screenshot. Camera not smooth: viewer must read fp_sub (told: before particles). Run 2 ~12:50-13:00.
+
+- 12:25 UI: Joseph says cluttered/ugly. New worker designer (handle designer, branch step-5-design, owns app.css + index.html layout; viewer keeps web/js). Brief docs/briefs/design.md. Waiting for Joseph to open session.
+
+- 12:25 Terrain answer key 644cf16 (sim/rim_truth.py, docs/requests/rim-answer-key.md on step-6-rim-truth): ~1/3 of rim shadow from invented lips; recommends vision read display=detail (Joseph decision). handoffs.md updated. Scene logged particles bc9f6ea; viewer told format. Designer handoff rewritten (heredoc broke it).
+
+- 12:26 Integrator judge pass 1: 7 items. Decided planner -> top-level key (handoffs updated). UI items 1,4,5,6,7 -> designer; 2 viewer; 3 scene.
+
+- 12:29 Designer session open (address unknown until it mails). Sent it judge items 1,4,5,6,7.

@@ -9,19 +9,23 @@ by the hash the contract holds.
 Surveyor states: IDLE, EXPLORING, CANDIDATE_FOUND, NAVIGATING_TO_SITE,
 INSPECTING, PUBLISHING, RESUMING, ERROR.
   Explores toward orbital candidate sites, neutron-surveying as it drives.
-  At a site it scans around it, scores its confidence, and registers a
-  candidate on chain. Then it drills (inspects), publishes a Positive,
-  Negative or Inconclusive result with its report and the route it drove,
-  and resumes.
+  It has no arm and no drill. It stops short of a site, faces it, scans it,
+  scores its confidence and registers a candidate on chain; then it maps the
+  site with its mast camera, sits for a neutron dwell, photographs it, and
+  publishes a Positive, Negative or Inconclusive result with its report and
+  the route it drove. On the way, a crater the orbital map missed makes it
+  stop (MAPPING_HAZARD), face it, map and photograph it, and flag it in the
+  route it publishes; then it drives around it.
 
 Prospector states: IDLE, FETCHING_TARGET, PLANNING, NAVIGATING, REPLANNING,
 ANALYZING, REPORTING, COMPLETED, ERROR.
   Reads the registry for sites the Surveyor found positive (the eligibility
   policy is configurable), picks the nearest by planned path cost, fetches
-  the Surveyor's route by the CID on chain and checks its hash, validates it
-  against its own map and reuses what is safe. While driving it can find a
-  new obstacle the Surveyor never saw; it marks it and replans. At the site
-  it runs a fuller instrument sequence and reports a new, linked analysis.
+  the Surveyor's routes by the CIDs on chain and checks their hashes, adds
+  every hazard the Surveyor flagged to its own map, and plans its own route
+  around them; it takes the Surveyor's route only where that is shorter. At
+  the site it drills: NIR scan, 1 m core, mass spectrometer, and reports a
+  new, linked analysis.
 
 Usage:
     python sim/roles.py run                 # chain auto: local anvil if Foundry is installed
@@ -51,7 +55,7 @@ import resources  # noqa: E402
 import science  # noqa: E402
 
 ROLE = {"A": "Surveyor", "B": "Prospector"}
-SURVEYOR_STATES = ("IDLE", "EXPLORING", "CANDIDATE_FOUND", "NAVIGATING_TO_SITE", "INSPECTING",
+SURVEYOR_STATES = ("IDLE", "EXPLORING", "CANDIDATE_FOUND", "NAVIGATING_TO_SITE", "MAPPING_HAZARD", "INSPECTING",
                    "PUBLISHING", "RESUMING", "ERROR")
 PROSPECTOR_STATES = ("IDLE", "FETCHING_TARGET", "PLANNING", "NAVIGATING", "REPLANNING", "ANALYZING",
                      "REPORTING", "COMPLETED", "ERROR")
@@ -65,8 +69,18 @@ START_SOC = {"A": 1.0, "B": 0.9}
 SCAN_RADIUS_M = 4.0          # the Surveyor's candidate scan: centre plus 6 points this far out
 POLL_S = 600.0               # the Prospector re-reads the registry this often while it waits
 HAZARD_SENSE_M = 10.0        # a new obstacle is seen this far ahead (lamp-lit stereo range, about)
-HAZARD_RADIUS_M = 4.0        # the new obstacle: a boulder field this wide
-HAZARD_AT = 0.55             # placed this far along the Prospector's first route
+HAZARD_RADIUS_M = 5.0        # fallback obstacle when no crater lies by the route: a boulder field
+HAZARD_CRATER_D_M = (6.0, 20.0)   # the crater the orbital map missed: this wide (stamped craters, sim/terrain.py)
+HAZARD_MARGIN_M = 1.5        # rim boulders reach this far past the rim
+HAZARD_ALONG = (0.3, 0.75)   # and it lies this far along that route
+# ASSUMED, a demo choice: the crater lies on the Surveyor's n-th drive from one
+# ice site to another. Those are the hops the Prospector drives later too, so
+# it meets the flagged crater's corridor (with seed 11, the T04 -> T06 hop).
+HAZARD_LEG = 2
+FLAGGED_MARGIN_M = 4.0       # ASSUMED: the Prospector keeps this much extra room around a flagged hazard
+STANDOFF_M = 6.0             # the Surveyor stops this far short of a site, facing it, to map it
+TURN_RATE_RAD_S = 0.1        # turning in place to face something
+SLOPE_BASE_M = 2.0           # slopes measured across this baseline, as sim/rover.py SlopeMap
 ELIGIBILITY = {"positive": ("Positive",), "positive+inconclusive": ("Positive", "Inconclusive")}
 
 
@@ -86,6 +100,10 @@ class RolesMission(M.Mission):
         self.hidden_hazards = []     # on no map until a rover sees them
         self.planned = []            # every planned route, for the dashboard (planned is not driven)
         self.hazard_log = []
+        self.hazard_stops = []       # the Surveyor's stops at a flagged hazard, for the run log
+        self.crater_placed = False
+        self.ice_legs = 0            # Surveyor drives from one ice site to another, so far
+        self.prev_ice = False        # did the Surveyor's last site hold ice (hidden truth, for placing the crater)
         for ag, r in self.rovers.items():
             r.start_soc = START_SOC[ag]
             r.health.battery_wh = START_SOC[ag] * H.BATTERY_WH
@@ -126,15 +144,15 @@ class RolesMission(M.Mission):
         self.planned.append({"agency": r.agency, "t": round(r.t, 1), "kind": kind, "target_id": target_id,
                              "points": pts})
 
-    def scan(self, r, cx, cy):
+    def scan(self, r, site_true, site_est):
         """The Surveyor's candidate scan: neutron readings at the site and
         around it, positions as the rover estimates them."""
         out = []
-        ex, ey = r.estimate
+        ex, ey = site_est
         for k in range(7):
             a = 2 * math.pi * k / 6
             d = 0.0 if k == 0 else SCAN_RADIUS_M
-            tx, ty = r.pose[0] + d * math.cos(a), r.pose[1] + d * math.sin(a)
+            tx, ty = site_true[0] + d * math.cos(a), site_true[1] + d * math.sin(a)
             w = resources.neutron_reading(self.deposits, tx, ty, r.rng)
             out.append((ex + d * math.cos(a), ey + d * math.sin(a), w))
         return out
@@ -158,9 +176,16 @@ class RolesMission(M.Mission):
                                   est_xy, true_xy, seed=int(r.rng.integers(1 << 31)), attempts=tries,
                                   phases_spec=phases)
         rec["observation"] = observation
+        return self.publish_record(r, rec, tgt, phases, est_xy, parent_cid)
+
+    def publish_record(self, r, rec, tgt, phases, est_xy, parent_cid=None):
+        """Spend the stop's time and energy, store its evidence, queue its
+        Lantern-contract calls, and log it."""
+        observation = rec["observation"]
         dur = sum(d for _, d in phases)
         r.t += dur
         r.health.spend(H.Health.science_wh([{"name": n, "dur": d} for n, d in phases]))
+        r.track.append((r.t, *r.pose, *r.estimate, *r.odom, r.sigma, r.health.soc))
         tail, _ = science.last_route(est_xy, spacing=0.0)
         rec = self.store.publish(rec, tail, parent_report_cid=parent_cid)
         new = MS.outbox_items_for(rec, r.health)   # the Lantern contract's calls, for testnet
@@ -197,8 +222,9 @@ class RolesMission(M.Mission):
         if tgt is None:
             return self.finish_rover(r, "no candidate site left that fits the battery and the sortie")
         self.board.claim(tgt["id"], r.agency)
+        goal = (tgt["x"], tgt["y"])
         try:
-            route = self.link.plan(r.pose[:2], (tgt["x"], tgt["y"]))
+            route = self.link.plan(r.pose[:2], goal)
         except planner_link.NoRoute as e:
             tgt["status"] = "unreachable"
             self.set_state(r, "ERROR", f"no safe route to {tgt['id']}: {e}")
@@ -207,26 +233,51 @@ class RolesMission(M.Mission):
         self.plan_log(r, route, "planned", tgt["id"])
         self.ev(r, "depart", target_id=tgt["id"], kind=tgt["kind"], route_m=round(planner_link.route_length(route), 1),
                 waypoints=len(route), planner=self.link.name)
+        if self.prev_ice and self._has_ice(tgt):
+            self.ice_legs += 1
+            if self.ice_legs == HAZARD_LEG and not self.crater_placed:
+                self._place_crater(route)
+        self.prev_ice = self._has_ice(tgt)
         r.mode = "to target"
-        if self.drive(r, route, abort_on_low=True) is False:
-            self.board.release(tgt["id"])
-            return self.finish_rover(r, "battery fell to the return threshold on the way")
+        flagged = []
+        for attempt in range(5):
+            self._why = None
+            res = self.drive(r, route, abort_on_low=True, on_step=lambda rr: self._surveyor_watch(rr, goal))
+            if res is False:
+                self.board.release(tgt["id"])
+                return self.finish_rover(r, "battery fell to the return threshold on the way")
+            if res is True or self._why == "standoff":
+                break
+            flagged.append(self.hazard_stop(r, self.hazard_log[-1]))
+            try:
+                route = self.link.plan(r.pose[:2], goal)
+            except planner_link.NoRoute as e:
+                self.board.release(tgt["id"])
+                return self.set_state(r, "ERROR", f"no way around the hazard to {tgt['id']}: {e}")
+            self.plan_log(r, route, "replanned", tgt["id"])
+            self.ev(r, "replanned", target_id=tgt["id"], route_m=round(planner_link.route_length(route), 1))
+            self.set_state(r, "NAVIGATING_TO_SITE",
+                           f"around the flagged crater to {tgt['id']} ({planner_link.route_length(route):.0f} m)")
+        self.face(r, goal)
+
+        # Where the site is, by the rover's own estimate plus the camera's range to it.
+        site_est = (r.estimate[0] + goal[0] - r.pose[0], r.estimate[1] + goal[1] - r.pose[1])
 
         # CANDIDATE_FOUND: scan around the site, score it, register it.
         sid = RC.site_id(self.store.id, tgt["id"])
-        scan = self.scan(r, tgt["x"], tgt["y"])
+        scan = self.scan(r, goal, site_est)
         best = max(w for _, _, w in scan)
         conf = float(np.clip(0.1 + 0.85 * best / 2.0, 0.05, 0.95))
         self.set_state(r, "CANDIDATE_FOUND",
                        f"site {tgt['id']}: neutron scan peak {best:.2f} wt%, confidence {conf:.0%}")
-        lat, lon = science.south_polar_to_latlon(*r.estimate)
-        cand = EV.make_candidate(self.store.id, sid, tgt, r.agency, r.t, r.estimate, r.sigma, (lat, lon), scan, conf)
+        lat, lon = science.south_polar_to_latlon(*site_est)
+        cand = EV.make_candidate(self.store.id, sid, tgt, r.agency, r.t, site_est, r.sigma, (lat, lon), scan, conf)
         cref = self.store.ev.put(cand, "candidate")
         self.store.db.evidence(self.store.id, cref)
         self.site_target[sid] = tgt
         self.site_records[sid] = {"candidate": cref}
         self.set_state(r, "PUBLISHING", f"registering candidate {tgt['id']} on chain")
-        ex, ey = r.estimate
+        ex, ey = site_est
         if self.chain_write(r, "registerCandidate", self.reg.register_candidate, sid, self.mkey, ex, ey, conf,
                             cref["data_hash"], cref["cid"], site_id=sid, target_id=tgt["id"],
                             confidence=round(conf, 3), report_cid=cref["cid"], evidence_hash=cref["data_hash"],
@@ -235,33 +286,17 @@ class RolesMission(M.Mission):
                                     f"confidence {conf:.0%}, and the hash of its scan report") is None:
             return self.set_state(r, "RESUMING", "moving on after a refused registration")
 
-        # INSPECTING: drill it.
-        self.set_state(r, "NAVIGATING_TO_SITE", f"positioning the drill over {tgt['id']}")
-        self.set_state(r, "INSPECTING", f"drilling a 1 m core at {tgt['id']}")
+        # INSPECTING: map it, dwell on it, photograph it. No drill on this rover.
+        self.set_state(r, "INSPECTING", f"mapping {tgt['id']} with the mast camera and a neutron dwell")
         r.mode = "science"
-        rec = self.drill(r, tgt, science.PHASES, "surveyor inspection")
-        if rec is None:
-            # Two stalls: an honest Inconclusive, with what was attempted.
-            self.set_state(r, "ERROR", f"drill stalled twice at {tgt['id']}")
-            tgt["status"] = "failed"
-            failed = {"schema": EV.SCHEMA_REPORT, "mission_id": self.store.id, "site_id": sid, "rover": r.agency,
-                      "observation": "surveyor inspection (drill failed)", "simulated": True, "t": round(r.t, 1),
-                      "result": {"verdict": "inconclusive", "summary": "drill stalled twice; no core"}}
-            rref = self.store.ev.put(failed, "report")
-            true_xy, est_xy = r.tracks()
-            route_obj = EV.make_route(self.store.id, r.agency, tgt["id"], science.last_route(est_xy, spacing=0.0)[0],
-                                      r.t, sigma=r.sigma)
-            route_ref = self.store.ev.put(route_obj, "route")
-            for ref in (rref, route_ref):
-                self.store.db.evidence(self.store.id, ref)
-            self.set_state(r, "PUBLISHING", f"publishing an inconclusive result for {tgt['id']}")
-            self.chain_write(r, "submitSurveyorInspection", self.reg.submit_surveyor_inspection, sid,
-                             "Inconclusive", rref["data_hash"], rref["cid"], route_ref["data_hash"], route_ref["cid"],
-                             site_id=sid, target_id=tgt["id"], result="Inconclusive", report_cid=rref["cid"],
-                             route_cid=route_ref["cid"], evidence_hash=rref["data_hash"],
-                             explain=f"Surveyor reports {tgt['id']} inconclusive: the drill stalled twice")
-            self.published_t[sid] = r.t
-            return self.set_state(r, "RESUMING", "moving on")
+        true_xy, est_xy = r.tracks()
+        rec = science.run_site_survey(r.agency, tgt, self.deposits, r.t, goal, site_est, r.sigma, r.pose,
+                                      est_xy, true_xy, self.ground_stats(*goal, 8.0),
+                                      seed=int(r.rng.integers(1 << 31)))
+        rec["observation"] = "surveyor site survey"
+        if flagged:
+            rec["route_hazards"] = flagged
+        rec = self.publish_record(r, rec, tgt, science.SURVEY_PHASES, est_xy)
         self.board.complete(tgt["id"], rec["record_id"])
         result = RESULT_OF[rec["result"]["verdict"]]
         r.stats[{"Positive": "finds", "Negative": "dry", "Inconclusive": "trace"}[result]] += 1
@@ -273,11 +308,149 @@ class RolesMission(M.Mission):
                          site_id=sid, target_id=tgt["id"], result=result, record_id=rec["record_id"],
                          report_cid=ev["report"]["cid"], route_cid=ev["route"]["cid"],
                          evidence_hash=ev["report"]["data_hash"], reading=rec["result"]["reading"],
+                         flagged_hazards=len(flagged),
                          explain=f"Surveyor reports {tgt['id']} {result.upper()} "
-                                 f"({rec['result']['reading']:.2f} wt% water) with the hash of its report "
-                                 f"and of the {rec['route']['length_m']:.0f} m route it drove")
+                                 f"(neutron dwell {rec['result']['reading']:.2f} wt%) with the hash of its report "
+                                 f"and of the {rec['route']['length_m']:.0f} m route it drove"
+                                 + (f", which flags {len(flagged)} hazard(s)" if flagged else ""))
         self.published_t[sid] = r.t
         self.set_state(r, "RESUMING", "back to exploring")
+
+    def _surveyor_watch(self, r, goal):
+        """Stop for a new hazard, or STANDOFF_M short of the site."""
+        if self._sense_hazards(r):
+            self._why = "hazard"
+            return True
+        if math.dist(r.pose[:2], goal) <= STANDOFF_M:
+            self._why = "standoff"
+            return True
+        return False
+
+    def face(self, r, xy):
+        """Turn in place toward xy (the site, or a hazard), so the camera looks at it."""
+        if math.dist(r.pose[:2], xy) < 0.5:
+            return
+        hd = math.atan2(xy[1] - r.pose[1], xy[0] - r.pose[0])
+        dh = (hd - r.pose[2] + math.pi) % (2 * math.pi) - math.pi
+        r.t += abs(dh) / TURN_RATE_RAD_S
+        r.health.spend(r.health.idle_wh(abs(dh) / TURN_RATE_RAD_S))
+        r.pose = (r.pose[0], r.pose[1], hd)
+        r.nav_step(0.0, dh)
+        r.odom_step(0.0, dh)
+        r.track.append((r.t, *r.pose, *r.estimate, *r.odom, r.sigma, r.health.soc))
+
+    def ground_stats(self, x, y, radius):
+        """What the mast camera's stereo map says about the ground within
+        `radius` of (x, y): slopes across SLOPE_BASE_M, and how much of it the
+        planner calls no-go."""
+        c = self.cell
+        n = max(1, int(round(SLOPE_BASE_M / c)))
+        i0, i1 = int((y - radius - self.y0) / c) - n, int((y + radius - self.y0) / c) + n + 1
+        j0, j1 = int((x - radius - self.x0) / c) - n, int((x + radius - self.x0) / c) + n + 1
+        H_, W_ = self.height.shape
+        i0, j0, i1, j1 = max(i0, 0), max(j0, 0), min(i1, H_), min(j1, W_)
+        z = self.height[i0:i1, j0:j1]
+        gy = (z[2 * n:, n:-n] - z[:-2 * n, n:-n]) / (2 * n * c)
+        gx = (z[n:-n, 2 * n:] - z[n:-n, :-2 * n]) / (2 * n * c)
+        deg = np.degrees(np.arctan(np.hypot(gx, gy)))
+        ii, jj = np.mgrid[i0 + n:i1 - n, j0 + n:j1 - n]
+        inside = np.hypot(self.x0 + jj * c - x, self.y0 + ii * c - y) <= radius
+        d = deg[inside] if inside.any() else deg.ravel()
+        pts = [(x + rr * math.cos(a), y + rr * math.sin(a)) for rr in np.linspace(0, radius, 6)
+               for a in np.linspace(0, 2 * math.pi, 12, endpoint=False)]
+        blocked = np.mean([self.link.blocked(px, py) for px, py in pts])
+        return {"radius_m": round(radius, 1), "max_slope_deg": round(float(d.max()), 1),
+                "mean_slope_deg": round(float(d.mean()), 1), "no_go_fraction": round(float(blocked), 2),
+                "slope_baseline_m": SLOPE_BASE_M, "source": "simulated stereo map (the sim height grid)"}
+
+    def hazard_stop(self, r, h):
+        """Stop, face the hazard, map and photograph it, and write it up. The
+        write-up goes in this rover's route object, which is on chain by its
+        hash, so the next rover can read it."""
+        n = len(self.hazard_stops) + 1
+        hid = f"H{n}"
+        what = f"a crater {h['crater_d']:.0f} m across, boulders on its rim," if h.get("crater_d") else "a boulder field"
+        self.set_state(r, "MAPPING_HAZARD", f"{what} not on the orbital map, {h['seen_at_m']:.0f} m ahead: "
+                                            "stopping to map and photograph it")
+        self.face(r, (h["x"], h["y"]))
+        t0 = r.t
+        phases, tt = [], t0
+        for name, dur in science.HAZARD_PHASES:
+            phases.append({"name": name, "t0": round(tt, 2), "dur": dur})
+            tt += dur
+        r.t = tt
+        r.health.spend(r.health.idle_wh(tt - t0))
+        r.track.append((r.t, *r.pose, *r.estimate, *r.odom, r.sigma, r.health.soc))
+        stats = self.ground_stats(h["x"], h["y"], h["radius"])
+        # The hazard where this rover thinks it is: its estimate plus the camera's range.
+        hx, hy = r.estimate[0] + h["x"] - r.pose[0], r.estimate[1] + h["y"] - r.pose[1]
+        obj = {"schema": "lantern.hazard/1", "mission_id": self.store.id, "hazard_id": hid, "rover": r.agency,
+               "observation": "hazard survey (mast camera stereo map and photo)", "simulated": True,
+               "t": round(t0, 1),
+               "position": {"x": round(hx, 2), "y": round(hy, 2), "sigma": round(r.sigma, 2), "source": "rover estimate"},
+               "hazard": {"kind": h["kind"], "radius_m": round(h["radius"], 1),
+                          "crater_diameter_m": h.get("crater_d"), **stats},
+               "decision": "unsafe to cross: flagged in this rover's route; it drives around, "
+                           "and later rovers plan around it"}
+        ref = self.store.ev.put(obj, "hazard")
+        self.store.db.evidence(self.store.id, ref)
+        h.update(hazard_id=hid, report_cid=ref["cid"], max_slope_deg=stats["max_slope_deg"])
+        self.hazard_stops.append({
+            "type": "science", "agency": r.agency, "record_id": f"{r.agency}-{hid}-t{int(round(t0)):06d}",
+            "target_id": hid, "x": round(hx, 2), "y": round(hy, 2), "sigma": round(r.sigma, 2),
+            "verdict": "unsafe", "reading": stats["max_slope_deg"],
+            "summary": f"{h['kind']}: slopes to {stats['max_slope_deg']:.0f} deg; unsafe, flagged for the Prospector",
+            "phases": phases, "chain_call": None, "observation": "hazard survey", "kind": "hazard",
+            "report_cid": ref["cid"], "route_cid": None, "data_hash": ref["data_hash"],
+            "hazard": {"x": h["x"], "y": h["y"], "radius": h["radius"], "kind": h["kind"], "crater_d": h.get("crater_d")}})
+        self.ev(r, "hazard_flagged", hazard_id=hid, report_cid=ref["cid"], **stats)
+        return {"hazard_id": hid, "x": round(hx, 2), "y": round(hy, 2), "radius_m": round(h["radius"], 1),
+                "kind": h["kind"], "max_slope_deg": stats["max_slope_deg"], "report_cid": ref["cid"]}
+
+    def _has_ice(self, tgt):
+        c, _ = resources.concentration(self.deposits, "water_ice", tgt["x"], tgt["y"])
+        return tgt.get("kind") == "water_ice" and c >= science.ICE_THRESHOLD_WT_PCT
+
+    def _place_crater(self, route):
+        """The crater the orbital map missed: a real crater of the terrain
+        beside the Surveyor's route, whose rim boulders block the way. The
+        planner does not know about the boulders until a rover sees them."""
+        pts = np.asarray(route, float)
+        seg = np.hypot(*np.diff(pts, axis=0).T)
+        cum = np.concatenate([[0], np.cumsum(seg)])
+        L = float(cum[-1])
+        if L < 30:
+            return
+        lo, hi = HAZARD_CRATER_D_M
+        cr = self.craters[(self.craters[:, 2] >= lo) & (self.craters[:, 2] <= hi)]
+        box = (pts.min(0) - hi, pts.max(0) + hi)
+        cr = cr[(cr[:, 0] > box[0][0]) & (cr[:, 0] < box[1][0]) & (cr[:, 1] > box[0][1]) & (cr[:, 1] < box[1][1])]
+        best = None
+        for cx, cy, D in cr:
+            # Nearest point of the route to the crater centre, and how far along it is.
+            a, b = pts[:-1], pts[1:]
+            ab = b - a
+            tt = np.clip(np.einsum("ij,ij->i", np.array([cx, cy]) - a, ab) / np.maximum(np.einsum("ij,ij->i", ab, ab), 1e-9), 0, 1)
+            near = a + tt[:, None] * ab
+            d = np.hypot(near[:, 0] - cx, near[:, 1] - cy)
+            k = int(np.argmin(d))
+            along = (cum[k] + tt[k] * seg[k]) / L
+            if HAZARD_ALONG[0] <= along <= HAZARD_ALONG[1] and d[k] <= D / 2 + 3.0:
+                score = abs(along - 0.5)
+                if best is None or score < best[0]:
+                    best = (score, cx, cy, D, d[k])
+        self.crater_placed = True
+        if best:
+            _, x, y, D, dist = best
+            radius = max(D / 2 + HAZARD_MARGIN_M, dist + 2.0)   # the boulders reach the route
+            self.hidden_hazards.append({"x": float(x), "y": float(y), "radius": float(radius), "seen": False,
+                                        "kind": "crater rim with boulders", "crater_d": round(float(D), 1)})
+        else:
+            s = 0.5 * L
+            k = max(min(int(np.searchsorted(cum, s)) - 1, len(seg) - 1), 0)
+            x, y = pts[k] + (s - cum[k]) / max(seg[k], 1e-9) * (pts[k + 1] - pts[k])
+            self.hidden_hazards.append({"x": float(x), "y": float(y), "radius": HAZARD_RADIUS_M, "seen": False,
+                                        "kind": "boulder field", "crater_d": None})
 
     # ---- Prospector --------------------------------------------------------------
     def prospector_leg(self, r):
@@ -321,16 +494,42 @@ class RolesMission(M.Mission):
         ref = self.store.ev.get(rep["route_cid"])                   # verified against its CID
         route_ok = EV.keccak256(EV.canonical_bytes(ref)).hex() == rep["route_hash"].removeprefix("0x")
         goal = (site["x"], site["y"])
+        # Every hazard the Surveyor flagged, from its routes on chain, goes on this rover's map first.
+        flagged = self.read_flagged(sites)
+        for hz in flagged:
+            self.link.add_hazard(hz["x"], hz["y"], hz["radius_m"] + FLAGGED_MARGIN_M)
+        # A route on which the Surveyor had to stop for a hazard is not one to
+        # follow: plan a new one with the hazard (and a margin) on the map.
+        on_way = ref.get("hazards", [])
         try:
-            route, info = self.link.reuse(r.pose[:2], ref["points"], goal)
+            own = self.link.plan(r.pose[:2], goal)
+            if on_way:
+                route, info = own, {"mode": "own plan: the Surveyor's route ran into a flagged hazard"}
+            else:
+                reuse_route, info = self.link.reuse(r.pose[:2], ref["points"], goal)
+                route = own if planner_link.route_length(own) <= planner_link.route_length(reuse_route) else reuse_route
         except planner_link.NoRoute as e:
             return self.set_state(r, "ERROR", f"cannot plan to {tgt_src['id']}: {e}")
-        self.ev(r, "route_reuse", target_id=tgt_src["id"], route_cid=rep["route_cid"], route_hash_ok=route_ok, **info)
-        self.set_state(r, "PLANNING",
-                       f"site {tgt_src['id']}: {cost:.0f} m away; Surveyor's route fetched by CID, hash "
-                       f"{'matches the chain' if route_ok else 'DOES NOT match'}; {info['mode']}")
-        if not self.hazard_log and len(route) >= 2:   # one new obstacle, on the first trip
-            self._place_hazard(route)
+        route_m = planner_link.route_length(route)
+        choice = "its own plan" if route is own else "the Surveyor's route, checked"
+        clear = None
+        if on_way:
+            # Closest this route comes to each flagged rim, the room it leaves.
+            pts = np.asarray(route, float)
+            clear = min(float(np.min(np.hypot(pts[:, 0] - hz["x"], pts[:, 1] - hz["y"]))) - hz["radius_m"]
+                        for hz in on_way)
+        self.ev(r, "route_reuse", target_id=tgt_src["id"], route_cid=rep["route_cid"], route_hash_ok=route_ok,
+                flagged=len(flagged), flagged_on_route=[hz["hazard_id"] for hz in on_way], chosen=choice,
+                route_m=round(route_m, 1), clearance_m=None if clear is None else round(clear, 1),
+                **{k: v for k, v in info.items() if k not in ("route_m",)})
+        hash_txt = "hash matches the chain" if route_ok else "hash DOES NOT match"
+        if on_way:
+            ids = ", ".join(hz["hazard_id"] for hz in on_way)
+            self.set_state(r, "PLANNING", f"site {tgt_src['id']}: the Surveyor's route ({hash_txt}) flags crater {ids}; "
+                                          f"planning its own way, {clear:.0f} m clear of it ({route_m:.0f} m)")
+        else:
+            self.set_state(r, "PLANNING", f"site {tgt_src['id']}: Surveyor's route fetched by CID, {hash_txt}; "
+                                          f"taking the {choice} ({route_m:.0f} m)")
 
         # NAVIGATING, with REPLANNING when something new blocks the way.
         r.mode = "to target"
@@ -375,17 +574,23 @@ class RolesMission(M.Mission):
                                  f"({rec['result']['reading']:.2f} wt% water) as a new report linked to the "
                                  f"Surveyor's (#{site['latest_report_id']}); the Surveyor's record is untouched")
 
-    def _place_hazard(self, route):
-        """A boulder field the Surveyor never met, on the Prospector's way."""
-        pts = np.asarray(route, float)
-        seg = np.hypot(*np.diff(pts, axis=0).T)
-        cum = np.concatenate([[0], np.cumsum(seg)])
-        s = HAZARD_AT * cum[-1]
-        k = min(int(np.searchsorted(cum, s)) - 1, len(seg) - 1)
-        k = max(k, 0)
-        f = (s - cum[k]) / max(seg[k], 1e-9)
-        x, y = pts[k] + f * (pts[k + 1] - pts[k])
-        self.hidden_hazards.append({"x": float(x), "y": float(y), "radius": HAZARD_RADIUS_M, "seen": False})
+    def read_flagged(self, sites):
+        """Hazards flagged in the Surveyor's routes: each route read by the
+        CID its report holds on chain, and checked against that hash."""
+        out, seen = [], set()
+        for s in sites:
+            rid = s["latest_report_id"]
+            while rid:
+                rep = self.reg.get_report(rid)
+                cid = rep.get("route_cid")
+                if cid and cid not in seen:
+                    seen.add(cid)
+                    obj = self.store.ev.get(cid)
+                    if obj.get("rover") == "A" and \
+                            EV.keccak256(EV.canonical_bytes(obj)).hex() == rep["route_hash"].removeprefix("0x"):
+                        out += obj.get("hazards", [])
+                rid = rep["parent_report_id"]
+        return out
 
     def _sense_hazards(self, r):
         for h in self.hidden_hazards:
@@ -395,8 +600,9 @@ class RolesMission(M.Mission):
             if d <= HAZARD_SENSE_M + h["radius"]:
                 h["seen"] = True
                 self.link.add_hazard(h["x"], h["y"], h["radius"])
-                row = dict(x=round(h["x"], 2), y=round(h["y"], 2), radius=h["radius"], seen_t=round(r.t, 1),
-                           seen_by=r.agency, seen_at_m=round(d - h["radius"], 1))
+                row = dict(x=round(h["x"], 2), y=round(h["y"], 2), radius=round(h["radius"], 2), seen_t=round(r.t, 1),
+                           seen_by=r.agency, seen_at_m=round(d - h["radius"], 1), kind=h.get("kind"),
+                           crater_d=h.get("crater_d"))
                 self.hazard_log.append(row)
                 self.ev(r, "hazard", **row)
                 return True
@@ -430,7 +636,7 @@ class RolesMission(M.Mission):
         log = super().run_log()
         # Steps at every science stop, so the rover holds still while it works.
         extra = []
-        for e in self.store.db.events(self.store.id, "science"):
+        for e in list(self.store.db.events(self.store.id, "science")) + self.hazard_stops:
             ph = e["phases"]
             extra += [ph[0]["t0"], ph[-1]["t0"] + ph[-1]["dur"]]
         times = sorted({s["t"] for s in log["steps"]} | {round(t, 1) for t in extra})
@@ -453,6 +659,9 @@ class RolesMission(M.Mission):
             steps.append(s)
         # Registry writes onto the step at or after their time.
         ts = [s["t"] for s in steps]
+        for e in self.hazard_stops:
+            k = min(bisect.bisect_left(ts, round(e["phases"][0]["t0"], 1)), len(steps) - 1)
+            steps[k].setdefault("science", []).append(e)
         for e in self.reg_events:
             k = min(bisect.bisect_left(ts, e["t"]), len(steps) - 1)
             steps[k].setdefault("registry", []).append(e)
@@ -506,7 +715,8 @@ def main():
         chain = " -> ".join(f"#{x['report_id']} {x['stage']}:{x['result']}" for x in s["reports"])
         print(f"    site {s['target_id']:4s} ({s['kind']:9s}) conf {s['confidence']:.0%}  {chain}")
     for h in man["hazards"]:
-        print(f"  new obstacle at ({h['x']:.0f}, {h['y']:.0f}) seen by {h['seen_by']} {h['seen_at_m']} m ahead -> replanned")
+        print(f"  {h.get('kind') or 'obstacle'} at ({h['x']:.0f}, {h['y']:.0f}) seen by {h['seen_by']} "
+              f"{h['seen_at_m']} m ahead -> mapped, flagged, driven around")
     if a.render:
         import mission_render
         mission_render.render(store)

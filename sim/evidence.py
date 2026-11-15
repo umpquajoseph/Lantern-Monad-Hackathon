@@ -285,7 +285,7 @@ DATA_SOURCES = [
 ]
 
 
-def make_route(mission_id, agency, target_id, est_track, t_end, sigma=0.0):
+def make_route(mission_id, agency, target_id, est_track, t_end, sigma=0.0, hazards=None):
     """The route object: what the rover drove to reach the site, by its own
     estimate (the only position it knows), thinned.
 
@@ -301,6 +301,8 @@ def make_route(mission_id, agency, target_id, est_track, t_end, sigma=0.0):
         "position_source": "rover estimate", "position_sigma_m": round(float(sigma), 2),
         "simulated": True, "t_end": round(float(t_end), 1),
         "tolerance_m": round(tol, 2), "points_driven": len(pts), "points": thin,
+        # Ground this rover found unsafe on the way, so the next one plans around it.
+        **({"hazards": hazards} if hazards else {}),
     }
 
 
@@ -310,19 +312,30 @@ def make_report(mission_id, record, route_ref, parent_ref=None):
     p, s, r = record["position"], record["sample"], record["result"]
     observation = record.get("observation") or (
         "check of another agency's find" if record["target"]["purpose"] == "check" else "survey drill")
+    if s.get("kind") == "site_survey":
+        # The Surveyor's site survey: no core, a neutron dwell and a camera map.
+        measurements = {
+            "instrument": s["instrument"], "dwell": s["dwell"],
+            "dwell_readings_per_point": s["dwell_readings_per_point"],
+            "water_wt_pct_mean": s["water_wt_pct"], "water_wt_pct_peak": s["water_wt_pct_peak"],
+            "terrain": s["terrain"],
+            "units": {"dwell": "[dx m, dy m, wt% water-equivalent hydrogen, top 1 m]", "slope": "deg"},
+        }
+    else:
+        measurements = {
+            "instrument": s["instrument"], "drill_depth_m": s["drill_depth_m"],
+            "water_wt_pct_by_depth": [[b["depth_m"], b["water_wt_pct"]] for b in s["profile"]],
+            "water_wt_pct_max": s["water_wt_pct"], "ilmenite_wt_pct": s["ilmenite_wt_pct"],
+            "regolith_class": s["regolith_class"],
+            "units": {"depth": "m", "water": "wt% water", "ilmenite": "wt%"},
+        }
     return {
         "schema": SCHEMA_REPORT, "mission_id": mission_id, "report_id": record["record_id"],
         "site_id": record["target"]["id"], "site_source": record["target"].get("source"),
         "rover": record["agency"], "observation": observation, "simulated": True,
         "t": record["t"],
         "position": {k: p[k] for k in ("x", "y", "sigma", "lat", "lon", "frame", "source")},
-        "measurements": {
-            "instrument": s["instrument"], "drill_depth_m": s["drill_depth_m"],
-            "water_wt_pct_by_depth": [[b["depth_m"], b["water_wt_pct"]] for b in s["profile"]],
-            "water_wt_pct_max": s["water_wt_pct"], "ilmenite_wt_pct": s["ilmenite_wt_pct"],
-            "regolith_class": s["regolith_class"],
-            "units": {"depth": "m", "water": "wt% water", "ilmenite": "wt%"},
-        },
+        "measurements": measurements,
         "result": {"verdict": r["verdict"], "reading_wt_pct": r["reading"],
                    "ice_top_m": r.get("ice_top_m"), "summary": r["summary"],
                    "confidence": confidence(record)},
@@ -356,7 +369,17 @@ def confidence(record):
     the threshold in units of the instrument noise. Not a probability of ice
     being there; a measure of how clearly this core says what it says."""
     import science
-    w = [b["water_wt_pct"] for b in record["sample"]["profile"]]
+    s = record["sample"]
+    if s.get("kind") == "site_survey":
+        # A dwell mean: the per-reading noise shrinks with the number of readings.
+        import resources
+        n = len(s["dwell"]) * s["dwell_readings_per_point"]
+        noise = resources.NEUTRON_NOISE_WT_PCT / n ** 0.5
+        margin = abs(s["water_wt_pct"] - science.ICE_THRESHOLD_WT_PCT) / noise
+        return {"margin_sigma": round(margin, 2),
+                "level": "high" if margin >= 3 else "medium" if margin >= 1 else "low",
+                "basis": "neutron dwell mean vs the 1 wt% threshold, in units of the dwell's noise (simulated)"}
+    w = [b["water_wt_pct"] for b in s["profile"]]
     thr, noise = science.ICE_THRESHOLD_WT_PCT, science.WATER_NOISE_WT_PCT
     if record["result"]["verdict"] == "ice":
         margin = (record["result"]["reading"] - thr) / noise

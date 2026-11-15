@@ -30,6 +30,20 @@ Laid out after NASA's "Experience Curiosity" (eyes.nasa.gov/apps/curiosity):
 - On a phone the camera boxes sit side by side and the panel starts folded.
 - Picking a camera or rover during a drill stop now ends that stop's close-up; before, the close-up took the camera straight back.
 
+## 1c. Surveyor maps, Prospector drills, a flagged crater (UI team, round 2)
+
+- **Built on main.** `origin/main` (the checkpoint) is merged into `ritvik`. Terrain assets are rebuilt with main's `web/build_assets.py` from the committed `lantern_data/` (same no-go share as the team's site, 20.6%), and the page uses main's `world.js`, `map.js` and `data.js` unchanged.
+- **Surveyor has no arm.** It stops 6 m short of a site, turns to face it, pans its mast camera, maps the ground, takes a neutron dwell and a photo (`science.run_site_survey`, `SURVEY_PHASES`). Its verdict comes from the dwell, against the same 1 wt% threshold; the Prospector's core confirms. Reports store the dwell and the terrain map instead of a core.
+- **A crater the orbital map missed.** On the Surveyor's 2nd drive between two ice sites (with seed 11, T04 to T06), a real terrain crater has rim boulders no map shows. The Surveyor stops about 10 m short, faces it, maps it, photographs it and writes a hazard report (`lantern.hazard/1`). The hazard goes into the route object it publishes (hash on chain), then it drives around.
+- **Prospector plans a better way.** Before planning, it reads every Surveyor route by its CID and checks the hash. It adds each flagged hazard to its map with a 4 m margin. Where the Surveyor's route ran into a hazard, it plans its own route instead of following that one (20 m clear of the rim in the seed-11 run).
+- **First-person survey view.** The Surveyor's stops switch the main view to its camera:
+  - corner brackets, a reticle locking on, and a camera-pan sweep;
+  - the terrain grid building from near to far, coloured by slope (green flat, yellow 8–15°, red steep or rocks);
+  - neutron dwell pulses and a photo flash;
+  - at the crater, the old route crossed out, the new one drawn, and "UNSAFE · H1 FLAGGED FOR THE PROSPECTOR".
+- **Suspension.** Each rover body tilts and lifts to a plane fitted to the ground under its wheels. On Perseverance the merged wheel and rocker meshes are cut apart by clustering, so each wheel spins with distance and rides up and down, and the rockers tip. Opportunity is one mesh, so only its body tilts.
+- **"How to read this"** is rebuilt as sections: the two rovers, the ground colours, the camera colours, on chain, and controls.
+
 ## 2. The larger build (master implementation prompt)
 
 The team agreed to extend Lantern, not rewrite it in React/TypeScript.

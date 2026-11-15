@@ -147,16 +147,60 @@
 </div>
 
 <dialog class="about" id="about">
-  <h2>How to read this</h2>
-  <ul class="legend">
-    <li><i class="sw" style="background:#e0a83a"></i><b>Amber ring</b> A possible site, relayed by the satellite. It can't see rocks or small craters.</li>
-    <li><i class="sw" style="background:#5aa7ff"></i><b>Rover</b> Finds its own way there, steering around obstacles and replanning when blocked.</li>
-    <li><i class="sw" style="background:#ff4d4d"></i><b>Red</b> A drill found ice here.</li>
-    <li><i class="sw" style="background:#9fe0b5"></i><b>On chain</b> Each find's result and a 32-byte fingerprint of its full report. The report itself stays off chain.</li>
-  </ul>
-  <p class="hint small" id="about-notes">Ice, readings and cores are simulated. The slope map and one placed obstacle stand in for camera vision.</p>
-  <p class="hint small" id="model-credit"></p>
-  <form method="dialog"><button class="btn">Close</button></form>
+  <div class="about-head">
+    <h2>How to read this</h2>
+    <form method="dialog"><button class="ib" aria-label="Close">✕</button></form>
+  </div>
+
+  <section>
+    <h3>The two rovers</h3>
+    <div class="rcards">
+      <div class="rcard">
+        <div class="rcard-t"><i class="dot A"></i>Surveyor A</div>
+        <p>Camera and neutron sensor, no drill. Finds sites, maps them, and flags dangerous ground.</p>
+      </div>
+      <div class="rcard">
+        <div class="rcard-t"><i class="dot B"></i>Prospector B</div>
+        <p>Arm and drill. Reads what the Surveyor found from the chain, then drills to confirm the ice.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h3>On the ground</h3>
+    <ul class="legend">
+      <li><i class="sw ring" style="--c:#e0a83a"></i><b>Amber ring</b><span>A possible site, relayed by the satellite</span></li>
+      <li><i class="sw" style="--c:#ff4d4d"></i><b>Red patch</b><span>Ice found here</span></li>
+      <li><i class="sw ring dash" style="--c:#ff5d5d"></i><b>Red dashed ring</b><span>A flagged hazard; rovers plan around it</span></li>
+      <li><i class="sw line" style="--c:#5aa7ff"></i><b>Coloured line</b><span>The route a rover is following</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>In the Surveyor's camera</h3>
+    <ul class="legend">
+      <li><i class="sw line" style="--c:#4fd18b"></i><b>Green grid</b><span>Flat, easy ground</span></li>
+      <li><i class="sw line" style="--c:#f2c94c"></i><b>Yellow grid</b><span>Sloping, 8 to 15°</span></li>
+      <li><i class="sw line" style="--c:#ff5d5d"></i><b>Red grid</b><span>Too steep, or rocks</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>On chain</h3>
+    <p>Each record holds a result and a 32-byte fingerprint of the full report. The report itself stays off chain. <b>Verify</b> re-checks the fingerprint, which proves the report has not changed.</p>
+  </section>
+
+  <section>
+    <h3>Controls</h3>
+    <dl class="keys">
+      <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
+      <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom in or out</dd>
+      <dt>Drag</dt><dd>Look around</dd>
+      <dt><svg><use href="#i-expand"/></svg></dt><dd>Make a camera box full screen</dd>
+    </dl>
+  </section>
+
+  <p class="about-foot" id="about-notes">Ice, readings and drill cores are simulated. <span id="model-credit"></span></p>
 </dialog>
 
 <script type="module" src="js/mission.js"></script>

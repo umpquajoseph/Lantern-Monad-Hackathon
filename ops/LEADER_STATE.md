@@ -167,5 +167,5 @@ Read mail, then `mv` it to `leader/archive/`.
 - Rule (Joseph 12:52): new workers go through the inbox system. Write the
   brief and a handoff mail in ops/mailboxes/<handle>/inbox/; Joseph opens the
   session. Never start_session for a worker.
-- Joseph 12:55: the global 4-Opus worker cap does not apply to this project.
+- Joseph 12:54: the global 4-Opus worker cap does not apply to this project.
   The inbox rule above still does.

@@ -19,3 +19,7 @@ frames/
 *.mp4
 # mailboxes: shared by all worktrees at an absolute path, never committed
 ops/mailboxes/
+# foundry (survey)
+survey/out/
+survey/cache/
+survey/broadcast/

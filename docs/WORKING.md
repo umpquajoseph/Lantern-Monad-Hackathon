@@ -30,6 +30,7 @@ another part calls.
 | Site look: clean, uncluttered layout | Joseph, agent `designer` | `step-5-design` | `web/app.css`, `web/index.html` layout | 12:29 | starting |
 | Contract on Monad testnet with Foundry tests, and the Python client `sim/chain.py` (step 1) | Kellen, agent `chain` | `step-1-chain` | `contracts/`, `sim/chain.py`, `sim/lantern_abi.json`, `sim/lantern_deployment.json` | 10:50 | done 11:25, deployed on Monad testnet (address in `sim/lantern_deployment.json`), demo run on chain; ready to merge |
 | Live chain feed for the viewer: read-only browser reader of the contract, standalone page, wiring note for the viewer owner (brief `docs/briefs/chain-feed.md`) | Kellen, agent `chain-feed` | `step-5-chain-feed` | `web/js/chain.js`, `web/chain.html`, `web/collect_chain.py`, `web/chain/` | 12:00 | done 12:20, pushed; `web/chain.html` reads the live contract; wiring note for the viewer owner at the top of `chain.js` |
+| Results ledger: master results file per run (paths, find locations, ice quantity, volatiles) and posting it to Monad, `LanternSurvey` contract next to Lantern | Kellen, agent `results` | `step-7-results` | `sim/results.py`, `sim/survey.py`, `sim/survey_abi.json`, `sim/survey_deployment.json`, `survey/` | 11:05 | done on anvil 11:25; testnet deploy next (Lantern is live) |
 | Briefs, review, merging into `joseph` | Joseph, lead session | `joseph` | `docs/`, `ops/PROTOCOL.md` | 10:00 | ongoing |
 
 ## Not claimed yet

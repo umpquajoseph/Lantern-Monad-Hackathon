@@ -226,6 +226,31 @@ get_finds() -> list[dict]   # each: id, agency, x, y, sigma, reading,
   `sim/lantern_deployment.json` and `sim/lantern_abi.json` (committed, written
   by `contracts/deploy.sh`). The web viewer can read the same two files.
 
+## Results ledger (`sim/results.py`, `sim/survey.py`, `survey/`), gives
+
+After a run, one master file per run and its results on Monad, next to Lantern:
+
+- `python sim/results.py build data/runs/<run_id>` reads `log.json` (above) and
+  writes `data/runs/<run_id>/results.json`: per rover the path it believes it
+  drove (`estimate`, or `odom_pose` when nav is off) with sigma, its length and a
+  downsampled copy for the chain; per find x, y, sigma, lat/lon, reading, a
+  modelled ice quantity (`ice.area_m2`, `ice.depth_m`, `ice.mass_kg`), modelled
+  volatiles (`volatiles_ppm`, `volatiles_kg`, 8 species from LCROSS, Colaprete
+  et al. 2010 Table 2), its checks and its status; run totals; and
+  `results_hash`, keccak256 of the canonical file without `truth` and `chain`.
+- `python sim/survey.py post data/runs/<run_id>` posts to `LanternSurvey`
+  (`survey/src/LanternSurvey.sol`): one traverse per rover, one assay per find
+  (signed by the finder, refused for anyone else), one run record with
+  `results_hash`. It writes the transactions into `results.json` under `chain`.
+  `--post-finds` first posts finds and checks that have no `tx` (stand-in chain
+  runs) to Lantern. Re-running skips what is already on chain.
+- Reads for the viewer: `SurveyClient().runs()`, `.traverses()`, `.assays()`;
+  ABI and address in `sim/survey_abi.json`, `sim/survey_deployment.json`.
+- Optional, asked of the spine: a per-step `"reading"` (wt%) in each rover's
+  dict. With it the deposit extent is measured along the track; without it the
+  area is one sensor footprint (sim/ice.py FOOTPRINT_RADIUS_M). Nothing breaks either way.
+- Writers are Lantern's agencies (`isAgency`), so it needs no keys of its own.
+
 ## Step 5, dashboard, takes
 
 - The per-step state above for both rovers, `get_finds()`, and from step 6 the

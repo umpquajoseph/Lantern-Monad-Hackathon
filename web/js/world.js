@@ -10,6 +10,7 @@ import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { regolith, lampIntensity, fillIntensity, fillAmbient, TONE_GLSL } from "./regolith.js";
 import { fetchF32 } from "./data.js";
+import { frostPatch } from "./frost.js";
 
 // ShadowNav (Atha et al. 2024, sections IV and V), as in sim/scene.py:
 // camera 2.5 m above the ground, lamp 0.2 m below it.
@@ -695,15 +696,16 @@ uniform vec4 uP1;`)
     }
     // Real ice, hidden from the rovers (stand-in runs carry it).
     this.truthObjs = [];
-    for (const ice of (run.truth && run.truth.ice) || []) {
+    for (const [i, ice] of ((run.truth && run.truth.ice) || []).entries()) {
       const d = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: COLORS.truth }));
       d.position.copy(this.groundL(ice.x, ice.y, 0.8));
       d.scale.set(1, 1, 1.6);
       // Marker only: the sidebar legend names it, and a text label here
       // would cover the find label at the same spot.
       const ring = this.ring(ice.x, ice.y, ice.radius, this.lineMat(COLORS.truth, 1.5, { dashed: true, opacity: 0.8 }));
-      this.overlay.add(d, ring);
-      this.truthObjs.push(d, ring);
+      const frost = frostPatch(this, ice.x, ice.y, ice.radius, `${run.log.run_id}:${i}`);
+      this.overlay.add(d, ring, frost);
+      this.truthObjs.push(d, ring, frost);
     }
     this.findObjs = new Map();
     this.lastFollowPos = null;

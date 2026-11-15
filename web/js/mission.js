@@ -11,6 +11,7 @@ import { Terrain, Run, loadIndex, fmtClock } from "./data.js";
 import { World } from "./world.js";
 import { MapView } from "./map.js";
 import { ScienceRig, DRILL_DEPTH_M } from "./science_rig.js";
+import { frostPatch, ICE_HEX, ICE_CSS } from "./frost.js";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -42,7 +43,7 @@ const SPLIT = {
 };
 const MODE_SHORT = { local: "Local chain", monad: "Monad testnet", offline: "Offline" };
 const STAGE_N = { None: 0, Candidate: 1, SurveyorInspected: 2, ProspectorAnalyzed: 3 };
-const SITE_COLOR = { Candidate: 0x9aa7b8, Positive: 0xff4d4d, Negative: 0x8d939b, Inconclusive: 0xd9b44a, Analyzed: 0x58b4ff };
+const SITE_COLOR = { Candidate: 0x9aa7b8, Positive: ICE_HEX, Negative: 0x8d939b, Inconclusive: 0xd9b44a, Analyzed: 0x58b4ff };
 const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop
 const FOCUS_LEAD_S = 3;    // the close-up starts this many sim seconds before the stop
 const FOCUS_TAIL_S = 3;    // and holds this long after it
@@ -412,10 +413,8 @@ function buildOverlay() {
     const lbl = new CSS2DObject(el);
     lbl.position.set(p.x, p.y, p.z + 5.4);
     lbl.center.set(0, 1);
-    // Ice found here: a red patch on the ground, so nobody can miss it.
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(4.5, 40),
-      new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.35, depthWrite: false }));
-    disc.position.copy(world.groundL(e.x, e.y, 0.2));
+    // Ice found here: a frost patch on the ground, so nobody can miss it.
+    const disc = frostPatch(world, e.x, e.y, 4.5, e.site_id);
     disc.visible = false;
     g.add(ring, beam, lbl, disc);
     ov.add(g);
@@ -474,7 +473,7 @@ function buildOverlay() {
   }
 }
 
-// Ticks on the play bar: blue for a science stop, red where ice was found,
+// Ticks on the play bar: blue for a science stop, ice white where ice was found,
 // a low red tick for a new obstacle. Hover for what each is.
 function buildTimeline() {
   const marks = $("tl-marks");
@@ -830,7 +829,7 @@ function drawFpOverlay(fr, cv, small) {
   for (const s of run.log.satellite_sites || []) {
     const r = [...sites.values()].find((v) => v.target === s.id);
     const ice = r && (r.surveyor === "Positive" || r.prospector === "Positive");
-    const color = ice ? "#ff4d4d" : r ? "#9aa7b8" : "#e0a83a";
+    const color = ice ? ICE_CSS : r ? "#9aa7b8" : "#e0a83a";
     const base = P(s.x, s.y), tip = P(s.x, s.y, 6);
     if (!base || !tip || base[2] > 250) continue;
     c.strokeStyle = color; c.lineWidth = 2 * k;
@@ -1030,7 +1029,7 @@ function drawSurveyFx(c, ev, t, P, k, font) {
 
   // The verdict at the end of a site survey.
   if (!hz && (past("photo") || (ph.name === "photo" && ph.p > 0.4))) {
-    const v = { ice: ["HYDROGEN HIGH · WORTH A CORE", "#ff6b6b"], trace: ["SOME HYDROGEN · BELOW THRESHOLD", "#f2c94c"],
+    const v = { ice: ["HYDROGEN HIGH · WORTH A CORE", ICE_CSS], trace: ["SOME HYDROGEN · BELOW THRESHOLD", "#f2c94c"],
       dry: ["DRY · NOTHING TO DRILL", "#c9ccd1"] }[ev.verdict] || [String(ev.verdict).toUpperCase(), "#fff"];
     banner(c, v[0], v[1], k, font);
   }
@@ -1113,7 +1112,6 @@ function updateOverlay(t) {
   }
   const done = new Set([...sites.values()].map((s) => s.target));
   for (const o of satObjs) o.g.visible = !done.has(o.id);
-  for (const o of siteObjs.values()) if (o.disc.visible) o.disc.material.opacity = 0.28 + 0.14 * Math.sin(performance.now() / 300);
   for (const h of hazards) if (h.obj) h.obj.visible = S.opts.hazards && t >= h.seen_t;
   for (const a of S.run.agencies) {
     const st = stateAt(a, t).state;

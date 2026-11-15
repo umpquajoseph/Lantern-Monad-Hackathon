@@ -108,3 +108,13 @@ Doorbells (SendMessage `to` = these addresses; all sessions share the name
 - 11:30 Spine merged into joseph: run1 confirmed, run2 disputed (data/runs/run*-20261115-1108). Scene worker idle; told to expect mail from integrator.
 
 - 11:27 Viewer merged into joseph (1bfd1cf). Screens checked: run1 confirmed, run2 disputed. Flaws: rover camera washed out (scene exposure); hidden-truth labels cover the find label in run 2. Next: hosting.
+
+- 11:29 Integrator interim report: app.py on integration serves the viewer, both runs play. Told it to merge origin/joseph (standins fix is 6baa1ef). Viewer told: label fix, agree hosting with integrator. Addresses: integrator uds:\.\pipe\LOCAL\cc-msg-e4aa78077ba4f6511766cd4cc20730b8, viewer uds:\.\pipe\LOCAL\cc-msg-a233f82a3c78cbd382c1279676ac4ac8. The textured clip has no rover: terrain_look.py draws terrain only; scene.py has the rover mesh.
+
+- 11:31 Integrator: joseph merged into integration (3eecb01), banner and FAKE TX on screen, --site export 46 MB with no keys. Scene texturing frames, ETA about 12:30. Host choice waits on Joseph (repo private, so not GitHub Pages free).
+
+- 11:33 Viewer label fix fa35ebc merged into joseph. Viewer proposed integrator runs the deploy.
+
+- 11:36 Realism push before Calvin nav import (Joseph: "as realistic as possible ... first and third person lighting and terrain"). scene: display layer + Hapke + exposure in sim/scene.py (approved, ~12:40). viewer: Hapke shader, rocks, near backdrop in web 3D. terrain: verify Hapke vs Xu 2020, reference stills, judge both (branch step-2-terrain-realism). Keep Scene interface stable for nav.
+
+- 11:38 Standing rule (Joseph): localhost site from app.py is the base; everything integrates into it; done = visible there. Broadcast to all workers; on the board. Calvin is building nav.

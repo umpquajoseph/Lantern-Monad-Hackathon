@@ -462,6 +462,13 @@ def checkpoints(steps, sites):
     if kb is not None:
         cps.append(dict(id="dispatch-B", step=kb, t=steps[kb]["t"], label="Prospector dispatched", pause=True,
                         say="The Prospector read the find from the chain, not from the Surveyor, and heads straight for it."))
+    # The Surveyor finished: the step it comes to rest after its last site (after it
+    # drives clear of the find). Play there follows the Prospector. When it is the
+    # dispatch step itself, that pause covers both.
+    ka_done = first(lambda k: steps[k]["rovers"]["A"]["mode"] == "done")
+    if ka_done is not None and ka_done != kb:
+        cps.append(dict(id="done-A", step=ka_done, t=steps[ka_done]["t"], label="Surveyor finished", pause=True,
+                        say="The Surveyor is parked clear of the find. Play: follow the Prospector."))
     kp = first(lambda k: steps[k]["rovers"]["B"]["mode"] == "prospect")
     if kp is not None:
         cps.append(dict(id="arrive-B", step=kp, t=steps[kp]["t"], label="Prospector at the find", pause=True,

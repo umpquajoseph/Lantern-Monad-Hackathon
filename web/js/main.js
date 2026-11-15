@@ -33,6 +33,7 @@ async function main() {
   world.buildTerrain();
   world.buildBackdrop();
   world.loadRocks();
+  world.initPatches();
   map = new MapView($("map"), terrain);
 
   state.runs = await loadIndex("runs/");

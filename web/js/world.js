@@ -34,9 +34,14 @@ const FILL_FROM_VIEW_DEG = 110;
 
 // Viewer only, assumed. "low" is for weak GPUs (?quality=low).
 const QUALITY = {
-  high: { fineStride: 1, shadow: 4096, nearStride: 1, farStride: 2, rocks: true },
-  low: { fineStride: 2, shadow: 2048, nearStride: 2, farStride: 4, rocks: true },
+  // patch: the fine height patch ahead of each rover, `res` m spacing over a
+  // square `half` m each way about a point PATCH_AHEAD_M ahead.
+  high: { fineStride: 1, shadow: 4096, nearStride: 1, farStride: 2, rocks: true, patch: { res: 0.04, half: 13 } },
+  low: { fineStride: 2, shadow: 2048, nearStride: 2, farStride: 4, rocks: true, patch: null },
 };
+const PATCH_AHEAD_M = 9;       // patch centre ahead of the rover, where the lamp pool is
+const PATCH_MOVE_M = 3;        // rebuild once the wanted centre moves this far
+const PATCH_TAPER_M = 0.75;    // blend to the tile surface over the patch's outer edge
 const COARSE_STRIDE = 2;       // coarse map drawn at 2 m
 const FINE_PAD_M = 70;         // load 0.25 m tiles within this of each rover
 const DRAPE_M = 0.18;          // lines float this far above the ground
@@ -144,7 +149,29 @@ export class World {
       THREE.RedFormat, THREE.UnsignedByteType);
     this.mask.needsUpdate = true;
     const drive = { hapke: this.hapke, albedo, normalMap: detailN, detailAlb: detailA, strength };
+    // The fine patch draws with fineMat; the 0.25 m tiles are not drawn,
+    // nor cast shadows, inside a patch.
     this.fineMat = regolith(drive);
+    const far = () => new THREE.Vector4(1e9, 1e9, -1e9, -1e9);
+    this.patchRects = [far(), far()];
+    const rectU = { uP0: { value: this.patchRects[0] }, uP1: { value: this.patchRects[1] } };
+    const inRect = `(vXY.x > uP0.x && vXY.y > uP0.y && vXY.x < uP0.z && vXY.y < uP0.w) ||
+                    (vXY.x > uP1.x && vXY.y > uP1.y && vXY.x < uP1.z && vXY.y < uP1.w)`;
+    this.tileMat = regolith({ ...drive, uniforms: rectU, discard: `if (${inRect}) discard;` });
+    this.tileDepthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    this.tileDepthMat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, rectU);
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>
+varying vec2 vXY;`)
+        .replace("#include <begin_vertex>", `#include <begin_vertex>
+vXY = (modelMatrix * vec4(position, 1.0)).xy;`);
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>
+varying vec2 vXY;
+uniform vec4 uP0;
+uniform vec4 uP1;`)
+        .replace("void main() {", `void main() {
+ if (${inRect}) discard;`);
+    };
     // The coarse map is not drawn where a fine tile is loaded.
     this.coarseMat = regolith({ ...drive,
       uniforms: {
@@ -300,7 +327,8 @@ export class World {
       this.fineMeshes.set(key, null);
       this.terrain.loadTile(key).then((g) => {
         if (!this.fineMeshes.has(key)) return;
-        const mesh = new THREE.Mesh(this.gridGeometry(g, this.q.fineStride), this.fineMat);
+        const mesh = new THREE.Mesh(this.gridGeometry(g, this.q.fineStride), this.tileMat);
+        mesh.customDepthMaterial = this.tileDepthMat;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         this.scene.add(mesh);
@@ -319,6 +347,80 @@ export class World {
       this.fineMeshes.delete(key);
       this.setMask(key, 0);
     }
+  }
+
+  // ------------------------------------------------------- fine patch
+  async initPatches() {
+    const P = this.q.patch, lm = this.terrain.meta.lips;
+    if (!P || !lm) return;
+    const lips = await fetchF32(this.terrain.base + lm.file);
+    this.patchWorker = new Worker(new URL("./patch_worker.js", import.meta.url), { type: "module" });
+    this.patchWorker.postMessage({ init: { lips, x0: this.terrain.meta.x0, y0: this.terrain.meta.y0 } });
+    this.patchWorker.onmessage = (e) => this.patchReady(e.data);
+    this.patches = {};
+    const n = Math.round((2 * P.half) / P.res) + 1;
+    const idx = new Uint32Array((n - 1) * (n - 1) * 6);
+    let t = 0;
+    for (let a = 0; a < n - 1; a++) for (let b = 0; b < n - 1; b++) {
+      const v = a * n + b;
+      idx[t++] = v; idx[t++] = v + 1; idx[t++] = v + n;
+      idx[t++] = v + 1; idx[t++] = v + n + 1; idx[t++] = v + n;
+    }
+    this.patchIndex = new THREE.BufferAttribute(idx, 1);
+    this.patchN = n;
+    this.patchSeq = 0;
+  }
+
+  // Ask for a new patch when a rover's lamp pool has moved on.
+  updatePatches(run, t) {
+    if (!this.patches) return;
+    const P = this.q.patch, T = this.terrain, m = T.meta;
+    for (const a of run.agencies) {
+      const st = (this.patches[a] = this.patches[a] || {});
+      if (st.pending) continue;
+      const [x, y, h] = run.poseAt(a, t);
+      // Snap to the patch spacing so vertices land on the same world points.
+      const cx = x + PATCH_AHEAD_M * Math.cos(h), cy = y + PATCH_AHEAD_M * Math.sin(h);
+      if (st.center && Math.hypot(cx - st.center[0], cy - st.center[1]) < PATCH_MOVE_M) continue;
+      const px0 = m.x0 + Math.round((cx - P.half - m.x0) / P.res) * P.res;
+      const py0 = m.y0 + Math.round((cy - P.half - m.y0) / P.res) * P.res;
+      const span = (this.patchN - 1) * P.res;
+      // Every 0.25 m tile under it must be loaded, or the base would be the 1 m map.
+      const corners = [[px0, py0], [px0 + span, py0], [px0, py0 + span], [px0 + span, py0 + span]];
+      const keys = corners.map(([u, v]) => T.tileKey(u, v));
+      if (keys.some((k) => !k || !T.tiles.has(k))) continue;
+      const cell = m.cell;
+      const bx0 = m.x0 + (Math.floor((px0 - m.x0) / cell) - 2) * cell, by0 = m.y0 + (Math.floor((py0 - m.y0) / cell) - 2) * cell;
+      const bnx = Math.ceil(span / cell) + 6, bny = bnx;
+      const base = new Float32Array(bnx * bny);
+      for (let i = 0; i < bny; i++) for (let j = 0; j < bnx; j++) base[i * bnx + j] = T.heightAt(bx0 + j * cell, by0 + i * cell);
+      st.pending = true;
+      st.want = [cx, cy];
+      const ax0 = m.x0 - m.cell / 2, ay0 = m.y0 - m.cell / 2;
+      this.patchWorker.postMessage({ id: ++this.patchSeq, a, base, bx0, by0, bnx, bny, cell, px0, py0, res: P.res, n: this.patchN,
+        taper: PATCH_TAPER_M, o: [this.o.x, this.o.y, this.o.z], alb: [ax0, ay0, m.cols * m.cell, m.rows * m.cell],
+        per: m.detail ? m.detail.period_m : 8 }, [base.buffer]);
+    }
+  }
+
+  patchReady({ a, pos, nrm, uv0, uv1, px0, py0, span }) {
+    const st = this.patches[a];
+    st.pending = false;
+    st.center = st.want;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
+    g.setAttribute("uv", new THREE.BufferAttribute(uv0, 2));
+    g.setAttribute("uv1", new THREE.BufferAttribute(uv1, 2));
+    g.setIndex(this.patchIndex);
+    g.computeBoundingSphere();
+    if (st.mesh) { this.scene.remove(st.mesh); st.mesh.geometry.dispose(); }
+    st.mesh = new THREE.Mesh(g, this.fineMat);
+    st.mesh.castShadow = true;
+    st.mesh.receiveShadow = true;
+    this.scene.add(st.mesh);
+    const r = this.patchRects[a === "A" ? 0 : 1];
+    r.set(px0 - this.o.x, py0 - this.o.y, px0 + span - this.o.x, py0 + span - this.o.y);
   }
 
   setMask(key, v) {
@@ -552,6 +654,7 @@ export class World {
       }
     }
     this.updateFine(pts);
+    this.updatePatches(run, t);
 
     // Finds, keyed by status so a marker is rebuilt when its status changes.
     const finds = run.findsAt(k);

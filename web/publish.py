@@ -1,13 +1,14 @@
 """Put the web viewer on a host. The site is web/ as it is on disk.
 
     python web/publish.py check                # is web/ complete? (web/check_site.py)
+    python web/publish.py prune                # drop files in web/runs/ that no log names
     python web/publish.py export DIR           # copy the site as a host receives it
     python web/publish.py vercel               # upload to Vercel, production
     python web/publish.py vercel --preview     # upload as a preview deployment (own URL)
     python web/publish.py branch               # commit the site to the `deploy` branch and push;
                                                # Vercel's GitHub integration and GitHub Pages serve it
 
-Every command runs the check first and stops on errors. The one-time setup
+Every command prunes, runs the check, and stops on errors. The one-time setup
 for each route is in docs/hosting.md. Needs Node 20+ for the vercel route
 (npx fetches the CLI) and a pushed-to remote for the branch route.
 """
@@ -35,11 +36,47 @@ def say(msg):
 
 
 def preflight(site: Path):
+    prune(site)
     print(f"checking {site}")
     rep = check(site)
     rep.print()
     if rep.errors:
         sys.exit("[publish] fix the errors above, then run again")
+
+
+def prune(site: Path) -> None:
+    """Delete files under web/runs/ that no listed log names (frames from a rerun, runs
+    dropped from index.json). web/runs/ holds copies; the data folder is untouched."""
+    runs = site / "runs"
+    idx = runs / "index.json"
+    if not idx.exists():
+        return
+    import json
+    j = json.loads(idx.read_text(encoding="utf8"))
+    entries = j if isinstance(j, list) else j.get("runs", [])
+    keep = {idx.resolve()}
+    for r in entries:
+        rel = (r.get("path") or f"runs/{r.get('dir', r.get('run_id'))}/log.json").replace("runs/", "", 1)
+        log = runs / rel
+        if not log.exists():
+            continue
+        keep.add(log.resolve())
+        lg = json.loads(log.read_text(encoding="utf8"))
+        for st in lg.get("steps", []):
+            for rv in st.get("rovers", {}).values():
+                if rv.get("fp_frame"):
+                    keep.add((log.parent / rv["fp_frame"]).resolve())
+    gone, mb = 0, 0.0
+    for f in runs.rglob("*"):
+        if f.is_file() and f.resolve() not in keep:
+            mb += f.stat().st_size / 1e6
+            f.unlink()
+            gone += 1
+    for d in sorted((d for d in runs.rglob("*") if d.is_dir()), reverse=True):
+        if not any(d.iterdir()):
+            d.rmdir()
+    if gone:
+        say(f"pruned {gone} files ({mb:.0f} MB) under {runs} that no log names")
 
 
 def copy_site(site: Path, dest: Path) -> tuple[int, float]:
@@ -146,6 +183,7 @@ def main():
     ap.add_argument("--site", type=Path, default=WEB, help="site folder (default web/)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check")
+    sub.add_parser("prune")
     e = sub.add_parser("export"); e.add_argument("dest", type=Path)
     v = sub.add_parser("vercel")
     v.add_argument("--preview", action="store_true", help="a preview deployment instead of production")
@@ -157,6 +195,8 @@ def main():
     site = a.site.resolve()
     if a.cmd == "check":
         preflight(site); say("ready")
+    elif a.cmd == "prune":
+        prune(site); say("done")
     elif a.cmd == "export":
         export(site, a.dest.resolve())
     elif a.cmd == "vercel":

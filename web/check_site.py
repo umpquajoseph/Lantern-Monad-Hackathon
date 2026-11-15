@@ -221,14 +221,32 @@ def check(site: Path) -> Report:
             if si:
                 rep.note(f"  stand-ins declared in the log: {', '.join(si)}")
 
+    # Files under runs/ that no listed log names: the page never fetches them.
+    if "runs/index.json" in have:
+        used = {"runs/index.json"} | {f for f in have if f.startswith("runs/") and f.endswith("log.json")}
+        for path in [f for f in have if f.startswith("runs/") and f.endswith("log.json")]:
+            try:
+                lg = json.loads((site / path).read_text(encoding="utf8"))
+            except Exception:
+                continue
+            rdir = posixpath.dirname(path)
+            used |= {posixpath.join(rdir, rv["fp_frame"]) for st in lg.get("steps", [])
+                     for rv in st.get("rovers", {}).values() if rv.get("fp_frame")}
+        unused = [f for f in have if f.startswith("runs/") and f not in used]
+        if unused:
+            mb = sum(files[f] for f in unused) / 1e6
+            rep.warn(f"{len(unused)} files under runs/ ({mb:.0f} MB) are not named by any log, e.g. {unused[0]}; "
+                     f"`python web/publish.py prune` removes them from web/runs/ (copies; the data folder is untouched)")
+
     # Size and shape.
     total, n = sum(files.values()), len(files)
     rep.note(f"site as uploaded: {n} files, {total / 1e6:.1f} MB")
     if total > MAX_TOTAL_MB * 1e6:
-        rep.err(f"{total / 1e6:.0f} MB is over the {MAX_TOTAL_MB} MB Hobby upload limit: rerun run_demo.py "
-                f"with a larger --frame-every, or deploy from a Pro team")
-    elif total > 0.8 * MAX_TOTAL_MB * 1e6:
-        rep.warn(f"{total / 1e6:.0f} MB is close to the {MAX_TOTAL_MB} MB Hobby upload limit")
+        # docs.vercel.com/limits (2026-09-16) still lists 100 MB for Hobby CLI uploads; the
+        # 2026-06-17 changelog says CLI deployment limits were removed. Try; if the upload is
+        # refused, python web/shrink_frames.py, or a larger --frame-every in run_demo.py.
+        rep.warn(f"{total / 1e6:.0f} MB is over the {MAX_TOTAL_MB} MB figure in Vercel's Hobby limits; "
+                 f"the upload may be refused (see the note in check_site.py)")
     if n > MAX_FILES:
         rep.err(f"{n} files is over the {MAX_FILES} file limit")
     for rel, sz in files.items():

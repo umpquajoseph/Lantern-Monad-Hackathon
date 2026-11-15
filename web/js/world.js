@@ -707,6 +707,21 @@ uniform vec4 uP1;`)
       this.overlay.add(d, ring, frost);
       this.truthObjs.push(d, ring, frost);
     }
+    // Mission sites the Surveyor called ice (run_mission.py's log): a frost
+    // patch from the moment of that verdict. It is the find, not hidden truth,
+    // so it shows whatever the truth toggle says.
+    this.iceSites = [];
+    const verdictT = {};
+    for (const st of run.steps) for (const e of st.mission_events || []) {
+      if (e.type === "site" && e.verdict === "ice" && !(e.site_id in verdictT)) verdictT[e.site_id] = st.t;
+    }
+    for (const site of (run.log.mission && run.log.mission.sites) || []) {
+      if (site.verdict !== "ice") continue;
+      const frost = frostPatch(this, site.x, site.y, site.radius || 6, `${run.log.run_id}:${site.id}`);
+      frost.visible = false;
+      this.overlay.add(frost);
+      this.iceSites.push({ obj: frost, t: verdictT[site.id] ?? 0 });
+    }
     this.findObjs = new Map();
     this.lastFollowPos = null;
     this.placeCamera(this.follow, true);
@@ -789,6 +804,7 @@ uniform vec4 uP1;`)
     const run = this.run;
     if (!run) return;
     const k = run.stepAt(t);
+    for (const s of this.iceSites || []) s.obj.visible = t >= s.t;
     const pts = [];
     for (const a of run.agencies) {
       const [x, y, h] = run.poseAt(a, t);

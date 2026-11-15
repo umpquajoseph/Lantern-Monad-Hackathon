@@ -8,9 +8,38 @@ with their position uncertainty, to a contract on Monad testnet, and check
 each other's finds. The contract refuses a check from the finder's own
 agency or from too far away, and marks a find confirmed or disputed.
 
-**Live site: https://lantern-teal.vercel.app**. `/` replays the demo runs and
-`/chain.html` reads the contract live. Mission Control, `web/mission.html`,
-goes up with the next publish.
+**Live site: https://lantern-teal.vercel.app**
+
+## The demo mission
+
+One run of `run_mission.py`, two rovers, replayed by the site with pauses at
+its checkpoints:
+
+1. The Surveyor (agency A) plans a route to two candidate sites from the
+   orbital map, which is too coarse to show small craters. Its lidar finds
+   them on the way and the route bends around them.
+2. At S1 it stops and surveys with its neutron sensor. S1 is dry, so nothing
+   goes on chain.
+3. At S2 it finds ice and posts the find, with its position uncertainty, to
+   the Lantern contract.
+4. The Prospector (agency B) reads the contract, sees a find from another
+   agency, drives there and runs its own instruments. Its check agrees, and
+   the contract marks the find confirmed.
+
+Both rovers navigate with the particle filter on rims seen by their cameras
+(`sim/vision.py`), and plan around steep ground and lidar hazards under a
+15 deg slope limit. What is still a stand-in is listed in the run log under
+`standins`.
+
+The site opens on the mission. Opened as `/?key=<DEMO_KEY>`, each
+play-through posts the find and the check to Monad testnet for real, through
+`web/api/chain.js`; without the key it replays the recorded hashes. Every
+transaction opens on Monadscan in a new window. `/chain.html` reads the
+contract live. The earlier two-run demo is still in the run list.
+
+Contract: Lantern at `0x67f9Bedb42C845307cB1Fd6551D07Df64bd3CE98`, Monad
+testnet (chain 10143), verified on Sourcify. Details in
+`sim/lantern_deployment.json`.
 
 ## Run it
 
@@ -22,9 +51,9 @@ pip install numpy scipy tifffile opencv-python matplotlib web3 python-dotenv vtk
 
 | To do this | Run | Then |
 |---|---|---|
-| The whole demo site | `python app.py` | builds what is missing, runs both demo runs if there are none, opens http://localhost:8000 |
-| Rerun the two demo runs | `python app.py --fresh` or `python run_demo.py` | runs land in `data/runs/` |
-| The 8-site Surveyor/Prospector mission | `python sim/roles.py run --render --publish-run data/runs` | adds the mission to `data/runs/index.json`; `python app.py`, then open `/mission.html` |
+| The demo site | `python app.py` | builds what is missing, opens http://localhost:8000 |
+| Rerun the demo mission | `python run_mission.py --stamp demo` | writes `data/runs/mission-demo`; posts for real when `.env` has the keys, `--no-chain` to use the stand-in, `--no-vision` for stand-in rims |
+| Rerun the two earlier demo runs | `python run_demo.py` | runs land in `data/runs/` |
 | Read the chain record | `python sim/chain.py finds` | needs no keys |
 | Publish the site | `python web/publish.py vercel` | see `docs/hosting.md` |
 
@@ -33,29 +62,32 @@ else `./data` (`sim/terrain.py`). To skip the terrain build, set
 `LANTERN_DATA=lantern_data`, the committed copy.
 
 **The chain.** With no keys, runs post to a stand-in and the site says the
-hashes are fake. To post for real, copy `.env.example` to `.env` and fill in
+hashes are stand-ins. To post for real, copy `.env.example` to `.env` and fill in
 `MONAD_RPC_URL` and two throwaway testnet keys, `AGENCY_A_PRIVATE_KEY` and
 `AGENCY_B_PRIVATE_KEY`, funded from the Monad faucet. Never commit `.env`.
-Every transaction links to Monadscan, which opens in a second window because
-it cannot be embedded.
+The hosted page's live posting keeps its keys in
+the Vercel project's environment, never in git (`docs/hosting.md`, "The demo
+mission and the live uplink").
 
 ## Where things are
 
 | Path | What it is |
 |---|---|
 | `app.py` | One command: terrain, display layer, web assets, runs, viewer |
-| `run_demo.py` | The two demo runs end to end: rover A finds, rover B checks |
+| `run_mission.py` | The demo mission: Surveyor surveys S1 and S2, posts the find, Prospector checks it |
+| `run_demo.py` | The two earlier demo runs, and the render and camera code the mission uses |
 | `sim/terrain.py`, `sim/terrain_display.py`, `sim/terrain_look.py` | Height grid and crater list from NASA LOLA; display-only surface detail |
 | `sim/nav.py` | Particle filter on rim points (ParticleNav) |
 | `sim/rover.py`, `sim/ice.py` | Planner under the 15 deg slope limit; hidden ice and the neutron sensor |
+| `sim/lidar.py`, `sim/vision.py` | Lidar hazards (top-down and first-person views); crater rims from camera frames |
 | `sim/scene.py` | 3D render: first-person lamp camera with depth, chase view |
 | `sim/chain.py` | Python client for the Lantern contract |
-| `sim/roles.py`, `sim/mission*.py`, `sim/registry_client.py`, `sim/evidence.py`, `sim/science.py` | Surveyor and Prospector mission, its store, evidence hashing |
+| `sim/roles.py`, `sim/mission*.py`, `sim/registry_client.py`, `sim/evidence.py`, `sim/science.py` | An earlier 8-site mission on the registry contract. Not used by the demo |
 | `sim/results.py`, `sim/survey.py` | Per-run results ledger and its contract client |
 | `contracts/` | **Lantern**, the demo's contract: finds, checks, safety zones. Foundry |
 | `registry/` | LunarDiscoveryRegistry, the mission's site registry. Not used by the demo |
 | `survey/` | LanternSurvey, the results ledger beside Lantern. Optional |
-| `web/` | The static site: `index.html` viewer, `mission.html`, `chain.html` |
+| `web/` | The static site: `index.html` (the mission), `chain.html` (the contract), `api/chain.js` (live posting on Vercel) |
 | `web/chain/` | Copies of `sim/lantern_*.json` for the site, made by `web/collect_chain.py` |
 | `lantern_data/` | Committed terrain, so a fresh clone runs without building |
 | `science/` | Mission Control's science preview and a sample record |

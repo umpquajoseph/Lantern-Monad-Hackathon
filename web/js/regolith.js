@@ -176,7 +176,14 @@ export function lampIntensity(hp, { camH, lampBelow, pitchDeg, refRange, refLeve
 // Fill-light intensity as sim/terrain_look.py: flat ground under the fill
 // alone shows at `level`, using that file's reference geometry (sun at elDeg,
 // mu = 0.7, phase 60 deg).
+// sim/scene.py _fill_rgb (step-6-scene, scene.py:1131), in display-linear
+// light before the tone curve: albedo * level * (wrap + (1 - wrap) * max(N.s, 0)).
+// The directional part is set so flat ground gets level * (1 - wrap) * sin(el)
+// through Hapke; the wrap part is ambient light (Lambert, albedo / pi).
+export const FILL_WRAP = 0.35;   // scene.py:1131, assumed there
 export function fillIntensity(hp, { level, elDeg }) {
-  const flat = hapkeRadf(Math.sin((elDeg * Math.PI) / 180), 0.7, (60 * Math.PI) / 180, hp);
-  return radianceFor(level) / flat;
+  const mu0 = Math.sin((elDeg * Math.PI) / 180);
+  const flat = hapkeRadf(mu0, 0.7, (60 * Math.PI) / 180, hp);
+  return (level * (1 - FILL_WRAP) * mu0) / flat;
 }
+export function fillAmbient(level) { return level * FILL_WRAP * Math.PI; }

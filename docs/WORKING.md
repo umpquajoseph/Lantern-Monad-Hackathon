@@ -25,7 +25,7 @@ another part calls.
 | Realism, third person: Hapke shading, rocks and the near backdrop in the site's 3D view | Joseph, agent `viewer` | `step-5-viewer` | `web/` | 11:36 | starting |
 | Realism check: Hapke values against Xu 2020, reference stills, comparisons with ShadowNav images | Joseph, agent `terrain` | `step-2-terrain-realism` | `sim/terrain*.py`, `docs/sources/` | 11:36 | starting |
 | Contract on Monad testnet with Foundry tests, and the Python client `sim/chain.py` (step 1) | Kellen, agent `chain` | `step-1-chain` | `contracts/`, `sim/chain.py`, `sim/lantern_abi.json`, `sim/lantern_deployment.json` | 10:50 | done 11:25, deployed on Monad testnet (address in `sim/lantern_deployment.json`), demo run on chain; ready to merge |
-| Live chain feed for the viewer: read-only browser reader of the contract, standalone page, wiring note for the viewer owner (brief `docs/briefs/chain-feed.md`) | Kellen, agent `chain-feed` | `step-5-chain-feed` | `web/js/chain.js`, `web/chain.html`, `web/collect_chain.py`, `web/chain/` | 12:00 | starting |
+| Live chain feed for the viewer: read-only browser reader of the contract, standalone page, wiring note for the viewer owner (brief `docs/briefs/chain-feed.md`) | Kellen, agent `chain-feed` | `step-5-chain-feed` | `web/js/chain.js`, `web/chain.html`, `web/collect_chain.py`, `web/chain/` | 12:00 | done 12:20, pushed; `web/chain.html` reads the live contract; wiring note for the viewer owner at the top of `chain.js` |
 | Briefs, review, merging into `joseph` | Joseph, lead session | `joseph` | `docs/`, `ops/PROTOCOL.md` | 10:00 | ongoing |
 
 ## Not claimed yet

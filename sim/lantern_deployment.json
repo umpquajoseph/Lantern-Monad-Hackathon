@@ -22,5 +22,6 @@
   "explorerContractUrl": "https://testnet.monadscan.com/address/0x67f9Bedb42C845307cB1Fd6551D07Df64bd3CE98",
   "deployedAt": "2026-11-15T19:22:40+00:00",
   "verified": "sourcify",
-  "verifiedAt": "2026-11-15T19:27:11Z"
+  "verifiedAt": "2026-11-15T19:27:11Z",
+  "frame": "LOLA south polar stereographic, metres, x east, y north; on chain as whole cm"
 }

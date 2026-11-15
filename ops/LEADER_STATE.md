@@ -267,3 +267,7 @@ Read mail, then `mv` it to `leader/archive/`.
   from 12:55 to 13:25 behind my own brief's "no heavy benchmarks before
   13:10" and never checked when 13:10 passed. RULE: any worker blocked on
   another gets checked at the stated time; never let a wait run silently.
+- 13:28 scene: 1250 has no log.json (site safe on 1108). run1 1250 frames
+  complete; run2 1255/~2290. 1250 tracks: run 2 A clears deep crater, 0 m
+  on no-go. Told scene not to wait on perf: agree split by mail, add
+  --resume in the driver, publish run 1 first (no rendering needed).

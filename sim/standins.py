@@ -114,14 +114,15 @@ class ChainStandin:
     STANDIN = "chain: in-memory record with the handoff check rule; tx hashes are fake (0xfa4efa4e...)"
     FAKE_PREFIX = "0xfa4efa4e"
 
-    def __init__(self):
+    def __init__(self, salt=""):
+        self.salt = salt  # makes fake hashes differ between runs
         self.finds = []
         self.last_tx = None
         self._n = 0
 
     def _tx(self, *parts):
         self._n += 1
-        h = hashlib.sha256(repr((self._n,) + parts).encode()).hexdigest()
+        h = hashlib.sha256(repr((self.salt, self._n) + parts).encode()).hexdigest()
         self.last_tx = self.FAKE_PREFIX + h[: 64 - 8]
         return self.last_tx
 

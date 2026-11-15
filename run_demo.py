@@ -79,7 +79,7 @@ def simulate(scn, terrain, slope, field=None):
     rims_rng = {"A": rng(3), "B": rng(13)}
     goal_a = (x0 + scn["a_goal"][0], y0 + scn["a_goal"][1])
     A.set_goal(goal_a)
-    chain = ChainStandin()
+    chain = ChainStandin(salt=f"{scn['key']}-{seed}")
     sensor = IceSensor(field, rng(7)) if field is not None else None
 
     mode = {"A": "survey", "B": "wait" if field is not None else "off"}
@@ -236,6 +236,7 @@ def main():
     ap.add_argument("--only", choices=[s["key"] for s in SCENARIOS], default=None)
     ap.add_argument("--frame-every", type=int, default=1, help="render a first-person frame every N steps a rover moves")
     ap.add_argument("--no-render", action="store_true", help="simulate and write logs without frames")
+    ap.add_argument("--stamp", default=None, help="run_id suffix (default: now, YYYYMMDD-HHMM); reuse one to overwrite a run")
     args = ap.parse_args()
 
     t = time.perf_counter()
@@ -245,7 +246,7 @@ def main():
     slope = SlopeMap(height, x0, y0, cell)
     print(f"terrain {Path(tpath).name} loaded in {time.perf_counter() - t:.1f}s")
     out = Path(args.out)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    stamp = args.stamp or datetime.now().strftime("%Y%m%d-%H%M")
     index = []
     for scn in SCENARIOS:
         if args.only and scn["key"] != args.only:

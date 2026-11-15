@@ -25,6 +25,24 @@ forge verify-contract <address> src/Lantern.sol:Lantern --chain 10143 \
 (docs.monad.xyz/guides/verify-smart-contract/foundry; Monadscan's own verifier needs an
 API key.) Redeploying gives a clean record: every find ever posted stays on the contract.
 
+## Before the demo: a clean record
+
+Every find ever posted stays on the contract, including the smoke tests. Shortly before the
+demo, from the repo root:
+
+1. `contracts/deploy.sh` deploys a fresh contract, verifies it on Sourcify and rewrites
+   `sim/lantern_deployment.json`. Costs about 0.3 MON from agency A. Check balances first:
+   `cast balance --ether <address> --rpc-url https://testnet-rpc.monad.xyz` (each demo run
+   is about 0.1 MON more).
+2. Commit `sim/lantern_deployment.json` (and `sim/lantern_abi.json` if the contract changed),
+   push, and have the lead merge it. Any copy of the deployment file elsewhere (for example
+   under `web/`) must be refreshed from this one. If the results ledger (`survey/`,
+   `LanternSurvey`, branch `step-7-results`) is in use, redeploy it too, after this one: its
+   writers come from this Lantern's `isAgency`.
+3. Re-run `run_demo.py` so the run logs carry the new address and real hashes, then the
+   viewer's `web/collect_runs.py` (or `python app.py --fresh` on the integration branch).
+4. `python sim/chain.py finds` should list only the demo's finds, starting at #0.
+
 The Python side is `sim/chain.py`; the formats it gives are in `docs/handoffs.md`. For the
 demo spine, `sim.chain.run_scope()` is a drop-in for `ChainStandin` (see the module docstring).
 Network facts (chain ID 10143, RPC, explorers, faucet): https://docs.monad.xyz/developer-essentials/testnet

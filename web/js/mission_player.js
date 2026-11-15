@@ -2,8 +2,9 @@
 // "Mission log"). The player owns two things the plain replay does not:
 //
 //  1. Checkpoints: while playing, crossing a checkpoint step with pause=true
-//     stops the clock there and shows the checkpoint's label and line. Play
-//     goes on. Jumping backwards re-arms the checkpoints after the new time,
+//     pauses there at once and shows the checkpoint's label and line until
+//     Play goes on (asked for: "when it reaches a checkpoint it hits the pause
+//     button and doesnt wait at all"). Jumping backwards re-arms the checkpoints after the new time,
 //     so a second pass through pauses again.
 //  2. Live chain: with ?key=... in the URL, crossing a step that holds a chain
 //     event (find, check) pauses, posts that call for real through the site's
@@ -16,15 +17,10 @@
 // loop, player.rewound(t) on any backward jump, player.restart() at t = 0.
 import { LiveChain } from "./live_chain.js";
 
-// Wall-clock seconds a checkpoint holds the replay before it plays on by itself
-// (asked for: "shorten down the checkpoint stops to 3 seconds and make it not
-// require me to unpause it"). Live chain posts still wait for their transaction.
-export const CHECKPOINT_HOLD_S = 3;
-
 export class MissionPlayer {
   constructor(run, hooks) {
     this.run = run;
-    this.hooks = hooks;          // { pause(), resume(), note(html|null), rerender() }
+    this.hooks = hooks;          // { pause(), resume(), note(html|null), rerender(), checkpoint()? }
     const m = run.log.mission || {};
     this.checkpoints = (m.checkpoints || []).filter((c) => c.pause).sort((a, b) => a.step - b.step);
     this.live = new LiveChain();
@@ -56,7 +52,6 @@ export class MissionPlayer {
 
   /** Arm the checkpoints after t again (a backward jump); live posts only re-arm from the start. */
   rewound(t) {
-    this.holdToken = null;   // a pending auto-resume belongs to the old position
     const k = this.run.stepAt(t);
     for (const c of this.checkpoints) if (c.step > k) this.armed.add(c.id);
     if (t <= 0.5) this.restart();
@@ -84,16 +79,10 @@ export class MissionPlayer {
         this.armed.delete(c.id);
         this.active = c;
         const at = this.run.times[c.step];
-        if (this.hooks.hold) {
-          // The page holds the clock CHECKPOINT_HOLD_S of wall time, then plays on by itself.
-          this.hooks.hold(at, CHECKPOINT_HOLD_S);
-        } else {
-          // Pages without a hold hook (classic main.js): pause, then resume after the hold
-          // unless the viewer moved the clock or a newer hold replaced this one.
-          this.hooks.pause(at);
-          const token = (this.holdToken = {});
-          setTimeout(() => { if (this.holdToken === token && !this.busy) { this.holdToken = null; this.hooks.resume(); } }, CHECKPOINT_HOLD_S * 1000);
-        }
+        // Pause here and wait for Play. A page may decide where to pause (the
+        // mission page lets the final-site drill play out first).
+        if (this.hooks.checkpoint) this.hooks.checkpoint(at);
+        else this.hooks.pause(at);
         this.hooks.note(`<span class="cp-tag">Checkpoint</span> <b>${esc(c.label)}</b> · ${esc(c.say)}`);
         return true;
       }

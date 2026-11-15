@@ -16,7 +16,6 @@ import { MissionPlayer, ensureStyles } from "./mission_player.js";
 // The judges' page plays Kellen's mission log (run_mission.py, docs/handoffs.md
 // "Mission log"): checkpoints and live chain posts come from mission_player.js,
 // the chain feed from the log's find and check events.
-const AUTO_B_HOLD_MS = 3000;   // assumed: wall time on the Surveyor after its ice find, then follow the Prospector
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -50,7 +49,7 @@ const MODE_SHORT = { local: "Local chain", monad: "Monad testnet", offline: "Off
 const STAGE_N = { None: 0, Candidate: 1, SurveyorInspected: 2, ProspectorAnalyzed: 3 };
 const SITE_COLOR = { Candidate: 0x9aa7b8, Positive: ICE_HEX, Negative: 0x8d939b, Inconclusive: 0xd9b44a, Analyzed: 0x58b4ff };
 const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop (Ritvik's short stops)
-const FOCUS_WALL_S = 3;    // asked for: every stop about 3 s in all; a mission stop (135-270 s of sim time) plays in this many real seconds
+const FOCUS_WALL_S = 3;    // asked for: the final-site drill plays in about this many real seconds (135-270 s of sim time)
 const FOCUS_LEAD_S = 3;    // the close-up starts this many sim seconds before the stop
 const FOCUS_TAIL_S = 3;    // and holds this long after it
 const NARROW = matchMedia("(max-width: 760px)");
@@ -60,10 +59,10 @@ const S = {
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
   opts: { fill: false, routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
   player: null,        // MissionPlayer: checkpoints and live chain
-  autoB: { armed: true, at: 0 },
-  holdUntil: 0,        // wall time (performance.now) a checkpoint hold ends; 0 = no hold   // switch to the Prospector once after the Surveyor's find
+  autoB: { armed: true, pending: false },   // switch to the Prospector once after the Surveyor's find
+  pauseAtT: 0,         // a checkpoint met during the drill pauses here, when the drill ends; 0 = none
 };
-let terrain, world, map, rigs = {}, ov, sci = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
+let terrain, world, map, rigs = {}, ov, sci = [], drill = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
 let satObjs = [], tagEls = {}, extras = {}, dressed = {}, odo = {}, susp = {};
 // Rover camera, as sim/scene.py: 640x480, 60 deg wide, 15 deg down, 2.5 m up.
 const FP = { w: 640, h: 480, pitch: (15 * Math.PI) / 180, camH: 2.5, fx: 320 / Math.tan((30 * Math.PI) / 180) };
@@ -135,29 +134,25 @@ async function openRun(entry) {
   });
   if (!sci.length) sci = missionScience(run);
   sci.sort((a, b) => a.t0 - b.t0);
+  // Asked for: no slow-mo at the Surveyor's sites, only the drill at the final site.
+  drill = sci.filter((e) => e.agency === "B").slice(-1);
   reg.sort((a, b) => a.t - b.t);
   hazards = log.hazards || [];
   planned = log.planned_routes || [];
 
   ensureStyles();
   S.player = new MissionPlayer(run, {
-    pause: (tt) => { S.holdUntil = 0; S.playing = false; S.t = tt; setPlayIcon(); },
-    resume: () => { S.holdUntil = 0; S.playing = true; setPlayIcon(); },
-    // A checkpoint: stop the clock here for `sec` of wall time, still "playing", then go on.
-    hold: (tt, sec) => {
+    pause: (tt) => { S.pauseAtT = 0; S.playing = false; S.t = tt; setPlayIcon(); },
+    resume: () => { S.pauseAtT = 0; S.playing = true; setPlayIcon(); },
+    // A checkpoint pauses at once and waits for Play. One inside the final-site
+    // drill lets the drill play out first, then pauses where it ends.
+    checkpoint: (tt) => {
       S.t = tt;
-      // A checkpoint inside a science stop: the stop's own short playback is the
-      // hold, so no freeze on top. The card shows until the stop ends.
-      const ev = sci.find((e) => tt >= e.t0 - FOCUS_LEAD_S && tt <= e.t1 + FOCUS_TAIL_S);
-      if (ev && S.focus) { S.holdUntil = 0; S.cardUntilT = ev.t1 + FOCUS_TAIL_S; return; }
-      S.cardUntilT = 0; S.holdUntil = performance.now() + sec * 1000; S.holdSec = sec;
+      const ev = drill.find((e) => tt >= e.t0 - FOCUS_LEAD_S && tt <= e.t1 + FOCUS_TAIL_S);
+      if (ev) { S.pauseAtT = ev.t1 + FOCUS_TAIL_S; return; }
+      S.pauseAtT = 0; S.playing = false; setPlayIcon();
     },
-    note: (html) => {
-      const b = $("checkpoint");
-      b.hidden = !html;
-      b.innerHTML = (html || "") + (html && S.holdUntil ? `<i class="cp-bar" style="animation-duration:${S.holdSec}s"></i>` : "");
-      b.classList.toggle("holding", !!(html && S.holdUntil));
-    },
+    note: (html) => { const b = $("checkpoint"); b.hidden = !html; b.innerHTML = html || ""; },
     rerender: () => { $("chain-now").dataset.key = ""; render(true); },
   });
   setChainBadge();
@@ -585,13 +580,13 @@ function buildTimeline() {
 // ---------------------------------------------------------------- controls
 function bind() {
   $("play").onclick = togglePlay;
-  $("checkpoint").onclick = (e) => { if (S.holdUntil && !e.target.closest("a")) S.holdUntil = performance.now(); };   // go on now
-  $("restart").onclick = () => { S.holdUntil = 0; S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; S.player.restart(); rearmAutoB(0); render(true); };
+  // A click on a paused checkpoint card plays on, like the Play button.
+  $("checkpoint").onclick = (e) => { if (!S.playing && !e.target.closest("a")) togglePlay(); };
+  $("restart").onclick = () => { S.pauseAtT = 0; S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; S.player.restart(); rearmAutoB(0); render(true); };
   $("speed").onchange = (e) => (S.speed = Number(e.target.value));
-  $("focus").onchange = (e) => { S.focus = e.target.checked; if (!S.focus) exitFocus(); };
   $("scrub").oninput = (e) => {
     const nt = (Number(e.target.value) / 1000) * S.run.tEnd;
-    S.holdUntil = 0;
+    S.pauseAtT = 0;
     if (nt < S.t) { S.player.rewound(nt); rearmAutoB(nt); }
     else if (!S.player.busy) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
     S.t = nt; exitFocus(); S.dismissed = null; render(true);
@@ -662,26 +657,48 @@ function applyInsets() {
   $("in-lidar").hidden = !S.run.hasLidar;
 }
 
-// After the Surveyor posts its ice find, hold on it a moment, then follow the
-// Prospector, once per play-through. A rover picked by hand in the hold wins.
-function rearmAutoB(t) {
-  const f = S.run.events.find((e) => e.type === "find");
-  if (f && t >= S.run.times[f.k]) return;
-  // The auto switch fired in this play-through: going back before the find returns to the Surveyor.
-  if (!S.autoB.armed && S.autoB.switched && S.rover === "B") setRover("A");
-  S.autoB = { armed: true, at: 0 };
+// When the Surveyor is finished (at rest after its last site, after it drives
+// clear of the find) the replay pauses; the view follows the Prospector the
+// moment Play is pressed, once per play-through (asked for: "when a is finished
+// it pauses and when i unpause it switches to b"). A rover picked by hand while
+// paused wins. If a checkpoint already paused on that step (today's log: the find
+// and the dispatch), that one pause does both.
+function aDoneT() {
+  const run = S.run;
+  const cp = ((run.log.mission || {}).checkpoints || []).find((c) => c.id === "done-A");
+  if (cp) return run.times[cp.step];
+  const f = run.events.find((e) => e.type === "find");
+  const k0 = f ? f.k : 0;
+  const k = run.steps.findIndex((s, i) => i >= k0 && (s.rovers.A || {}).phase === "done");
+  return k < 0 ? null : run.times[k];
 }
 
-function autoB(prevT, t, now) {
-  const f = S.run.events.find((e) => e.type === "find");
-  if (!f) return;
-  const ft = S.run.times[f.k];
-  if (S.autoB.armed && !S.autoB.at && prevT < ft && t >= ft) S.autoB = { armed: true, at: now + AUTO_B_HOLD_MS, rover: S.rover };
-  if (S.autoB.at && now >= S.autoB.at) {
-    const untouched = S.rover === S.autoB.rover;
-    S.autoB = { armed: false, at: 0, switched: untouched && S.rover !== "B" };
-    if (S.autoB.switched) { exitFocus(true); setRover("B"); }
-  }
+function rearmAutoB(t) {
+  const ta = aDoneT();
+  if (ta != null && t >= ta) return;
+  // The auto switch fired in this play-through: going back before the find returns to the Surveyor.
+  if (!S.autoB.armed && S.autoB.switched && S.rover === "B") setRover("A");
+  S.autoB = { armed: true, pending: false };
+}
+
+function autoB(prevT, t) {
+  const ta = aDoneT();
+  if (ta == null || !S.autoB.armed || S.autoB.pending || !(prevT < ta && t >= ta)) return;
+  S.autoB = { armed: true, pending: true, rover: S.rover };
+  const b = $("checkpoint"), hint = ` <span class="cp-hint">Play follows Prospector B.</span>`;
+  if (S.playing) {
+    // No checkpoint here in this log: pause on the Surveyor's last step.
+    S.t = ta; S.playing = false; setPlayIcon();
+    const st = stateAt("A", ta);
+    b.innerHTML = `<span class="cp-tag">Checkpoint</span> <b>Surveyor finished</b> · ${esc((st && st.objective) || "survey complete")}.` + hint;
+  } else if (!b.hidden && !b.innerHTML.includes("cp-hint") && !b.innerHTML.includes("Surveyor finished")) b.innerHTML += hint;
+  b.hidden = false;
+}
+
+function fireAutoB() {
+  const untouched = S.rover === S.autoB.rover;
+  S.autoB = { armed: false, pending: false, switched: untouched && S.rover !== "B" };
+  if (S.autoB.switched) { exitFocus(true); setRover("B"); }
 }
 
 function setChainBadge() {
@@ -698,7 +715,7 @@ function setChainBadge() {
 function stepBy(n) {
   const run = S.run;
   if (S.player.busy) return;
-  S.holdUntil = 0;
+  S.pauseAtT = 0;
   S.playing = false;
   setPlayIcon();
   const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(S.t) + n));
@@ -717,11 +734,10 @@ function setPlayIcon() {
 
 function togglePlay() {
   if (S.player && S.player.busy) return;   // a live chain post is in flight
-  // Pause during a checkpoint hold: stay here, keep the card, no auto-resume.
-  if (S.holdUntil) { S.holdUntil = 0; S.playing = false; $("checkpoint").classList.remove("holding"); setPlayIcon(); return; }
   if (S.t >= S.run.tEnd) { S.t = 0; S.player.restart(); rearmAutoB(0); }
   S.playing = !S.playing;
-  if (S.playing && S.player && !(S.player.active && S.player.active.step === 0 && S.t === 0)) $("checkpoint").hidden = true;
+  if (S.playing && !S.player.busy) $("checkpoint").hidden = true;
+  if (S.playing && S.autoB.pending) fireAutoB();
   setPlayIcon();
 }
 
@@ -824,7 +840,7 @@ function exitFocus(byUser = false) {
 }
 
 const focusSpeed = (ev) => Math.min(S.speed, Math.max(FOCUS_SPEED, (ev.t1 - ev.t0) / FOCUS_WALL_S));
-const activeSci = (t) => sci.find((e) => t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + FOCUS_TAIL_S);
+const activeSci = (t) => drill.find((e) => t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + FOCUS_TAIL_S);
 
 // -------------------------------------------------------------------- loop
 let last = performance.now(), lastPanelAt = 0;
@@ -832,21 +848,20 @@ function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const prevT = S.t;
-  if (S.holdUntil && now >= S.holdUntil) { S.holdUntil = 0; $("checkpoint").hidden = true; }
-  if (S.cardUntilT && S.t > S.cardUntilT) { S.cardUntilT = 0; $("checkpoint").hidden = true; }
-  if (S.playing && S.run && !S.holdUntil) {
+  if (S.playing && S.run) {
     let adv = dt * (S.focusEv ? focusSpeed(S.focusEv) : S.speed);
     if (S.focus && !S.focusEv) {
       // Never jump over a science stop at high speed: stop at its start.
-      const next = sci.find((e) => e.t0 - FOCUS_LEAD_S > S.t && e.t0 - FOCUS_LEAD_S <= S.t + adv);
+      const next = drill.find((e) => e.t0 - FOCUS_LEAD_S > S.t && e.t0 - FOCUS_LEAD_S <= S.t + adv);
       if (next) adv = next.t0 - FOCUS_LEAD_S - S.t;
     }
     S.t = Math.min(S.run.tEnd, S.t + adv);
+    if (S.pauseAtT && S.t >= S.pauseAtT) { S.t = S.pauseAtT; S.pauseAtT = 0; S.playing = false; setPlayIcon(); }
     if (S.t >= S.run.tEnd) { S.playing = false; setPlayIcon(); }
     S.player.tick(prevT, S.t);   // a checkpoint or a live post pauses and sets S.t
   }
   if (S.run) {
-    autoB(prevT, S.t, now);
+    autoB(prevT, S.t);
     const ev = S.focus ? activeSci(S.t) : null;
     if (ev && ev !== S.focusEv && ev !== S.dismissed) enterFocus(ev);
     if (!ev && S.focusEv) exitFocus();

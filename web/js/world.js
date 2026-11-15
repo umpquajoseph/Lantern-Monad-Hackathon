@@ -46,6 +46,7 @@ const PATCH_WORKERS = 2;
 const PATCH_TAPER_M = 0.75;    // blend to the tile surface over the patch's outer edge
 const COARSE_STRIDE = 2;       // coarse map drawn at 2 m
 const FINE_PAD_M = 70;         // load 0.25 m tiles within this of each rover
+const FINE_VIEW_M = 150;       // viewer only, assumed: fine tiles and patches draw within this of the camera (0.25 m is ~1.5 px there)
 const DRAPE_M = 0.18;          // lines float this far above the ground
 const LABEL_GAP_PX = 6;       // viewer only, assumed: a rover tag hides when a find label is this close
 const PARTICLE_SIZE = 0.3;    // viewer only, assumed: point size for an average-weight particle
@@ -516,6 +517,30 @@ uniform vec4 uP1;`)
     this.patchRects[a === "A" ? 0 : 1].set(px0 - this.o.x, py0 - this.o.y, px0 + span - this.o.x, py0 + span - this.o.y);
   }
 
+  // Far from the camera, the 0.25 m tiles and the 5 cm patches go sub-pixel
+  // and their rim lips alias into dark speckle with a hard outline where
+  // they stop. Beyond FINE_VIEW_M they hide and the coarse map draws there.
+  applyDistanceLod() {
+    const cam = this.camera.position;
+    for (const [key, mesh] of this.fineMeshes) {
+      if (!mesh) continue;
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      const near = mesh.geometry.boundingBox.distanceToPoint(cam) < FINE_VIEW_M;
+      if (mesh.visible !== near) { mesh.visible = near; this.setMask(key, near ? 1 : 0); }
+    }
+    for (const a of Object.keys(this.patchActive || {})) {
+      const p = this.patchActive[a] && this.patches[a].get(this.patchActive[a]);
+      if (!p || !p.mesh) continue;
+      if (!p.mesh.geometry.boundingBox) p.mesh.geometry.computeBoundingBox();
+      const near = p.mesh.geometry.boundingBox.distanceToPoint(cam) < FINE_VIEW_M;
+      if (p.mesh.visible === near) continue;
+      p.mesh.visible = near;
+      const [px0, py0, span] = p.rect, r = this.patchRects[a === "A" ? 0 : 1];
+      if (near) r.set(px0 - this.o.x, py0 - this.o.y, px0 + span - this.o.x, py0 + span - this.o.y);
+      else r.set(1e9, 1e9, -1e9, -1e9);
+    }
+  }
+
   setMask(key, v) {
     const [r, c] = key.split("_").map(Number);
     this.mask.image.data[r * this.terrain.ntc + c] = v ? 255 : 0;
@@ -890,6 +915,7 @@ uniform vec4 uP1;`)
   }
 
   render() {
+    this.applyDistanceLod();
     this.controls.update();
     // The fill comes from the side of the view, never from behind the camera.
     const cam = this.camera.position, t = this.controls.target;

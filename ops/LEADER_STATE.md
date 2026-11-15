@@ -271,3 +271,9 @@ Read mail, then `mv` it to `leader/archive/`.
   complete; run2 1255/~2290. 1250 tracks: run 2 A clears deep crater, 0 m
   on no-go. Told scene not to wait on perf: agree split by mail, add
   --resume in the driver, publish run 1 first (no rendering needed).
+- 13:29 perf profile (run 1, 30 steps, --vision, detail): 1.08 s/step;
+  first_person 759 ms (horizon maps 171, shadow lookups 92, Hapke 75...),
+  lidar 118, set_rover 113, vision 37. Big wins: pass 2 re-renders pass 1's
+  frames (35-45%), one core only (threads), camera horizon duplicates lamp's
+  (66 ms). Order approved: pool sizing, pass reuse, threads, horizon. Mail
+  after each fix.

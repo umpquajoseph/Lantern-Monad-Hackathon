@@ -312,3 +312,26 @@ kbd { font: 500 12px var(--mono); background: rgba(255,255,255,.08); border: 1px
   background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; white-space: nowrap; pointer-events: none; }
 .vnote[hidden] { display: none; }
 @media (max-width: 760px) { .vnote { top: auto; bottom: calc(var(--bar-h) + 8px); font-size: 11px; white-space: normal; text-align: center; width: calc(100vw - 32px); } }
+/* Story line, top centre under the rover picker; the fill note under it */
+.story { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 9; max-width: min(620px, calc(100vw - 2 * var(--gut) - 360px * 2));
+  text-align: center; font-size: 14px; line-height: 1.35; color: var(--fg); background: var(--glass-2, rgba(14,14,16,.82)); border: 1px solid var(--line);
+  border-radius: 10px; padding: 6px 14px; backdrop-filter: blur(8px); pointer-events: none; }
+.story:empty { display: none; }
+.vnote { top: auto; bottom: calc(var(--bar-h) + 24px); left: calc(var(--gut) + 8px); transform: none; }
+.ib.step { font-size: 22px; line-height: 1; }
+.hud-src { font-size: 11px; color: var(--dim); margin-top: 3px; }
+.credit { margin-top: 12px; font-size: 12px; } .credit a { color: var(--dim); }
+@media (max-width: 1100px) { .story { max-width: calc(100vw - 2 * var(--gut) - 40px); top: 64px; font-size: 13px; } }
+@media (max-width: 760px) { .story { top: 100px; } }
+/* Story and fill note share one centred block under the rover picker */
+.topline { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 9; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  max-width: min(620px, calc(100vw - 2 * var(--gut) - 720px)); pointer-events: none; }
+.topline .story, .topline .vnote { position: static; transform: none; max-width: none; }
+.topline .vnote { white-space: normal; text-align: center; font-size: 11px; padding: 2px 10px; }
+@media (max-width: 1100px) { .topline { max-width: calc(100vw - 2 * var(--gut) - 40px); top: 64px; } }
+@media (max-width: 760px) { .topline { top: 100px; } .topline .vnote { display: none; } }
+/* Keep the story between the left panel (ends ~378 px) and the right column (~340 px wide) */
+.topline { left: 392px; right: 344px; transform: none; max-width: none; }
+.topline .story { max-width: 620px; }
+.panel.closed ~ .topline { left: 80px; }
+@media (max-width: 760px) { .topline { left: var(--gut); right: var(--gut); } }

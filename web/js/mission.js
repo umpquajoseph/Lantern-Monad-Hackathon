@@ -579,6 +579,8 @@ function bind() {
     else if (!S.player.busy) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
     S.t = nt; exitFocus(); S.dismissed = null; render(true);
   };
+  $("step-back").onclick = () => stepBy(-1);
+  $("step-fwd").onclick = () => stepBy(1);
   $("zoom-in").onclick = () => zoom(1 / 1.35);
   $("zoom-out").onclick = () => zoom(1.35);
   document.querySelectorAll("#rover-seg button").forEach((b) => (b.onclick = () => { exitFocus(true); setRover(b.dataset.rover); }));
@@ -623,6 +625,8 @@ function bind() {
     // keep focus after a click, so they still let the shortcuts through.
     if (e.target.closest?.("input:not([type=range]):not([type=checkbox]), select, textarea")) return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+    if (e.code === "ArrowRight") { e.preventDefault(); stepBy(1); }
+    if (e.code === "ArrowLeft") { e.preventDefault(); stepBy(-1); }
     if (e.key === "Escape") $("drawer").hidden = true;
     if (e.key === "+" || e.key === "=") zoom(1 / 1.35);
     if (e.key === "-") zoom(1.35);
@@ -671,6 +675,21 @@ function setChainBadge() {
   badge.textContent = live ? "Monad testnet · live" : real ? "Monad testnet" : "Recorded";
   badge.title = live ? "Each find and check is signed and sent to Monad testnet as the replay crosses it."
     : real ? `Contract ${run.chain.contract}` : "Recorded transactions from the mission log. Add ?key= to post them live.";
+}
+
+// One logged step (one sensor frame) back or forward, paused (main.js stepBy).
+function stepBy(n) {
+  const run = S.run;
+  if (S.player.busy) return;
+  S.playing = false;
+  setPlayIcon();
+  const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(S.t) + n));
+  const back = run.times[k] < S.t;
+  S.t = run.times[k];
+  if (back) { S.player.rewound(S.t); rearmAutoB(S.t); }
+  else $("checkpoint").hidden = true;
+  exitFocus(true);
+  render(true);
 }
 
 function setPlayIcon() {
@@ -823,6 +842,7 @@ function render(panels) {
   world.currentT = t;
   world.update(t, { tracks: S.opts.routes, particles: S.opts.particles });
   updateSteepShade(t);
+  updatePlan3D(t);
   for (const a of run.agencies) {
     updateSuspension(a, t);
     const ev = sci.filter((e) => e.agency === a && t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + 1).at(-1) || null;
@@ -1078,6 +1098,36 @@ function drawFpOverlay(fr, cv, small) {
   }
 }
 
+// ------------------------------------------------------- planned route in 3D
+// Each rover's logged plan for the shown step ("plan", world xy, out to ~20 m,
+// re-planned every step) draped on the ground as amber dashes, the same line
+// the rover camera and the satellite map draw. Rebuilt when the step changes.
+const PLAN_HEX = 0xffc83c;   // the camera's plan colour, rgba(255, 200, 60) (map.js PLAN_CSS)
+const plan3d = {};
+function updatePlan3D(t) {
+  const run = S.run, k = run.stepAt(t);
+  for (const a of run.agencies) {
+    let o = plan3d[a];
+    if (!o) {
+      const mat = world.lineMat(PLAN_HEX, 3, { dashed: true, opacity: 0.95 });
+      mat.dashSize = 0.6; mat.gapSize = 0.4;   // metres, as the camera's dashes
+      o = plan3d[a] = { mat, line: null, k: -1 };
+    }
+    const show = S.opts.routes;
+    if (o.k !== k) {
+      o.k = k;
+      if (o.line) { world.scene.remove(o.line); o.line.geometry.dispose(); o.line = null; }
+      const plan = (run.steps[k].rovers[a] || {}).plan;
+      if (plan && plan.length > 1) {
+        o.line = world.drape(plan, o.mat, 0.5).line;
+        o.line.renderOrder = 3;
+        world.scene.add(o.line);
+      }
+    }
+    if (o.line) o.line.visible = show;
+  }
+}
+
 // ------------------------------------------------------- steep ground
 // The planner's no-go ground (assets/terrain/nogo.png: sim/rover.py SlopeMap,
 // over 15 deg across 2 m, the overhead map's layer) shaded red on the 3D
@@ -1241,6 +1291,7 @@ class MissionMap extends MapView {
 
 // ------------------------------------------------------------------ panels
 function renderPanels(t) {
+  renderStory(t);
   renderRover(t);
   renderToast(t);
   renderScience(t);
@@ -1292,7 +1343,27 @@ function navTable(run, k) {
   const nav = run.nav ? run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim() : "";
   return `<table class="navt"><thead><tr><th></th><th>Steering by</th><th title="The rover's own 1-sigma estimate of its position error">Thinks within</th>` +
     `<th title="Distance from the estimate to the hidden true position">Actually off</th><th title="Where odometry alone would put it, distance from the true position">Odometry alone</th></tr></thead>` +
-    `<tbody>${rows}</tbody></table>` + (nav ? `<div class="hint small" title="${esc(run.nav)}">${esc(nav)}${S.opts.particles ? "; dots in 3D are its particles" : ""}</div>` : "");
+    `<tbody>${rows}</tbody></table>` + navSources(run);
+}
+
+function navSources(run) {
+  const out = [];
+  if (run.nav) {
+    const nav = run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim();
+    const dots = run.hasParticles !== false && S.opts.particles ? "; dots in 3D are its particles" : "";
+    out.push(`<div class="hud-src" title="${esc(run.nav)}">${esc(nav)}${dots}</div>`);
+  }
+  const si = run.standin || {};
+  const rims = si.rims ? "stand-ins from the crater map" : run.log.vision ? "crater rims from the camera frames" : "";
+  if (rims) {
+    const sq = S.opts.rims ? "; squares on the rover camera" : "";
+    out.push(`<div class="hud-src" title="${esc(run.log.vision || si.rims || "")}">Steers on ${rims}${sq}</div>`);
+  }
+  if (run.planner) {
+    const short = run.planner.replace(/^planner:\s*/, "").split(/[;(]/)[0].replace(/[.,\s]+$/, "");
+    out.push(`<div class="hud-src" title="${esc(run.planner)}">Route: ${esc(short)}; amber dashes on the camera</div>`);
+  }
+  return out.join("");
 }
 
 // A mission site's verdict once the Surveyor has published it (log.states).
@@ -1301,6 +1372,39 @@ function siteVerdict(id, t) {
   if (!site) return null;
   const pub = ((S.run.log.states || {}).A || []).find((q) => q.state === "PUBLISHING" && q.objective.includes(id));
   return pub && t >= pub.t ? site.verdict : null;
+}
+
+// One sentence on what is happening now, for someone who just walked up
+// (main.js story() and missionStory() at 4f51c54, for the mission log).
+function renderStory(t) {
+  const run = S.run, k = run.stepAt(t);
+  const html = story(run, k, run.findsAt(k));
+  if ($("story").dataset.html !== html) { $("story").innerHTML = html; $("story").dataset.html = html; }
+}
+
+function story(run, k, finds) {
+  const f = finds[0];
+  if (!f) return missionStory(run, k);
+  const other = run.agencies.find((x) => x !== f.agency);
+  const nm = (ag) => `The ${ROLE[ag] || "rover"} (${ag})`;
+  if (f.status === "reported") return `${nm(f.agency)} posted a find at <b>±${f.sigma.toFixed(1)} m</b>. ${nm(other)}, from another agency, reads it from the chain and drives there to check.`;
+  if (f.status === "confirmed") return `${nm(other)} measured ice at the reported spot. The find is <b>confirmed</b> on chain.`;
+  return `${nm(other)} found no ice at the reported spot: ${f.agency}'s position was off by more than the ice patch. The find stays on the record, <b>disputed</b>.`;
+}
+
+function missionStory(run, k) {
+  const name = (ag) => `The ${ROLE[ag] || "rover"} (${ag})`;
+  const [sv, pr] = ["A", "B"].map((ag) => (run.agencies.includes(ag) ? ag : run.agencies[0]));
+  const phase = run.rover(sv, k).phase || "";
+  const m = /^(to|survey) (\S+)/.exec(phase);
+  const sites = (run.log.mission || {}).sites || [];
+  const at = m ? sites.findIndex((x) => x.id === m[2]) : -1;
+  const dry = sites.slice(0, Math.max(at, 0)).filter((x) => x.verdict === "dry").map((x) => x.id);
+  const before = dry.length ? `${dry.join(" and ")} ${dry.length > 1 ? "were" : "was"} dry. ` : "";
+  const doing = !m ? `${name(sv)} is ${esc(phase) || "driving"}.`
+    : m[1] === "to" ? `${name(sv)} drives to orbital candidate ${m[2]}.`
+    : `${name(sv)} surveys ${m[2]} for ice.`;
+  return `${before}${doing} ${name(pr)} waits for a find on chain.`;
 }
 
 // One line over the play bar: who is doing what, and how fast time runs.

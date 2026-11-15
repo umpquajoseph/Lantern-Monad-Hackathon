@@ -83,7 +83,7 @@
     <button data-tab="chain" title="On chain"><svg><use href="#i-chain"/></svg></button>
   </nav>
   <div class="pane-wrap">
-    <section class="pane" data-pane="rover"><div id="now"></div><h2>Navigation</h2><div id="navt"></div><div class="standin" id="standin" hidden></div></section>
+    <section class="pane" data-pane="rover"><div id="now"></div><h2>Navigation</h2><div id="navt"></div><div class="standin" id="standin" hidden></div><div class="credit"><a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">Navigation after ShadowNav, JPL 2023</a></div></section>
     <section class="pane" data-pane="science" hidden>
       <h2 id="sci-title">Science</h2>
       <div id="sci-empty" class="hint">No drilling yet.</div>
@@ -128,12 +128,14 @@
 <button class="back-chip" id="back-chip" hidden>Back to rover view</button>
 
 <div class="toast" id="toast" hidden></div>
-<div class="vnote" id="vnote">Fill light added so you can see the ground. The rovers see only their lamps.</div>
+<div class="topline"><div class="story" id="story"></div><div class="vnote" id="vnote">Fill light added so you can see the ground. The rovers see only their lamps.</div></div>
 <div class="checkpoint cp-float" id="checkpoint" hidden></div>
 
 <footer class="playbar">
   <button class="play" id="play" aria-label="Play" title="Play (Space)"><svg><use href="#i-play"/></svg></button>
   <button class="ib" id="restart" aria-label="Reset" title="Reset"><svg><use href="#i-reset"/></svg></button>
+  <button class="ib step" id="step-back" aria-label="Step back" title="One step back (Left arrow)">&#8249;</button>
+  <button class="ib step" id="step-fwd" aria-label="Step forward" title="One step forward (Right arrow)">&#8250;</button>
   <div class="clock" id="clock">T+00:00:00</div>
   <div class="tl-track" id="tl-track">
     <div class="tl-fill" id="tl-fill"></div>
@@ -205,6 +207,11 @@
   </section>
 
   <section>
+    <h3>Navigation</h3>
+    <p>In a dark crater the rovers find their position from the shadows their own lamps cast at crater rims, after JPL's ShadowNav (<a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">Cauligi et al. 2023, arXiv:2301.04630</a>). Each rover runs a particle filter on wheel odometry and the rim points it sees. The table under the rover cards shows where each rover thinks it is against where it is.</p>
+  </section>
+
+  <section>
     <h3>On chain</h3>
     <p>The Surveyor posts its find to the Lantern contract (<code>postFind</code>): position, how sure it is of that position, the reading and a hash of the data. The Prospector reads the find from the chain, drives there, and posts its own reading (<code>checkFind</code>). The contract marks the find confirmed or disputed. Without <code>?key=</code> the feed shows the transactions recorded with the mission; with it, each one is signed and sent to Monad testnet as the replay crosses it.</p>
   </section>
@@ -213,6 +220,7 @@
     <h3>Controls</h3>
     <dl class="keys">
       <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
+      <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>One step back or forward</dd>
       <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom in or out</dd>
       <dt>Drag</dt><dd>Look around</dd>
       <dt><kbd>1</kbd> <kbd>2</kbd></dt><dd>Rover camera or satellite map full window (again to go back)</dd>

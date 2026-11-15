@@ -55,11 +55,16 @@ float hapkeRadf(float mu0, float mu, float g) {
 }
 varying vec3 vViewPosition;
 struct LambertMaterial { vec3 diffuseColor; float specularStrength; };
+// Set per light by the light loop (see LIGHTS_BEGIN): directional lights are
+// the viewer fill, shaded Lambert as sim/scene.py shades its fill; spot
+// lights are the rover lamps, shaded Hapke.
+bool gFillLight = false;
 void RE_Direct_Lambert(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal,
     const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in LambertMaterial material,
     inout ReflectedLight reflectedLight) {
   float mu0 = dot(geometryNormal, directLight.direction);
   if (mu0 <= 0.0) return;
+  if (gFillLight) { reflectedLight.directDiffuse += directLight.color * mu0 * BRDF_Lambert(material.diffuseColor); return; }
   float mu = dot(geometryNormal, geometryViewDir);
   float g = acos(clamp(dot(directLight.direction, geometryViewDir), -1.0, 1.0));
   reflectedLight.directDiffuse += directLight.color * hapkeRadf(mu0, mu, g) * material.diffuseColor;
@@ -72,6 +77,17 @@ void RE_IndirectDiffuse_Lambert(const in vec3 irradiance, const in vec3 geometry
 #define RE_Direct RE_Direct_Lambert
 #define RE_IndirectDiffuse RE_IndirectDiffuse_Lambert
 `;
+
+// three's light loop, with each light marked fill (directional) or lamp.
+const LIGHTS_BEGIN = (() => {
+  const s = THREE.ShaderChunk.lights_fragment_begin;
+  const out = s
+    .replace("getDirectionalLightInfo( directionalLight, directLight );", "getDirectionalLightInfo( directionalLight, directLight ); gFillLight = true;")
+    .replace("getSpotLightInfo( spotLight, geometryPosition, directLight );", "getSpotLightInfo( spotLight, geometryPosition, directLight ); gFillLight = false;")
+    .replace("getPointLightInfo( pointLight, geometryPosition, directLight );", "getPointLightInfo( pointLight, geometryPosition, directLight ); gFillLight = false;");
+  if (out === s || !/gFillLight = true/.test(out)) console.error("regolith: light loop not marked; fill shades as Hapke");
+  return out;
+})();
 
 // opts:
 //   hapke       meta.hapke
@@ -114,6 +130,7 @@ export function regolith(opts) {
         `#ifdef USE_DETAIL_ALB\nuniform sampler2D uDetailAlb;\n#endif\n` +
         Object.keys(opts.uniforms || {}).map((k) => `uniform ${glslType(opts.uniforms[k].value)} ${k};`).join("\n"))
       .replace("#include <lights_lambert_pars_fragment>", HAPKE_GLSL)
+      .replace("#include <lights_fragment_begin>", LIGHTS_BEGIN)
       .replace("#include <map_fragment>", `
         #ifdef USE_ALB_FACTOR
           diffuseColor.rgb *= 1.0 + uS * (texture2D(uAlb, vAlbUv).r * (255.0 / 128.0) - 1.0);
@@ -178,12 +195,9 @@ export function lampIntensity(hp, { camH, lampBelow, pitchDeg, refRange, refLeve
 // mu = 0.7, phase 60 deg).
 // sim/scene.py _fill_rgb (step-6-scene, scene.py:1131), in display-linear
 // light before the tone curve: albedo * level * (wrap + (1 - wrap) * max(N.s, 0)).
-// The directional part is set so flat ground gets level * (1 - wrap) * sin(el)
-// through Hapke; the wrap part is ambient light (Lambert, albedo / pi).
+// Directional part and wrap part (ambient light) are both Lambert.
 export const FILL_WRAP = 0.35;   // scene.py:1131, assumed there
-export function fillIntensity(hp, { level, elDeg }) {
-  const mu0 = Math.sin((elDeg * Math.PI) / 180);
-  const flat = hapkeRadf(mu0, 0.7, (60 * Math.PI) / 180, hp);
-  return (level * (1 - FILL_WRAP) * mu0) / flat;
-}
+// The fill is shaded Lambert (albedo * N.L / pi), as scene.py's, so the
+// directional light's intensity is level * (1 - wrap) * pi.
+export function fillIntensity(level) { return level * (1 - FILL_WRAP) * Math.PI; }
 export function fillAmbient(level) { return level * FILL_WRAP * Math.PI; }

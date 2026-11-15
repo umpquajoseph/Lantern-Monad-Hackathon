@@ -26,11 +26,8 @@ const CHASE_BACK_M = 14, CHASE_UP_M = 8;  // scene.py, assumed
 const EXPOSURE_REF_RANGE_M = 5, EXPOSURE_REF_LEVEL = 0.55;  // scene.py:80-81 (2c8af7e)
 const LAMP_RGB = [1.0, 0.93, 0.8];   // sim/terrain_look.py, assumed (linear)
 const FILL_RGB = [0.62, 0.68, 0.82]; // sim/terrain_look.py, assumed (linear)
-const FILL_LEVEL = 0.22, FILL_EL_DEG = 35;  // sim/scene.py:156-157, assumed: display-linear, before gamma
-// Viewer only, assumed: the fill comes from this far round from the view
-// direction, so it never sits behind the camera, where Hapke's opposition
-// surge would make a bright blob (terrain worker, 20261115-114023).
-const FILL_FROM_VIEW_DEG = 110;
+const FILL_LEVEL = 0.22;                    // sim/scene.py:156, assumed: display-linear, before gamma
+const FILL_AZ_DEG = 200, FILL_EL_DEG = 35;  // sim/scene.py:157, assumed: where the fill comes from (fixed)
 
 // Viewer only, assumed. "low" is for weak GPUs (?quality=low).
 const QUALITY = {
@@ -102,7 +99,7 @@ export class World {
     // there only so a viewer can see the ground; the rovers' cameras never
     // get it. Level, colour and wrap as sim/scene.py's chase view.
     const fc = new THREE.Color().setRGB(...FILL_RGB, THREE.LinearSRGBColorSpace);
-    this.fill = new THREE.DirectionalLight(fc, fillIntensity(this.hapke, { level: FILL_LEVEL, elDeg: FILL_EL_DEG }));
+    this.fill = new THREE.DirectionalLight(fc, fillIntensity(FILL_LEVEL));
     this.scene.add(this.fill, this.fill.target);
     // scene.py's wrap term: part of the fill reaches every surface.
     this.ambient = new THREE.AmbientLight(fc, fillAmbient(FILL_LEVEL));
@@ -917,9 +914,10 @@ uniform vec4 uP1;`)
   render() {
     this.applyDistanceLod();
     this.controls.update();
-    // The fill comes from the side of the view, never from behind the camera.
-    const cam = this.camera.position, t = this.controls.target;
-    const az = Math.atan2(t.y - cam.y, t.x - cam.x) + THREE.MathUtils.degToRad(FILL_FROM_VIEW_DEG);
+    // The fill comes from a fixed direction, as scene.py's; shaded Lambert,
+    // so no opposition blob when it is behind the camera.
+    const t = this.controls.target;
+    const az = THREE.MathUtils.degToRad(FILL_AZ_DEG);
     const el = THREE.MathUtils.degToRad(FILL_EL_DEG);
     this.fill.target.position.copy(t);
     this.fill.position.set(t.x + 100 * Math.cos(az) * Math.cos(el), t.y + 100 * Math.sin(az) * Math.cos(el), t.z + 100 * Math.sin(el));

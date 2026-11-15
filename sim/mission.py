@@ -73,6 +73,10 @@ RUN_LOG_DT_S = 120.0          # run log step spacing, simulated seconds
 # STAND-IN navigation filter (step 3 is someone else's and not built yet):
 NAV_SIGMA_M = {"A": 0.8, "B": 0.9}   # reported sigma
 NAV_CORR = 0.98                      # error is AR(1) per 0.5 m step, std NAV_SIGMA_M
+# Cauligi et al. 2023 sec. 1: odometry drifts about 2% of distance driven
+# (the same value as sim/standins.py ODOM_DRIFT). Applied as a scale bias.
+ODOM_DRIFT = 0.02
+ODOM_HEADING_NOISE_RAD = 0.0005   # ASSUMED, per 0.5 m step, as in sim/rover.py on step-4-spine
 NAV_STANDIN = ("navigation: true pose plus a slowly wandering error with std = sigma "
                "(STAND-IN for the step 3 particle filter)")
 
@@ -88,7 +92,9 @@ class Rover:
         self.sigma = NAV_SIGMA_M[agency]
         self.t = 0.0
         self.health = H.Health(agency, battery_wh=START_SOC[agency] * H.BATTERY_WH)
-        self.track = [(0.0, *self.pose, *self.estimate)]   # (t, x, y, h, ex, ey)
+        self.odom = list(self.pose)   # dead reckoning from the wheels alone
+        # (t, x, y, h, est_x, est_y, odom_x, odom_y, odom_h)
+        self.track = [(0.0, *self.pose, *self.estimate, *self.odom)]
         self.odo = 0.0
         self.next_survey = SURVEY_EVERY_M
         self.next_tel = 0.0
@@ -107,6 +113,14 @@ class Rover:
     def nav_step(self):
         s = self.sigma * math.sqrt(1 - NAV_CORR ** 2)
         self.err = NAV_CORR * self.err + self.rng.normal(0, s, 2)
+
+    def odom_step(self, d, dh):
+        """Wheel odometry: the true turn plus heading noise, the true
+        distance scaled by the 2% drift. What the rover would think with no
+        crater fixes; shown on the map next to the estimate."""
+        self.odom[2] += dh + self.rng.normal(0, ODOM_HEADING_NOISE_RAD)
+        self.odom[0] += d * (1 + ODOM_DRIFT) * math.cos(self.odom[2])
+        self.odom[1] += d * (1 + ODOM_DRIFT) * math.sin(self.odom[2])
 
     def tracks(self):
         a = np.array(self.track)
@@ -261,13 +275,15 @@ class Mission:
         prev = r.pose
         for pose in self.link.drive(route, r.pose):
             d = math.dist(pose[:2], prev[:2])
+            dh = (pose[2] - prev[2] + math.pi) % (2 * math.pi) - math.pi
             prev = pose
             r.pose = pose
             r.odo += d
             r.t += d / H.DRIVE_SPEED_M_S
             r.health.spend(H.Health.drive_wh(d))
             r.nav_step()
-            r.track.append((r.t, *r.pose, *r.estimate))
+            r.odom_step(d, dh)
+            r.track.append((r.t, *r.pose, *r.estimate, *r.odom))
             if r.odo >= r.next_survey:
                 r.next_survey += SURVEY_EVERY_M
                 self.take_survey(r)
@@ -353,39 +369,59 @@ class Mission:
             idx = np.clip(np.searchsorted(a[:, 0], times, side="right") - 1, 0, len(a) - 1)
             per[ag] = a[idx]
         events = self.store.read_lines("events.jsonl")
+        # Finds are numbered 1, 2, ... in the order they were made, as the
+        # contract would number them; find_refs maps each back to its record.
+        find_no = {}
         steps = []
         for k, t in enumerate(times):
             rovers = {}
             for ag, a in per.items():
                 row = a[k]
-                rovers[ag] = {"true_pose": [round(v, 3) for v in row[1:4]], "odom_pose": None,
+                rovers[ag] = {"true_pose": [round(v, 3) for v in row[1:4]],
+                              "odom_pose": [round(v, 3) for v in row[6:9]],
                               "estimate": [round(row[4], 3), round(row[5], 3)],
                               "sigma": NAV_SIGMA_M[ag], "nav_on": True, "rims": [], "fp_frame": None}
-            evs = []
+            evs, sci = [], []
             for e in events:
                 if t <= e["t"] < t + RUN_LOG_DT_S and e["type"] == "science":
                     rec = self.store.science.load(e["record_id"])
                     p, c = rec["position"], rec["chain"]
-                    evs.append(science.run_log_event(rec))
+                    # Every stop, dry ones too, with phases for the animation.
+                    # Its own key, so a viewer that knows only find and check
+                    # events is not confused by it.
+                    sci.append(science.run_log_event(rec))
                     if c["call"] == "post_find":
+                        find_no[rec["record_id"]] = len(find_no) + 1
                         evs.append({"type": "find", "agency": rec["agency"],
-                                    "find_id": MS.FIND_REF + rec["record_id"], "x": p["x"],
+                                    "find_id": find_no[rec["record_id"]], "x": p["x"],
                                     "y": p["y"], "sigma": p["sigma"],
-                                    "reading": rec["result"]["reading"], "tx": None})
+                                    "reading": rec["result"]["reading"], "tx": None,
+                                    "record_id": rec["record_id"]})
                     elif c["call"] == "check_find":
+                        ref = str(c["args"]["find_id"]).removeprefix(MS.FIND_REF)
                         evs.append({"type": "check", "agency": rec["agency"],
-                                    "find_id": c["args"]["find_id"], "x": p["x"], "y": p["y"],
+                                    "find_id": find_no.get(ref, c["args"]["find_id"]),
+                                    "x": p["x"], "y": p["y"],
                                     "sigma": p["sigma"], "reading": rec["result"]["reading"],
-                                    "agrees": c["args"]["agrees"], "tx": None})
-            steps.append({"t": round(float(t), 1), "rovers": rovers, "events": evs})
+                                    "agrees": c["args"]["agrees"], "tx": None,
+                                    "record_id": rec["record_id"]})
+            step = {"t": round(float(t), 1), "rovers": rovers, "events": evs}
+            if sci:
+                step["science"] = sci
+            steps.append(step)
         return {
             "run_id": self.store.id,
             "label": "Science mission: survey, drill, find, check",
             "terrain": {"file": self.terrain_path.name, "x0": self.x0, "y0": self.y0, "cell": self.cell},
             "chain": {"chain_id": None, "contract": None, "explorer": None,
                       "note": "not posted yet: see outbox.json; tx fills in after push"},
-            "truth": resources.as_truth(self.deposits),
-            "standins": [NAV_STANDIN] + ([] if self.link.real else [self.link.name]),
+            "truth": dict(resources.as_truth(self.deposits), ice_units="wt% water",
+                          find_threshold_wt=science.ICE_THRESHOLD_WT_PCT),
+            # Named parts, as run_demo.py writes them and web/js/data.js reads them.
+            "standins": dict(
+                navigation=NAV_STANDIN,
+                chain="chain: not posted yet; the calls wait in outbox.json, so there are no tx hashes",
+                **({} if self.link.real else {"planner": self.link.name})),
             "steps": steps,
         }
 

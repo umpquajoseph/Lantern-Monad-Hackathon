@@ -145,6 +145,9 @@ def make_run(run_id, label, a_nav_on, height, craters, x0, y0, cell, scene, ever
 
     out = OUT / run_id
     (out / "fp").mkdir(parents=True, exist_ok=True)
+    for old in (out / "fp").iterdir():  # frames from an earlier, longer run
+        if old.suffix == ".jpg":
+            old.unlink()
     steps, last = [], {}
     find = None
     b_target = None
@@ -159,8 +162,10 @@ def make_run(run_id, label, a_nav_on, height, craters, x0, y0, cell, scene, ever
             # Steer by the estimate: the true pose moves by the commanded step.
             want = math.atan2(b_target[1] - ey, b_target[0] - ex)
             dh = (want - bh + math.pi) % (2 * math.pi) - math.pi
-            bh += max(-TURN_PER_STEP, min(TURN_PER_STEP, dh))
             rem = math.hypot(b_target[0] - ex, b_target[1] - ey)
+            # Close in, turn on the spot instead of circling the target.
+            lim = math.pi if rem < 4 * STEP_M else TURN_PER_STEP
+            bh += max(-lim, min(lim, dh))
             st = min(STEP_M, rem)
             poses["B"].append((bx + st * math.cos(bh), by + st * math.sin(bh), bh))
         if k >= len(poses["B"]):

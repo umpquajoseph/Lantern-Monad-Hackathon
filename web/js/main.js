@@ -49,6 +49,8 @@ async function main() {
   const want = params.get("run") || state.runs[0].run_id;
   await openRun(want, Number(params.get("t")) || 0);
   $("loading").hidden = true;
+  // Someone opening the link cold sees it move; a deep link (?t=) holds still.
+  if (!params.has("t") && !params.has("paused")) togglePlay();
   requestAnimationFrame(loop);
 }
 
@@ -60,7 +62,11 @@ async function openRun(id, t) {
   const run = await Run.load("runs/", entry);
   // Fine tiles under every track first, so lines drape on the real ground.
   const pts = run.agencies.flatMap((a) => [...run.tracks[a].truth, ...run.tracks[a].est, ...run.tracks[a].odom]);
-  await Promise.all([...terrain.keysNear(pts.filter((_, i) => i % 3 === 0), 4)].map((k) => terrain.loadTile(k)));
+  const keys = [...terrain.keysNear(pts.filter((_, i) => i % 3 === 0), 4)];
+  let done = 0;
+  await Promise.all(keys.map((k) => terrain.loadTile(k).then(() => {
+    $("loading").textContent = `Loading ground under the tracks, ${++done} of ${keys.length}`;
+  })));
   state.run = run;
   state.t = Math.min(t, run.tEnd);
   state.lastEventsKey = "";

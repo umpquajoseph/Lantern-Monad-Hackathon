@@ -164,9 +164,11 @@ export class MapView {
       const text = `${f.agency}'s find ±${f.sigma.toFixed(1)} m · ${f.status}`;
       c.fillStyle = "rgba(10,11,13,0.8)";
       const tw = c.measureText(text).width;
-      c.fillRect(px + r + 4, py - 9, tw + 10, 17);
+      // Put the label on whichever side has room.
+      const lx = px + r + 4 + tw + 10 < W ? px + r + 4 : px - r - 4 - tw - 10;
+      c.fillRect(lx, py - 9, tw + 10, 17);
       c.fillStyle = col;
-      c.fillText(text, px + r + 9, py + 4);
+      c.fillText(text, lx + 5, py + 4);
     }
 
     // Rovers: estimate with its sigma circle, and a triangle at the true pose.

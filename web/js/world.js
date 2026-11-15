@@ -414,11 +414,11 @@ export class World {
     // Real ice, hidden from the rovers (stand-in runs carry it).
     this.truthObjs = [];
     for (const ice of (run.truth && run.truth.ice) || []) {
-      const d = new THREE.Mesh(new THREE.OctahedronGeometry(0.8), new THREE.MeshBasicMaterial({ color: COLORS.truth }));
-      d.position.copy(this.groundL(ice.x, ice.y, 1.4));
-      d.scale.set(1, 1, 1.5);
+      const d = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: COLORS.truth }));
+      d.position.copy(this.groundL(ice.x, ice.y, 0.8));
+      d.scale.set(1, 1, 1.6);
       const lbl = this.label("Real ice", "#d8f3ff");
-      lbl.position.set(0, 0, 1.6);
+      lbl.position.set(0, 0, 0.9);
       d.add(lbl);
       const ring = this.ring(ice.x, ice.y, ice.radius, this.lineMat(COLORS.truth, 1.5, { dashed: true, opacity: 0.8 }));
       this.overlay.add(d, ring);
@@ -433,13 +433,13 @@ export class World {
     const col = COLORS[f.status];
     const g = new THREE.Group();
     const p = this.groundL(f.x, f.y);
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 9, 10),
-      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.9 }));
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 6, 8),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.8 }));
     beam.rotation.x = Math.PI / 2;
-    beam.position.set(p.x, p.y, p.z + 4.5);
+    beam.position.set(p.x, p.y, p.z + 3);
     const ring = this.ring(f.x, f.y, f.sigma, this.lineMat(col, 2.5));
     const lbl = this.label("", "#" + col.toString(16).padStart(6, "0"));
-    lbl.position.set(p.x, p.y, p.z + 9.6);
+    lbl.position.set(p.x, p.y, p.z + 6.4);
     g.add(beam, ring, lbl);
     for (const c of f.checks) {
       const q = this.groundL(c.x, c.y, 0.3);
@@ -542,6 +542,7 @@ export class World {
       c.update();
       return;
     }
+    if (!run.agencies.includes(mode)) return;  // free camera
     const t = this.currentT || 0;
     const [x, y, h] = run.poseAt(mode, t);
     const p = this.groundL(x, y, 1.0);

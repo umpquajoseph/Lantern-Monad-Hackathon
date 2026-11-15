@@ -241,8 +241,20 @@ select:focus { outline: none; border-color: var(--accent); }
   :root { --side-w: 300px; --sidebar-w: 180px; }
 }
 @media (max-width: 820px) {
+  html, body { height: auto; }
   body { grid-template-columns: 1fr; overflow: auto; }
-  .sidebar { display: none; }
+  .hud { font-size: 10.5px; left: 6px; top: 6px; }
+  .hud .row span:nth-child(5) { display: none; }
+  .vnote { display: none; }
+  .sidebar { overflow: visible; }
+  .sidebar .wordmark, .sidebar .sb-badge { display: inline-block; padding-bottom: 6px; }
+  .sb-nav { display: flex; flex-wrap: wrap; align-items: stretch; padding: 0 6px 8px; }
+  .sb-nav .sb-section, .sb-nav .ck, .sb-legend, .sb-foot { display: none; }
+  #run-list { display: contents; }
+  .nav { width: auto; flex: 1 1 40%; margin: 2px; }
+  .transport { flex-wrap: wrap; }
+  .scrub { order: 10; flex-basis: 100%; }
+  .clock { margin-left: auto; }
   .page { grid-template-columns: 1fr; grid-template-rows: auto auto auto; height: auto; }
   .head { grid-column: 1; flex-direction: column; padding: 12px 16px; }
   .stage { grid-template-rows: 56vh auto auto; }

@@ -38,10 +38,12 @@ export class MissionPlayer {
 
   /** Arm everything: a fresh play-through from the start. */
   restart() {
-    this.armed = new Set(this.checkpoints.map((c) => c.id));
+    // A checkpoint at step 0 is the overview: shown now, never "crossed".
+    const c0 = this.checkpoints.find((c) => c.step === 0);
+    this.armed = new Set(this.checkpoints.filter((c) => c.step > 0).map((c) => c.id));
     this.armedTx = new Set(this.run.events.map((e, i) => i));
-    this.active = null;
-    this.hooks.note(null);
+    this.active = c0 || null;
+    this.hooks.note(c0 ? `<span class="cp-tag">Start</span> <b>${esc(c0.label)}</b> · ${esc(c0.say)}` : null);
   }
 
   /** Arm the checkpoints after t again (a backward jump); live posts only re-arm from the start. */

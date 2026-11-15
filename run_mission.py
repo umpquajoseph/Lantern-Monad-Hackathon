@@ -67,8 +67,8 @@ ROLE = {"A": "Surveyor", "B": "Prospector"}
 MISSION = dict(
     key="mission", seed=303,
     label="Mission: survey two sites, prospect the one with ice",
-    a_start=(300.0, 300.0, 0.6),                  # the spine's run 1 start (ground under 15 deg)
-    sites=[dict(id="S1", xy=(218.3, 373.6)),      # dry; a 14 m crater sits 61 m along the straight route, unseen by the orbital map
+    a_start=(389.7, 569.9, -1.22),   # flat 3 m around; the cleanest corridor to S1 with one crater to stage
+    sites=[dict(id="S1", xy=(425.6, 471.2)),      # dry; the straight route from A crosses one crater, left unmapped
            dict(id="S2", xy=(322.2, 433.6))],     # ice
     b_start=(559.9, 467.0, -3.0),          # flat 3 m around; a crater on the straight route to S2 that the orbital map misses
 )

@@ -68,9 +68,9 @@ def site_files(site: Path) -> dict[str, int]:
 
 def frame_keys(site: Path) -> tuple[str, ...]:
     """Run-log keys that name frames and that the site's scripts actually read. fp_frame
-    always; fp_sub (the spine's half-metre sub-frames, [[fraction, path], ...]) only once a
+    and lidar_frame always; fp_sub (the spine's half-metre sub-frames, [[fraction, path], ...]) only once a
     script mentions it, so unread sub-frames are not uploaded and read ones are never pruned."""
-    keys = ["fp_frame"]
+    keys = ["fp_frame", "lidar_frame"]
     for js in (site / "js").glob("*.js"):
         if "fp_sub" in js.read_text(encoding="utf8"):
             keys.append("fp_sub")
@@ -80,8 +80,9 @@ def frame_keys(site: Path) -> tuple[str, ...]:
 
 def frames_named(rover: dict, keys) -> list[str]:
     out = []
-    if "fp_frame" in keys and rover.get("fp_frame"):
-        out.append(rover["fp_frame"])
+    for key in ("fp_frame", "lidar_frame"):
+        if key in keys and rover.get(key):
+            out.append(rover[key])
     if "fp_sub" in keys:
         out += [p for _, p in rover.get("fp_sub") or []]
     return out

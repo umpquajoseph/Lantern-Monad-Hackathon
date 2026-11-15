@@ -52,9 +52,44 @@ def hillshade(z, cell, az_deg=315.0, el_deg=25.0):
     return np.clip((nx * lx + ny * ly + nz * lz) / n, 0, 1)
 
 
+def add_lips(height, craters, lips, x0, y0, cell, s):
+    """Rim lips from the terrain worker's display layer (lips.npy, one row per
+    crater: lip height, lip width), as in sim/terrain_display.py Display.patch:
+    h += s * lh * exp(-((r - R) / lw)^2). Display only; the sim grid is untouched."""
+    h = height.copy()
+    H, W = h.shape
+    for (cx, cy, D), (lh, lw) in zip(craters, lips):
+        R = D / 2
+        reach = R + 3 * lw
+        j0, j1 = max(int((cx - reach - x0) / cell), 0), min(int((cx + reach - x0) / cell) + 2, W)
+        i0, i1 = max(int((cy - reach - y0) / cell), 0), min(int((cy + reach - y0) / cell) + 2, H)
+        if j0 >= j1 or i0 >= i1:
+            continue
+        X = x0 + cell * np.arange(j0, j1)
+        Y = y0 + cell * np.arange(i0, i1)
+        r = np.hypot(X[None, :] - cx, Y[:, None] - cy)
+        h[i0:i1, j0:j1] += (s * lh * np.exp(-((r - R) / lw) ** 2)).astype(np.float32)
+    return h
+
+
+def far_normal(z, cell):
+    """Tileable tangent-space normal map (x east, y north, z up) of a periodic height tile."""
+    gx = (np.roll(z, -1, 1) - np.roll(z, 1, 1)) / (2 * cell)
+    gy = (np.roll(z, -1, 0) - np.roll(z, 1, 0)) / (2 * cell)
+    n = np.stack([-gx, -gy, np.ones_like(z)], -1)
+    n /= np.linalg.norm(n, axis=-1, keepdims=True)
+    rgb = np.clip(n * 127.5 + 127.5, 0, 255).astype(np.uint8)
+    return rgb[::-1]  # north up
+
+
 def main():
     height, craters, x0, y0, cell = load_terrain(DATA / "shoemaker.npz")
     H, W = height.shape
+    disp = DATA / "display"
+    dj = disp / "display.json"
+    d = json.loads(dj.read_text()) if dj.exists() else None
+    if d is not None and (disp / "lips.npy").exists():
+        height = add_lips(height, craters, np.load(disp / "lips.npy"), x0, y0, cell, d["params"]["strength"])
     hmin = float(height.min()) - 1.0
     hscale = (float(height.max()) + 1.0 - hmin) / 65535.0
     (OUT / "tiles").mkdir(parents=True, exist_ok=True)
@@ -87,25 +122,48 @@ def main():
         "craters": "craters.json",
     }
 
-    disp = DATA / "display"
-    dj = disp / "display.json"
-    if dj.exists():
-        d = json.loads(dj.read_text())
+    if d is not None:
+        P = d["params"]
         meta["display"] = {"real": d.get("real", []), "made_up": d.get("made_up", []),
-                           "detail_period_m": d["params"]["tile_period_m"]}
-        bd = np.load(disp / "backdrop.npz")
-        bh = bd["height"]
-        bmin = float(bh.min()) - 1.0
-        bscale = (float(bh.max()) + 1.0 - bmin) / 65535.0
-        write_u16(OUT / "backdrop.bin", bh, bmin, bscale)
-        meta["backdrop"] = {"file": "backdrop.bin", "x0": float(bd["x0"]), "y0": float(bd["y0"]),
-                            "cell": float(bd["cell"]), "rows": bh.shape[0], "cols": bh.shape[1],
-                            "hmin": bmin, "hscale": bscale,
-                            "note": "LOLA Shoemaker 5 m averaged to 20 m, whole 20 km tile"}
-        alb = cv2.imread(str(disp / "albedo.png"), cv2.IMREAD_UNCHANGED)
-        alb = cv2.resize(alb, (2048, 2048), interpolation=cv2.INTER_AREA)[::-1]
-        cv2.imwrite(str(OUT / "albedo.jpg"), alb, [cv2.IMWRITE_JPEG_QUALITY, 88])
-        meta["albedo"] = {"file": "albedo.jpg", "factor": "value / 128", "north_up": True}
+                           "detail_period_m": P["tile_period_m"], "strength": P["strength"],
+                           "lips": "baked into the heights above (display only)",
+                           "moon_radius_m": d.get("moon_radius_m", 1737400.0)}
+        # Hapke [X20] parameters, from display.json (terrain worker's sources).
+        meta["hapke"] = {k: P[k] for k in ("hapke_w", "hapke_b", "hapke_bs0", "hapke_hs")}
+        meta["hapke"]["source"] = d.get("sources", {}).get("hapke", "")
+        for key, name in (("backdrop", "backdrop.npz"), ("backdrop_near", "backdrop_near.npz")):
+            if not (disp / name).exists():
+                continue
+            bd = np.load(disp / name)
+            bh = bd["height"]
+            bmin = float(bh.min()) - 1.0
+            bscale = (float(bh.max()) + 1.0 - bmin) / 65535.0
+            write_u16(OUT / f"{key}.bin", bh, bmin, bscale)
+            meta[key] = {"file": f"{key}.bin", "x0": float(bd["x0"]), "y0": float(bd["y0"]),
+                         "cell": float(bd["cell"]), "rows": bh.shape[0], "cols": bh.shape[1],
+                         "hmin": bmin, "hscale": bscale}
+        meta["backdrop"]["note"] = "LOLA Shoemaker 5 m averaged to 20 m, whole 20 km tile (real)"
+        if "backdrop_near" in meta:
+            meta["backdrop_near"]["note"] = "LOLA Shoemaker native 5 m, 5 km square (real)"
+        if (disp / "far_detail_height.npy").exists():
+            fz = np.load(disp / "far_detail_height.npy") * P["strength"]
+            cv2.imwrite(str(OUT / "far_normal.png"), far_normal(fz, P["far_tile_cell_m"])[..., ::-1])
+            meta["far_detail"] = {"normal": "far_normal.png", "period_m": fz.shape[0] * P["far_tile_cell_m"],
+                                  "note": "made-up sub-5 m relief for the backdrops"}
+        if (disp / "rocks.npy").exists():
+            rk = np.load(disp / "rocks.npy").astype("<f4")
+            rk = rk[: int(round(P["strength"] * len(rk)))]
+            # Relative to the grid origin so float32 keeps millimetres.
+            rel = rk.copy()
+            rel[:, 0] -= x0
+            rel[:, 1] -= y0
+            (OUT / "rocks.bin").write_bytes(gzip.compress(np.ascontiguousarray(rel).tobytes(), 9))
+            meta["rocks"] = {"file": "rocks.bin", "count": len(rk), "cols": 7,
+                             "layout": "[x - x0, y - y0, long_m, short_m, height_m, yaw_rad, seed] float32",
+                             "rock_albedo": P["rock_albedo"], "sink_frac": P["rock_sink_frac"]}
+        alb = cv2.imread(str(disp / "albedo.png"), cv2.IMREAD_UNCHANGED)[::-1]
+        cv2.imwrite(str(OUT / "albedo.png"), alb)
+        meta["albedo"] = {"file": "albedo.png", "factor": "value / 128", "north_up": True}
         for name in ("detail_normal.png", "detail_albedo.png"):
             im = cv2.imread(str(disp / name), cv2.IMREAD_UNCHANGED)
             im = cv2.resize(im, (1024, 1024), interpolation=cv2.INTER_AREA)[::-1]

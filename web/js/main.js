@@ -28,9 +28,11 @@ async function main() {
     $("loading").textContent = "Terrain assets missing. Run python web/build_assets.py.";
     throw e;
   }
-  world = new World($("viewport"), terrain);
+  // ?quality=low: half-resolution drive-area mesh and smaller shadow maps.
+  world = new World($("viewport"), terrain, params.get("quality") || "high");
   world.buildTerrain();
   world.buildBackdrop();
+  world.loadRocks();
   map = new MapView($("map"), terrain);
 
   state.runs = await loadIndex("runs/");
@@ -100,6 +102,7 @@ async function openRun(id, t) {
   $("time").max = run.tEnd;
   world.currentT = state.t;
   world.setRun(run);
+  speedNote();
   world.setVisibility(state.opts);
   map.setRun(run);
   $("loading").hidden = true;
@@ -110,7 +113,7 @@ function bindControls() {
   $("play").onclick = togglePlay;
   $("back").onclick = () => stepBy(-1);
   $("fwd").onclick = () => stepBy(1);
-  $("speed").onchange = (e) => (state.speed = Number(e.target.value));
+  $("speed").onchange = (e) => { state.speed = Number(e.target.value); speedNote(); };
   $("time").oninput = (e) => { state.t = Number(e.target.value); render(); };
   document.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
   setView("A");
@@ -140,6 +143,14 @@ function bindControls() {
     else if (e.code === "ArrowRight") { e.preventDefault(); stepBy(1); }
     else if (e.code === "ArrowLeft") { e.preventDefault(); stepBy(-1); }
   });
+}
+
+// The rover's real speed beside the playback speed, so 200x reads as what it is.
+function speedNote() {
+  const run = state.run;
+  const v = run && Object.values(run.speed).filter((x) => x);
+  const real = v && v.length ? `rover ${(Math.max(...v) * 100).toFixed(1)} cm/s · ` : "";
+  $("speed-note").textContent = `${real}playback ${state.speed}×`;
 }
 
 function setView(v) {

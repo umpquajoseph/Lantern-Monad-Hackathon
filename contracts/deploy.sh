@@ -86,6 +86,9 @@ rec = {
     "rpcUrl": rpc if chain_id in (10143, 143) else None,
     "explorer": explorer,
     "explorerContractUrl": f"{explorer}/address/{addr}" if explorer else None,
+    # The frame xCm / yCm are in (docs/handoffs.md, "Frames and units"): the LOLA south polar
+    # stereographic map frame, metres, x east, y north, stored as whole centimetres.
+    "frame": "LOLA south polar stereographic, metres, x east, y north; on chain as whole cm",
     "deployedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
     "verified": verified or None,  # "sourcify" when Sourcify reported a match, else null
     "verifiedAt": verified_at or None,

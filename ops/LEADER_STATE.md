@@ -231,3 +231,6 @@ Read mail, then `mv` it to `leader/archive/`.
 - 13:11 designer: No-go on by default; faint graded tint at Site zoom,
   hatch zoomed in (f0e16a2, viewer fd8d9ff, ac82ce2); step-5-design
   f2fdda3. Looked at the run 2 shot: hillshade reads, no flood. Accepted.
+- 13:11 Joseph: "just let me know when the merge is done and all open items
+  from the md". Until then: handle worker mail quietly; next message to him
+  = merge done + docs/TODO.md open items.

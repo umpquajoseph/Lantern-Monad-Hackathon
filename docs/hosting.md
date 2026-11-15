@@ -37,6 +37,33 @@ integration renderer writes beside each frame: 71 MB of the real runs that
 the page never fetches), then runs `web/check_site.py`, which follows every
 file the page fetches and refuses to deploy a site with a hole in it.
 
+## Merge notes for Joseph (branch `step-5-hosting`, 2026-11-15 12:50 PST)
+
+Everything is pushed; the live site matches the branch plus the generated
+folders. What the branch holds, by owner:
+
+| Files | Origin | Note |
+|---|---|---|
+| `web/vercel.json`, `web/.vercelignore`, `web/check_site.py`, `web/publish.py`, `docs/hosting.md` | Kellen's hosting session, new | Host config, site check, publish, this runbook |
+| `web/chain.html`, `web/js/chain.js`, `web/collect_chain.py`, `web/chain/*.json` | Chain session's `step-5-chain-feed` at 915f0da, taken as files | Separate page; drop it by deleting these four paths, `index.html` does not depend on it |
+| `sim/terrain.py` (data default), `run_demo.py`, `web/build_assets.py`, `web/collect_runs.py`, `web/make_standin_run.py` | Owners' files, one line each | The `C:\` literals became the one default in `sim/terrain.py` (LANTERN_DATA, else the Windows checkout, else `data/` beside the repo); Windows behaviour unchanged |
+| `web/js/main.js` (stand-in banner) | Viewer's file, one line | The banner said "nothing was posted to Monad" on real-chain runs; the sentence now follows `run.fakeTx`. Take or redo |
+| `web/.gitignore`, `.gitignore` | `.vercel/` and `.env*` added | The Vercel CLI writes both in `web/` |
+| `docs/WORKING.md` | One row, with the timeline | |
+
+Not in git, on purpose: `web/assets/` (terrain, 37 MB, `build_assets.py`),
+`web/runs/` (the two runs, `collect_runs.py`), `web/.vercel/` (project
+link) and `web/.env.local` (CLI token). The runs on the live site are the
+chain session's `run1-real2` and `run2-real2` from
+`/Users/ksnider/Monad-Hackathon-Project/data/runs` on Kellen's Mac.
+
+`app.py` on `integration` keeps its own `C:\` default; switching it to
+`from sim.terrain import DATA` makes it match, optional.
+
+The Vercel project is in Kellen's personal Hobby scope. Republishing from
+another checkout works as is: `publish.py vercel` re-links to the project by
+name. From a machine that is not Kellen's it needs `VERCEL_TOKEN` (below).
+
 ## 1. Build the site
 
 On Joseph's Windows checkout, `python app.py --no-serve` (branch `integration`)

@@ -207,7 +207,7 @@ function render(force = false) {
   $("clock").textContent = `${fmtClock(t)} · step ${k + 1}/${run.steps.length}`;
   hud(run, k);
   const fr = run.frameNear(state.cam, t);
-  const camKey = `${state.cam}:${fr ? fr.k : -1}`;
+  const camKey = `${state.cam}:${fr ? fr.src : "-"}`;
   if (force || camKey !== lastCamKey) { camera(run, fr, k); lastCamKey = camKey; }
   if (force || k !== lastK) record(run, k);
   lastK = k;
@@ -245,18 +245,19 @@ function camera(run, fr, k) {
     }
   } else img.removeAttribute("src");
   const r = run.rover(a, fr ? fr.k : k);
-  // The camera records one frame per logged stop; say how far apart they are.
-  const stepM = run.speed[a] && run.log.dt_s ? run.speed[a] * run.log.dt_s : null;
-  const every = stepM ? `, one frame per ${stepM < 10 ? stepM.toFixed(1).replace(/\.0$/, "") : Math.round(stepM)} m stop` : "";
+  // Say how far apart the recorded frames are, from the log.
+  const gapM = run.frameSpacing(a);
+  const every = gapM ? `, one frame per ${gapM < 10 ? gapM.toFixed(1).replace(/\.0$/, "") : Math.round(gapM)} m driven` : "";
   $("fp-cap").innerHTML = `Rover ${a} camera${every}, as recorded. Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
-    (state.opts.rims && r.rims && r.rims.length ? ` ${r.rims.length} rim points${run.standin ? " (stand-in, from the crater map)" : ""}.` : "");
-  drawRims(run, a, fr ? fr.k : k);
+    (state.opts.rims && r.rims && r.rims.length && !(fr && fr.sub) ? ` ${r.rims.length} rim points${run.standin ? " (stand-in, from the crater map)" : ""}.` : "");
+  // Rim points are logged per step, in that step's pose: draw them only on a step's own frame.
+  drawRims(run, a, fr ? fr.k : k, !!(fr && fr.sub));
 }
 
 // Rim points [x_fwd, y_left] in the rover frame, projected into the image
 // with the scene's pinhole model and the ground height under each point.
-function drawRims(run, a, k) {
+function drawRims(run, a, k, none = false) {
   const cv = $("fp-rims");
   const W = cv.clientWidth, H = cv.clientHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -264,7 +265,7 @@ function drawRims(run, a, k) {
   cv.height = Math.round(H * dpr);
   const c = cv.getContext("2d");
   c.setTransform((W * dpr) / FP.w, 0, 0, (H * dpr) / FP.h, 0, 0);
-  if (!state.opts.rims) return;
+  if (!state.opts.rims || none) return;
   const r = run.rover(a, k);
   if (!r.rims) return;
   const [x, y, h] = r.true_pose;

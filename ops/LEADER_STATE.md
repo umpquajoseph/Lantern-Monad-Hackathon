@@ -267,11 +267,11 @@ Read mail, then `mv` it to `leader/archive/`.
   from 12:55 to 13:25 behind my own brief's "no heavy benchmarks before
   13:10" and never checked when 13:10 passed. RULE: any worker blocked on
   another gets checked at the stated time; never let a wait run silently.
-- 13:28 scene: 1250 has no log.json (site safe on 1108). run1 1250 frames
+- 13:27 scene: 1250 has no log.json (site safe on 1108). run1 1250 frames
   complete; run2 1255/~2290. 1250 tracks: run 2 A clears deep crater, 0 m
   on no-go. Told scene not to wait on perf: agree split by mail, add
   --resume in the driver, publish run 1 first (no rendering needed).
-- 13:29 perf profile (run 1, 30 steps, --vision, detail): 1.08 s/step;
+- 13:27 perf profile (run 1, 30 steps, --vision, detail): 1.08 s/step;
   first_person 759 ms (horizon maps 171, shadow lookups 92, Hapke 75...),
   lidar 118, set_rover 113, vision 37. Big wins: pass 2 re-renders pass 1's
   frames (35-45%), one core only (threads), camera horizon duplicates lamp's

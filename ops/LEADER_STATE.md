@@ -391,3 +391,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:47 UI merge retracted from viewer; new worker handle 'ui' (brief updated, handoff mail in ops/mailboxes/ui/inbox). Joseph opens the session.
 - 14:47 viewer stopped UI merge: step-5-ui b938fbc = main + ritvik a99af3c (main lidar.py/scene.py kept). Notes forwarded to ui inbox: mission.js reads registry events not find/check (chain feed empty); mission_player checkpoints not wired.
 - 14:48 Joseph: Ritvik not editing; only Kellen's mission plays in the new page; Kellen republishes after ui lands; ui deadline 15:18 (stage 1 by 15:03). Mailed ui.
+- 14:49 Joseph: no hard stop for ui (target only). New: auto-switch to rover B a few seconds after A's ice find. Mailed ui.

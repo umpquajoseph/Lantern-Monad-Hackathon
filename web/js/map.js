@@ -256,6 +256,18 @@ export class MapView {
     for (const a of run.agencies) {
       const r = run.rover(a, k);
       const col = hex(COLORS[a]);
+      // The filter's particles after step k: dot area follows weight.
+      const ps = r.particles;
+      if (this.opts.tracks && this.opts.particles && ps && ps.length) {
+        c.fillStyle = col;
+        c.strokeStyle = "#0d0e10";
+        c.lineWidth = 1;
+        const n = ps.length;
+        for (const [px, py, w] of ps) {
+          const rad = Math.min(5, Math.max(1.5, 2.2 * Math.sqrt(Math.max(w, 0) * n)));
+          c.beginPath(); c.arc(X(px), Y(py), rad, 0, Math.PI * 2); c.fill(); c.stroke();
+        }
+      }
       if (this.opts.tracks) {
         const [ex, ey] = r.estimate;
         c.strokeStyle = col;

@@ -11,7 +11,7 @@ This writes, under web/assets/terrain/:
     map.png            hillshade of the drive area for the 2D map, north up
     nogo.png           the planner's no-go ground (sim/rover.py SlopeMap), red on clear, north up
     craters.json       the crater list [[x, y, diameter], ...], world metres
-    albedo.jpg         display albedo, 2048 px, north up (if built)
+    albedo.png         display albedo, 2048 px, north up (if built)
     detail_normal.png, detail_albedo.png   tileable close-up detail (if built)
 
 Heights: metres = hmin + value * hscale. Row 0 of every grid is the south
@@ -37,6 +37,12 @@ DATA = Path(r"C:\Monad-Hackathon-Project\data\terrain")
 OUT = ROOT / "web" / "assets" / "terrain"
 TILE = 512          # cells per fine tile (128 m)
 COARSE = 4          # coarse grid keeps every 4th sample (1 m)
+
+
+def imwrite(path, img):
+    """cv2.imwrite that fails loudly: cv2 returns False instead of raising."""
+    if not cv2.imwrite(str(path), img):
+        raise OSError(f"could not write {path}")
 
 
 def write_u16(path, z, hmin, hscale):
@@ -86,7 +92,7 @@ def nogo_png(height, x0, y0, cell, path):
     bad = SlopeMap(height, x0, y0, cell).fine_deg > SLOPE_LIMIT_DEG
     rgba = np.zeros(bad.shape + (4,), np.uint8)
     rgba[bad] = (79, 87, 229, 255)          # BGRA for cv2: #e5574f, the page's "disputed" red
-    cv2.imwrite(str(path), rgba[::-1])
+    imwrite(path, rgba[::-1])
     return {"file": path.name, "limit_deg": SLOPE_LIMIT_DEG, "fraction": round(float(bad.mean()), 4),
             "source": "sim/rover.py SlopeMap(height, x0, y0, cell).fine_deg > SLOPE_LIMIT_DEG, on the sim grid without display lips"}
 
@@ -102,6 +108,7 @@ def far_normal(z, cell):
 
 
 def main():
+    OUT.mkdir(parents=True, exist_ok=True)
     height, craters, x0, y0, cell = load_terrain(DATA / "shoemaker.npz")
     H, W = height.shape
     # The planner works on the sim grid as is, so the no-go layer does too.
@@ -129,7 +136,7 @@ def main():
     # 2D map: hillshade at 1 m, north up (flip rows for the image).
     hs = hillshade(coarse, cell * COARSE)
     img = (40 + 170 * hs ** 0.8).astype(np.uint8)[::-1]
-    cv2.imwrite(str(OUT / "map.png"), img)
+    imwrite(OUT / "map.png", img)
 
     (OUT / "craters.json").write_text(json.dumps(np.round(craters, 2).tolist(), separators=(",", ":")))
 
@@ -169,7 +176,7 @@ def main():
             meta["backdrop_near"]["note"] = "LOLA Shoemaker native 5 m, 5 km square (real)"
         if (disp / "far_detail_height.npy").exists():
             fz = np.load(disp / "far_detail_height.npy") * P["strength"]
-            cv2.imwrite(str(OUT / "far_normal.png"), far_normal(fz, P["far_tile_cell_m"])[..., ::-1])
+            imwrite(OUT / "far_normal.png", far_normal(fz, P["far_tile_cell_m"])[..., ::-1])
             meta["far_detail"] = {"normal": "far_normal.png", "period_m": fz.shape[0] * P["far_tile_cell_m"],
                                   "note": "made-up sub-5 m relief for the backdrops"}
         if (disp / "rocks.npy").exists():
@@ -193,12 +200,12 @@ def main():
                         "layout": "[x - x0, y - y0, diameter_m, lip_height_m * strength, lip_width_m] float32",
                         "formula": "h += lip_height * exp(-((r - D/2) / lip_width)^2), already in the tiles"}
         alb = cv2.imread(str(disp / "albedo.png"), cv2.IMREAD_UNCHANGED)[::-1]
-        cv2.imwrite(str(OUT / "albedo.png"), alb)
+        imwrite(OUT / "albedo.png", alb)
         meta["albedo"] = {"file": "albedo.png", "factor": "value / 128", "north_up": True}
         for name in ("detail_normal.png", "detail_albedo.png"):
             im = cv2.imread(str(disp / name), cv2.IMREAD_UNCHANGED)
             im = cv2.resize(im, (1024, 1024), interpolation=cv2.INTER_AREA)[::-1]
-            cv2.imwrite(str(OUT / name), im)
+            imwrite(OUT / name, im)
         meta["detail"] = {"normal": "detail_normal.png", "albedo": "detail_albedo.png",
                           "period_m": d["params"]["tile_period_m"], "north_up": True}
 

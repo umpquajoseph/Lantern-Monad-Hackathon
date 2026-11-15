@@ -174,6 +174,11 @@ export class Run {
     this.truth = log.truth || null;
     // What made the estimate and sigma, when the run says (run_demo.py "nav").
     this.nav = typeof log.nav === "string" ? log.nav.replace(/^nav:\s*/, "") : null;
+    // Real parts get a top-level line like nav (docs/handoffs.md): the planner.
+    this.planner = typeof log.planner === "string" ? log.planner.replace(/^planner:\s*/, "") : null;
+    // The navigation filter's particles after each step, when logged
+    // (docs/handoffs.md: per rover `particles`, [[x, y, w], ...]).
+    this.hasParticles = this.steps.some((s) => this.agencies.some((a) => (s.rovers[a].particles || []).length));
     this.chain = log.chain || {};
     // The rover's real driving speed, from the log: median distance per
     // logged step over dt_s, counting only steps where it moved.

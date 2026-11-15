@@ -131,6 +131,23 @@ as 4.29.
   (`web/js/chain.js`, `web/chain.html`, `web/collect_chain.py`), with a
   wiring note for you. Nothing of yours is edited.
 
+## State at 13:05 PST, and two asks from Ritvik
+
+- The hosted site, https://lantern-teal.vercel.app, serves the real-chain
+  runs (finds 17 and 18 after the swap to `run1-real2`/`run2-real2`, Calvin's
+  `ParticleNav`, camera frames with the display layer) and `/chain.html`,
+  the live record page. The lead's state file (12:31) records that the
+  chain and hosting are off the lead's scope for now; the site exists
+  regardless, in Kellen's Vercel account, and nothing on it needs a merge.
+- Ritvik's `docs/CHANGES-ritvik.md` section 3 assigns two items to the
+  chain teammate: (1) deploy his `registry/` contract on testnet with the
+  agency keys, then run his roles demo on chain; (2) add `bytes32 dataHash`
+  to `Check` in `Lantern.sol` so check reports are anchored like finds. (2)
+  is a small contract change (field, event, `checkFind` argument with the
+  client defaulting it to zero, three tests) that belongs in the pre-demo
+  redeploy if wanted; (1) is a third contract and a team decision. Neither
+  is started; Kellen decides with Joseph.
+
 ## Before the demo
 
 The contract keeps every find ever posted, including our tests (13 finds at

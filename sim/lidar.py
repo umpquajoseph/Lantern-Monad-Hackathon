@@ -238,11 +238,75 @@ class Lidar:
             y += 20
         return img
 
+    def view_fp(self, rng_img, size=VIEW_SIZE):
+        """The lidar panel's first-person view (RGB uint8): the range image as
+        the lidar sees it, bearing across (left of the rover on the left),
+        beam elevation up. Near returns bright, far dark (key on the right);
+        returns the scan judged hazards in the top-down map's red (no-go,
+        steeper than 15 deg) and amber (crater floor); black: no return."""
+        W, H = size
+        img = np.zeros((H, W, 3), np.uint8)
+        L, R, T, B = 74, 112, 8, 50                          # margins: labels left, key right, ticks below
+        pw, ph = W - L - R, H - T - B
+        # Range shading, near bright: rows top = highest beam, columns left = +bearing (left).
+        r = rng_img[::-1, ::-1]
+        ok = np.isfinite(r)
+        shade = np.where(ok, 235 - 190 * np.clip(r / MAX_RANGE_M, 0, 1), 0).astype(np.uint8)
+        rgb = np.stack([shade * 0.80, shade * 0.88, shade], axis=-1).astype(np.uint8)
+        # Hazard class of every return, from the same grids as the top-down map.
+        g = self.hazards(self.points_from_image(rng_img), grids=True)
+        EL, AZ = np.meshgrid(self.el, self.az, indexing="ij")
+        fx = rng_img * np.cos(EL) * np.cos(AZ)
+        fy = rng_img * np.cos(EL) * np.sin(AZ)
+        nx, ny = g["known"].shape
+        x0, _ = HAZ_RANGE_M
+        with np.errstate(invalid="ignore"):
+            ix = np.floor((fx - x0) / HAZ_CELL_M)
+            iy = np.floor((fy + HAZ_HALF_WIDTH_M) / HAZ_CELL_M)
+            inb = np.isfinite(rng_img) & (ix >= 0) & (ix < nx) & (iy >= 0) & (iy < ny)
+        ixi, iyi = np.where(inb, ix, 0).astype(int), np.where(inb, iy, 0).astype(int)
+        crat = (inb & (g["crater"][ixi, iyi] | g["rock"][ixi, iyi]))[::-1, ::-1]
+        steep = (inb & g["slope"][ixi, iyi])[::-1, ::-1]
+        rgb[crat] = (240, 160, 40)
+        rgb[steep] = (230, 50, 40)
+        img[T:T + ph, L:L + pw] = cv2.resize(rgb, (pw, ph), interpolation=cv2.INTER_NEAREST)
+        # Shown about 340 px wide (0.43 x): few labels, drawn large; the
+        # colours are explained by the caption under the panel.
+        grey, white, f, fs = (150, 150, 150), (235, 235, 235), cv2.FONT_HERSHEY_SIMPLEX, 1.05
+        cv2.rectangle(img, (L - 1, T - 1), (L + pw, T + ph), grey, 2)
+        # Bearing ticks every 30 deg, labelled at the edges and straight ahead.
+        for b in (60, 30, 0, -30, -60):
+            u = L + int(round((H_FOV_DEG / 2 - b) / H_FOV_DEG * pw))
+            cv2.line(img, (u, T + ph), (u, T + ph + 8), grey, 2)
+            if b in (60, 0, -60):
+                lab = "ahead" if b == 0 else f"{abs(b)}{'L' if b > 0 else 'R'}"
+                (tw, _), _ = cv2.getTextSize(lab, f, fs, 2)
+                ux = min(max(u - tw // 2, 0), W - tw)
+                cv2.putText(img, lab, (ux, T + ph + 40), f, fs, white, 2, cv2.LINE_AA)
+        # Elevation: the top and bottom beams.
+        e_hi, e_lo = float(V_ANGLES_DEG.max()), float(V_ANGLES_DEG.min())
+        for e, v in ((e_hi, T + 22), (e_lo, T + ph - 4)):
+            cv2.putText(img, f"{e:.0f}", (4, v), f, fs, white, 2, cv2.LINE_AA)
+        # Range key, near bright at the top.
+        kx, ky0, ky1 = W - R + 12, T + 32, T + ph - 34
+        for v in range(ky0, ky1):
+            t = (v - ky0) / max(ky1 - ky0 - 1, 1)
+            sh = int(235 - 190 * t)
+            img[v, kx:kx + 22] = (int(sh * 0.80), int(sh * 0.88), sh)
+        cv2.putText(img, "near", (kx - 8, ky0 - 8), f, fs, white, 2, cv2.LINE_AA)
+        cv2.putText(img, f"{MAX_RANGE_M:.0f}m", (kx - 8, ky1 + 30), f, fs, white, 2, cv2.LINE_AA)
+        return img
+
     def to_camera_frame(self, centres):
         """Hazard centres from the lidar origin to the camera origin (rover frame)."""
         c = np.asarray(centres, float).reshape(-1, 2).copy()
         c[:, 1] -= LIDAR_RIGHT_OF_CAMERA_M   # the lidar sits to the right (negative y_left)
         return c
+
+
+def fp_name(name):
+    """lidar/A_0028.jpg -> lidar/A_0028_fp.jpg: the first-person image of the same scan."""
+    return name[:-4] + "_fp.jpg" if name.endswith(".jpg") else name + "_fp"
 
 
 def regenerate(run_dir, display="detail"):
@@ -268,6 +332,7 @@ def regenerate(run_dir, display="detail"):
                 continue
             _, rimg = lid.scan(r["true_pose"])
             cv2.imwrite(str(run_dir / name), lid.view(rimg)[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 85])
+            cv2.imwrite(str(run_dir / fp_name(name)), lid.view_fp(rimg)[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 85])
             n += 1
     return n
 

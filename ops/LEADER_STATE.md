@@ -323,3 +323,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 13:57 perf: lidar 95 to 26 ms/frame, identical on 24 scans, 4c33567 (lidar.py only, nav asked). Integrator told to merge. Perf next: set_rover rebuilds.
 - 13:58 integrator: viewer 56aae1e (98400b3) and perf lidar 4c33567 (2267e97) merged and pushed; :8000 run 1 loads with 200° fill, no console errors.
 - 13:58 scene: a fresh full render takes about 32 min, too long for 14:45-15:00. Plan: --resume over the 1250 frames (about 2 min) if poses match at the freeze. Asked Joseph whether the final run uses vision. Nav asked whether its fixes move poses without vision.
+- 13:59 Joseph: final run has vision on; workers needn't stress the merge. Scene: fresh --vision render starting on nav's passing ref (target 14:20), timing vision+lidar now. Viewer task: white/blue ice look on ice sites (mission.js:243 red disc), merge origin/ritvik mission.js first.

@@ -25,7 +25,7 @@ before writing a function another part calls.
 | Realism, third person: Hapke shading, rocks and the near backdrop in the site's 3D view | Joseph, agent `viewer` | `step-5-viewer` | `web/` | 11:36 | starting |
 | Realism check: Hapke values against Xu 2020, reference stills, comparisons with ShadowNav images | Joseph, agent `terrain` | `step-2-terrain-realism` | `sim/terrain*.py`, `docs/sources/` | 11:36 | starting |
 | Navigation: particle filter `sim/nav.py` and planner fix `sim/rover.py` | Calvin | `Calvin` -> `integration` | `sim/nav.py`, `sim/rover.py` | 11:55 | in `integration`, run 1 live on the site |
-| Vision: crater rims from first-person frames (step 6) | Calvin | `Calvin` | `sim/vision.py` | 12:20 | WIP at `c84f4e1`, not in `checkpoint`: run 1 does not pass end to end yet, and it conflicts in `web/js/main.js` |
+| Vision: crater rims from first-person frames (step 6) | Calvin | `Calvin` | `sim/vision.py` | 12:20 | in `checkpoint` (`2e28d61`), opt-in: `run_demo.py --vision` adds camera rims and lidar hazards; default runs use the stand-in rims |
 | Rim answer key for scoring vision | Joseph, agent `terrain` | `step-6-rim-truth` | `sim/rim_truth.py` | 12:18 | done 12:25 |
 | Site look: clean, uncluttered layout | Joseph, agent `designer` | `step-5-design` | `web/app.css`, `web/index.html` layout | 12:29 | in `checkpoint` (`861bb11`) |
 | Contract on Monad testnet with Foundry tests, and the Python client `sim/chain.py` (step 1) | Kellen, agent `chain` | `step-1-chain` | `contracts/`, `sim/chain.py`, `sim/lantern_abi.json`, `sim/lantern_deployment.json` | 10:50 | done 11:25, deployed on Monad testnet (address in `sim/lantern_deployment.json`), demo run on chain; ready to merge |

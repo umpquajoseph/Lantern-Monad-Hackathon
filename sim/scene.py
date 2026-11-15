@@ -11,8 +11,16 @@ and is stitched to the fine squares so no cracks show.
 
 First person: VTK renders only the depth buffer from the camera. Every pixel
 is turned back into a 3D point, and its brightness is computed here in
-numpy: lamp spotlight, inverse-square falloff, Lambert shading, and a shadow
+numpy: lamp spotlight, inverse-square falloff, Hapke reflectance (Xu et al.
+2020, the model ShadowNav renders with, Cauligi 2023 sec. 4A), and a shadow
 test. There is no sunlight and no fill light, so the image is the sensor.
+
+Display layer (sim/terrain_display.py, Scene(display=...)): the fine squares
+carry its rim lips and rocks as geometry; every pixel adds its 8 m detail
+tile (albedo, slope, and pebble-scale cast shadows seen from the camera) and
+its albedo map. All of that is made-up detail, marked so there. The image
+then goes through a soft tone curve (no clipping), shot and read noise, and
+8-bit quantisation, all assumed values.
 
 Shadows: the lamp's shadow is computed from a polar horizon map. Rays leave
 the lamp in many directions across the ground; along each ray the steepest
@@ -37,6 +45,8 @@ from __future__ import annotations
 
 import math
 import time
+import zlib
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -63,11 +73,42 @@ FP_SIZE = (640, 480)          # assumed: first-person image (w, h) px. The rig i
 TP_SIZE = (960, 540)          # assumed: chase-view image (w, h) px.
 CAMERA_PITCH_DEG = 15.0       # assumed: camera axis this far below level. Ground in view from ~3 m out to the horizon.
 LAMP_PITCH_DEG = 15.0         # assumed: lamp aimed along the camera axis.
-LAMP_INNER_DEG = 30.0         # assumed: full lamp brightness within this angle of the lamp axis.
-LAMP_OUTER_DEG = 45.0         # assumed: no light beyond this angle (a flood light, like the field rig's LED flood).
+LAMP_INNER_DEG = 15.0         # assumed: full lamp brightness within this angle of the lamp axis.
+LAMP_OUTER_DEG = 32.0         # assumed: no light beyond this angle. Was 30/45 (a flood wider than the view, so frames
+                              # read evenly grey); 15/32 puts a visible pool inside the 60 deg view that falls off
+                              # to dark at the sides, centre brightness unchanged (exposure is set on the axis).
 EXPOSURE_REF_RANGE_M = 5.0    # assumed: flat ground this far ahead renders at EXPOSURE_REF_LEVEL.
-EXPOSURE_REF_LEVEL = 0.55     # assumed: 0..1 display level of that reference ground (nearest ground in view stays below white).
+EXPOSURE_REF_LEVEL = 0.55     # assumed: 0..1 display level of that reference ground (sim/terrain_look.py uses the same).
 DISPLAY_GAMMA = 2.2           # assumed: sensor-to-display curve.
+# Tone curve, in display-linear light y = L * EXPOSURE_REF_LEVEL^gamma (L = 1 at
+# the reference): straight below TONE_KNEE, so mid-tones and the 1/r^2 falloff
+# are the plain gamma curve; above it a soft shoulder, so hot near ground
+# rolls off toward white instead of clipping. Assumed.
+TONE_KNEE = 0.6               # display-linear (0.79 after gamma)
+
+# Display layer (sim/terrain_display.py, docs/handoffs.md "Terrain display").
+# "full": rim lips and rocks in the fine mesh, plus the detail tile and albedo
+# per pixel. "detail": texture and albedo only, no made-up geometry (for vision,
+# so invented lips do not become edges). "off": the plain sim grid, Lambert.
+DISPLAY_MODES = ("full", "detail", "off")
+TILE_MIP_LEVELS = 9           # detail tile prefiltered 2048 -> 8 texels, so far ground does not sparkle
+MICRO_SHADOW_STEPS_M = (0.01, 0.02, 0.035, 0.055, 0.08, 0.12, 0.17, 0.24, 0.33)  # assumed: march for tile-relief shadows
+# Off (0): with the lamp 0.2 m under the camera a pebble hides almost all of
+# its own shadow, and the 9-step march misses the camera's occluder between
+# steps more often than the lamp's, so it drew dark specks the references do
+# not have. Pebbles read through the tile's pale albedo instead.
+MICRO_SHADOW_RANGE_M = 0.0    # assumed: set > 0 (e.g. 30) to turn tile-relief shadows on
+MICRO_SHADOW_MAX_LEVEL = 2    # assumed: only where the tile's mip level keeps pebbles (texel <= 1.6 cm); coarser levels smear them into blobs
+MICRO_SHADOW_SOFT_M = 0.0004  # assumed: shadow edge width, metres of relief (under the lamp-camera gap, see SHADOW_SOFT_TAN_CAM)
+# Sensor (assumed; not given in Atha 2024 or Cauligi 2023): shot noise with
+# SENSOR_FULL_WELL_E electrons at display white, read noise SENSOR_READ_E, in
+# the linear signal before the tone curve; then 8-bit quantisation.
+SENSOR_FULL_WELL_E = 6000.0
+SENSOR_READ_E = 2.0
+NORMAL_MIN_VIEW_COS = 0.1     # assumed: detail normals bent to face the camera at least this much
+BLOCK_TAPER_CELLS = 8         # assumed: display relief fades out over the fine square's outer 2 m (seam to coarse mesh)
+SHARED_ARRAYS = ("height", "grid_h", "grid_hg", "alb_map", "disp_alb")  # Scene.share()
+DISPLAY_DIR_MAIN ="C:/Monad-Hackathon-Project/data/terrain/display"  # built assets, git-ignored
 LAMP_FADE_START_M = 60.0      # assumed: the lit region ends smoothly between these ranges.
 LAMP_FADE_END_M = 80.0        # assumed: by 60 m, 1/r^2 has already made the ground near-black.
 ALBEDO_VARIATION = 0.06       # assumed: +/- regolith brightness texture, so the ground is not flat grey.
@@ -75,10 +116,34 @@ SHADOW_SOFT_TAN = 0.0015      # assumed: shadow edge antialiasing width, in tan(
 SHADOW_SELF_MARGIN_M = 0.15   # assumed: terrain this close in front of a point is not tested as its blocker.
 HORIZON_AZIMUTHS = 1536       # assumed: rays in the lamp's horizon map, over 180 deg (2 mrad, 8 cm apart at 40 m).
 HORIZON_DR_M = 0.125          # assumed: sample spacing along each ray (half a grid cell).
+# Near surface (display on): a 5 cm height field around each rover from
+# terrain_display's patch(), used only for shadows and shading, so rim lips
+# narrower than the 0.25 m mesh still cast their shadow arcs.
+NEAR_RES_M = 0.05             # assumed: resolves lip widths (0.06 R) of craters down to ~2 m across
+NEAR_HALF_M = 42.0            # assumed: square half-width; past ~40 m a rim arc is under a pixel or two
+NEAR_SNAP_M = 8.0             # assumed: square centres sit on this lattice, so the rover is within 5.7 m of the
+                              # centre and the square reaches 36 m past it (beyond HORIZON_NEAR_M)
+HORIZON_NEAR_M = 34.0         # assumed: horizon rays sample at HORIZON_DR_NEAR_M out to here (inside the square)
+HORIZON_DR_NEAR_M = 0.05      # assumed
+# Horizon spans either side of the heading. Ground in the camera's view lies
+# within +-28 deg of it (60 deg HFOV, 15 deg pitch, corners). The lamp's
+# cone (LAMP_OUTER_DEG about an axis LAMP_PITCH_DEG down) holds no direction
+# more than asin(sin 32 / cos 15) = 33.3 deg from the heading. Outside a span
+# a point counts as unlit (lamp) or unseen (camera), which only happens out of view.
+CAMERA_HORIZON_HALF_DEG = 32.0
+LAMP_HORIZON_HALF_DEG = 40.0
+SHADOW_SELF_MARGIN_CAM_M = 0.03  # assumed: self-margin when the camera horizon also votes (no acne then)
+# Edge width when the camera votes. It must be well under the gap between the
+# lamp's and the camera's sight lines (0.2 m / range per metre behind a rim,
+# ~0.02 at 10 m) or both votes come out half-blocked and bowls go grey.
+SHADOW_SOFT_TAN_CAM = 0.0002   # assumed
 
 FINE_HALF_CELLS = 320         # assumed: fine mesh square is 2*320 cells = 160 m across.
-FINE_RECENTER_M = 20.0        # assumed: rebuild a rover's fine square when it drives this far from its centre,
-                              # so the square always reaches LAMP_FADE_START_M past the rover.
+FINE_SNAP_M = 20.0            # assumed: fine square centres sit on this lattice, so the rover is within 14.1 m
+                              # of the centre and the square reaches 66 m past it (beyond LAMP_FADE_START_M).
+# Both squares are snapped, not recentred on the rover after it drives some
+# distance, so a frame depends only on the two rovers' poses, never on the
+# order frames were drawn in. That lets display frames render in parallel.
 COARSE_STEP = 8               # assumed: coarse mesh vertex every 8 cells (2 m).
 NEAR_CLIP_M = 0.2             # assumed: GPU near and far planes.
 FAR_CLIP_M = 3000.0
@@ -97,6 +162,11 @@ STATUS_RGB = {"reported": (1.0, 0.85, 0.2), "confirmed": (0.3, 0.95, 0.4), "disp
 DRAPE_M = 0.10                # assumed: tracks float this far above the ground.
 
 
+def _snap(v, step):
+    """v to the nearest multiple of step (halves round up)."""
+    return step * math.floor(v / step + 0.5)
+
+
 def _smoothstep(e0, e1, x):
     t = np.clip((x - e0) / (e1 - e0), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
@@ -106,15 +176,18 @@ def _smoothstep(e0, e1, x):
 # Height grid sampling (local frame: world minus self.origin).
 # ---------------------------------------------------------------------------
 class _Grid:
-    def __init__(self, height, x0, y0, cell):
+    def __init__(self, height, x0, y0, cell, hg=None):
         self.h = np.ascontiguousarray(height, dtype=np.float32)
         self.H, self.W = self.h.shape
         self.x0, self.y0, self.cell = float(x0), float(y0), float(cell)
         self._hf = self.h.ravel()
         # Height and its central-difference slopes per cell, gathered together
-        # so one lookup gives a point's height and smooth normal.
-        gy, gx = np.gradient(self.h, self.cell)
-        self._hg = np.stack([self.h, gx, gy], axis=-1).reshape(-1, 3).astype(np.float32)
+        # so one lookup gives a point's height and smooth normal. hg: the same,
+        # already computed (a shared memory map, see Scene.share).
+        if hg is None:
+            gy, gx = np.gradient(self.h, self.cell)
+            hg = np.stack([self.h, gx, gy], axis=-1).reshape(-1, 3).astype(np.float32)
+        self._hg = hg
 
     def _corners(self, x, y):
         fj = np.clip((np.asarray(x, dtype=np.float64) - self.x0) / self.cell, 0.0, self.W - 1.000001)
@@ -132,16 +205,23 @@ class _Grid:
         b = h10 + (h11 - h10) * tj
         return a + (b - a) * ti
 
-    def height_normal(self, x, y):
-        """(height, unit normal) at points, both bilinear in the grid's slopes."""
+    def height_slopes(self, x, y):
+        """(..., 3) [height, dh/dx, dh/dy], bilinear in the grid's values and slopes."""
         k, tj, ti = self._corners(x, y)
         g, W = self._hg, self.W
         tj, ti = tj[..., None], ti[..., None]
         a = g[k] + (g[k + 1] - g[k]) * tj
         b = g[k + W] + (g[k + W + 1] - g[k + W]) * tj
-        s = a + (b - a) * ti
-        n = np.stack([-s[..., 1], -s[..., 2], np.ones_like(s[..., 0])], axis=-1)
-        return s[..., 0], n / np.linalg.norm(n, axis=-1, keepdims=True)
+        return a + (b - a) * ti
+
+    def height_normal(self, x, y):
+        """(height, unit normal) at points, both bilinear in the grid's slopes."""
+        s = self.height_slopes(x, y)
+        return s[..., 0], _slope_normal(s[..., 1], s[..., 2])
+
+    def contains(self, x, y):
+        return ((x >= self.x0) & (x <= self.x0 + (self.W - 1) * self.cell)
+                & (y >= self.y0) & (y <= self.y0 + (self.H - 1) * self.cell))
 
     def normal(self, x, y, e=None):
         """Unit up-normal from central differences of the bilinear height."""
@@ -149,40 +229,214 @@ class _Grid:
             return self.height_normal(x, y)[1]
         hx = (self.height(x + e, y) - self.height(x - e, y)) / (2 * e)
         hy = (self.height(x, y + e) - self.height(x, y - e)) / (2 * e)
-        n = np.stack([-hx, -hy, np.ones_like(hx)], axis=-1)
-        return n / np.linalg.norm(n, axis=-1, keepdims=True)
+        return _slope_normal(hx, hy)
+
+
+def _slope_normal(sx, sy):
+    n = np.stack([-sx, -sy, np.ones_like(sx)], axis=-1)
+    return n / np.linalg.norm(n, axis=-1, keepdims=True)
+
+
+def _by_block(base, blocks, x, y, fn):
+    """fn(grid, x, y) from the first block (priority order) containing each
+    point, else from base. Each point is looked up once."""
+    if not blocks:
+        return fn(base, x, y)
+    out = None
+    left = np.ones(np.shape(x), dtype=bool)
+    for g in blocks + [base]:
+        m = left & g.contains(x, y) if g is not base else left
+        if not np.any(m):
+            continue
+        r = fn(g, x[m], y[m])
+        if out is None:
+            out = np.empty(np.shape(x) + r.shape[1:], r.dtype)
+        out[m] = r
+        left &= ~m
+    return out
+
+
+class _Surface:
+    """The ground the lamp and camera see: the sim grid, overridden inside
+    each rover's fine square by that square's display heights (rim lips and
+    rocks). Blocks earlier in agency order win where squares overlap, the
+    same rule the fine mesh uses, so shading matches the drawn mesh."""
+
+    def __init__(self, base):
+        self.base = base
+        self.blocks = []  # _Grid per fine square, highest priority first
+
+    def _each(self, x, y, fn):
+        return _by_block(self.base, self.blocks, x, y, fn)
+
+    def height(self, x, y):
+        x, y = np.asarray(x, np.float64), np.asarray(y, np.float64)
+        if x.ndim == 0:
+            return self._each(x[None], y[None], _Grid.height)[0]
+        return self._each(x, y, _Grid.height)
+
+    def height_slopes(self, x, y):
+        return self._each(np.asarray(x, np.float64), np.asarray(y, np.float64), _Grid.height_slopes)
+
+    def height_normal(self, x, y):
+        s = self.height_slopes(x, y)
+        return s[..., 0], _slope_normal(s[..., 1], s[..., 2])
+
+
+def _bilinear(arr, x0, y0, cell, x, y):
+    """Bilinear sample of arr (rows north, [i, j] at (x0 + j cell, y0 + i cell)), clamped."""
+    H, W = arr.shape[:2]
+    fj = np.clip((np.asarray(x, np.float64) - x0) / cell, 0.0, W - 1.000001)
+    fi = np.clip((np.asarray(y, np.float64) - y0) / cell, 0.0, H - 1.000001)
+    j, i = fj.astype(np.int64), fi.astype(np.int64)
+    tj, ti = (fj - j).astype(np.float32), (fi - i).astype(np.float32)
+    if arr.ndim == 3:
+        tj, ti = tj[..., None], ti[..., None]
+    a = arr[i, j] + (arr[i, j + 1] - arr[i, j]) * tj
+    b = arr[i + 1, j] + (arr[i + 1, j + 1] - arr[i + 1, j]) * tj
+    return a + (b - a) * ti
+
+
+def _remap1(arr, mu, mv):
+    """cv2.remap of 1-D coordinate lists (bilinear, wrapping), any channel count."""
+    k = len(mu)
+    pad = (-k) % 1024  # remap wants image-shaped maps; rows of 1024
+    mu = np.concatenate([mu, np.zeros(pad, np.float32)]).reshape(-1, 1024)
+    mv = np.concatenate([mv, np.zeros(pad, np.float32)]).reshape(-1, 1024)
+    out = cv2.remap(arr, mu, mv, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
+    return out.reshape((-1,) + arr.shape[2:])[:k]
+
+
+class _DetailTile:
+    """terrain_display's repeating detail tile as a mip pyramid of
+    [albedo factor, dh/dx, dh/dy], sampled per pixel at the pixel's ground
+    footprint so distant ground averages out instead of sparkling."""
+
+    def __init__(self, tile_h, tile_a, period_m, strength):
+        n = tile_h.shape[0]
+        px = period_m / n
+        gx = (np.roll(tile_h, -1, 1) - np.roll(tile_h, 1, 1)) / (2 * px)  # same differences as tile_normal()
+        gy = (np.roll(tile_h, -1, 0) - np.roll(tile_h, 1, 0)) / (2 * px)
+        lvl = np.stack([1.0 + strength * (tile_a - 1.0), strength * gx, strength * gy], -1).astype(np.float32)
+        hl = (strength * tile_h).astype(np.float32)
+        self.levels, self.hlevels = [lvl], [hl]
+        while len(self.levels) < TILE_MIP_LEVELS and lvl.shape[0] > 1:
+            lvl = 0.25 * (lvl[0::2, 0::2] + lvl[1::2, 0::2] + lvl[0::2, 1::2] + lvl[1::2, 1::2])
+            hl = 0.25 * (hl[0::2, 0::2] + hl[1::2, 0::2] + hl[0::2, 1::2] + hl[1::2, 1::2])
+            self.levels.append(lvl)
+            self.hlevels.append(hl)
+        self.period = period_m
+        self.texel0 = px
+
+    def _uv(self, x, y):
+        n0 = self.levels[0].shape[0]
+        # Level-0 texel coordinates: texel [i, j] is centred at ((j + .5) p / n, (i + .5) p / n).
+        return (((x % self.period) / self.period * n0 - 0.5).astype(np.float32),
+                ((y % self.period) / self.period * n0 - 0.5).astype(np.float32))
+
+    def _level(self, footprint_m):
+        return np.clip(np.log2(np.maximum(footprint_m, 1e-9) / self.texel0), 0.0, len(self.levels) - 1.0)
+
+    def micro_shadow(self, x, y, footprint_m, dir_xy, tan_lamp, tan_cam):
+        """0..1 lamp visibility from the tile's own relief (pebbles, craterlets):
+        march toward the lamp over MICRO_SHADOW_STEPS_M and test whether the
+        relief rises above the ray to the lamp. The 0.25 m mesh cannot cast
+        these; the lamp 0.2 m under the camera shows them as thin dark slivers
+        on the far side of each bump (Atha 2024 sec. V's reason for the low lamp).
+        The relief is only shading on a flat mesh, so the camera would see
+        straight through a bump to the shadow behind it. The same march toward
+        the camera (same bearing: the lamp is under it) finds where the bump
+        hides the point from the camera; there the pixel really shows the
+        bump's lit face, so the shadow is dropped.
+        Height comes from the mip level nearest the pixel footprint."""
+        L = np.rint(self._level(footprint_m)).astype(np.int64)
+        u, v = self._uv(x, y)
+        n0 = self.levels[0].shape[0]
+        k = n0 / self.period  # texels per metre at level 0
+        occ = np.full(len(x), -1.0, np.float32)
+        occ_c = np.full(len(x), -1.0, np.float32)
+        for lv in np.unique(L):
+            m = L == lv
+            hl = self.hlevels[int(lv)]
+            sc = np.float32(0.5 ** lv)
+            um, vm = u[m], v[m]
+            dx, dy = dir_xy[m, 0] * np.float32(k), dir_xy[m, 1] * np.float32(k)
+            h0 = _remap1(hl, (um + 0.5) * sc - 0.5, (vm + 0.5) * sc - 0.5)
+            t, tc = tan_lamp[m], tan_cam[m]
+            o = np.full(m.sum(), -1.0, np.float32)
+            oc = np.full(m.sum(), -1.0, np.float32)
+            for d in MICRO_SHADOW_STEPS_M:
+                rise = _remap1(hl, (um + dx * d + 0.5) * sc - 0.5, (vm + dy * d + 0.5) * sc - 0.5) - h0
+                np.maximum(o, rise - t * np.float32(d), out=o)
+                np.maximum(oc, rise - tc * np.float32(d), out=oc)
+            occ[m], occ_c[m] = o, oc
+        soft = np.float32(MICRO_SHADOW_SOFT_M)
+        lamp_vis = np.clip(0.5 - occ / soft, 0.0, 1.0)
+        cam_vis = np.clip(0.5 - occ_c / soft, 0.0, 1.0)
+        return 1.0 - (1.0 - lamp_vis) * cam_vis
+
+    def sample(self, x, y, footprint_m):
+        """(n, 3) [albedo factor, sx, sy], trilinear across mip levels."""
+        u, v = self._uv(x, y)
+        lf = self._level(footprint_m)
+        l0 = np.floor(lf).astype(np.int64)
+        t = (lf - l0).astype(np.float32)[:, None]
+        out = np.zeros((len(x), 3), np.float32)
+        for L in range(int(l0.min()), min(int(l0.max()) + 2, len(self.levels))):
+            lo, hi = l0 == L, l0 == L - 1  # this level is the lower or upper of the pair
+            m = lo | hi
+            if not np.any(m):
+                continue
+            w = np.where(lo[m, None], 1.0 - t[m], t[m])
+            sc = np.float32(0.5 ** L)
+            out[m] += w * _remap1(self.levels[L], (u[m] + 0.5) * sc - 0.5, (v[m] + 0.5) * sc - 0.5)
+        return out
 
 
 # ---------------------------------------------------------------------------
 # The lamp and its shadow.
 # ---------------------------------------------------------------------------
-class _Lamp:
-    """One rover's lamp: position, aim, and a polar horizon map for shadows."""
+class _Horizon:
+    """Polar horizon map from a point: along rays over the half-plane in front
+    of it, the running maximum of the terrain's elevation angle. A point is
+    visible from the origin when it rises above everything in between.
+    Samples are HORIZON_DR_NEAR_M apart out to HORIZON_NEAR_M (where the
+    5 cm near surface is), HORIZON_DR_M beyond."""
 
-    def __init__(self, grid, pos, heading):
+    def __init__(self, surface, pos, heading, half_deg=90.0):
         self.pos = np.asarray(pos, dtype=np.float64)
         self.heading = heading
-        p = math.radians(LAMP_PITCH_DEG)
-        self.axis = np.array([math.cos(heading) * math.cos(p), math.sin(heading) * math.cos(p), -math.sin(p)])
-        # Horizon map over the half-plane in front of the lamp. Everything
-        # behind it is outside the cone (pitch + outer angle < 90 deg).
-        self.daz = math.pi / (HORIZON_AZIMUTHS - 1)
-        az = heading - math.pi / 2 + self.daz * np.arange(HORIZON_AZIMUTHS)
-        n_r = int(LAMP_FADE_END_M / HORIZON_DR_M) + 2
-        r = HORIZON_DR_M * np.arange(1, n_r + 1)
+        self.daz = math.pi / (HORIZON_AZIMUTHS - 1)  # same angular spacing whatever the span
+        # Rays at heading + k * daz: the same azimuths whatever the span, so a
+        # wider or narrower span changes no shadow inside both.
+        n_half = int(math.ceil(math.radians(half_deg) / self.daz))
+        self.half = n_half * self.daz
+        az = heading + self.daz * np.arange(-n_half, n_half + 1)
+        self.n1 = int(round(HORIZON_NEAR_M / HORIZON_DR_NEAR_M))
+        r1 = HORIZON_DR_NEAR_M * np.arange(1, self.n1 + 1)
+        n2 = int(math.ceil((LAMP_FADE_END_M - HORIZON_NEAR_M) / HORIZON_DR_M)) + 2
+        r = np.concatenate([r1, HORIZON_NEAR_M + HORIZON_DR_M * np.arange(1, n2 + 1)])
         X = self.pos[0] + np.cos(az)[:, None] * r[None, :]
         Y = self.pos[1] + np.sin(az)[:, None] * r[None, :]
-        tan_el = (grid.height(X, Y) - self.pos[2]) / r[None, :]
+        tan_el = (surface.height(X, Y) - self.pos[2]) / r[None, :]
         self.horizon = np.maximum.accumulate(tan_el, axis=1).astype(np.float32)
 
-    def visibility(self, P):
-        """0..1: how lit point(s) P (..., 3) are, from the horizon map."""
+    def _index(self, rho):
+        """Fractional sample index of range rho (index k holds the k-th radius)."""
+        near = rho / HORIZON_DR_NEAR_M - 1.0
+        far = (self.n1 - 1) + (rho - HORIZON_NEAR_M) / HORIZON_DR_M
+        return np.where(rho <= HORIZON_NEAR_M, near, far)
+
+    def visibility(self, P, margin=None, soft=SHADOW_SOFT_TAN):
+        """0..1: how visible point(s) P (..., 3) are from the origin."""
         d = P - self.pos.astype(P.dtype)
         rho = np.hypot(d[..., 0], d[..., 1])
         a = np.arctan2(d[..., 1], d[..., 0]) - self.heading
         a = (a + math.pi) % (2 * math.pi) - math.pi
-        fa = (a + math.pi / 2) / self.daz
-        fr = (rho - SHADOW_SELF_MARGIN_M) / HORIZON_DR_M - 1.0  # index k holds r = dr * (k + 1)
+        fa = (a + self.half) / self.daz
+        # float64: in float32, R - 1.000001 rounds to R - 1 and the + 1 below overruns.
+        fr = self._index(rho.astype(np.float64) - (SHADOW_SELF_MARGIN_M if margin is None else margin))
+        fa = fa.astype(np.float64)
         A, R = self.horizon.shape
         inside = (fa >= 0) & (fa <= A - 1) & (fr >= 0)
         fa = np.clip(fa, 0, A - 1.000001)
@@ -194,11 +448,35 @@ class _Lamp:
         h1 = Hm[ia + 1, ir] + (Hm[ia + 1, ir + 1] - Hm[ia + 1, ir]) * tr
         blocker = h0 + (h1 - h0) * ta
         tan_p = d[..., 2] / np.maximum(rho, 1e-6)
-        vis = np.clip((tan_p - blocker) / SHADOW_SOFT_TAN + 0.5, 0.0, 1.0)
+        vis = np.clip((tan_p - blocker) / soft + 0.5, 0.0, 1.0)
         return np.where(inside, vis, np.where(fr < 0, 1.0, 0.0))
 
-    def irradiance(self, P, N):
-        """Lamp irradiance on points P (n, 3) with normals N (n, 3), in lamp units / m^2."""
+
+class _Lamp:
+    """One rover's lamp: position, aim, and a horizon map for its shadows."""
+
+    def __init__(self, surface, pos, heading):
+        self.pos = np.asarray(pos, dtype=np.float64)
+        self.heading = heading
+        p = math.radians(LAMP_PITCH_DEG)
+        self.axis = np.array([math.cos(heading) * math.cos(p), math.sin(heading) * math.cos(p), -math.sin(p)])
+        # Everything behind the lamp is outside the cone (pitch + outer angle < 90 deg).
+        self.hz = _Horizon(surface, pos, heading, LAMP_HORIZON_HALF_DEG)
+
+    def visibility(self, P):
+        return self.hz.visibility(P)
+
+    def irradiance(self, P, N, V=None, brdf=None, cam=None):
+        """Lamp irradiance on points P (n, 3) with normals N (n, 3), in lamp units / m^2.
+
+        With V (n, 3), unit vectors from each point toward the viewer, and
+        brdf(mu0, mu, cos_g), the cosine factor is replaced by brdf's
+        reflectance (normalised so it equals mu0 at the exposure reference).
+
+        With cam, the viewing camera's _Horizon: a point the lamp cannot see
+        is drawn dark only if the camera can see it. Where the camera is
+        blocked too, the pixel really shows the blocker's lit face (the
+        drawn mesh is coarser than the shadow surface), so it stays lit."""
         out = np.zeros(len(P), dtype=np.float32)
         l = self.pos.astype(P.dtype) - P
         # Cheap cull first: inside the cone and the lamp's reach.
@@ -211,12 +489,23 @@ class _Lamp:
         l, r2, along, Pk, Nk = l[keep], r2[keep], along[keep], P[keep], N[keep]
         r = np.sqrt(r2)
         ndotl = np.clip(np.einsum("ij,ij->i", Nk, l) / r, 0.0, None)
+        if brdf is not None:
+            Vk = V[keep]
+            mu = np.einsum("ij,ij->i", Nk, Vk)
+            cos_g = np.einsum("ij,ij->i", l, Vk) / r
+            ndotl = np.where(ndotl > 0, brdf(ndotl, mu, cos_g), 0.0).astype(np.float32)
         spot = _smoothstep(c_out, math.cos(math.radians(LAMP_INNER_DEG)), along / r)
         fade = 1.0 - _smoothstep(LAMP_FADE_START_M, LAMP_FADE_END_M, r)
         e = spot * fade * ndotl / np.maximum(r2, 1e-6)
         lit = e > 0
         if np.any(lit):
-            e[lit] *= self.visibility(Pk[lit])
+            if cam is None:
+                vl = self.visibility(Pk[lit])
+            else:
+                vl = self.hz.visibility(Pk[lit], SHADOW_SELF_MARGIN_CAM_M, SHADOW_SOFT_TAN_CAM)
+                vc = cam.visibility(Pk[lit], SHADOW_SELF_MARGIN_CAM_M, SHADOW_SOFT_TAN_CAM)
+                vl = 1.0 - (1.0 - vl) * vc
+            e[lit] *= vl
         out[keep] = e
         return out
 
@@ -231,6 +520,51 @@ def _reference_irradiance():
     cos_off = float(-lhat @ np.array([math.cos(p), 0.0, -math.sin(p)]))
     spot = float(_smoothstep(math.cos(math.radians(LAMP_OUTER_DEG)), math.cos(math.radians(LAMP_INNER_DEG)), cos_off))
     return spot * lhat[2] / r2
+
+
+def _reference_angles():
+    """(mu0, mu, cos phase) at the exposure reference point: lamp below the camera, flat ground."""
+    hl = CAMERA_HEIGHT_M - LAMP_BELOW_CAMERA_M
+    l = np.array([-EXPOSURE_REF_RANGE_M, 0.0, hl])
+    v = np.array([-EXPOSURE_REF_RANGE_M, 0.0, CAMERA_HEIGHT_M])
+    l, v = l / np.linalg.norm(l), v / np.linalg.norm(v)
+    return float(l[2]), float(v[2]), float(l @ v)
+
+
+def _tone_lin(lin_rel):
+    """Display-linear 0..1 from radiance relative to the exposure reference (1 = reference)."""
+    y = np.asarray(lin_rel, np.float32) * np.float32(EXPOSURE_REF_LEVEL ** DISPLAY_GAMMA)
+    k, w = np.float32(TONE_KNEE), np.float32(1.0 - TONE_KNEE)
+    return np.where(y <= k, y, k + w * (1.0 - np.exp(-(y - k) / w))).astype(np.float32)
+
+
+def _load_display(height, craters, x0, y0, cell, display_dir, strength):
+    """terrain_display.Display over the scene's own arrays (it would otherwise
+    load the terrain file again). None, with a printed reason, if unusable."""
+    import os
+    import sys
+    from pathlib import Path
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)  # terrain_display does `import terrain`
+    import terrain_display as TD
+    d = Path(display_dir) if display_dir else None
+    if d is None or not (d / "display.json").exists():
+        cands = [Path(here).parent / "data/terrain/display", Path(DISPLAY_DIR_MAIN)]
+        d = next((c for c in cands if (c / "display.json").exists()), None)
+    if d is None:
+        print("scene: no display assets (run `python sim/terrain_display.py build`); display off")
+        return None, TD
+    orig = TD.T.load_terrain
+    TD.T.load_terrain = lambda path=None: (height, craters, x0, y0, cell)
+    try:
+        disp = TD.Display(display_dir=d, strength=strength)
+    finally:
+        TD.T.load_terrain = orig
+    if disp.alb.shape != np.shape(height) or len(disp.lips) != len(craters):
+        print(f"scene: display assets in {d} were built for another terrain; display off")
+        return None, TD
+    return disp, TD
 
 
 # ---------------------------------------------------------------------------
@@ -346,20 +680,69 @@ class Scene:
     Use camera_model() or depth_to_rover() to turn it into rover-frame points.
     """
 
-    def __init__(self, height, craters, x0, y0, cell):
+    def __init__(self, height, craters, x0, y0, cell, display="full", display_dir=None, strength=None,
+                 shared=None):
+        """display: "full" (display layer with rim lips and rocks), "detail"
+        (its texture, albedo and Hapke shading only: no made-up geometry, for
+        the vision step), or "off" (the sim grid, Lambert, as before).
+        strength: terrain_display's one knob (None = its built default).
+        shared: a folder written by share(); its big arrays are opened as
+        read-only memory maps, so worker processes hold one copy between them."""
+        sh = None
+        if shared is not None:
+            sh = {k: np.load(Path(shared) / f"{k}.npy", mmap_mode="r") for k in SHARED_ARRAYS
+                  if (Path(shared) / f"{k}.npy").exists()}
+        if display not in DISPLAY_MODES:
+            raise ValueError(f"display must be one of {DISPLAY_MODES}")
         height = np.asarray(height, dtype=np.float32)
+        self._height = height
         H, W = height.shape
         # Render in a local frame near the map centre: world coordinates such
         # as LOLA stereographic metres (~1e5) lose millimetres in float32.
         self.origin = np.array([x0 + 0.5 * W * cell, y0 + 0.5 * H * cell, float(np.median(height))])
-        self.grid = _Grid(height - self.origin[2], x0 - self.origin[0], y0 - self.origin[1], cell)
+        if sh is not None:
+            self.grid = _Grid(sh["grid_h"], x0 - self.origin[0], y0 - self.origin[1], cell, hg=sh["grid_hg"])
+        else:
+            self.grid = _Grid(height - self.origin[2], x0 - self.origin[0], y0 - self.origin[1], cell)
+        self.surface = _Surface(self.grid)  # what the lamp and camera see; fine squares added per rover
+        self.mesh_surface = _Surface(self.grid)  # what VTK draws: fine squares over the sim grid
         self.craters = np.asarray(craters, dtype=np.float64)
         self.e_ref = _reference_irradiance()
         self._albedo = self._make_albedo()
 
+        self.disp = None
+        self._brdf = None
+        self._tile = None
+        if display != "off":
+            self.disp, TD = _load_display(height, craters, x0, y0, cell, display_dir, strength)
+            if self.disp is None:
+                display = "off"
+        self.display = display
+        if self.disp is not None:
+            D = self.disp
+            self._tile = _DetailTile(D.tile_h, D.tile_a, D.p.tile_period_m, D.s)
+            # Per-cell albedo map at the knob's strength (terrain_display FORMAT, "Combine").
+            if sh is not None:
+                D.alb = sh["disp_alb"]
+                self._alb_map = sh["alb_map"]
+            else:
+                self._alb_map = (1.0 + D.s * (D.alb - 1.0)).astype(np.float32)
+            self.grid.alb = self._alb_map
+            mu0r, mur, cgr = _reference_angles()
+            hp = D.p
+            radf_ref = float(TD.hapke_radf(mu0r, mur, math.acos(cgr), hp))
+            k = np.float32(mu0r / radf_ref)
+
+            def brdf(mu0, mu, cos_g):  # Hapke I/F (Xu et al. 2020 Eqs. 5-12), equal to mu0 at the reference
+                return TD.hapke_radf(mu0, mu, np.arccos(np.clip(cos_g, -1.0, 1.0)), hp) * k
+            self._brdf = brdf
+            self._mesh_layers = ("lips", "rocks") if display == "full" else ()
+
         self.poses = {}     # agency -> (x, y, heading), world
         self.lamps = {}     # agency -> _Lamp (local frame), built lazily
         self.blocks = {}    # agency -> fine mesh block
+        self.near = {}      # agency -> 5 cm near _Grid (display on)
+        self.cams = {}      # agency -> camera _Horizon, built lazily
         self._lamp_colors_dirty = True
 
         # Coarse mesh over the whole map.
@@ -411,6 +794,17 @@ class Scene:
         self._rover_actors = {}  # agency -> (fp actor, tp actor)
         self.timings = {}
 
+    def share(self, folder):
+        """Write the big arrays a Scene(..., shared=folder) maps instead of building."""
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        arrs = dict(height=self._height, grid_h=self.grid.h, grid_hg=self.grid._hg)
+        if self.disp is not None:
+            arrs.update(alb_map=self._alb_map, disp_alb=self.disp.alb)
+        for k, a in arrs.items():
+            np.save(folder / f"{k}.npy", np.ascontiguousarray(a))
+        return folder
+
     # -- public API (docs/handoffs.md) ---------------------------------------
     def set_rover(self, agency, true_pose):
         x, y, hd = (float(v) for v in true_pose)
@@ -419,8 +813,14 @@ class Scene:
         self._lamp_colors_dirty = True
         lx, ly = x - self.origin[0], y - self.origin[1]
         blk = self.blocks.get(agency)
-        if blk is None or math.hypot(lx - blk["cx"], ly - blk["cy"]) > FINE_RECENTER_M:
-            self._build_block(agency, lx, ly)
+        bc = (_snap(lx, FINE_SNAP_M), _snap(ly, FINE_SNAP_M))
+        if blk is None or (blk["cx"], blk["cy"]) != bc:
+            self._build_block(agency, *bc)
+        near = self.near.get(agency)
+        nc = (_snap(lx, NEAR_SNAP_M), _snap(ly, NEAR_SNAP_M))
+        if self.disp is not None and (near is None or (near.cx, near.cy) != nc):
+            self._build_near(agency, *nc)
+        self.cams.pop(agency, None)
         self._place_rover_actor(agency)
 
     def first_person(self, agency):
@@ -461,8 +861,49 @@ class Scene:
             reach |= (np.abs(P[..., 0] - lp[0]) < LAMP_FADE_END_M) & (np.abs(P[..., 1] - lp[1]) < LAMP_FADE_END_M)
         reach &= ~sky
         Pr = P[reach]
-        hP, N = self.grid.height_normal(Pr[:, 0], Pr[:, 1])
-        off_ground = np.abs(Pr[:, 2] - hP) > 0.05
+        S = self.surface.height_slopes(Pr[:, 0], Pr[:, 1])
+        hP = S[:, 0]
+        V = (C[None, :] - Pr).astype(np.float32)
+        V /= np.linalg.norm(V, axis=1, keepdims=True)
+        alb = self._albedo_at(Pr)
+        if self._tile is not None:
+            # Per-pixel detail in world coordinates (it repeats every 8 m in
+            # world x, y, as terrain_display.patch() lays it). Footprint: the
+            # pixel's width on the ground, stretched by the viewing slant.
+            Nm = _slope_normal(S[:, 1], S[:, 2])
+            mu = np.einsum("ij,ij->i", Nm, V)
+            fx = self._intrinsics()[0]
+            foot = z_eye[reach] * ray_len[reach] / fx / np.maximum(mu, 0.15)
+            T = self._tile.sample(Pr[:, 0] + self.origin[0], Pr[:, 1] + self.origin[1], foot)
+            alb = alb * T[:, 0]
+            # Inside a near square built with the tile's relief, the slopes
+            # already hold it (to 5 cm); do not add it twice.
+            tx, ty = T[:, 1].copy(), T[:, 2].copy()
+            for ng in self.near.values():
+                if getattr(ng, "has_detail", False):
+                    m = ng.contains(Pr[:, 0], Pr[:, 1])
+                    tx[m] = 0.0
+                    ty[m] = 0.0
+            N = _slope_normal(S[:, 1] + tx, S[:, 2] + ty).astype(np.float32)
+        else:
+            N = _slope_normal(S[:, 1], S[:, 2]).astype(np.float32)
+        # Normals come from the 5 cm surface and the detail tile, finer than the
+        # 0.25 m mesh the camera sees: one can face away from the camera on a
+        # facet the camera does see (a rock's far flank under a mesh bump).
+        # Bend those toward the viewer (standard normal-map fix) so they do
+        # not render as black specks.
+        nv = np.einsum("ij,ij->i", N, V)
+        bad = nv < NORMAL_MIN_VIEW_COS
+        if np.any(bad):
+            Nb = N[bad] + (NORMAL_MIN_VIEW_COS - nv[bad])[:, None] * V[bad]
+            N[bad] = Nb / np.linalg.norm(Nb, axis=1, keepdims=True)
+        # Another rover: far from the drawn mesh (not the 5 cm surface, whose
+        # rocks and lips the mesh only approximates).
+        off_ground = np.abs(Pr[:, 2] - self.mesh_surface.height(Pr[:, 0], Pr[:, 1])) > 0.05
+        # Shadow tests run on the 5 cm surface: lift ground points onto it, so a
+        # lip the 0.25 m mesh cannot hold does not shadow the point drawn under it.
+        Ps = Pr.copy()
+        Ps[~off_ground, 2] = hP[~off_ground]
         if np.any(off_ground):  # another rover: normal from the depth image instead
             Pimg = np.where(sky[..., None], np.nan, P)
             nimg = np.cross(np.gradient(Pimg, axis=1), np.gradient(Pimg, axis=0))
@@ -471,14 +912,39 @@ class Scene:
             No = nimg[reach][off_ground]
             N[off_ground] = np.where(np.isfinite(No), No, 0.0)
         E = np.zeros(len(Pr), dtype=np.float32)
+        cam = self._cam_horizon(agency)
         for ag in self.poses:
             lamp = self._lamp(ag)
             near = (np.abs(Pr[:, 0] - lamp.pos[0]) < LAMP_FADE_END_M) & (np.abs(Pr[:, 1] - lamp.pos[1]) < LAMP_FADE_END_M)
-            if np.any(near):
-                E[near] += lamp.irradiance(Pr[near], N[near])
-        lin = self._albedo_at(Pr) * E * np.float32(EXPOSURE_REF_LEVEL ** DISPLAY_GAMMA / self.e_ref)
-        grey = np.zeros((h, w), dtype=np.uint8)
-        grey[reach] = (np.clip(lin, 0.0, 1.0) ** np.float32(1.0 / DISPLAY_GAMMA) * 255.0 + 0.5).astype(np.uint8)
+            if not np.any(near):
+                continue
+            e = lamp.irradiance(Ps[near], N[near], V[near], self._brdf, cam)
+            if ag == agency and self._tile is not None:
+                # Pebble-scale cast shadows from this camera's own lamp.
+                d = lamp.pos[None, :2] - Ps[near, :2]
+                rho = np.linalg.norm(d, axis=1)
+                fine = self._tile._level(foot[near]) <= MICRO_SHADOW_MAX_LEVEL + 0.5
+                sel = (e > 0) & (rho < MICRO_SHADOW_RANGE_M) & ~off_ground[near] & fine
+                if np.any(sel):
+                    ii = np.flatnonzero(near)[sel]
+                    dirs = (d[sel] / np.maximum(rho[sel], 1e-6)[:, None]).astype(np.float32)
+                    tan_l = ((lamp.pos[2] - Ps[ii, 2]) / np.maximum(rho[sel], 1e-3)).astype(np.float32)
+                    tan_c = ((C[2] - Ps[ii, 2]) / np.maximum(rho[sel], 1e-3)).astype(np.float32)
+                    e[sel] *= self._tile.micro_shadow(Pr[ii, 0] + self.origin[0], Pr[ii, 1] + self.origin[1],
+                                                      foot[ii], dirs, tan_l, tan_c)
+            E[near] += e
+        lin_rel = alb * E * np.float32(1.0 / self.e_ref)  # 1 = the exposure reference ground
+        y = np.zeros((h, w), dtype=np.float32)
+        y[reach] = _tone_lin(lin_rel)  # display-linear, 0..1
+        if SENSOR_FULL_WELL_E > 0:
+            # Seeded by pose (crc32, not hash(): str hashes change per process),
+            # so a frame re-renders identically.
+            seed = zlib.crc32(repr((agency,) + tuple(round(v, 3) for v in self.poses[agency])).encode())
+            rng = np.random.default_rng(seed)
+            el = y * np.float32(SENSOR_FULL_WELL_E)
+            sd = np.sqrt(el + np.float32(SENSOR_READ_E ** 2))
+            y = np.clip((el + sd * rng.standard_normal((h, w), dtype=np.float32)) / np.float32(SENSOR_FULL_WELL_E), 0.0, 1.0)
+        grey = (y ** np.float32(1.0 / DISPLAY_GAMMA) * 255.0 + 0.5).astype(np.uint8)
         img = np.repeat(grey[..., None], 3, axis=2)
         t2 = time.perf_counter()
         self.timings["fp_render_ms"] = 1e3 * (t1 - t0)
@@ -575,11 +1041,49 @@ class Scene:
         up = np.cross(right, fwd)
         return C, fwd, right, up
 
+    def _cam_horizon(self, agency):
+        hz = self.cams.get(agency)
+        if hz is None:
+            C, *_ = self._camera_frame(agency)
+            hz = _Horizon(self.surface, C, self.poses[agency][2], CAMERA_HORIZON_HALF_DEG)
+            self.cams[agency] = hz
+        return hz
+
+    def _set_surface(self):
+        """Priority: near squares, then fine squares (each in agency order), then the sim grid."""
+        self.surface.blocks = ([self.near[a] for a in sorted(self.near)]
+                               + [self.blocks[a]["grid"] for a in sorted(self.blocks) if self.blocks[a]["grid"] is not None])
+        self.mesh_surface.blocks = [self.blocks[a]["grid"] for a in sorted(self.blocks) if self.blocks[a]["grid"] is not None]
+        self.lamps.clear()
+        self.cams.clear()
+
+    def _build_near(self, agency, lx, ly):
+        t = time.perf_counter()
+        n = int(round(2 * NEAR_HALF_M / NEAR_RES_M)) + 1
+        x0 = lx - NEAR_HALF_M
+        y0 = ly - NEAR_HALF_M
+        # "full" also puts the detail tile's relief into the shadow surface: its
+        # bumps along a ridge cast the dashed lip lines terrain_look's 2 cm
+        # geometry shows. Its albedo stays per pixel, so it is divided out here.
+        detail = self.display == "full"
+        layers = self._mesh_layers + (("detail",) if detail else ())
+        ph, pa = self.disp.patch(x0 + self.origin[0], y0 + self.origin[1], n, n, NEAR_RES_M, layers=layers)
+        if detail:
+            X, Y = np.meshgrid(x0 + self.origin[0] + NEAR_RES_M * np.arange(n), y0 + self.origin[1] + NEAR_RES_M * np.arange(n))
+            pa = pa / (1.0 + self.disp.s * (self.disp._tile(self.disp.tile_a, X, Y) - 1.0))
+        ng = _Grid(ph - np.float32(self.origin[2]), x0, y0, NEAR_RES_M)
+        ng.alb = pa.astype(np.float32)
+        ng.has_detail = detail
+        ng.cx, ng.cy = lx, ly
+        self.near[agency] = ng
+        self._set_surface()
+        self.timings["near_ms"] = 1e3 * (time.perf_counter() - t)
+
     def _lamp(self, agency):
         lamp = self.lamps.get(agency)
         if lamp is None:
             C, *_ = self._camera_frame(agency)
-            lamp = _Lamp(self.grid, C - np.array([0.0, 0.0, LAMP_BELOW_CAMERA_M]), self.poses[agency][2])
+            lamp = _Lamp(self.surface, C - np.array([0.0, 0.0, LAMP_BELOW_CAMERA_M]), self.poses[agency][2])
             self.lamps[agency] = lamp
         return lamp
 
@@ -598,8 +1102,13 @@ class Scene:
         return (1.0 + ALBEDO_VARIATION * t / t.std()).astype(np.float32)
 
     def _albedo_at(self, P):
-        """Bilinear sample of the repeating albedo tile (one texel per grid cell)."""
+        """Ground albedo factor at local points P (..., 2+): the display layer's
+        per-cell map (fine squares: their patch albedo, with rocks), or with
+        the display off, the repeating stand-in tile."""
         g = self.grid
+        if self.disp is not None:
+            return _by_block(g, self.surface.blocks, P[..., 0], P[..., 1],
+                             lambda gr, x, y: _bilinear(gr.alb, gr.x0, gr.y0, gr.cell, x, y))
         A = self._albedo
         n = A.shape[0]
         fj = (P[..., 0] - g.x0) / g.cell
@@ -633,15 +1142,36 @@ class Scene:
         i1 = min(g.H - 1, ic + FINE_HALF_CELLS)
         j1 = min(g.W - 1, jc + FINE_HALF_CELLS)
         I, J = np.meshgrid(np.arange(i0, i1 + 1), np.arange(j0, j1 + 1), indexing="ij")
-        xyz = np.stack([g.x0 + J * g.cell, g.y0 + I * g.cell, g.h[I, J]], axis=-1).reshape(-1, 3).astype(np.float64)
+        nr, nc = i1 - i0 + 1, j1 - j0 + 1
+        hb = g.h[i0:i1 + 1, j0:j1 + 1]
+        bgrid = None
+        if self.disp is not None:
+            # Display heights on the same 0.25 m vertices (terrain_display.patch,
+            # rows north, [i, j] at (xmin + j res, ymin + i res)). The made-up
+            # part tapers to zero at the square's edge so the stitch to the
+            # coarse mesh stays closed.
+            t = time.perf_counter()
+            ph, pa = self.disp.patch(g.x0 + j0 * g.cell + self.origin[0], g.y0 + i0 * g.cell + self.origin[1],
+                                     nc, nr, g.cell, layers=self._mesh_layers)
+            ramp = np.minimum(np.arange(nr), np.arange(nr)[::-1])[:, None]
+            ramp = np.minimum(ramp, np.minimum(np.arange(nc), np.arange(nc)[::-1])[None, :])
+            taper = _smoothstep(0.0, float(BLOCK_TAPER_CELLS), ramp.astype(np.float32))
+            hb = (hb + taper * ((ph - self.origin[2]) - hb)).astype(np.float32)
+            bgrid = _Grid(hb, g.x0 + j0 * g.cell, g.y0 + i0 * g.cell, g.cell)
+            bgrid.alb = pa.astype(np.float32)
+            self.timings["patch_ms"] = 1e3 * (time.perf_counter() - t)
+        xyz = np.stack([g.x0 + J * g.cell, g.y0 + I * g.cell, hb], axis=-1).reshape(-1, 3).astype(np.float64)
         old = self.blocks.get(agency)
-        blk = dict(i0=i0, i1=i1, j0=j0, j1=j1, cx=lx, cy=ly, xyz=xyz,
-                   n=g.normal(xyz[:, 0], xyz[:, 1]))
-        blk["albedo"] = self._albedo_at(xyz)
+        blk = dict(i0=i0, i1=i1, j0=j0, j1=j1, cx=lx, cy=ly, xyz=xyz, grid=bgrid)
+        if bgrid is not None:
+            blk["n"] = bgrid.height_normal(xyz[:, 0], xyz[:, 1])[1]
+            blk["albedo"] = bgrid.alb.ravel()
+        else:
+            blk["n"] = g.normal(xyz[:, 0], xyz[:, 1])
+            blk["albedo"] = self._albedo_at(xyz)
         blk["fill"] = self._fill_rgb(xyz, blk["n"])
         blk["base"] = self._to_u8(blk["fill"])
         pd = _polydata(xyz, np.zeros((0, 3), dtype=np.int64))
-        nr, nc = i1 - i0 + 1, j1 - j0 + 1
         # Third-person colours live in a texture with one texel per vertex,
         # so a lamp update re-uploads the texture, not the whole mesh.
         tu = (np.arange(nc) + 0.5) / nc
@@ -676,6 +1206,8 @@ class Scene:
             self._fp_ren.RemoveActor(old["fp_actor"])
             self._tp_ren.RemoveActor(old["tp_actor"])
         self.blocks[agency] = blk
+        # The ground changed under every lamp that reaches this square.
+        self._set_surface()
         self._fp_ren.AddActor(blk["fp_actor"])
         self._tp_ren.AddActor(blk["tp_actor"])
         self._rebuild_topology()
@@ -752,7 +1284,8 @@ class Scene:
                 E += lamp.irradiance(xyz, b["n"])
             lit = np.flatnonzero(E > 0)
             if len(lit):
-                lin = b["albedo"][lit] * E[lit] * np.float32(EXPOSURE_REF_LEVEL ** DISPLAY_GAMMA / self.e_ref)
+                # Same tone curve as first person, before gamma, so the pool rolls off instead of clipping.
+                lin = _tone_lin(b["albedo"][lit] * E[lit] * np.float32(1.0 / self.e_ref))
                 tex[lit] = self._to_u8(b["fill"][lit] + lin[:, None] * LAMP_RGB[None, :])
             b["lit"] = lit
             b["tex_img"].GetPointData().GetScalars().Modified()
@@ -964,13 +1497,15 @@ def main():
                     help="terrain .npz from step 2 (default: shoemaker.npz if present, else the stand-in)")
     ap.add_argument("--out", default="frames/scene_drive.mp4")
     ap.add_argument("--frames", type=int, default=160)
+    ap.add_argument("--display", choices=DISPLAY_MODES, default="full",
+                    help="display layer: full (lips, rocks, texture), detail (texture only), off (sim grid)")
     args = ap.parse_args()
 
     t = time.perf_counter()
     height, craters, x0, y0, cell = load_any_terrain(args.terrain)
     print(f"terrain {args.terrain or 'stand-in'} {height.shape} in {time.perf_counter() - t:.1f}s")
     t = time.perf_counter()
-    scene = Scene(height, craters, x0, y0, cell)
+    scene = Scene(height, craters, x0, y0, cell, display=args.display)
     print(f"scene built in {time.perf_counter() - t:.1f}s")
     start = (x0 + 500.0, y0 + 500.0) if args.terrain else (100.0, 500.0)
     poses = _scripted_drive(start, args.frames)

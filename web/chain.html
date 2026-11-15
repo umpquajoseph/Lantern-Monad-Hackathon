@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern, live record</title>
+<meta name="description" content="The Lantern ice record read live from the contract on Monad testnet: every find, its status, who checked it, and the safety zones active now.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="app.css">
+<style>
+  /* Only what this page adds to the viewer's stylesheet. */
+  .live { max-width: 460px; font-size: var(--f-hint); color: var(--hint); border-left: 2px solid var(--confirmed); padding: 2px 0 2px 10px; }
+  .live .tag { color: var(--confirmed); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; font-size: var(--f-overline); display: block; }
+  .live.err { border-left-color: var(--disputed); }
+  .live.err .tag { color: var(--disputed); }
+  .record.full { grid-row: 2; min-height: 0; }
+  .find .meta a, .ev a.tx { color: #8fb3ec; text-decoration: none; }
+  .find .meta a:hover, .ev a.tx:hover { text-decoration: underline; }
+  .tx.hint { color: var(--disabled); font-family: var(--sans); }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: var(--f-hint); }
+  .facts dt { color: var(--hint); margin: 0; }
+  .facts dd { margin: 0; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .facts dd.sans { font-family: var(--sans); }
+  .zone { display: grid; grid-template-columns: 18px 1fr auto; gap: 0 8px; padding: 5px 0; border-bottom: 1px solid var(--hairline); align-items: baseline; font-size: var(--f-hint); }
+  .zone:last-child { border-bottom: 0; }
+  .zone .who { font-weight: 700; font-size: var(--f-body); }
+  .zone .left { font-family: var(--mono); color: var(--hint); white-space: nowrap; }
+  .zone .left.on { color: var(--confirmed); }
+  .zone .meta { grid-column: 2 / 4; color: var(--hint); }
+  .sb-facts { padding: 2px 14px 8px; display: grid; gap: 3px; font-size: var(--f-hint); color: var(--hint); }
+  .sb-facts b { color: var(--fg); font-weight: 600; }
+  .sb-facts a { color: #8fb3ec; text-decoration: none; }
+  .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--confirmed); margin-right: 6px; vertical-align: middle; }
+  .pulse.off { background: var(--disputed); }
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="wordmark">Lantern</div>
+  <div class="sb-badge">Live from Monad testnet</div>
+
+  <nav class="sb-nav">
+    <div class="sb-section">Pages</div>
+    <a class="nav" href="index.html" style="display:block; text-decoration:none; color:inherit;">Replay of the demo runs</a>
+    <a class="nav" aria-current="true" href="chain.html" style="display:block; text-decoration:none;">The record, live</a>
+
+    <div class="sb-section">Contract</div>
+    <div class="sb-facts" id="sb-contract">
+      <div>Loading <code>chain/lantern_deployment.json</code></div>
+    </div>
+
+    <div class="sb-section">Reading</div>
+    <div class="sb-facts" id="sb-reading">
+      <div>Not read yet</div>
+    </div>
+  </nav>
+
+  <div class="sb-legend">
+    <div class="lg"><i class="sw ag-A"></i>Agency A</div>
+    <div class="lg"><i class="sw ag-B"></i>Agency B</div>
+    <div class="lg"><span class="status reported">reported</span></div>
+    <div class="lg"><span class="status confirmed">confirmed</span></div>
+    <div class="lg"><span class="status disputed">disputed</span></div>
+  </div>
+  <div class="sb-foot">
+    <a href="https://docs.monad.xyz/developer-essentials/testnet" target="_blank" rel="noopener">Monad testnet</a>
+  </div>
+</aside>
+
+<main class="page">
+  <header class="head">
+    <div class="titles">
+      <div class="ptitle">The shared record, live</div>
+      <div class="psub" id="summary">Connecting to the contract</div>
+    </div>
+    <div class="live" id="live">
+      <span class="tag"><span class="pulse off" id="pulse"></span>Live from Monad testnet</span>
+      <span id="live-text">Every number on this page is read from the Lantern contract in your browser. No server, no keys.</span>
+    </div>
+  </header>
+
+  <section class="record full">
+    <div class="col">
+      <div class="overline">Finds on chain <span class="hint" id="finds-hint"></span></div>
+      <div id="finds" class="finds"><div class="empty">Reading</div></div>
+    </div>
+    <div class="col">
+      <div class="overline">Transactions <span class="hint" id="feed-hint"></span></div>
+      <div id="feed" class="feed"><div class="empty">Reading</div></div>
+    </div>
+  </section>
+
+  <aside class="side">
+    <div class="panel">
+      <div class="panel-head"><div class="overline">What is on chain</div></div>
+      <dl class="facts" id="facts"></dl>
+    </div>
+    <div class="panel grow">
+      <div class="panel-head">
+        <div class="overline">Safety zones <span class="hint" id="zones-hint"></span></div>
+      </div>
+      <div id="zones"><div class="empty">Reading</div></div>
+      <div class="cap">Artemis Accords section 11: an agency announces the area it is working in, for how long, and why, so other rovers route around it.</div>
+    </div>
+  </aside>
+</main>
+
+<script type="module">
+import { LanternReader, renderFinds, renderFeed, short, fmtTime } from "./js/chain.js";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const link = (url, text) => url ? `<a href="${url}" target="_blank" rel="noopener">${esc(text)}</a>` : esc(text);
+
+function showError(e) {
+  const msg = e.shortMessage || e.message || String(e);
+  $("live").classList.add("err");
+  $("pulse").classList.add("off");
+  $("live-text").textContent = `Live read unavailable: ${msg}. The replay page still shows the recorded hashes.`;
+}
+
+function sidebarContract(reader) {
+  const d = reader.deployment;
+  $("sb-contract").innerHTML =
+    `<div>Lantern on chain <b>${esc(d.chainId)}</b></div>` +
+    `<div>${link(reader.addressUrl(), short(d.address))}</div>` +
+    `<div>deployed at block <b>${esc(d.deployBlock)}</b></div>` +
+    `<div>source ${d.verified ? `<b>verified</b> (${esc(d.verified)})` : "not verified"}</div>`;
+}
+
+function render(reader, snap) {
+  const c = snap.finds.filter((f) => f.status === "confirmed").length;
+  const d = snap.finds.filter((f) => f.status === "disputed").length;
+  const r = snap.finds.length - c - d;
+  const active = snap.zones.filter((z) => z.active).length;
+  $("summary").innerHTML =
+    `<b>${snap.finds.length}</b> find${snap.finds.length === 1 ? "" : "s"}: <b>${c}</b> confirmed, <b>${d}</b> disputed, <b>${r}</b> reported. ` +
+    `<b>${snap.checks.length}</b> cross-agency check${snap.checks.length === 1 ? "" : "s"}. ` +
+    `<b>${active}</b> safety zone${active === 1 ? "" : "s"} active now. Block ${snap.block}.`;
+  $("pulse").classList.remove("off");
+  $("live").classList.remove("err");
+  $("live-text").textContent = `Every number on this page is read from the Lantern contract in your browser. No server, no keys. Last read ${snap.read_at.toLocaleTimeString()}.`;
+
+  $("finds").innerHTML = renderFinds(reader, snap);
+  $("finds-hint").textContent = snap.finds.length ? `${snap.finds.length} on the contract, oldest first` : "";
+  $("feed").innerHTML = renderFeed(reader, snap);
+  const withTx = snap.finds.filter((f) => f.tx).length + snap.checks.filter((k) => k.tx).length;
+  const total = snap.finds.length + snap.checks.length;
+  $("feed-hint").textContent = snap.logs.complete
+    ? "newest first, hashes from the event logs"
+    : `newest first · hashes for ${withTx} of ${total} so far, still scanning blocks ${snap.logs.tail}…${snap.logs.head}`;
+
+  $("zones-hint").textContent = `${active} active of ${snap.zones.length}`;
+  const now = Date.now() / 1000;
+  $("zones").innerHTML = snap.zones.length ? [...snap.zones].reverse().map((z) => {
+    const left = z.until - now;
+    const when = left > 0 ? `${Math.floor(left / 60)} min left` : "ended";
+    return `<div class="zone"><span class="who c-${esc(z.agency)}">${esc(z.agency)}</span>` +
+      `<span>#${z.id} · r ${z.radius.toFixed(0)} m · ${esc(z.purpose)}</span>` +
+      `<span class="left${left > 0 ? " on" : ""}">${when}</span>` +
+      `<span class="meta">(${z.x.toFixed(1)}, ${z.y.toFixed(1)}) m · announced ${fmtTime(z.time)}${z.tx ? " · " + link(reader.txUrl(z.tx), short(z.tx)) : ""}</span></div>`;
+  }).join("") : `<div class="empty">No safety zones announced.</div>`;
+
+  $("facts").innerHTML =
+    `<dt>contract</dt><dd>${link(reader.addressUrl(), snap.contract)}</dd>` +
+    `<dt>chain</dt><dd>Monad testnet, ${snap.chain_id}</dd>` +
+    `<dt>agencies</dt><dd class="sans">${snap.agencies.map((a) => `<span class="c-${a.letter}">${esc(a.letter)}</span> ${esc(a.name)} ${short(a.address)}`).join(" · ")}</dd>` +
+    `<dt>per find</dt><dd class="sans">position (cm), 1σ uncertainty (cm), reading (0.01 wt%), keccak256 of the raw data, timestamp</dd>` +
+    `<dt>per check</dt><dd class="sans">who, from where, their σ, their reading, agree or disagree</dd>` +
+    `<dt>rules</dt><dd class="sans">only another agency may check, from within 3 × (σ<sub>find</sub> + σ<sub>check</sub>); nothing is edited or deleted</dd>` +
+    `<dt>source</dt><dd class="sans">${snap.verified ? `verified on ${esc(snap.verified)}` : "not verified"}</dd>`;
+
+  $("sb-reading").innerHTML =
+    `<div>block <b>${snap.block}</b></div>` +
+    `<div>at <b>${snap.read_at.toLocaleTimeString()}</b>, every 4 s</div>` +
+    `<div>event logs: ${snap.logs.complete ? "<b>complete</b>" : `blocks ${snap.logs.tail}…${snap.logs.head}`}${snap.logs.error ? ` <span class="c-B">(${esc(snap.logs.error)})</span>` : ""}</div>`;
+}
+
+try {
+  const reader = await LanternReader.load("chain/");
+  sidebarContract(reader);
+  reader.poll((snap) => render(reader, snap), { onError: showError });
+} catch (e) {
+  showError(e);
+}
+</script>
+</body>
+</html>

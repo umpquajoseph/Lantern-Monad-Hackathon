@@ -287,6 +287,20 @@ function camera(run, fr, k) {
     }
   } else img.removeAttribute("src");
   $("fp-cap").innerHTML = captionHtml(run, a, fr ? fr.k : k, !!(fr && fr.sub));
+  // Lidar panel: the scan taken with this step's live frame (run_demo.py --vision).
+  const r = run.rover(a, fr ? fr.k : k);
+  const li = $("lidar-img");
+  // Runs without --vision have no lidar: hide the panel rather than show an empty box.
+  if (run.hasLidar === undefined) run.hasLidar = run.agencies.some((ag) => run.steps.some((_, j) => run.rover(ag, j).lidar_frame));
+  li.parentElement.hidden = $("lidar-cap").hidden = !run.hasLidar;
+  if (r.lidar_frame) {
+    const src = run.dir + r.lidar_frame;
+    if (li.dataset.src !== src) { li.dataset.src = src; li.src = src; }
+  } else {
+    li.removeAttribute("src");
+    delete li.dataset.src;
+  }
+  $("lidar-cap").textContent = lidarCapText(run, a, fr ? fr.k : k);
   // Rim points are logged per step, in that step's pose: draw them only on a step's own frame.
   drawRims(run, a, fr ? fr.k : k, !!(fr && fr.sub));
 }
@@ -298,7 +312,17 @@ function captionHtml(run, a, k, sub) {
   const every = gapM ? `, one frame per ${gapM < 10 ? gapM.toFixed(1).replace(/\.0$/, "") : Math.round(gapM)} m` : "";
   return `Recorded lamp-only view from rover ${a}${every}. 60° view, camera 2.5 m up. Click to enlarge.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
-    (state.opts.rims && r.rims && r.rims.length && !sub ? ` ${r.rims.length} rim points${run.standin ? " (stand-in, from the crater map)" : ""}.` : "");
+    (state.opts.rims && r.rims && r.rims.length && !sub ? ` ${r.rims.length} rim points${run.standin && run.standin.rims ? " (stand-in, from the crater map)" : " from the camera"}.` : "") +
+    (r.lidar_frame && !sub ? " Amber dots: planned path. Red marks: lidar hazards." : "");
+}
+
+// Lidar panel caption: the scan taken with this step's live frame (run_demo.py --vision).
+function lidarCapText(run, a, k) {
+  const r = run.rover(a, k);
+  if (!r.lidar_frame) return "No lidar in this run.";
+  const hz = r.lidar_hazards || {};
+  return `Rover ${a} lidar, beside the camera: 120° x 33°, near warm, far cool. ` +
+    `This scan: ${hz.crater || 0} crater cells, ${hz.slope || 0} steep cells.`;
 }
 
 // Text that changes as a run plays must not move the page. Each live box is
@@ -307,14 +331,16 @@ function captionHtml(run, a, k, sub) {
 // window size or a toggle changes; playing then never moves anything.
 function reserveHeights(run) {
   const last = run.steps.length - 1;
-  const caps = new Set(), stories = new Set();
+  const caps = new Set(), stories = new Set(), lidarCaps = new Set();
   for (let k = 0; k <= last; k++) {
     for (const a of run.agencies) for (const sub of [false, true]) caps.add(captionHtml(run, a, k, sub));
+    for (const a of run.agencies) lidarCaps.add(lidarCapText(run, a, k));
     stories.add(story(run, k, run.findsAt(k)));
   }
   const evsAll = run.eventsUpTo(last).slice().reverse();
   const boxes = [
     [$("fp-cap"), caps],
+    [$("lidar-cap"), lidarCaps],
     [$("story"), stories],
     // Finds and transactions only accumulate: the run's end is the most.
     [$("finds"), [findsHtml(run, []), findsHtml(run, run.findsAt(last))]],

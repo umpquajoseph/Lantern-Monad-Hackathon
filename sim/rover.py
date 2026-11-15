@@ -33,6 +33,13 @@ MAP_MARGIN_M = 15.0             # assumed: stay this far inside the map edge
 LOOKAHEAD_WAYPOINTS = 4         # assumed: steer for the global waypoint ~16 m ahead
 LOCAL_PLAN_MAX_CELLS = 3000     # assumed: local A* search budget (2 m cells)
 
+# Assumed: share of a 2 m planning cell that sensor hazards must cover before
+# the planner routes around the whole cell.
+HAZARD_CELL_FRAC = 0.01   # any hazard cell blocks its 2 m planning cell (lidar hazards are craters, not lone rocks)
+
+# Assumed: how far the rover turns in place when no way forward is clear.
+STUCK_TURN_DEG = 60.0
+
 # Assumed: half the rover's width, from the rover model in sim/scene.py
 # (wheels at y = +-0.72 m, 0.22 m wide).
 ROVER_HALF_WIDTH_M = 0.83
@@ -88,7 +95,7 @@ class SlopeMap:
     def inside(self, x, y):
         return (self.x0 + MAP_MARGIN_M <= x <= self.x1 - MAP_MARGIN_M) and (self.y0 + MAP_MARGIN_M <= y <= self.y1 - MAP_MARGIN_M)
 
-    def plan(self, start_xy, goal_xy, max_expand=None):
+    def plan(self, start_xy, goal_xy, max_expand=None, blocked=None):
         """A* over the 2 m grid, 8-connected, through cells under the slope limit.
 
         Returns world (x, y) waypoints from start to goal, [goal] if no path
@@ -99,6 +106,8 @@ class SlopeMap:
         ny, nx = self.deg.shape
         m = int(math.ceil(MAP_MARGIN_M / self.b))
         ok = self.deg <= SLOPE_LIMIT_DEG
+        if blocked is not None:              # hazards the rover's camera found (2 m cells)
+            ok &= ~blocked
         ok[:m, :] = ok[-m:, :] = False
         ok[:, :m] = ok[:, -m:] = False
 
@@ -157,6 +166,16 @@ class Rover:
         self.distance = 0.0
         self.path = []
         self.goal = None
+        # Hazards seen by this rover's camera (sim/vision.py), in the true frame:
+        # relative geometry from depth, placed around where the rover really is.
+        self.haz_fine = np.zeros(slope.fine_deg.shape, dtype=bool)
+        self.haz_2m = np.zeros(slope.deg.shape, dtype=bool)
+        self.n_hazard_cells = 0
+        self.stuck_turns = 0      # turns in place because no way forward was clear
+        # True when the rover drives on its camera and lidar (run_demo.py
+        # --vision). The back-and-forth guard and turning in place apply only
+        # then, so stand-in runs keep exactly the spine's routes.
+        self.sensing = False
 
     def set_goal(self, goal_xy):
         """Plan from where the rover believes it is."""
@@ -188,12 +207,72 @@ class Rover:
         wp = self.path[min(len(self.path) - 1, LOOKAHEAD_WAYPOINTS)]
         x, y = self.true[0], self.true[1]
         tgt = (x + wp[0] - est[0], y + wp[1] - est[1])
-        local = self.slope.plan((x, y), tgt, max_expand=LOCAL_PLAN_MAX_CELLS)
+        local = self.slope.plan((x, y), tgt, max_expand=LOCAL_PLAN_MAX_CELLS, blocked=self.haz_2m)
+        self.local_plan = [(x, y)] + list(local) if local else [(x, y), tgt]   # true frame, for drawing
         aim = tgt
         if local:  # first local waypoint far enough ahead to give a stable heading
             aim = next((p for p in local if math.hypot(p[0] - x, p[1] - y) >= 3.0), local[-1])
         d = min(STEP_M, math.hypot(self.goal[0] - est[0], self.goal[1] - est[1]))
-        return self._drive_true(aim, d)
+        moved, dh = self._drive_true(aim, d)
+        # Back-and-forth guard: if this step returns to where the rover was two
+        # steps ago, the way ahead is blocked for the fine check but not the
+        # planner. Block the planning cell it was heading into, so the next
+        # local plan goes another way.
+        self._hist = (getattr(self, "_hist", []) + [self.true[:2].copy()])[-3:]
+        if self.sensing and moved > 0 and len(self._hist) == 3 and np.hypot(*(self._hist[2] - self._hist[0])) < 0.5:
+            sm = self.slope
+            hx, hy = self._hist[1]
+            bi = int(np.clip((hy - sm.y0) // sm.b, 0, self.haz_2m.shape[0] - 1))
+            bj = int(np.clip((hx - sm.x0) // sm.b, 0, self.haz_2m.shape[1] - 1))
+            self.haz_2m[bi, bj] = True
+            self.pingpong_blocks = getattr(self, "pingpong_blocks", 0) + 1
+        if self.sensing and moved == 0.0 and d > 1e-6:
+            # Dead end: no clear heading, not even back the way it came. Turn in
+            # place so the camera looks at new ground; hazards it then sees
+            # feed the next local plan, which can lead off in another direction.
+            turn = math.radians(STUCK_TURN_DEG)
+            self.true = np.array([self.true[0], self.true[1], self.true[2] + turn])
+            self.stuck_turns += 1
+            return 0.0, turn
+        return moved, dh
+
+    def goal_blocked(self):
+        """True if the goal (taken where the rover believes it is) is on ground
+        the rover may not enter: a sensor hazard or a slope over the limit."""
+        if self.goal is None:
+            return False
+        gx, gy = self.goal
+        c = self.slope.cell
+        i = int(np.clip(round((gy - self.slope.y0) / c), 0, self.haz_fine.shape[0] - 1))
+        j = int(np.clip(round((gx - self.slope.x0) / c), 0, self.haz_fine.shape[1] - 1))
+        return bool(self.haz_fine[i, j]) or float(self.slope.at(gx, gy)) > SLOPE_LIMIT_DEG
+
+    def add_hazards(self, world_xy):
+        """Mark hazard points from the camera (world xy, true frame), widened
+        by the rover's half width, for _feasible and the local planner."""
+        pts = np.asarray(world_xy, float).reshape(-1, 2)
+        if len(pts) == 0:
+            return
+        sm = self.slope
+        c = sm.cell
+        H, W = self.haz_fine.shape
+        r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+        ci = np.rint((pts[:, 1] - sm.y0) / c).astype(int)
+        cj = np.rint((pts[:, 0] - sm.x0) / c).astype(int)
+        for di in range(-r, r + 1):
+            for dj in range(-r, r + 1):
+                i, j = ci + di, cj + dj
+                ok = (i >= 0) & (i < H) & (j >= 0) & (j < W)
+                self.haz_fine[i[ok], j[ok]] = True
+        # A 2 m planning cell is blocked only when most of it is hazard: the
+        # rover steers around a single rock inside a cell (checked by _feasible).
+        k = int(round(sm.b / c))
+        i0, i1 = max(ci.min() - r, 0) // k * k, min(ci.max() + r + k, H) // k * k
+        j0, j1 = max(cj.min() - r, 0) // k * k, min(cj.max() + r + k, W) // k * k
+        if i1 > i0 and j1 > j0:
+            blk = self.haz_fine[i0:i1, j0:j1].reshape((i1 - i0) // k, k, (j1 - j0) // k, k).mean(axis=(1, 3))
+            self.haz_2m[i0 // k:i1 // k, j0 // k:j1 // k] |= blk >= HAZARD_CELL_FRAC
+        self.n_hazard_cells = int(self.haz_fine.sum())
 
     def _drive_true(self, aim_xy, d):
         """Step d metres toward aim_xy (true frame), the nearest heading under the slope limit."""
@@ -226,6 +305,14 @@ class Rover:
             return False
         s = self.slope.at(px, py)
         here = float(self.slope.at(x, y))
+        c = self.slope.cell
+        hi = np.clip(np.rint((py - self.slope.y0) / c).astype(int), 0, self.haz_fine.shape[0] - 1)
+        hj = np.clip(np.rint((px - self.slope.x0) / c).astype(int), 0, self.haz_fine.shape[1] - 1)
+        haz = self.haz_fine[hi, hj]
+        on_haz = bool(self.haz_fine[int(np.clip(round((y - self.slope.y0) / c), 0, self.haz_fine.shape[0] - 1)),
+                                    int(np.clip(round((x - self.slope.x0) / c), 0, self.haz_fine.shape[1] - 1))])
+        if haz.any() and not (on_haz and not haz[-1]):   # standing on a hazard: may only step off it
+            return False
         if here <= SLOPE_LIMIT_DEG:
             return bool(np.all(s <= SLOPE_LIMIT_DEG))
         return bool(np.all(s <= here) and s[-1] < here)

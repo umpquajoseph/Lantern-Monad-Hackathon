@@ -45,16 +45,20 @@ from sim.ice import (DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit,
                      FOOTPRINT_RADIUS_M)
 from sim.rover import PLANNER_STANDIN, SLOPE_LIMIT_DEG, SPEED_M_S, STEP_M, Rover, SlopeMap
 from sim.nav import ParticleNav
+from sim.lidar import Lidar
+from sim.vision import Vision, draw_plan, rover_to_world
 from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
 try:
     from sim import chain as lantern   # step 1: the real contract on Monad testnet
 except Exception:                    # no web3, or no deployment file: stay on the stand-in
     lantern = None
-from sim.terrain import DATA, default_path, load_terrain
+from sim.terrain import DATA, TERRAIN_DIR, default_path, load_terrain
 
 RUNS_DIR = DATA / "runs"           # LANTERN_DATA/runs, or the default in sim/terrain.py
 DT_S = STEP_M / SPEED_M_S          # simulated seconds per step (PROSPECT p.3 speed)
 ARRIVE_M = 0.3                     # assumed: B stops when its estimate is this close to the find
+BLOCKED_ARRIVE_M = 2.0             # assumed: or this close, when the find is on ground B may not enter
+                                   # (a crater the lidar marked); inside the check gate 3 x (sigma + sigma)
 CHECK_READS = 3                    # assumed: B averages this many readings at the find
 TAIL_STEPS = 5                     # assumed: idle steps after the last check, so the end state shows
 MAX_STEPS = 1500                   # assumed: safety stop
@@ -106,6 +110,9 @@ def simulate(scn, terrain, slope, field=None, cam=None):
     rims_rng = {"A": rng(3), "B": rng(13)}
     if cam is not None:
         cam.start((A, B))
+        cam.attach("A", rng(4), rng(5))
+        cam.attach("B", rng(14), rng(15))
+        A.sensing = B.sensing = cam.sensors
     goal_a = (x0 + scn["a_goal"][0], y0 + scn["a_goal"][1])
     A.set_goal(goal_a)
     # Real chain when the step 1 client can sign for both agencies (.env keys), else the stand-in.
@@ -132,7 +139,9 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                 "ice_reading": None if reading is None else round(reading, 3),
                 "est_error": round(float(np.hypot(*(r.estimate - r.true[:2]))), 3),
                 "distance": round(r.distance, 2),
-                "fp_frame": cam.last.get(r.agency) if cam is not None else None,
+                "fp_frame": cam.last.get(r.agency) if cam is not None and cam.run_dir is not None else None,
+                "lidar_frame": cam.last_lidar.get(r.agency) if cam is not None else None,
+                "lidar_hazards": cam.haz_count.get(r.agency, {}) if cam is not None else {},
                 "particles": _particles_log(r.nav)}
 
     for k in range(MAX_STEPS):
@@ -144,10 +153,11 @@ def simulate(scn, terrain, slope, field=None, cam=None):
             reading = None
             if k > 0 and mode[ag] in ("survey", "goto"):
                 d, dh = r.follow()
+                seen = None
                 if cam is not None:  # the camera sees the new pose before navigation runs
-                    cam.shoot(k, r, d > 0)
+                    seen = cam.shoot(k, r, d > 0)
                 odo, err = r.odometry(d, dh)
-                rims = rims_standin(r.true, craters, rims_rng[ag])
+                rims = seen if seen is not None else rims_standin(r.true, craters, rims_rng[ag])
                 r.localize(err, d, len(rims), odom=odo, rims=rims)
                 moved = d > 0
                 if sensor is not None:
@@ -155,7 +165,9 @@ def simulate(scn, terrain, slope, field=None, cam=None):
             else:
                 rims = rims_standin(r.true, craters, rims_rng[ag]) if k == 0 else np.zeros((0, 2))
                 if cam is not None and k == 0:
-                    cam.shoot(k, r, False)
+                    seen = cam.shoot(k, r, False)
+                    if seen is not None:
+                        rims = seen
 
             # Rover A: a find is the peak reading of one pass over ice.
             if ag == "A" and mode["A"] == "survey" and reading is not None:
@@ -189,7 +201,8 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                     r.set_goal(target_b)
                     mode["B"] = "goto"
                     target_b_id = f["id"]
-            if ag == "B" and mode["B"] == "goto" and math.hypot(target_b[0] - r.estimate[0], target_b[1] - r.estimate[1]) < ARRIVE_M:
+            dist_b = math.hypot(target_b[0] - r.estimate[0], target_b[1] - r.estimate[1]) if target_b else None
+            if ag == "B" and mode["B"] == "goto" and (dist_b < ARRIVE_M or (dist_b < BLOCKED_ARRIVE_M and getattr(r, "goal_blocked", lambda: False)())):
                 reads = [sensor.read(r.true[0], r.true[1]) for _ in range(CHECK_READS)]
                 reading = float(np.mean(reads))
                 agrees = reading >= FIND_THRESHOLD_WT
@@ -258,11 +271,28 @@ class LiveCamera:
     reads them there once it lands). The other rover is wherever it is at
     that moment in the loop."""
 
-    def __init__(self, scene, run_dir, frame_every=1):
+    def __init__(self, scene, run_dir, frame_every=1, sensors=True):
+        """run_dir None: sense only, write no files (pass 1, so A's path matches pass 2).
+        sensors: run vision (rims) and lidar (hazards) on each live frame."""
         self.scene, self.run_dir, self.frame_every = scene, run_dir, frame_every
-        (run_dir / "fp").mkdir(parents=True, exist_ok=True)
+        if run_dir is not None:
+            (run_dir / "fp").mkdir(parents=True, exist_ok=True)
+            if sensors:
+                (run_dir / "lidar").mkdir(parents=True, exist_ok=True)
         self.last, self.times = {}, []
         self._moved, self._posed = {}, {}
+        self.sensors = sensors
+        self.vis, self.lid = {}, {}
+        self.last_lidar, self.haz_count = {}, {}
+        self.t_vision, self.t_lidar = [], []   # seconds per live frame, for the timing summary
+        self.score_every = 0                   # score vision on every Nth live frame (sim/rim_truth.py)
+        self.scores = []
+
+    def attach(self, agency, rng_vision, rng_lidar):
+        """Per-run sensor noise streams, so pass 1 and pass 2 see the same."""
+        if self.sensors:
+            self.vis[agency] = Vision(self.scene, rng_vision)
+            self.lid[agency] = Lidar(self.scene, rng_lidar)
 
     def _place(self, r):
         pose = _pose_log(r)
@@ -280,11 +310,40 @@ class LiveCamera:
         self._moved[ag] = self._moved.get(ag, 0) + (1 if moved else 0)
         if k == 0 or ag not in self.last or (moved and self._moved[ag] % self.frame_every == 0):
             t0 = time.perf_counter()
-            img, _depth = self.scene.first_person(ag)
+            img, depth = self.scene.first_person(ag)
             self.times.append(time.perf_counter() - t0)
             name = f"fp/{ag}_{k:04d}.jpg"
-            _write_jpg(self.run_dir / name, img)
+            rims, shown = None, img
+            if ag in self.vis:
+                # Vision: rim points for the particle filter. Lidar: crater and
+                # slope hazards for the planner, from the moment they are seen.
+                t1 = time.perf_counter()
+                rims = self.vis[ag].rims(img, depth)
+                t2 = time.perf_counter()
+                pts, rng_img = self.lid[ag].scan(r.true)
+                hz, kinds = self.lid[ag].hazards(pts)
+                self.t_vision.append(t2 - t1)
+                self.t_lidar.append(time.perf_counter() - t2)
+                if self.score_every and len(self.t_vision) % self.score_every == 0:
+                    try:
+                        from sim.rim_truth import rim_truth, score   # branch step-6-rim-truth
+                        self.scores.append(score(rims, rim_truth(self.scene, ag, depth)))
+                    except ImportError:
+                        self.score_every = 0
+                hz_world = rover_to_world(self.lid[ag].to_camera_frame(hz), r.true)
+                r.add_hazards(hz_world)
+                self.haz_count[ag] = {kk: kinds.count(kk) for kk in ("crater", "slope")}
+                if self.run_dir is not None:
+                    plan = list(getattr(r, "local_plan", [])[1:])
+                    shown = draw_plan(img, [tuple(r.true[:2])] + plan, r.true, self.scene, hz_world)
+                    lname = f"lidar/{ag}_{k:04d}.jpg"
+                    _write_jpg(self.run_dir / lname, self.lid[ag].view(rng_img))
+                    self.last_lidar[ag] = lname
+            if self.run_dir is not None:
+                _write_jpg(self.run_dir / name, shown)
             self.last[ag] = name
+            return rims
+        return None
 
 
 def sub_frame_jobs(steps, run_dir, sub_m):
@@ -375,7 +434,12 @@ def main():
     ap.add_argument("--out", default=str(RUNS_DIR))
     ap.add_argument("--only", choices=[s["key"] for s in SCENARIOS], default=None)
     ap.add_argument("--frame-every", type=int, default=1, help="render a first-person frame every N steps a rover moves")
-    ap.add_argument("--no-render", action="store_true", help="simulate and write logs without frames")
+    ap.add_argument("--no-render", action="store_true", help="simulate and write logs without frames (stand-in rims, no lidar)")
+    ap.add_argument("--score-rims", type=int, default=0, metavar="N",
+                    help="score vision rims against sim/rim_truth.py on every Nth live frame (needs that file)")
+    ap.add_argument("--vision", action="store_true",
+                    help="navigate on the camera (sim/vision.py rims) and lidar (sim/lidar.py hazards); "
+                         "off by default until both runs pass with it")
     ap.add_argument("--stamp", default=None, help="run_id suffix (default: now, YYYYMMDD-HHMM); reuse one to overwrite a run")
     ap.add_argument("--display", choices=("full", "detail", "off"), default="full",
                     help="first-person terrain display layer (sim/scene.py): full = rim lips and rocks, "
@@ -396,9 +460,15 @@ def main():
     stamp = args.stamp or datetime.now().strftime("%Y%m%d-%H%M")
     scene = display = shared = cam = None
     if not args.no_render:
-        from sim.scene import Scene
+        try:
+            from sim.scene import Scene
+        except ImportError as e:   # vtk: the camera, vision and lidar all need it
+            raise SystemExit(f"run_demo.py: cannot render ({e}). Install it with `python3 -m pip install vtk`, "
+                             "or run with --no-render (stand-in rims, no camera or lidar).")
         t = time.perf_counter()
-        scene = Scene(height, craters, x0, y0, cell, display=args.display)
+        # Display assets from $LANTERN_DATA (scene.py's own lookup only checks
+        # the repo's data/ and a fixed C:\ path, so off Windows it fell back to "off").
+        scene = Scene(height, craters, x0, y0, cell, display=args.display, display_dir=TERRAIN_DIR / "display")
         display = scene.display  # what was drawn (falls back to "off" without assets)
         if args.sub_frame_m > 0 and args.frame_every == 1:
             shared = scene.share(out / "_shared")
@@ -410,12 +480,16 @@ def main():
         if args.only and scn["key"] != args.only:
             continue
         t0 = time.perf_counter()
-        a_steps, _, _ = simulate(scn, terrain, slope, field=None)
+        # Pass 1 senses like pass 2 (no files), so A drives the same path.
+        cam1 = LiveCamera(scene, None, args.frame_every, sensors=args.vision) if scene is not None else None
+        a_steps, _, _ = simulate(scn, terrain, slope, field=None, cam=cam1)
         field = place_ice(scn, a_steps, x0, y0, np.random.default_rng([scn["seed"], 99]))
         run_id = f"{scn['key']}-{stamp}"
         run_dir = out / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        cam = LiveCamera(scene, run_dir, args.frame_every) if scene is not None else None
+        cam = LiveCamera(scene, run_dir, args.frame_every, sensors=args.vision) if scene is not None else None
+        if cam is not None:
+            cam.score_every = args.score_rims
         steps, chain, ft = simulate(scn, terrain, slope, field=field, cam=cam)
         finds = chain.get_finds()
         if not finds:
@@ -444,8 +518,15 @@ def main():
         if cam is not None and cam.times:
             msg += f" with {len(cam.times)} live step frames, median {1e3 * np.median(cam.times):.0f} ms"
         print(msg)
+        if cam is not None and cam.t_vision:
+            print(f"  per live frame: render {1e3 * np.median(cam.times):.0f} ms, vision {1e3 * np.median(cam.t_vision):.0f} ms, "
+                  f"lidar {1e3 * np.median(cam.t_lidar):.0f} ms (medians; pass 2 only)")
+        if cam is not None and cam.scores:
+            sc = {k: float(np.nanmean([d[k] for d in cam.scores])) for k in ("precision", "recall", "recall_shadow", "mean_dist_m", "gauss")}
+            print(f"  vision vs rim_truth on {len(cam.scores)} frames: " + ", ".join(f"{k} {v:.2f}" for k, v in sc.items()))
         if shared is not None:
             jobs += sub_frame_jobs(steps, run_dir, args.sub_frame_m)
+        sensing = cam is not None and cam.sensors
         done.append((scn, run_id, run_dir, steps, field, finds))
     t_sim = time.perf_counter() - t_all
 
@@ -476,8 +557,10 @@ def main():
                       "find_threshold_wt": FIND_THRESHOLD_WT},
             "nav": ParticleNav.NAME,
             "planner": PLANNER_STANDIN,  # a real part (sim/rover.py A*); the constant keeps its old name
-            "standins": {k: v for k, v in {"rims": RIMS_STANDIN, "chain": chain.STANDIN,
-                         "ice_sensor": IceSensor.STANDIN}.items() if v},
+            "vision": Vision.NAME if sensing else None,
+            "lidar": Lidar.NAME if sensing else None,
+            "standins": {k: v for k, v in {**({} if sensing else {"rims": RIMS_STANDIN}),
+                         "chain": chain.STANDIN, "ice_sensor": IceSensor.STANDIN}.items() if v},
             "dt_s": round(DT_S, 2),
             "display": display,
             "frames": FRAMES_NOTE,

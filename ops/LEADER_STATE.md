@@ -353,3 +353,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:20 perf FINAL: frame 0.70 to 0.30 s detail, 0.89 to 0.27 s full; lidar 95 to 26 ms; pass-2 replay in run_demo and run_mission; every change 0 px / byte-identical vs frozen e3b205e. All merged except a775a0f (requested). Perf told to shut down.
 - 14:20 integrator: a775a0f merged, head 97dd89c. Scene told to keep its running 46d42d0 render (same frames).
 - 14:21 viewer: Mission Control lidar panel de9d1e2, captions follow image kind; integrator asked to merge. Told to check the top-down panel on the 14:32 mission.
+- 14:21 nav fix 3 9025960: any steep point closes its 2 m cell; mission no-go 0.0/0.0, 20 deg max, 0 reversals; run_demo run1 vision confirmed (find 457,418); run2 running. Changes mission poses. Integrator: merge 9025960 + viewer de9d1e2; scene: final mission render from that head after the 46d42d0 interim. Nav: mission poses frozen at 9025960.

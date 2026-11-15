@@ -1,9 +1,16 @@
 # Hosting the demo
 
 **Live: https://lantern-teal.vercel.app** (Vercel project `lantern` in
-Kellen's scope `kellensniders-projects`, Hobby plan; first published
-2026-11-15 12:20 PST with stand-in runs and no camera frames). Every
-`python web/publish.py vercel` replaces it in about a minute.
+Kellen's scope `kellensniders-projects`, Hobby plan). Since 12:39 PST it
+carries the real-chain runs with camera frames (chain session, from
+`integration` at c9c7931 with the chain patch; frames are plain lamp-lit
+geometry until Joseph re-renders with the display layer). Every
+`python web/publish.py vercel` replaces it in about two minutes.
+
+Share **only the alias above**. The per-deployment URLs the CLI prints
+(`lantern-<hash>-kellensniders-projects.vercel.app`) redirect to a Vercel
+login: deployment protection is on for those by default, and off for the
+production alias.
 
 The judges' link is a hosted copy of `web/`. Nothing on the server runs: the
 page is static files, with relative paths, and loads three.js from jsdelivr.
@@ -24,9 +31,11 @@ any fresh contract deploy, refresh them before publishing. `check_site.py`
 warns when a real-chain run was posted to a different contract than the
 page reads. The replay page `index.html` does not depend on it.
 
-`web/publish.py` does the rest. Every command below first runs
-`web/check_site.py`, which follows every file the page fetches and refuses to
-deploy a site with a hole in it.
+`web/publish.py` does the rest. Every command below first prunes `web/runs/`
+(files no listed log names, such as the `_1`, `_2`, `_3` frame variants the
+integration renderer writes beside each frame: 71 MB of the real runs that
+the page never fetches), then runs `web/check_site.py`, which follows every
+file the page fetches and refuses to deploy a site with a hole in it.
 
 ## 1. Build the site
 
@@ -130,9 +139,12 @@ the console for 404s. Then try it at phone width.
 
 ## Limits and things to keep true
 
-- **100 MB** total upload on Vercel Hobby, **15,000** files. Terrain is 37 MB;
-  frames are the rest (about 15 KB each). `run_demo.py --frame-every 2` halves
-  them. `check_site.py` errors over the limit and warns above 80 MB.
+- **100 MB** total upload is the figure in Vercel's Hobby limits page;
+  Vercel's June 2026 changelog says CLI limits were removed, and a 61 MB
+  upload went through. `check_site.py` warns over 100 MB. Terrain is 37 MB;
+  the real runs' named frames are 24 MB (about 28 KB each, 855 frames).
+  If an upload is ever refused: `run_demo.py --frame-every 2`, or re-encode
+  the frames at JPEG quality 70 (25% smaller, 44 dB PSNR, measured).
 - **No `web/public/` folder**: Vercel's "Other" preset would serve that
   instead of the site.
 - **Relative paths only** in `index.html`, the css and the js.

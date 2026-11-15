@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern Mission Control</title>
+<meta name="description" content="A Surveyor and a Prospector rover explore a dark lunar region, drill for ice, and record every observation in a registry on chain, with the evidence off-chain.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="mission.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha3/0.9.3/sha3.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="wordmark">Lantern <span>Mission Control</span></div>
+    <div class="sub" id="run-title">Loading…</div>
+  </div>
+  <div class="transport">
+    <button id="play" class="btn primary" title="Space">Start</button>
+    <button id="restart" class="btn" title="Back to the start">Reset</button>
+    <label class="field">Speed
+      <select id="speed">
+        <option value="10">10×</option>
+        <option value="60">60×</option>
+        <option value="200" selected>200×</option>
+        <option value="600">600×</option>
+      </select>
+    </label>
+    <label class="ck" title="Slow down and zoom in whenever a rover scans, drills or analyses"><input type="checkbox" id="focus" checked> Slow down for science</label>
+    <div class="clock" id="clock">T+00:00:00</div>
+  </div>
+  <div class="chain-badge" id="chain-badge" title="Where the records in this run were written">chain</div>
+</header>
+
+<main class="layout">
+  <section class="stage">
+    <div class="stage-bar">
+      <div class="seg" id="cam-seg" role="tablist" aria-label="Camera">
+        <button data-cam="third" aria-selected="true">Third person</button>
+        <button data-cam="first">First person</button>
+        <button data-cam="overhead">Overhead</button>
+      </div>
+      <div class="seg" id="rover-seg" role="tablist" aria-label="Rover">
+        <button data-rover="A" aria-selected="true"><i class="dot A"></i>Surveyor A</button>
+        <button data-rover="B"><i class="dot B"></i>Prospector B</button>
+      </div>
+      <div class="toggles">
+        <label class="ck"><input type="checkbox" id="opt-routes" checked> Routes</label>
+        <label class="ck"><input type="checkbox" id="opt-hazards" checked> Hazards</label>
+        <label class="ck" title="The real deposits. The rovers never see these."><input type="checkbox" id="opt-truth"> Hidden truth</label>
+      </div>
+    </div>
+    <div class="viewport" id="viewport">
+      <div class="fp" id="fp" hidden>
+        <div class="fp-box"><img id="fp-img" alt="Rover camera"><canvas id="fp-ov" width="640" height="480"></canvas></div>
+        <div class="fp-none" id="fp-none" hidden>No camera frame recorded yet for this rover.</div>
+        <div class="fp-cap">Rover camera, lamp light only (recorded frame). Drawn on top: the route it is following, obstacles it has found, and sites.</div>
+      </div>
+      <div class="hud" id="hud"></div>
+      <div class="focus-tag" id="focus-tag" hidden></div>
+      <div class="loading" id="loading">Loading terrain</div>
+      <div class="cam-note" id="cam-note">Drag to orbit, scroll to zoom</div>
+      <div class="model-credit" id="model-credit"></div>
+    </div>
+    <div class="timeline">
+      <div class="tl-track" id="tl-track">
+        <div class="tl-fill" id="tl-fill"></div>
+        <div class="tl-marks" id="tl-marks"></div>
+        <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Mission time">
+      </div>
+      <div class="tl-legend"><i class="mk sci"></i>science stop <i class="mk reg"></i>on-chain record <i class="mk haz"></i>new obstacle</div>
+    </div>
+  </section>
+
+  <aside class="side">
+    <section class="card" id="now-card">
+      <h2>What's happening</h2>
+      <div id="now"></div>
+    </section>
+
+    <section class="card">
+      <h2>Who knows what</h2>
+      <dl class="kv">
+        <dt><i class="mk" style="background:#e0a83a;margin:0"></i> Satellite</dt><dd>Relays only <b>where the sites are</b> (amber rings). It cannot see small craters or rocks.</dd>
+        <dt><i class="mk" style="background:#5aa7ff;margin:0"></i> Rover</dt><dd>Finds its own way there: its camera reads the ground ahead, steers around craters and new obstacles, and replans if blocked.</dd>
+        <dt><i class="mk" style="background:#ff4d4d;margin:0"></i> Red</dt><dd>A site where a drill found ice.</dd>
+      </dl>
+      <div class="hint small" style="margin-top:6px">In this sim the slope map and the one new obstacle stand in for what the camera would measure; crater-rim vision is not built yet.</div>
+    </section>
+
+    <section class="card" id="sci-card" hidden>
+      <h2 id="sci-title">Science stop</h2>
+      <ol class="phases" id="sci-phases"></ol>
+      <div class="sci-cols">
+        <div>
+          <div class="overline">Data being recorded</div>
+          <div class="bins" id="sci-bins"></div>
+        </div>
+        <div class="sci-result" id="sci-result"></div>
+      </div>
+    </section>
+
+    <section class="card" id="chain-card">
+      <h2>On chain, in plain words</h2>
+      <div id="chain-now"><p class="hint">Nothing written yet. Records go on chain only at meaningful moments: a candidate found, a site inspected, a site analysed.</p></div>
+    </section>
+
+    <section class="card">
+      <h2>Discovery registry <span class="hint" id="reg-count"></span></h2>
+      <div class="hint small">Read from the contract. Click a site for its full record.</div>
+      <table class="reg">
+        <thead><tr><th>Site</th><th>Stage</th><th>Surveyor</th><th>Prospector</th></tr></thead>
+        <tbody id="reg-body"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Transactions</h2>
+      <ol class="txs" id="txs"></ol>
+    </section>
+  </aside>
+</main>
+
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer-head"><h2 id="dr-title">Site</h2><button class="btn" id="dr-close">Close</button></div>
+  <div id="dr-body"></div>
+</div>
+
+<script type="module" src="js/mission.js"></script>
+</body>
+</html>

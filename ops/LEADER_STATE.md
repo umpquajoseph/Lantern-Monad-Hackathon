@@ -63,7 +63,7 @@ git at 73e77ab. Read this first after a compaction, then `ops/PROTOCOL.md`,
 | viewer | `uds:\\.\pipe\LOCAL\cc-msg-a233f82a3c78cbd382c1279676ac4ac8` | local_ea255feb-3f18-40f4-80e5-767adfa4e3e7 | `C:\Monad-Hackathon-viewer`, `step-5-viewer` | owns `web/js`. First fp_sub playback (smooth camera), then the particle cloud display |
 | terrain | `uds:\\.\pipe\LOCAL\cc-msg-3956fbcec9b14cf96512bbeaf1a4ac16` | local_f1ad01df-54d1-41c3-a8ba-611e840a57d3 | `C:\Monad-Hackathon-terrain`, `step-6-rim-truth` | answer key done (644cf16); revalidates on the new runs. Realism checker for scene and viewer |
 | integrator | `uds:\\.\pipe\LOCAL\cc-msg-e4aa78077ba4f6511766cd4cc20730b8` | local_e783098d-945c-48ad-9f91-90350cb94056 | `C:\Monad-Hackathon-integration`, `integration` | owns `app.py`. Judge pass 1 done (7 items). Second pass after run 2 lands |
-| designer | unknown until it mails | opened about 12:29 | own worktree, `step-5-design` | owns `web/app.css` and `index.html` layout. Judge items 1, 4, 5, 6, 7. Brief `docs/briefs/design.md` |
+| designer | `uds:\.\pipe\LOCAL\cc-msg-42257a837952d8f3cb6dda87cb29e0fb` | local_ba34eb33-eb0d-45e1-8f58-6d1df15566b9 | own worktree, `step-5-design` | owns `web/app.css` and `index.html` layout. Judge items 1, 4, 5, 6, 7. Brief `docs/briefs/design.md` |
 
 My watcher (run_in_background, re-arm after every mail):
 
@@ -140,3 +140,11 @@ Read mail, then `mv` it to `leader/archive/`.
   separate web/mission.html "Mission Control". No keys; touches no shared
   file (app.js, index.html, rover, nav, scene, run_demo, app.py). Parked:
   chain is off, and it is a second contract and a second dashboard.
+- 12:46 designer report (535a317 on step-5-design, with viewer 1360ed3,
+  dff8895 nogo.png build fix): pitch line, legend folded into toggles, HUD
+  table "thinks it is within / actually off by", run status dots, phone
+  layout. Shots data/previews/design/{before,after}. Looked: clear gain.
+  Sent back: No-go must default ON (Joseph liked the no-go map), quieter
+  tint instead of off. Open: phone scroll unproven on a real phone; faint
+  dashed rectangle near A's find (viewer to trace). Run 1's banner still
+  lists "route planner" as stand-in: old 1203 log, fixed at next rerun.

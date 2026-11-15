@@ -53,6 +53,14 @@ const FOCUS_WALL_S = 3;    // asked for: the final-site drill plays in about thi
 const FOCUS_LEAD_S = 3;    // the close-up starts this many sim seconds before the stop
 const FOCUS_TAIL_S = 3;    // and holds this long after it
 const NARROW = matchMedia("(max-width: 760px)");
+// Candidate sites from orbit (S1, S2): green in 3D, on the camera and on the map
+// (asked for: "the site rings can be green"), so amber means the planned route only.
+const SITE_HEX = 0x7ddc7a, SITE_CSS = "#7ddc7a";
+// Frost patches drawn at this brightness (asked for: "cut the ice patch brightness a bit").
+const FROST_DIM = 0.45;   // 0.6 still read as a white cloud at S2 with fill off; 0.45 reads as frost
+function dimFrost(obj) {
+  obj.traverse((o) => { if (o.isMesh && o.material && o.material.map && o.material.color) o.material.color.setScalar(FROST_DIM); });
+}
 
 const S = {
   lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
@@ -87,6 +95,7 @@ async function main() {
   const entry = runs.find((r) => r.run_id === want) || runs.find((r) => r.run_id === "mission-demo") || runs[0];
   await openRun(entry);
   bind();
+  updateLegend();
   if (NARROW.matches) $("panel").classList.add("closed");
   window.lantern = { world, S, rigs };   // for poking at the scene from the browser console
   $("loading").hidden = true;
@@ -106,6 +115,8 @@ async function openRun(entry) {
   S.run = run;
   world.currentT = 0;
   world.setRun(run);
+  for (const s of world.iceSites || []) dimFrost(s.obj);
+  for (const o of world.truthObjs || []) if (o.isGroup) dimFrost(o);
   run.hasLidar = run.agencies.some((ag) => run.steps.some((st) => st.rovers[ag] && st.rovers[ag].lidar_frame));
   for (const b of document.querySelectorAll("[data-sensor]")) {
     b.onclick = () => setSensor(b.dataset.sensor);
@@ -499,6 +510,7 @@ function buildOverlay() {
     lbl.center.set(0, 1);
     // Ice found here: a frost patch on the ground, so nobody can miss it.
     const disc = frostPatch(world, e.x, e.y, 4.5, e.site_id);
+    dimFrost(disc);
     disc.visible = false;
     g.add(ring, beam, lbl, disc);
     ov.add(g);
@@ -508,7 +520,7 @@ function buildOverlay() {
   satObjs = [];
   for (const s of S.run.log.satellite_sites || []) {
     const g = new THREE.Group();
-    g.add(world.ring(s.x, s.y, 6, world.lineMat(0xe0a83a, 2, { dashed: true, opacity: 0.9 })));
+    g.add(world.ring(s.x, s.y, 6, world.lineMat(SITE_HEX, 2, { dashed: true, opacity: 0.9 })));
     const el = document.createElement("div");
     el.className = "lbl-sat";
     el.textContent = s.id;
@@ -577,6 +589,30 @@ function buildTimeline() {
   for (const e of S.run.events) add(S.run.times[e.k], "ice", e.type === "find" ? `Ice find posted (${ROLE[e.agency]})` : `Check posted (${ROLE[e.agency]})`);
 }
 
+// ------------------------------------------------------------------ legend
+// Bottom left, above the play bar. A row shows only while its layer draws.
+function updateLegend() {
+  const run = S.run, o = S.opts;
+  const on = {
+    routes: o.routes,
+    nogo: o.nogo && !!terrain.meta.nogo,
+    hazards: o.hazards && hazards.length > 0,
+    particles: o.routes && o.particles && run.hasParticles !== false,
+    sat: (run.log.satellite_sites || []).length > 0,
+    find: ((run.log.mission || {}).sites || []).some((s) => s.verdict === "ice"),
+    truth: o.truth && ((run.truth && run.truth.ice) || []).length > 0,
+  };
+  for (const li of document.querySelectorAll("#lg-rows [data-on]")) li.hidden = !on[li.dataset.on];
+}
+
+// The collapse button says what it does next.
+function syncCollapse() {
+  const closed = $("panel").classList.contains("closed"), b = $("collapse");
+  b.setAttribute("aria-label", closed ? "Show panel" : "Hide panel");
+  b.title = closed ? "Show panel" : "Hide panel";
+  b.setAttribute("aria-expanded", String(!closed));
+}
+
 // ---------------------------------------------------------------- controls
 function bind() {
   $("play").onclick = togglePlay;
@@ -610,13 +646,18 @@ function bind() {
     S.tabBeforeFocus = null;
     setTab(b.dataset.tab);
   }));
-  $("collapse").onclick = () => $("panel").classList.toggle("closed");
+  $("collapse").onclick = () => { $("panel").classList.toggle("closed"); syncCollapse(); };
+  $("key-btn").onclick = () => {
+    const open = $("legend").classList.toggle("open");
+    $("key-btn").setAttribute("aria-expanded", String(open));
+  };
   for (const k of ["fill", "routes", "hazards", "nogo", "truth", "particles", "rims"]) {
     $("opt-" + k).onchange = (e) => {
       S.opts[k] = e.target.checked;
       world.setVisibility({ fill: S.opts.fill, tracks: S.opts.routes, truth: S.opts.truth });
   $("vnote").hidden = !S.opts.fill;
       map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
+      updateLegend();
       render(true);
     };
   }
@@ -1125,7 +1166,7 @@ function drawFpOverlay(fr, cv, small) {
   for (const s of run.log.satellite_sites || []) {
     const r = [...sites.values()].find((v) => v.target === s.id);
     const ice = (r && (r.surveyor === "Positive" || r.prospector === "Positive")) || siteVerdict(s.id, tf) === "ice";
-    const color = ice ? ICE_CSS : r ? "#9aa7b8" : "#e0a83a";
+    const color = ice ? ICE_CSS : r ? "#9aa7b8" : SITE_CSS;
     const base = P(s.x, s.y), tip = P(s.x, s.y, 6);
     if (!base || !tip || base[2] > 250) continue;
     c.strokeStyle = color; c.lineWidth = 2 * k;
@@ -1139,7 +1180,7 @@ function drawFpOverlay(fr, cv, small) {
 // Each rover's logged plan for the shown step ("plan", world xy, out to ~20 m,
 // re-planned every step) draped on the ground as amber dashes, the same line
 // the rover camera and the satellite map draw. Rebuilt when the step changes.
-const PLAN_HEX = 0xffc83c;   // the camera's plan colour, rgba(255, 200, 60) (map.js PLAN_CSS)
+const PLAN_HEX = 0xffc83c;   // amber is the planned route only; sites are SITE_HEX green   // the camera's plan colour, rgba(255, 200, 60) (map.js PLAN_CSS)
 const plan3d = {};
 function updatePlan3D(t) {
   const run = S.run, k = run.stepAt(t);
@@ -1171,7 +1212,7 @@ function updatePlan3D(t) {
 // ground near the rover being followed. One draped grid, rebuilt when the
 // rover has moved STEEP_STEP_M. Unlit, so it reads in the dark.
 const STEEP_HALF_M = 120, STEEP_CELL_M = 0.5, STEEP_STEP_M = 40, STEEP_LIFT_M = 0.06;   // assumed, display only
-const STEEP_OPACITY = 0.55;
+const STEEP_OPACITY = 0.72;   // asked for: "a bit more opaque" (was 0.55)
 let steepMesh = null, steepAt = null, steepTex = null;
 function updateSteepShade(t) {
   const m = terrain.meta;
@@ -1299,7 +1340,7 @@ class MissionMap extends MapView {
     c.lineWidth = 1.5;
     for (const o of S.run.log.satellite_sites || []) {
       if (done.has(o.id)) continue;
-      c.setLineDash([3, 3]); c.strokeStyle = "#e0a83a";
+      c.setLineDash([3, 3]); c.strokeStyle = SITE_CSS;
       c.beginPath(); c.arc(X(o.x), Y(o.y), 5, 0, Math.PI * 2); c.stroke();
     }
     c.setLineDash([]);

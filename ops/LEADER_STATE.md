@@ -343,3 +343,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:14 nav fix 2 755bb92: mission harness passes (S1 dry, S2 ice, both diverts, confirmed, no-go 0.0/0.2, 20 deg/step max, 0 reversals). run_demo run1 --vision still loops. Integrator to merge; scene re-renders mission on it after the current render goes up. Viewer toned frost down (shot frost-mission-2.png).
 - 14:14 viewer 32f9917: calmer frost (ec714d7) + planned route from log on map and camera; tested with plan filled from true track (no logged run has plan yet). Told to recheck on mission-demo.
 - 14:15 integrator: integration 700376d has nav 755bb92 + viewer 32f9917. Viewer: run_mission logs plan (run_mission.py:245); route draws on all frames of a logic-only run. Mission render at 920/~930 frames.
+- 14:16 integrator: mission-demo live on :8000, opens first, 265 steps, 8 checkpoints incl both diverts, no console errors, stand-in chain. Gap to viewer: intro paragraph still run 1's text.

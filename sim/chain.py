@@ -153,6 +153,7 @@ class LanternClient:
         keys: dict[str, str] | None = None,
     ):
         deployment = self._load_deployment()
+        self.deployment = deployment  # sim/lantern_deployment.json, or {} if absent
         self.rpc_url = rpc_url or os.environ.get("MONAD_RPC_URL") or deployment.get("rpcUrl") or DEFAULT_RPC
         address = address or os.environ.get("LANTERN_CONTRACT_ADDRESS") or deployment.get("address")
         if not address:
@@ -326,7 +327,9 @@ class LanternClient:
             "contract": self.address,
             "explorer": self.explorer,
             "contract_url": self.address_url(),
-            "verified": "sourcify" if self.chain_id == 10143 else None,
+            # "sourcify" only when contracts/deploy.sh saw Sourcify report a match for this address.
+            "verified": self.deployment.get("verified")
+            if self.deployment.get("address", "").lower() == self.address.lower() else None,
         }
 
     def run_scope(self, cache_s: float | None = None) -> "RunScope":

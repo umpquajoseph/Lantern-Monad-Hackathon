@@ -46,9 +46,32 @@ BLOCK=$(cast receipt "$TX" blockNumber --rpc-url "$RPC_URL")
 mkdir -p "$ROOT/sim"
 forge inspect Lantern abi --json > "$ROOT/sim/lantern_abi.json"
 
-python3 - "$DEPLOYMENT_OUT" "$CHAIN_ID" "$ADDR" "$TX" "$BLOCK" "$A" "$B" "$DEPLOYER" "$RPC_URL" <<'PY'
+# Verify the source on Monad's Sourcify (docs.monad.xyz/guides/verify-smart-contract/foundry),
+# so explorers that read Sourcify show decoded calls. Best effort: a failure here does not
+# undo the deploy. VERIFIED is recorded in the deployment file only when Sourcify reports a match.
+VERIFIED=""
+VERIFIED_AT=""
+SOURCIFY="https://sourcify-api-monad.blockvision.org"
+if [ "$CHAIN_ID" = "10143" ] || [ "$CHAIN_ID" = "143" ]; then
+  if forge verify-contract "$ADDR" src/Lantern.sol:Lantern --chain "$CHAIN_ID" \
+       --verifier sourcify --verifier-url "$SOURCIFY/" >/dev/null 2>&1; then
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      sleep 5
+      MATCH=$(curl -s --max-time 15 "$SOURCIFY/v2/contract/$CHAIN_ID/$ADDR" \
+        | python3 -c 'import sys,json
+try: d=json.load(sys.stdin); print((d.get("match") or "") + " " + (d.get("verifiedAt") or ""))
+except Exception: print("")' 2>/dev/null)
+      case "$MATCH" in
+        exact_match*|match*) VERIFIED="sourcify"; VERIFIED_AT="${MATCH#* }"; break ;;
+      esac
+    done
+  fi
+  echo "  verified : ${VERIFIED:-no (run: forge verify-contract $ADDR src/Lantern.sol:Lantern --chain $CHAIN_ID --verifier sourcify --verifier-url $SOURCIFY/)}"
+fi
+
+python3 - "$DEPLOYMENT_OUT" "$CHAIN_ID" "$ADDR" "$TX" "$BLOCK" "$A" "$B" "$DEPLOYER" "$RPC_URL" "$VERIFIED" "$VERIFIED_AT" <<'PY'
 import json, sys, datetime
-out, chain_id, addr, tx, block, a, b, deployer, rpc = sys.argv[1:]
+out, chain_id, addr, tx, block, a, b, deployer, rpc, verified, verified_at = sys.argv[1:]
 chain_id = int(chain_id)
 explorer = {10143: "https://testnet.monadscan.com", 143: "https://monadscan.com"}.get(chain_id)
 rec = {
@@ -64,6 +87,8 @@ rec = {
     "explorer": explorer,
     "explorerContractUrl": f"{explorer}/address/{addr}" if explorer else None,
     "deployedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+    "verified": verified or None,  # "sourcify" when Sourcify reported a match, else null
+    "verifiedAt": verified_at or None,
 }
 json.dump(rec, open(out, "w"), indent=2)
 print(json.dumps(rec, indent=2))

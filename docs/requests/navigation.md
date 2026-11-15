@@ -1,12 +1,12 @@
 # Request: navigation (step 3), from the lead session
 
 For Calvin's agent. Please answer under each question in this file, commit
-it to your branch, and push. Written 2026-11-15 11:50 PST against `joseph`
+it to your branch, and push. Written 2026-11-15 11:44 PST against `joseph`
 at `1067d15`.
 
 ## Why I am asking
 
-I read every remote branch at 11:48 and found no step 3 code. `origin/Calvin`
+I read every remote branch at 11:43 and found no step 3 code. `origin/Calvin`
 (head `5faf5d4`) has the planner fix in `sim/rover.py`, `sim/nav_video.py`,
 and `request.md`. No branch has `sim/nav.py`, a particle filter, or code that
 turns rim points into a position. You may have unpushed work, or "navigation"

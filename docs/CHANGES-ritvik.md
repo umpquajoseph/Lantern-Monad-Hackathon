@@ -36,12 +36,10 @@ Laid out after NASA's "Experience Curiosity" (eyes.nasa.gov/apps/curiosity):
 - **Surveyor has no arm.** It stops 6 m short of a site, turns to face it, pans its mast camera, maps the ground, takes a neutron dwell and a photo (`science.run_site_survey`, `SURVEY_PHASES`). Its verdict comes from the dwell, against the same 1 wt% threshold; the Prospector's core confirms. Reports store the dwell and the terrain map instead of a core.
 - **A crater the orbital map missed.** On the Surveyor's 2nd drive between two ice sites (with seed 11, T04 to T06), a real terrain crater has rim boulders no map shows. The Surveyor stops about 10 m short, faces it, maps it, photographs it and writes a hazard report (`lantern.hazard/1`). The hazard goes into the route object it publishes (hash on chain), then it drives around.
 - **Prospector plans a better way.** Before planning, it reads every Surveyor route by its CID and checks the hash. It adds each flagged hazard to its map with a 4 m margin. Where the Surveyor's route ran into a hazard, it plans its own route instead of following that one (20 m clear of the rim in the seed-11 run).
-- **First-person survey view.** The Surveyor's stops switch the main view to its camera:
-  - corner brackets, a reticle locking on, and a camera-pan sweep;
-  - the terrain grid building from near to far, coloured by slope (green flat, yellow 8–15°, red steep or rocks);
-  - neutron dwell pulses and a photo flash;
-  - at the crater, the old route crossed out, the new one drawn, and "UNSAFE · H1 FLAGGED FOR THE PROSPECTOR".
-- **Suspension.** Each rover body tilts and lifts to a plane fitted to the ground under its wheels. On Perseverance the merged wheel and rocker meshes are cut apart by clustering, so each wheel spins with distance and rides up and down, and the rockers tip. Opportunity is one mesh, so only its body tilts.
+- **First-person at Surveyor stops.** When the Surveyor stops at a site or the crater, the main view switches to its own camera, with no drawn effects on it. The steps of the stop are listed in the panel.
+- **Suspension.** Each rover body tilts and lifts to a plane fitted to the ground under its wheels. On Perseverance the merged wheel and rocker meshes are cut apart by clustering, so each wheel spins with distance and rides up and down, and the rockers tip. Opportunity is one mesh, so only its body tilts. The wheel and rocker parts are groups of meshes (one per material), so they are cut apart together.
+- **Rovers on the ground.** The suspension measured the model in scene coordinates, about 380 m off, so the Surveyor floated 13 m up and the Prospector sank 5 m. It now measures in the rover's own frame.
+- **Crater rings.** Joseph's crater map (`terrain.craters`, 11,082 craters) is drawn as red rim rings on the ground within 150 m of the followed rover. The overhead map shows his no-go layer (`map.js`, `opts.nogo`). Both are under Layers → Craters.
 - **"How to read this"** is rebuilt as sections: the two rovers, the ground colours, the camera colours, on chain, and controls.
 
 ## 2. The larger build (master implementation prompt)

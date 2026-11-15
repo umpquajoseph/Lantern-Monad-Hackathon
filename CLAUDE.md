@@ -12,6 +12,14 @@ Monad contract, and check each other's finds.
 ## Event rules
 
 - Build window about seven hours. Demo in the evening, top six pitch.
+- Judging criteria, as given by the organizers:
+  - Investability.
+  - Creativity: "how original is the idea? an original take on a real
+    problem scores highest".
+  - Completeness: "clean ui/ux and working features, end to end, no gaps".
+  - Presentation.
+- So: a demo that runs end to end with a clean dashboard beats an extra
+  feature. Polish step 5 before any upgrade (real terrain, vision).
 
 ## Layout (planned, one file per step)
 

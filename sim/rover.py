@@ -37,6 +37,11 @@ LOCAL_PLAN_MAX_CELLS = 3000     # assumed: local A* search budget (2 m cells)
 # the planner routes around the whole cell.
 HAZARD_CELL_FRAC = 0.01   # any hazard cell blocks its 2 m planning cell (lidar hazards are craters, not lone rocks)
 
+# Assumed: how much of the planned route is logged for display (the camera
+# view's dotted line), metres ahead of the rover: about as far as the camera
+# resolves rims and the lidar judges craters (20-25 m).
+PLAN_DISPLAY_M = 20.0
+
 # Assumed: how far the rover turns in place when no way forward is clear.
 STUCK_TURN_DEG = 60.0
 
@@ -235,6 +240,33 @@ class Rover:
             self.stuck_turns += 1
             return 0.0, turn
         return moved, dh
+
+    def planned_route(self, max_m=None):
+        """Where the rover intends to drive next, true frame, starting at the
+        rover: its local plan around what its sensors have found, smoothed
+        (two rounds of corner cutting, as a rover follows a 2 m grid path),
+        cut at max_m metres. The global route beyond it is left out: it is
+        held in the believed frame and would jump with every estimate."""
+        max_m = PLAN_DISPLAY_M if max_m is None else max_m
+        pts = np.array([tuple(self.true[:2])] + [tuple(p) for p in getattr(self, "local_plan", [])[1:]], float)
+        for _ in range(2):   # Chaikin corner cutting; keeps the first and last point
+            if len(pts) < 3:
+                break
+            q = [pts[0]]
+            for a_, b_ in zip(pts[:-1], pts[1:]):
+                q += [0.75 * a_ + 0.25 * b_, 0.25 * a_ + 0.75 * b_]
+            q.append(pts[-1])
+            pts = np.array(q)
+        out, total = [tuple(pts[0])], 0.0
+        for a_, b_ in zip(pts[:-1], pts[1:]):
+            seg = float(np.hypot(*(b_ - a_)))
+            if total + seg >= max_m:
+                t = (max_m - total) / seg if seg > 0 else 0.0
+                out.append(tuple(a_ + t * (b_ - a_)))
+                break
+            out.append(tuple(b_))
+            total += seg
+        return out
 
     def goal_blocked(self):
         """True if the goal (taken where the rover believes it is) is on ground

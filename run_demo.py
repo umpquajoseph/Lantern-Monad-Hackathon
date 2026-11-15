@@ -142,6 +142,8 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                 "fp_frame": cam.last.get(r.agency) if cam is not None and cam.run_dir is not None else None,
                 "lidar_frame": cam.last_lidar.get(r.agency) if cam is not None else None,
                 "lidar_hazards": cam.haz_count.get(r.agency, {}) if cam is not None else {},
+                "plan": ([[round(float(px), 2), round(float(py), 2)] for px, py in r.planned_route()]
+                         if r.sensing and mode[r.agency] in ("survey", "goto") else None),
                 "particles": _particles_log(r.nav)}
 
     for k in range(MAX_STEPS):
@@ -265,6 +267,26 @@ def _write_jpg(path, img):
     cv2.imwrite(str(path), img[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
 
 
+def _thin_marks(hz, kinds, hz_world, cell_m=1.5, max_range_m=25.0, max_marks=30):
+    """Crater cells only, one mark per cell_m square, nearest first: the lidar
+    flags 0.5 m cells, and marking every one buries the camera view."""
+    if len(hz) == 0:
+        return hz_world
+    keep, seen = [], set()
+    order = np.argsort(np.hypot(hz[:, 0], hz[:, 1]))
+    for i in order:
+        if kinds[i] != "crater" or np.hypot(*hz[i]) > max_range_m:
+            continue
+        key = (int(hz[i, 0] // cell_m), int(hz[i, 1] // cell_m))
+        if key in seen:
+            continue
+        seen.add(key)
+        keep.append(i)
+        if len(keep) >= max_marks:
+            break
+    return hz_world[keep] if keep else np.zeros((0, 2))
+
+
 class LiveCamera:
     """Sensor frames, fp/<agency>_<step>.jpg: taken inside the sim loop right
     after a rover drives and before it localises, as its camera would (vision
@@ -334,8 +356,9 @@ class LiveCamera:
                 r.add_hazards(hz_world)
                 self.haz_count[ag] = {kk: kinds.count(kk) for kk in ("crater", "slope")}
                 if self.run_dir is not None:
-                    plan = list(getattr(r, "local_plan", [])[1:])
-                    shown = draw_plan(img, [tuple(r.true[:2])] + plan, r.true, self.scene, hz_world)
+                    # Lidar hazards are marked on the saved frame; the planned
+                    # route is drawn live by the viewer from the logged "plan".
+                    shown = draw_plan(img, [], r.true, self.scene, _thin_marks(hz, kinds, hz_world))
                     lname = f"lidar/{ag}_{k:04d}.jpg"
                     _write_jpg(self.run_dir / lname, self.lid[ag].view(rng_img))
                     self.last_lidar[ag] = lname

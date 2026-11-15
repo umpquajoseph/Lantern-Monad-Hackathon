@@ -6,6 +6,7 @@ than its inputs, so a second launch takes a few seconds.
 
     python app.py              build what is missing, open the viewer
     python app.py --fresh      rerun both demo runs first (about 5 minutes)
+    python app.py --vision     rerun both runs with the camera and lidar driving (slower: every step renders)
     python app.py --no-open    do not open a browser
     python app.py --port 8001
     python app.py --site DIR   also copy the finished static site to DIR, ready to host
@@ -68,7 +69,7 @@ def stale(out: Path, *inputs: Path) -> bool:
     return not out.exists() or any(mtime(i) > mtime(out) for i in inputs)
 
 
-def build(fresh: bool):
+def build(fresh: bool, vision: bool = False):
     if not TERRAIN.exists():
         run(["sim/terrain.py", "build"], "terrain")
     else:
@@ -89,8 +90,10 @@ def build(fresh: bool):
     else:
         say(f"web assets: {ASSETS_META.parent} (kept)")
 
-    if fresh or not (RUNS / "index.json").exists():
-        run(["run_demo.py"], "demo runs")
+    if fresh or vision or not (RUNS / "index.json").exists():
+        # --vision: the rovers drive on their camera (rims) and lidar (craters);
+        # it reruns both runs, since saved runs may have been made without it.
+        run(["run_demo.py", *(["--vision"] if vision else [])], "demo runs")
     else:
         say(f"demo runs: {RUNS / 'index.json'} (kept; --fresh reruns them)")
 
@@ -166,13 +169,15 @@ def serve(port: int, open_browser: bool):
 def main():
     ap = argparse.ArgumentParser(description="Build what is missing, run the demo, open the viewer.")
     ap.add_argument("--fresh", action="store_true", help="rerun both demo runs")
+    ap.add_argument("--vision", action="store_true",
+                    help="rerun both demo runs with the camera and lidar driving (run_demo.py --vision)")
     ap.add_argument("--no-open", action="store_true", help="do not open a browser")
     ap.add_argument("--no-serve", action="store_true", help="build and sync only")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--site", type=Path, help="copy the finished static site here")
     a = ap.parse_args()
 
-    build(a.fresh)
+    build(a.fresh, a.vision)
     sync_runs()
     if a.site:
         export_site(a.site)

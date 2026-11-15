@@ -50,6 +50,7 @@ const FOCUS_TAIL_S = 3;    // and holds this long after it
 const NARROW = matchMedia("(max-width: 760px)");
 
 const S = {
+  lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
   opts: { routes: true, hazards: true, nogo: true, truth: false }, focus: true, focusEv: null, prev: null, lastPanel: "",
 };
@@ -516,6 +517,11 @@ function bind() {
   $("zoom-in").onclick = () => zoom(1 / 1.35);
   $("zoom-out").onclick = () => zoom(1.35);
   document.querySelectorAll("#rover-seg button").forEach((b) => (b.onclick = () => { exitFocus(true); setRover(b.dataset.rover); }));
+  document.querySelectorAll("#lid-seg button").forEach((b) => (b.onclick = () => {
+    S.lidarKind = b.dataset.lk;
+    document.querySelectorAll("#lid-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    render(true);
+  }));
   document.querySelectorAll("[data-expand]").forEach((b) => (b.onclick = () => { exitFocus(true); setCam(b.dataset.expand); }));
   $("back-chip").onclick = () => { exitFocus(true); setCam("third"); };
   document.querySelectorAll(".rail button").forEach((b) => (b.onclick = () => {
@@ -766,22 +772,29 @@ function showLidar(t) {
   if (run.hasLidar === undefined) run.hasLidar = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_frame));
   box.hidden = !run.hasLidar;
   if (!run.hasLidar) return;
+  // Top-down / First person (lidar_fp_frame, step-6-nav 6846caf), only when the run logs both.
+  if (run.hasLidarFp === undefined) run.hasLidarFp = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_fp_frame));
+  $("lid-seg").hidden = !run.hasLidarFp;
+  const fp = run.hasLidarFp && S.lidarKind === "fp";
   const a = S.rover, k = run.stepAt(t);
   let src = null;
-  for (let i = k; i >= 0 && i > k - 50 && !src; i--) src = run.steps[i].rovers[a] && run.steps[i].rovers[a].lidar_frame;
+  for (let i = k; i >= 0 && i > k - 50 && !src; i--) {
+    const r = run.steps[i].rovers[a];
+    src = r && (fp && r.lidar_fp_frame ? r.lidar_fp_frame : r.lidar_frame);
+  }
   const img = $("lid-img");
   $("lid-none").hidden = !!src;
   img.hidden = !src;
   if (src && img.dataset.src !== run.dir + src) { img.src = run.dir + src; img.dataset.src = run.dir + src; }
   // Top-down scans (step-6-nav 40304d4) are 800 px wide; older range images 400.
   const top = !(img.naturalWidth > 0 && img.naturalWidth < 800);   // not loaded yet: the current kind
-  const cap = `${ROLE[a] || "Rover " + a} lidar, ${top ? "from above" : "range image"}`;
-  if ($("lid-cap").textContent !== cap) {
-    $("lid-cap").textContent = cap;
-    $("lid-cap").title = top
-      ? "Top-down, forward up, rover at the bottom centre. Grey safe, amber crater floor (avoided), red steeper than 15° (no-go). Rings every 5 m."
-      : "Range image beside the camera, 120° x 33°: near warm, far cool.";
-  }
+  const isFp = fp && src && src.endsWith("_fp.jpg");
+  const cap = run.hasLidarFp ? `${ROLE[a] || "Rover " + a} lidar` : `${ROLE[a] || "Rover " + a} lidar, ${top ? "from above" : "range image"}`;
+  const tip = isFp ? "First person: the same scan, 120° across, near bright, far dark. Red no-go, amber crater floor."
+    : top ? "Top-down, forward up, rover at the bottom centre. Grey safe, amber crater floor (avoided), red steeper than 15° (no-go). Rings every 5 m."
+    : "Range image beside the camera, 120° x 33°: near warm, far cool.";
+  if ($("lid-cap").textContent !== cap) $("lid-cap").textContent = cap;
+  if ($("in-lidar").title !== tip) $("in-lidar").title = tip;
 }
 
 function showFrame(img, cv, none, small) {

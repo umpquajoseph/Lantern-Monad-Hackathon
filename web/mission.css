@@ -156,6 +156,9 @@ ol.txs .t { font-family: var(--mono); color: var(--faint); font-size: 11px; padd
 .inset-view img, .inset-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .inset-view.lidar-mini { aspect-ratio: 400 / 140; }
 .inset-view.lidar-mini img { object-fit: contain; }
+.lk-seg { display: flex; margin-left: 6px; }
+.lk-seg button { font: 500 11px var(--sans); color: var(--dim); background: transparent; border: 1px solid var(--line); padding: 1px 6px; margin-left: -1px; cursor: pointer; }
+.lk-seg button[aria-pressed="true"] { color: var(--fg); background: rgba(255,255,255,.08); }
 .inset-none { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 12px; }
 .inset figcaption { display: flex; align-items: center; justify-content: space-between; padding: 3px 4px 3px 12px; font-size: 13px; font-weight: 500; color: var(--fg); }
 .back-chip { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); z-index: 11; background: #fff; color: #111; border: 0; border-radius: 999px; padding: 7px 16px; font-weight: 600; }

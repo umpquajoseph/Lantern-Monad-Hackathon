@@ -18,6 +18,7 @@ const PART_NAMES = { nav: "navigation", rims: "rim detection", planner: "route p
 
 const state = {
   runs: [], run: null, t: 0, playing: false, speed: 200, cam: "A",
+  lidarKind: "top",   // "top": lidar_frame (from above); "fp": lidar_fp_frame (first person)
   opts: { fill: true, tracks: true, particles: true, rims: true, nogo: false, truth: false },
   lastEventsKey: "",
 };
@@ -154,6 +155,11 @@ function bindControls() {
   setView("A");
   // The camera's A / B is the same choice as Follow rover A / B: one sets both.
   document.querySelectorAll("#cam-seg button").forEach((b) => (b.onclick = () => setView(b.dataset.ag)));
+  document.querySelectorAll("#lidar-seg button").forEach((b) => (b.onclick = () => {
+    state.lidarKind = b.dataset.lk;
+    document.querySelectorAll("#lidar-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    render(true);
+  }));
   document.querySelectorAll("#map-seg button").forEach((b) => (b.onclick = () => {
     map.setMode(b.dataset.map);
     document.querySelectorAll("#map-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
@@ -322,9 +328,13 @@ function camera(run, fr, k) {
   const li = $("lidar-img");
   // Runs without --vision have no lidar: hide the panel rather than show an empty box.
   if (run.hasLidar === undefined) run.hasLidar = run.agencies.some((ag) => run.steps.some((_, j) => run.rover(ag, j).lidar_frame));
-  li.parentElement.hidden = $("lidar-cap").hidden = !run.hasLidar;
-  if (r.lidar_frame) {
-    const src = run.dir + r.lidar_frame;
+  li.parentElement.hidden = $("lidar-cap").hidden = $("lidar-head").hidden = !run.hasLidar;
+  // The Top-down / First person toggle only when the run logs both kinds.
+  if (run.hasLidarFp === undefined) run.hasLidarFp = run.agencies.some((ag) => run.steps.some((_, j) => run.rover(ag, j).lidar_fp_frame));
+  $("lidar-seg").hidden = !run.hasLidarFp;
+  const lf = lidarFile(run, r);
+  if (lf) {
+    const src = run.dir + lf;
     if (li.dataset.src !== src) { li.dataset.src = src; li.src = src; }
   } else {
     li.removeAttribute("src");
@@ -406,10 +416,22 @@ function captionHtml(run, a, k) {
 
 // Lidar panel caption: the scan taken with this step's live frame (run_demo.py --vision).
 const LIDAR_TOPDOWN_W = 800;   // sim/lidar.py Lidar.view on step-6-nav 40304d4: 800 x 280
+// The lidar image to show: the first-person range image when that is
+// chosen and logged (lidar_fp_frame, step-6-nav), else the top-down one.
+function lidarFile(run, r) {
+  return state.lidarKind === "fp" && r.lidar_fp_frame ? r.lidar_fp_frame : r.lidar_frame;
+}
+
 function lidarCapText(run, a, k) {
   const r = run.rover(a, k);
   if (!r.lidar_frame) return "No lidar in this run.";
   const hz = r.lidar_hazards || {};
+  if (lidarFile(run, r) === r.lidar_fp_frame && r.lidar_fp_frame) {
+    // step-6-nav 6846caf Lidar.view_fp: bearing 60L..60R across, elevation
+    // -2..-35 deg up the side, near bright, far dark; no colour legend inside.
+    return `Rover ${a} lidar, first person: the same scan, 120° across, near bright, far dark. ` +
+      `Red no-go, amber crater floor. This scan: ${hz.crater || 0} crater cells, ${hz.slope || 0} steep cells.`;
+  }
   // Two image kinds, told apart by width (step-6-nav 40304d4): the top-down
   // map of what the scan found is 800 px wide; the older range image is 400.
   // Until the image has loaded its width is 0: say top-down, the current kind.
@@ -429,7 +451,11 @@ function reserveHeights(run) {
   const caps = new Set(), stories = new Set(), lidarCaps = new Set();
   for (let k = 0; k <= last; k++) {
     for (const a of run.agencies) caps.add(captionHtml(run, a, k));
-    for (const a of run.agencies) lidarCaps.add(lidarCapText(run, a, k));
+    for (const a of run.agencies) {
+      const keep = state.lidarKind;
+      for (const kind of ["top", "fp"]) { state.lidarKind = kind; lidarCaps.add(lidarCapText(run, a, k)); }
+      state.lidarKind = keep;
+    }
     stories.add(story(run, k, run.findsAt(k)));
   }
   const evsAll = run.eventsUpTo(last).slice().reverse();

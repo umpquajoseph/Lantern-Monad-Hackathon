@@ -3,8 +3,8 @@
 **Live: https://lantern-teal.vercel.app** (Vercel project `lantern` in
 Kellen's scope `kellensniders-projects`, Hobby plan). Since 12:39 PST it
 carries the real-chain runs with camera frames (chain session, from
-`integration` at c9c7931 with the chain patch; frames are plain lamp-lit
-geometry until Joseph re-renders with the display layer). Every
+`integration` with the chain patch; since 12:49 the textured re-render
+with the display layer on: run1-real2 and run2-real2). Every
 `python web/publish.py vercel` replaces it in about two minutes.
 
 Share **only the alias above**. The per-deployment URLs the CLI prints

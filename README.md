@@ -17,6 +17,9 @@ steps. Data formats between steps are in `docs/handoffs.md`.
 2. Foundry, from https://getfoundry.sh.
 3. A throwaway testnet wallet per agency, funded from the Monad testnet faucet.
 4. Copy `.env.example` to `.env` and fill it in. Never commit `.env`.
+5. The contract is already deployed (address in `sim/lantern_deployment.json`).
+   To redeploy: `contracts/deploy.sh`. To check the chain client:
+   `python sim/chain.py finds`. Contract tests: `cd contracts && forge test`.
 
 ## Sources
 

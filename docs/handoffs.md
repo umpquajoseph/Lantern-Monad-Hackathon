@@ -149,13 +149,34 @@ post_find(agency, x, y, sigma, reading, data_hash) -> find_id
 check_find(agency, find_id, x, y, sigma, reading, agrees) -> tx_hash
 get_finds() -> list[dict]   # each: id, agency, x, y, sigma, reading,
                             # agree (agencies), disagree (agencies), status
+                            # plus: address, data_hash, time (block timestamp)
 ```
 
 - `agency` is `"A"` or `"B"`; the client maps it to the key in `.env`.
 - On chain, positions and sigmas are whole centimetres, `data_hash` is
-  `bytes32`, and status is reported, confirmed or disputed.
+  `bytes32`, and status is reported, confirmed or disputed. The client takes
+  metres and gives back metres; `status` comes back as one of the strings
+  `"reported"`, `"confirmed"`, `"disputed"`.
+- `reading` is the ice sensor reading as wt% water-equivalent (float, e.g.
+  `5.6`); on chain it is hundredths of wt% (`uint32`, ASSUMED unit, see
+  `contracts/src/Lantern.sol`).
+- `data_hash`: `bytes` (32) or a `0x` hex string. `chain.hash_raw(obj)` makes
+  one from the raw readings (canonical JSON, sorted keys, keccak256).
 - Check rule: refused if the checker's agency is the finder's, or if
-  `dx² + dy² > (3 × (sigma_find + sigma_check))²`, all in centimetres.
+  `dx² + dy² > (3 × (sigma_find + sigma_check))²`, all in centimetres. Also
+  refused: a second check of the same find by the same agency, and any write
+  from an address that is not one of the agencies fixed at deployment. A
+  refusal raises `chain.LanternRefused` with `.name` in `OwnFind`,
+  `AlreadyChecked`, `TooFar`, `NoSuchFind`, `NotAnAgency` and `.values` its
+  arguments; nothing is sent.
+- Also available: `chain.client().tx_log` (every transaction sent: `kind`,
+  `agency`, `tx_hash`, `url`, `block`, `gas_used`, `seconds`, `find_id`),
+  `chain.client().run_log_chain()` (the run log's `chain` block),
+  `post_safety_zone(agency, x, y, radius, until, purpose) -> zone_id` and
+  `get_zones()` (Artemis Accords section 11 upgrade).
+- Read-only use needs no keys: the address and ABI come from
+  `sim/lantern_deployment.json` and `sim/lantern_abi.json` (committed, written
+  by `contracts/deploy.sh`). The web viewer can read the same two files.
 
 ## Step 5, dashboard, takes
 

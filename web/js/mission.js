@@ -58,7 +58,7 @@ const NARROW = matchMedia("(max-width: 760px)");
 const S = {
   lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
-  opts: { fill: true, routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
+  opts: { fill: false, routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
   player: null,        // MissionPlayer: checkpoints and live chain
   autoB: { armed: true, at: 0 },
   holdUntil: 0,        // wall time (performance.now) a checkpoint hold ends; 0 = no hold   // switch to the Prospector once after the Surveyor's find

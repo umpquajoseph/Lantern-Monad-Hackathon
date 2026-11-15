@@ -31,9 +31,9 @@ const DOING = {
 };
 const PHASE = { park: "Park", nir_scan: "NIR scan", arm_deploy: "Arm out", drill: "Drill 1 m", sample_lift: "Core up",
   analyze: "Analyse", arm_stow: "Stow", stop: "Stop", mast_pan: "Camera pan", terrain_map: "Map terrain",
-  neutron_dwell: "Neutron dwell", photo: "Photo", flag: "Flag" };
+  neutron_dwell: "Neutron dwell", photo: "Photo", flag: "Flag", neutron_survey: "Neutron survey" };
 // What the Surveyor's name tag says during each step of a stop.
-const A_TAG = { mast_pan: "CAMERA PAN", terrain_map: "MAPPING TERRAIN", neutron_dwell: "NEUTRON DWELL", photo: "PHOTO",
+const A_TAG = { park: "PARKED", nir_scan: "NIR SCAN", neutron_survey: "NEUTRON SURVEY", analyze: "ANALYSING", mast_pan: "CAMERA PAN", terrain_map: "MAPPING TERRAIN", neutron_dwell: "NEUTRON DWELL", photo: "PHOTO",
   flag: "FLAGGING HAZARD" };
 const CALL = {
   registerCandidate: "Candidate registered",
@@ -49,7 +49,8 @@ const SPLIT = {
 const MODE_SHORT = { local: "Local chain", monad: "Monad testnet", offline: "Offline" };
 const STAGE_N = { None: 0, Candidate: 1, SurveyorInspected: 2, ProspectorAnalyzed: 3 };
 const SITE_COLOR = { Candidate: 0x9aa7b8, Positive: ICE_HEX, Negative: 0x8d939b, Inconclusive: 0xd9b44a, Analyzed: 0x58b4ff };
-const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop
+const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop (Ritvik's short stops)
+const FOCUS_WALL_S = 12;   // assumed: a mission stop (160-270 s of sim time) plays in about this many real seconds
 const FOCUS_LEAD_S = 3;    // the close-up starts this many sim seconds before the stop
 const FOCUS_TAIL_S = 3;    // and holds this long after it
 const NARROW = matchMedia("(max-width: 760px)");
@@ -131,6 +132,7 @@ async function openRun(entry) {
     }
     for (const e of s.registry || []) reg.push(e);
   });
+  if (!sci.length) sci = missionScience(run);
   sci.sort((a, b) => a.t0 - b.t0);
   reg.sort((a, b) => a.t - b.t);
   hazards = log.hazards || [];
@@ -162,6 +164,42 @@ async function openRun(entry) {
   setRover("A");
   S.t = 0;
   render(true);
+}
+
+// Kellen's mission log has no science events: each rover step carries the
+// instrument phase it ended in ({name, step, of}, docs/handoffs.md "Mission
+// log"). Rebuild Ritvik's science events from them: one event per stop, one
+// phase per run of steps with the same instrument name, spanning those steps.
+function missionScience(run) {
+  const out = [], sites = (run.log.mission || {}).sites || [];
+  for (const a of run.agencies) {
+    let cur = null;
+    run.steps.forEach((st, k) => {
+      const r = st.rovers[a] || {}, ins = r.instrument;
+      const stop = /^(survey|prospect)\b/.test(r.phase || "") ? r.phase : null;
+      if (!ins || !stop || k === 0) { if (cur) { out.push(cur); cur = null; } return; }
+      if (!cur || cur.stop !== stop) {
+        if (cur) out.push(cur);
+        const m = /survey (\S+)/.exec(stop);
+        const fid = /find (\d+)/.exec(stop);
+        const fe = fid ? run.events.find((e) => e.type === "find" && e.find_id === Number(fid[1])) : null;
+        const target = m ? m[1] : fe ? fe.site_id : stop;
+        const site = sites.find((x) => x.id === target);
+        const chk = run.events.find((e) => e.type === "check" && fe && e.find_id === fe.find_id);
+        cur = { agency: a, stop, target_id: target, kind: "site", record_id: `${a}-${stop}`, phases: [],
+          verdict: a === "A" ? (site && site.verdict) || "dry" : chk ? (chk.agrees ? "ice" : "dry") : "ice",
+          observation: a === "A" ? "survey" : "core", reading: null };
+      }
+      const t0 = run.times[k - 1], dur = run.times[k] - run.times[k - 1];
+      const last = cur.phases.at(-1);
+      if (last && last.name === ins.name) last.dur = t0 + dur - last.t0;
+      else cur.phases.push({ name: ins.name, t0, dur });
+      if (r.ice_reading != null) cur.reading = r.ice_reading;
+    });
+    if (cur) out.push(cur);
+  }
+  for (const e of out) { e.t0 = e.phases[0].t0; e.t1 = e.phases.at(-1).t0 + e.phases.at(-1).dur; }
+  return out;
 }
 
 // Each rover gets its own look and a name tag that also says what its
@@ -753,6 +791,7 @@ function exitFocus(byUser = false) {
   if (p && !byUser) { S.rover = p.rover; setCam(p.cam); setRover(p.rover); }
 }
 
+const focusSpeed = (ev) => Math.min(S.speed, Math.max(FOCUS_SPEED, (ev.t1 - ev.t0) / FOCUS_WALL_S));
 const activeSci = (t) => sci.find((e) => t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + FOCUS_TAIL_S);
 
 // -------------------------------------------------------------------- loop
@@ -762,7 +801,7 @@ function loop(now) {
   last = now;
   const prevT = S.t;
   if (S.playing && S.run) {
-    let adv = dt * (S.focusEv ? FOCUS_SPEED : S.speed);
+    let adv = dt * (S.focusEv ? focusSpeed(S.focusEv) : S.speed);
     if (S.focus && !S.focusEv) {
       // Never jump over a science stop at high speed: stop at its start.
       const next = sci.find((e) => e.t0 - FOCUS_LEAD_S > S.t && e.t0 - FOCUS_LEAD_S <= S.t + adv);
@@ -1241,7 +1280,7 @@ function renderToast(t) {
     const ev = S.focusEv, a = ev.agency;
     const what = instrumentNow(a, t, ev).toLowerCase() || (a === "A" ? "facing it" : "science");
     const where = ev.kind === "hazard" ? `crater ${ev.target_id} (not on the orbital map)` : ev.target_id;
-    html = `<i class="dot ${a}"></i> <b>${ROLE[a]} ${a}</b> · ${esc(what)} at ${esc(where)}<span class="sp">${FOCUS_SPEED}× for science</span>`;
+    html = `<i class="dot ${a}"></i> <b>${ROLE[a]} ${a}</b> · ${esc(what)} at ${esc(where)}<span class="sp">${Math.round(focusSpeed(ev))}× for science</span>`;
   } else if (t >= run.tEnd) {
     const f = (run.log.final_finds || [])[0];
     html = f ? `<b>Mission complete</b> · find #${f.id} ${esc(f.status)} on chain` : `<b>Mission complete</b>`;
@@ -1300,7 +1339,7 @@ function renderScience(t) {
       const got = d <= depth + 1e-6;
       const nowBin = got && d > depth - 0.1;
       return `<div class="b ${got ? (nowBin && !pastDrill ? "now" : "") : "pending"}"><span>${(d * 100).toFixed(0)} cm</span><span class="bar2"><i style="width:${got ? (100 * w) / max : 0}%"></i></span><span>${got ? w.toFixed(2) + "%" : "…"}</span></div>`;
-    }).join("") : `<div class="hint">Waiting for the core.</div>`;
+    }).join("") : (pastDrill && ev.reading != null ? `<div class="hint">Core reading ${ev.reading.toFixed(2)}${esc(S.run.unit || "")}</div>` : "");
     const analysed = ph.findIndex((p) => p.name === "analyze");
     const done = finished || cur > analysed;
     if (!done) {
@@ -1343,9 +1382,11 @@ function renderSurveyPane(ev, t, cur, finished) {
       html += `<div class="mini-h">Neutron dwell <span class="hint">water-equivalent, top 1 m</span></div>` + d.map(([dx, dy, w], i) =>
         `<div class="b ${i < n ? "" : "pending"}"><span>${i ? `${Math.round((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360}°` : "centre"}</span><span class="bar2"><i style="width:${i < n ? (100 * w) / max : 0}%"></i></span><span>${i < n ? w.toFixed(2) + "%" : "…"}</span></div>`).join("");
     }
+    if (!html && !j && cur >= 0) html = `<div class="hint">${esc(PHASE[names[cur]] || names[cur])}${ev.reading != null && finished ? ` · reading ${ev.reading.toFixed(2)}${esc(S.run.unit || "")}` : ""}</div>`;
     if (!html) html = `<div class="hint">${names[cur] === "mast_pan" ? "Panning the camera across it" : "Stopping and turning to face it"}</div>`;
     $("sci-bins").innerHTML = html;
-    if (!finished && !(done("photo") || (hz && ph.name === "flag"))) { $("sci-result").innerHTML = ""; return; }
+    const after = (name) => names.includes(name) && done(name);
+    if (!finished && !(after("photo") || (hz && ph.name === "flag") || (!j && after("analyze")))) { $("sci-result").innerHTML = ""; return; }
     if (hz) {
       const dtxt = terr && terr.crater_diameter_m ? `Crater ${terr.crater_diameter_m.toFixed(0)} m across, boulders on the rim` : "Boulder field";
       $("sci-result").innerHTML = `<div class="verdict ice">Unsafe<small>flagged</small><span class="sim-tag">SIMULATED</span></div>

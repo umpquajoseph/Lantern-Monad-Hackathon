@@ -20,6 +20,9 @@ steps. Data formats between steps are in `docs/handoffs.md`.
 ## Sources
 
 - Cauligi et al., ShadowNav, JPL, 2023: https://arxiv.org/abs/2301.04630
+  (local copy and text extract in `docs/sources/`)
+- PROSPECT Team Brief, RASC-AL 2027 Theme 3-1:
+  `docs/sources/PROSPECT-Team-Brief-RASC-AL-2027-Theme-3-1.pdf`
 - LOLA south pole elevation maps, NASA Goddard PGDA:
   https://pgda.gsfc.nasa.gov/products/90
 - Monad documentation: https://docs.monad.xyz

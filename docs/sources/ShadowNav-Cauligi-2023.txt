@@ -1,0 +1,764 @@
+                                        ShadowNav: Crater-Based Localization for Nighttime
+                                        and Permanently Shadowed Region Lunar Navigation
+
+                                                Abhishek Cauligi*              R. Michael Swan*                                               Hiro Ono
+                                        abhishek.s.cauligi@jpl.nasa.gov  robert.m.swan@jpl.nasa.gov                                masahiro.ono@jpl.nasa.gov
+
+                                                Shreyansh Daftry                  John Elliott                                      Larry Matthies
+                                        shreyansh.daftry@jpl.nasa.gov    john.o.elliott@jpl.nasa.gov                               lhm@jpl.nasa.gov
+
+                                                                                  Deegan Atha
+                                                                         deegan.j.atha@jpl.nasa.gov
+
+                                        Jet Propulsion Laboratory, California Institute of Technology
+                                                             Pasadena, CA 91109, USA
+
+arXiv:2301.04630v1 [cs.RO] 11 Jan 2023  Abstract-- There has been an increase in interest in missions                              3. APPROACH . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3
+                                        that drive significantly longer distances per day than what                                4. DATASETS OVERVIEW . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+                                        has currently been performed. For example, Endurance-A                                     5. CRATER DETECTION PERFORMANCE . . . . . . . . . . . 6
+                                        proposes driving several kilometers a day in order to reach                                6. LOCALIZATION PERFORMANCE . . . . . . . . . . . . . . . . . 8
+                                        its target traverse of 2000 km in 4 years. Additionally, some                              7. CONCLUSIONS . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+                                        of these proposed missions, including Endurance-A and rovers                               ACKNOWLEDGMENTS . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+                                        for Permanently Shadowed Regions (PSRs) of the moon, re-                                   REFERENCES . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11
+                                        quire autonomous driving and absolute localization in darkness.                            BIOGRAPHY . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12
+                                        Endurance-A proposes to drive 1200 km of its total traverse at
+                                        night. The lack of natural light available during these missions                           L                          R
+                                        limits what can be used as visual landmarks and the range
+                                        at which landmarks can be observed. In order for planetary                                 Figure 1: The ShadowNav localization algorithm per-
+                                        rovers to traverse long-ranges, onboard absolute localization is                           forms absolute localization for a Lunar rover mission
+                                        critical to the rover's ability to maintain its planned trajectory                         located at the red position in the left image by matching
+                                        and avoid known hazardous regions. Currently, the localization                             known craters from (left) an orbital map against (right)
+                                        performed onboard rovers is relative to the rover's frame of                               detected craters from the rover stereo cameras.
+                                        reference and is performed through the integration of wheel
+                                        and visual odometry and inertial measurements. To accomplish                                                 1. INTRODUCTION
+                                        absolute localization, a "ground-in-the-loop" (GITL) operation
+                                        is performed wherein a human operator matches local maps                                   Long-range Lunar navigation, and specifically navigating
+                                        or images from onboard with orbital images and maps. This                                  within darkness, has gained a significant amount of traction
+                                        GITL operation places a limit on the distance that can be                                  recently. For example, missions to Permanently Shadowed
+                                        driven in a day to a few hundred meters, which is the distance                             Regions (PSRs) of the moon have been proposed such as
+                                        that the rover can maintain acceptable localization error via                              the VIPER mission [1], [2] and the Lunar Polar Volatiles
+                                        relative methods. Previous work has shown that using craters                               Explorer mission concepts. Furthermore, there are missions
+                                        as landmarks is a promising approach for performing absolute                               that have proposed driving during the Lunar night in order
+                                        localization on the moon during the day. In this work we                                   to traverse longer distances. For example, the new Decadal
+                                        present a method of absolute localization that utilizes craters                            Survey [3] recommends the Endurance-A Lunar rover mis-
+                                        as landmarks and matches detected crater edges on the surface                              sion should be implemented as a strategic medium-class
+                                        with known craters in orbital maps. We focus on a localization                             mission as the highest priority of the Lunar Discovery and
+                                        method based on a perception system which has an external                                  Exploration Program. The Endurance-A rover proposal plans
+                                        illuminator and a stereo camera. While other methods based                                 to drive 2000 km in the South Pole-Aitken (SPA) Basin to
+                                        on lidar exist, lidar is not currently planned for deployment                              collect 100 kg of samples, which would be delivered to
+                                        on the current proposed nighttime and PSR missions. In this                                Artemis astronauts. This mission concept study [4] identified
+                                        paper, we evaluate (1) both monocular and stereo based surface                             several key capabilities required to complete this mission
+                                        crater edge detection techniques, (2) methods of scoring the                               which are: (1) Endurance will need to drive 70% of its total
+                                        crater edge matches for optimal localization, and (3) localization                         distance during the night to enable daytime hours dedicated
+                                        performance on simulated Lunar surface imagery at night. We                                to science and sampling. (2) The mission will require on-
+                                        demonstrate that this technique shows promise for maintaining                              board autonomy for the majority of its operations, while the
+                                        absolute localization error of less than 10 m required for most
+                                        planetary rover missions.
+
+                                                        TABLE OF CONTENTS
+
+                                        1. INTRODUCTION. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 1
+
+                                        2. RELATED WORKS . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2
+
+                                        *Abhishek Cauligi and R. Michael Swan contributed equally to this work.
+                                        978-1-6654-9032-0/23/$31.00 ©2023. California Institute of Technology.
+                                        Government sponsorship acknowledged.
+                                        The research was carried out at the Jet Propulsion Laboratory, California
+                                        Institute of Technology, under a contract with the National Aeronautics and
+                                        Space Administration (80NM0018D0004).
+
+                                                                                                                                1
+Orbital Image Generation                                             Particle Filter
+
+    Orbital Image Generation
+
+                                          Crater Edge                Local-to-Global  Compute Q-Score
+                                           Detection                    Transform
+
+Stereo Images Generation       Disparity  Disparity Hole                              Particle Filter
+                              Generation        Filler                                     Step
+
+Figure 2: Schematic of the ShadowNav algorithm proposed to perform absolute localization on the Moon. A particle
+filter is used to match craters detected by the rover stero cameras with known craters from an orbital map.
+
+ground only handles contingencies. (3) Global localization           the uncertainty and nonlinearity of the crater rim detection
+is necessary to maintain an error of <10 m relative to orbital       model, we utilize a particle filter with a novel Q-Score metric
+maps.                                                                for ranking potential crater matches in order to estimate the
+                                                                     absolute position of the rover within an orbital map. This
+At present, existing rovers perform onboard localization rel-        paper demonstrates the initial results of both crater detection
+ative to their own reference frame. This is accomplished             within darkness and absolute localization within simulation
+by using wheel and visual odometry and inertial measure-             which are the results of the first two years of a planned
+ments. Absolute localization is performed periodically with          three year effort to validate this approach. Work is ongoing
+a "ground-in-the-loop" (GITL) operation. This is acceptable          to collect and validate this approach in a real-world Lunar
+for current driving distances which are a few hundred meters         analogue test location.
+a day. Existing relative localization has around 2% drift and
+therefore can only drive at most 500 m before the error will         Statement of Contributions: This paper presents an approach
+be larger than 10 m. In order to traverse longer distances, on       to absolute localization on the Moon that can be performed
+the order of several kilometers a day proposed by missions           while a rover is in darkness, such as within a PSR or during
+such as Endurance-A, autonomous absolute localization be-            the Lunar night. The main contributions of the work as
+comes critical. At present the Lunar surface does not have           summarized below:
+continuous communication with Earth. Therefore, having to
+perform several GITL operations for absolute localization in         1. We developed a simulator based on Blender [10] which
+a day will significantly reduce the distance that can be driven.     renders simulated surface stereo imagery of the Lunar sur-
+The lack of frequent absolute localization for the rover would       face in darkness located within a known orbital position.
+lead to errors greater than the maximum 10 m localization            The rendering process utilizes the Hapke lighting model for
+error which would present significant risks to the mission           more accurate surface reflectance as well as DEMs captured
+through deviations from the desired trajectory and risk for          by LROC for realistic crater distributions.
+unidentified obstacles.
+                                                                     2. We evaluated different crater-edge detection techniques
+Craters as landmarks have been shown to be promising for             and demonstrate a method which captures 80% of the leading
+absolute localization on the Moon [5], [6]. However, the lack        crater arc at 10 m and can detect crater arcs out to 20 m.
+of natural light available while driving within a PSR or during
+the Lunar night limits what can be used as a landmark and the        3. We present a method to localize a rover within an orbital
+range at which the landmarks can be observed. Using craters          map using surface crater-edge detections and known orbital
+is still promising as the average distance between craters of        craters based on a particle filter and a metric we call the Q-
+10 m in diameter is 100 m on terrain with relatively fresh           Score which is detailed in Section 3.
+craters and 10 m on terrain with old craters [7]. Addi-
+tionally the Lunar Reconnaissance Orbiter Camera (LROC)              4. We demonstrate our absolute localization technique can
+provides digital elevation models (DEMs) with a resolution           achieve less than 2 m absolute error with an assumed odome-
+between 0.5 m-5 m per pixel [8] and there are some DEMs              try drift of 2% and an initial 3-sigma uncertainty of 3 m.
+within PSRs [9].
+                                                                                      2. RELATED WORKS
+In this work, we propose using a stereo camera with an
+illuminator positioned below the stereo camera in order to           Absolute localization on planetary surfaces is critical for
+detect crater rims within the darkness. The use of such an           expanding the range rovers can travel in a day and over the
+illuminator is motivated by the Endurance-A mission concept          course of a mission and there have been many previous works
+study [4], which proposes the use of a stereo camera with            that investigate this problem. There have been techniques
+an illumination source as the perception system for a rover          proposed for the Martian surface. Works such as [11], [12]
+operating in darkness. Global localization is then accom-            consider far range and horizon features which are at ranges
+plished by matching the detected crater rims against known           that are beyond what is expected can be seen in the dark.
+craters from an orbital image as shown in Figure 2. To handle
+
+                                                                  2
+Figure 3: Figure demonstrating the impact of placement             A. Surface Crater Detection
+of light source on crater rim shadows. Left: Sample
+render of a crater with light source even with camera.             In order to identify craters on the surface, the system was de-
+Right Sample render of a crater with light source below            signed to be used in conjunction with a perception system that
+the camera.                                                        contained a stereo camera and an illumination source. This
+                                                                   perception system was configured where the illumination
+[13] proposes a technique on the Martian surface for absolute      source was beneath the stereo camera. Examples of simulated
+localization that uses rocks and DEMs surface features.            images with the light at the same height as the cameras and
+                                                                   the light positioned beneath the cameras are in Figure 3. It
+In our work, we focus on the problem of global localization in     was observed that placing the illumination source below the
+darkness which is relevant for permanently shadowed regions        camera results in a shadow at the leading edge of a negative
+of the moon, for which there has been a surge of interest in       obstacle. Furthermore, offsetting the light with the cameras
+conducting scientific measurements and activities [14]. Our        reduced the impact of the Hapke model washing out some of
+solution approach is inspired by a host of recent works that       the surface texture. Further details on the Hapke model and
+seek to leverage orbital maps for global rover localization in     its impact on surface terrain are provided in Section 4.
+these shadowed regions. In [13], the authors propose a local-
+ization procedure that matches an observed rover image with        Here, we first review the three different techniques studied in
+an orbital map, but this approach neglects the rover motion        this work for detecting a crater's leading edge: (1) a method
+model and yields a deterministic estimate of the robot belief.     of detecting jumps within stero disparities, (2) a Canny edge
+A purely data-driven approach is presented in [15], wherein        detector used to find the shadow on the leading edge, and (3)
+a convolutional neural network is trained on synthetic data to     a convolutional neural network (CNN)-based edge detector
+match the rover observations with orbital imagery. Closest         that uses both the monocular and disparity image as input.
+to our approach, [16] presents a particle filtering technique
+to compare rover monocular camera imagery with orbital             1. Stereo Disparity Discontinuity Method The first approach
+imagery and uses a Siamese neural network approach to              for leading edge crater detection relies on detecting discon-
+assign each particle a likelihood weight. The authors in [6]       tinuities within the stereo disparity image. To accomplish
+propose a similar approach for Lunar absolute localization         this, the stereo disparity image must first be generated using
+known as LunarNav. However, LunarNav focuses on the day-           methods such as the JPLV algorithm [17] or the Semi-Global
+time localization problem and therefore considers different        Block Matching (SGBM) approach [18], among others. To
+methods of crater matching that rely on greater knowledge of       account for the low contrast that may be present in the Lunar
+the surface geometry than available in the nighttime case.         rover case, Contrast Limited Adaptive Histogram Equaliza-
+                                                                   tion (CLAHE) is first run on the input images prior to running
+                     3. APPROACH                                   stereo. CLAHE is an adaptive histogram equalization and
+                                                                   operates on sub-regions of an image which allows more
+In this work, we propose an absolute localization approach         consistent equalization across different lighting conditions
+which utilizes a crater's leading edge as landmarks for local-     within an image. This is useful for this application as there is
+ization. The end result of this approach will be an estimated      a light-to-dark gradient from near-to-far within the images.
+position and uncertainty within the orbital frame. At present,     The resulting disparity image is then scanned column-by-
+this approach only considers position localization. Rover          column and, when the difference between any two disparities
+orientation is assumed to be given by a star tracker which         is greater than some pre-defined threshold, the larger column
+can compute orientation in three dimensions from celestial         index is marked as a crater edge. Further, any numerical
+measurements. Our approach consists of two primary com-            issues stemming from stereo holes are accounted for by
+ponents:                                                           omitting any pixels with spurious values during comparison.
+
+1. A leading-edge crater detection methodology for use with        2. Canny Edge Detector Method For sensor configura-
+a Lunar rover equipped with a stereo camera system and             tions that contain an illuminator located beneath the stereo
+illumination source.                                               cameras, shadows appear on the leading edge of negative
+2. A particle filter for computing a position belief based on      obstacles. In such cases, a Canny edge detector can be used
+a score computed based on the association of crater edges          to distinguish the stark contrasting dark line along the rim.
+and known orbital ground truth craters, which we call the Q-       In this work, the Canny edge detector from OpenCV [19] is
+Score, and the robot motion model.                                 used to find these shadows.
+
+                                                                   3. CNN-Based Edge Detector Method The Holistically-
+                                                                   Nested Edge Detection (HED) approach presents a CNN-
+                                                                   based deep learning based method for leading edge crater
+                                                                   detection [20]. This method uses the HED approach and
+                                                                   can be performed by directly using the publicly released
+                                                                   neural network weights. HED is capable of performing both
+                                                                   monocular and stereo depth based edge detection. For HED
+                                                                   to perform edge detection within a depth image, it generates a
+                                                                   three channel image that contains horizontal disparity, height
+                                                                   above ground, and angle of the local surface normal with the
+                                                                   inferred direction of gravity. The RGB and depth predictions
+                                                                   of the CNN are then merged to generate the desired output.
+
+                                                                   Positive Obstacle False Positive Rejection--One shortcoming
+                                                                   of the aforementioned leading edge crater detection approach
+                                                                   is the susceptibility of false positive cases in the presence
+                                                                   of positive obstacles. In order to account for this positive
+
+                                                                3
+Algorithm 1 Q-Score Computation                                                    Algorithm 3 Systematic Resampling
+
+Require: Belief bit, set of crater observations {z0t,rover, ..., zm t ,rover},     Require: Particles {b1t , ..., bNt s } and associated  weights
+     set of ground truth craters {ct0,world, ..., ct,world}, positive value             {w1t , ..., wNt s }
+     
+                                                                                   1: nt = log            Ns   exp(bti )
+1: Qinc                                                                                                   i=1
+2: for i = 1, . . . , m do
+                                                                                   2: {w~0t , ..., w~Nt s }  {0, ..., 0}
+3: z0t,world  rover to world(z0t,rover)                                            3: for i = 1, ..., Ns do
+4: dcr  min cj,world - z0t,world                                                   4: w~it  exp(wit - nt)
+                                                                                   5: end for
+5: Qinc  Qinc + dcr                                                                6: {q0, ..., qNs }  cum sum({w~0t , ..., w~Nt s })
+6: end for                                                                         7: n  0
+
+7:  Qscore  min   1,  (  1  Qinc )-1                                               8: m  0
+                         m
+
+8: return Qscore                                                                   9:   u0     U(0,    1  )
+                                                                                                      Ns
+
+                                                                                   10: while n  Ns do
+                                                                                                       n
+                                                                                   11:  u   =  u0  +  Ns
+
+Algorithm 2 ShadowNav Particle Filtering Algorithm                                 12: while qm  u do
+
+Require: Initial belief distribution (µ0, 0), number of particles                  13: m  m + 1
+     Ns, number of effective particles threshold Neff,thresh
+                                                                                   14: end while
+1: {b10, ..., b0Ns }  sample beliefs(µ0, 0)
+2: {w10, ..., wN0 s }  {1, ..., 1}                                                 15: n  n + 1
+3: t  1                                                                            16: bnt  btm
+                                                                                   17: end while
+4: while particle filter running do
+                                                                                   18: return {bt0, ..., bNt s }
+
+5: {z0t , ..., zm t }  get observations()
+
+6: {q1t , ..., qNt s }  {0, ..., 0}                                                issues (Line 1). Next, for each measurement zit in the rover
+7: for i = 1, ..., Ns do                                                           frame, the detected edge is converted to world frame (Line 3)
+                                                                                   and the minimum distance to an edge from the ground truth
+8:  bti  propagate sample(bti-1)                                                   map computed (Line 4). The Qinc is incremented by the
+                                                                                   distance between the observed edge and its associated ground
+9:  qit  log Q score(bit, {z0t , ..., zm t })                                      truth observation (Line 5). The Q-Score is computed as the
+                                                                                   reciprocal of Qinc and a min operation is applied to ensure
+10: end for                                                                        that the score provided by any particular run is between 0 and
+11: qmt in  min(q1t , ..., qNt s )                                                 1 (Line 7). This implies that observations and belief pairs
+12: for i = 1, ..., Ns do                                                          which are less than 1 m away from ground truth will receive
+                                                                                   the same score as those exactly 1m away from ground truth,
+13: wit  wit-1 + qit - qmt in                                                      which is seen as acceptable given the orbital DEM resolution
+14: end for                                                                        and mission concept localization requirements.
+15: Neff  compute Neff(w1t , ..., wNt s )
+16: if Neff  Neff,thresh then                                                      In addition to the shortest distance formulation from Line 4,
+                                                                                   additional approaches were also explored for determining
+17: {b1t , ..., bNt s }  resample beliefs({bti}iN=s1, {wit}Ni=s1)                  the Q-Score. One alternate approach investigated included
+18: {w1t , ..., wNt s }  {1, ..., 1}                                               fitting a Gaussian normal distribution on the orbital map
+19: end if                                                                         crater edges and the Q-Score value was them computed based
+                                                                                   on the intensity (i.e., distance to the computed mean) of the
+20: t  t + 1                                                                       point hit by observations or 0 in cases when no point was
+                                                                                   hit. In practice, it was determined that the shortest distance
+21: end while                                                                      formulation provided the most robust results for use with the
+                                                                                   particle filter and also did not require additional projection
+obstacle issue, the detected edge points are passed through                        calculations to project each belief from the orbital frame to
+a filter that removes points which have hits on the far side of                    rover frame.
+the crater edge with a detected negative or flat slope. Detected
+edge points are kept only if, within the region directly beyond                    Overview--A description of the ShadowNav particle filtering
+the detected edge, there exists a positive slope or if there is                    algorithm is given in Alg. 2. The algorithm takes as input a
+not enough stereo to accurately compute the slope. Thus, the                       Gaussian belief distribution (µ0, 0) assumed for the initial
+case of a detected positive slope is assumed to correspond                         robot position, the number of particles Ns to use in the
+to the rising edge of the crater under the assumption that                         particle filter, and a threshold for the effective number of
+the detected edge is the leading edge of a negative obstacle.                      beliefs Neff,thresh used to trigger resampling (Line 2). The
+Alternatively, a detected edge is also retained if the far edge                    filter is initialized by sampling Ns particles from the initial
+is not captured due to low light conditions, as this is assumed                    belief distribution and assigning a weight of equal importance
+to be an indication of the presence of a large crater.                             for each particle (Lines 1-2). As common in particle filtering
+                                                                                   implementations [21], we note that we used the log of the
+B. Particle Filter                                                                 weights for improved numerical stability of the weight update
+                                                                                   step [22]. Given a new set of crater observations (Line 5),
+Here, we provide an overview of the proposed ShadowNav                             a set of Q-Score measurements is initialized for computing
+particle filtering approach. First, we provide further details                     for each individual particle (Line 6). After applying the
+on the Q-Score metric that is used in the belief update step.                      motion model update to each particle (Line 8), the Q-Score
+                                                                                   for each updated particle is computed using the procedure
+Q-Score--The Q-Score provided the measurement probabil-                            from Alg. 1 by comparing against the current measurements
+ity of some position belief based on rover frame observations
+and an orbital map. The procedure for computing the Q-Score
+is given in Algorithm 1. The algorithm takes as input a given
+belief bti, a set of m observed edges in rover frame, and a set
+of ground truth crater observations to associate these mea-
+surements with (Line 1). A value Qinc is initialized to some
+negligibly small, positive value  to later avoid divide-by-zero
+
+                                                                                4
+(a) Sample of terrain (b) Sample opposi- (c) Sample effect of
+with 90 from cam- tion effect during the surface reflectance at
+
+era.                       day.                  night with an illumi-
+
+                                                 nator.
+
+Figure 4: The opposition effect simulated during the day
+and its effect at night with an external illuminator.
+
+(Line 9). The particle weights are then updated in log-domain                  Figure 5: The trajectories used for the numerical ex-
+                                                                               periments are overlaid on the orbital map here with the
+(Line 13) with a normalization step to ensure non-negative                     crater numbers in black. A red square indicator is at
+weights (Line 11). Next, the number of effective samples Neff                  the start and a green circle indicator is at the end of
+at the current iteration is calculated (Line 15). A common                     each trajectory. Trajectory 1 is in blue, trajectory 2 is
+                                                                               in orange, and trajectory 3 is in purple.
+pitfall of particle filters is "degeneracy", wherein the weights
+{wit} collapse around a handful of particles and computa-                                    4. DATASETS OVERVIEW
+tional resources are wasted on propagating low likelihood
+particles [21]. If Neff is below the threshold Neff,thresh, then               A. Simulated Lunar Environment
+this indicates that the filter is degenerating and a resample
+                                                                               At the time of writing, a Lunar dataset with images captured
+operation is triggered (Line 17).                                              in the dark with an illuminator did not exist. Therefore, to
+                                                                               evaluate the approach, a simulation environment was devel-
+Further details on the systematic resampling approach used in                  oped using the Blender software [10]. In order to simulate
+                                                                               images as realistically as possible, the Hapke lighting model
+this work are provided in Algorithm 3. Given a set of particles                [23], [24], [25] was implemented. This model approximates
+                                                                               the Lunar surface reflectance and will simulate the "opposi-
+and their associated weights, the weights are first normalized                 tion effect". This effect leads to a focused point of extreme
+                                                                               saturation at a location within an image where the camera ray
+to (0, 1] from log-domain (Lines 1-4) and the cumulative sum                   and light source are at zero phase angle. The Hapke lighting
+                                                                               model was implemented using the "old highland" parameters
+of these normalized weights w~it computed (Line 6). The key                    of the moon provided in [26], as these most closely match the
+step in systematic resampling is to sample a random value                      poles of the moon where PSRs can be found. The coherent
+                                                                               backscattering opposition effect (CBOE) was left out of our
+u0 from a uniform distribution inversely proportional to Ns                    implementation and only the shadow hiding opposition effect
+                                                                               (SHOE) was implemented as it dominates most or all lighting
+(Line 9) and then incrementally sample a new particle from                     calculations in our use case, while CBOE has a negligible
+                                                                               or very small effect. Initial implementation was done using
+this  "bin"  of  width   1     .  This  ensures  that,  after  resampling,     the Open Shading Language (OSL), however not all rays are
+                        Ns                                                     available for calculation due to optimizations made in OSL,
+                                                         1                     so workarounds were needed to implement the Hapke light-
+at  least one    particle  is  retained  from    each   Ns  interval  from     ing model in Blender using OSL. While this was partially
+                                                                               successful, it was not very robust and we had numerous
+the previous belief distribution.                                              issues. Instead of using OSL, we opted to modify the
+                                                                               source of Blender to add the Hapke bidirectional reflectance
+C. Surface to Orbital Crater Transformation                                    distribution function (BRDF) directly into the Blender Cycles
+                                                                               renderer code which also reduced the render time by greater
+For every observation step, rover frame crater edges were                      than a factor of 2 through the use of Nvidia CUDA.
+detected with a stereo camera pair that provided the depth,
+and thus a relative position for the crater edge was saved. This               In order to represent a realistic 3D model of the sur-
+relative crater distance was added to each particle's belief                   face geometry, DEMs produced from LROC were utilized.
+position to form an estimate of the observed crater position                   While LROC has enough resolution to resolve craters of
+in the world frame for each particle. The orbital map was                      around 10 m, its resolution is not quite good enough for
+projected to the world frame and then the shortest distance                    generating smooth surface imagery. In order to have smooth
+metric noted in the Q-Score algorithm was used to determine                    surface image renders, the DEMs from LROC were scaled
+which particle belief positions were most likely and thus                      down to be 0.25 m resolution. Crater measurements in fu-
+which observed crater was the most likely one to match the
+known orbital craters.
+
+Stereo hole filling--As some crater edge detections do not
+rely on depth information, not all pixels in the stero camera
+depth or disparity image will have a detected depth value
+and, in such cases, no relative position would be available
+for matching rover observations to the orbital map. For such
+observations, a simple plane fit can be carried out to fill in the
+depth information. A future area of investigation includes
+carrying out an improved stereo hole filling approach, in
+particular using existing knowledge on what the regional
+terrain looks like.
+
+                                                                            5
+Table 1: Table of crater sizes in crater detection dataset.
+
+Crater  Diameter (m)  Depth (m)                                     Figure 6: Plots of different metrics evaluating crater
+                                                                    detection performance. Left: Plot that shows image-based
+1             9.2         1.0                                       crater edge detection score versus range for all craters
+2             9.1        0.75                                       evaluated. Right: Plot that shows percent of the crater
+3             11.3       0.84                                       front arc detected for all craters evaluated.
+4             4.4        0.55
+5             3.7        0.40
+6             8.3        0.27
+7             11.9       0.44
+8             3.9        0.48
+9             4.1        0.49
+10            2.3        0.25
+
+ture discussions were based on this scaled resolution. This         Figure 7: Sample stereo results using JPLV stereo on a
+scaled DEM was imported into Blender and a surface texture          sample negative obstacle.
+was added. The surface texture comprised of two scales
+of fractal Brownian motion, which is a natural noise that               5. CRATER DETECTION PERFORMANCE
+was added to the DEM in order to simulate Lunar surface
+texture for stereo to utilize. Figure 4 demonstrates three          A. Metrics
+sample renders, two in the daylight and one at night with
+an illumination source from our simulation. It demonstrates         In order to evaluate the performance of surface crater detec-
+what the surface looks like in daytime conditions as well as        tion, the dataset referenced in Section 4 was utilized. Five
+the effect of the Hapke model during the day with the sun           different combinations of algorithms were evaluated. These
+behind the camera and the effect of the illumination source.        were disparity discontinuity detection within SGBM stereo,
+From this it was observed that the full amount of daytime           disparity discontinuity detection within JPLV stereo, HED
+texture is not observed during the night with an illumination       using SGBM stereo, HED using JPLV stereo, and a hybrid
+source.                                                             JPLV disparity discontinuity detection and canny edge detec-
+                                                                    tion approach. The hybrid discontinuity detection and canny
+B. Simulated Craters for Detection Analysis                         approach was implemented so that Canny only ran on the
+                                                                    portion of the image that was 10 m away or further. This
+In order to evaluate the performance of different crater de-        was done since it was observed the discontinuity detection
+tection techniques, a dataset with different sized craters was      worked well in the near range but stereo began to degrade
+built. This dataset was built using the simulation process          beyond 10 m.
+within Blender and captured stereo pair renders between 5 m
+and 20 m from the front crater rim in increments of 0.1 m.          These algorithms were evaluated with two different metrics.
+This dataset contained 10 different craters with varying sizes      The first was an image based edge scoring method which
+and depths. The sizes of the craters within this dataset are in     captures an average Gaussian probability that a detected edge
+Table 1 and their locations corresponding to the crater ID in       is on a ground truth crater edge. It utilizes a distance error
+our simulated environment are marked in Figure 5.                   computed in image space as represented in Equation 1 where
+                                                                    Errordistpx is the pixel error from ground truth to detection,
+C. Simulated Trajectories for Localization Analysis                 rangegt is the known ground truth range, fl is the focal length
+                                                                    of camera, ss is the sensor size of the camera, and Errordist
+In order to evaluate the localization performance, several          is the error in meters of the detection.
+trajectories were run in the simulated environment. These
+trajectories were run to generate an image every 1 m and            Errordist  =  Errordistpx    rangegt   (1)
+were designed to approach craters in different ways that                                         (fl  ss)
+might present challenges to our filtering approach. The
+1 m observation delta was used to reduce render times of
+our dataset, as rendering every 0.1 m did not result in a
+significant localization performance change. An overview of
+the trajectories within the orbital environment are displayed
+in Figure 5.
+
+D. Real Data of Negative Obstacles at Night
+
+In addition to the simulated data generated, a dataset was
+collected in the Arroyo, which is a dry river bed near the
+NASA Jet Propulsion Laboratory. This dataset contained a
+few different negative obstacles that were imaged at 5, 10,
+and 15 m away from the leading edge. This dataset was
+used to validated that the stereo and crater edge detection
+algorithms work on real data collected at night with an
+external illuminator.
+
+                                                                 6
+(a) Ground Truth at 7 m            (b) Ground Truth at 12 m            (c) Ground Truth at 17 m
+
+(d) JPLV Disparity + Canny at 7 m  (e) JPLV Disparity + Canny at 12 m  (f) JPLV Disparity + Canny at 17 m
+
+(g) JPLV HED at 7 m                (h) JPLV HED at 12 m                (i) JPLV HED at 17 m
+
+Figure 8: The efficacy of the JPLV HED approach over JPLV Disparity + Canny is demonstrated in simulations of
+crater rim detection overlay samples for crater 1.
+
+The distance error was then passed into a Gaussian. The             most detections should fall within this boundary if they are
+Gaussian probabilities for all of the detected pixels were          highly accurate. The second metric used was "percent of
+summed together and normalized by number of detected                front arc detected". In this metric, there is a ground truth
+points to obtain a score. This scoring method infused ground        circle of the orbital crater. Depending on the pose of the
+truth range values to remove the impact of stereo holes             simulated cameras, the half arc of the ground truth circle that
+and stereo range uncertainty on the projection in order to          was nearest the simulated camera was projected into image
+better isolate the specific performance of the crater detection     space. The crater detection was then matched to the half
+algorithms. The sigma value for the Gaussian that was used          arc and the percentage of the half arc that was successfully
+in these experiments was 0.25m. This was chosen because             identified was determined. This metric removes the Gaussian
+the resolution of the DEM utilized was 0.25 m. Therefore            component from the first metric; however, it does not capture
+
+                                                                 7
+(a) Negative obstacle 5 m away  (b) Negative obstacle 10 m away      (c) Negative obstacle 10 m away
+
+(d) Negative obstacle 5 m away  (e) Negative obstacle 15 m away      (f) Negative obstacle 10 m away
+
+Figure 9: Qualitative edge detections using JPLV disparity discontinuity detection and Canny hybrid on negative
+obstacles on a real dataset collected in a dry river bed at night. These results demonstrate the transferability of the
+crater detection algorithms from simulated data to a real environment.
+
+false positives like the first metric.                               C. Detection Results on Real Data
+
+B. Detection Results on Simulated Data                               As described previously, data was collected from a location
+                                                                     with negative obstacles at night. This dataset was used
+The results of running the different algorithms on the simu-         to validate the performance of stereo and crater detection
+lated dataset are observed in Figure 6. There were several           algorithms. Figure 7 presents a sample of 5 m and 10 m
+notable observations from the results. The first was that the        negative obstacles and the corresponding stereo results from
+algorithms tended to perform the best around 10 m and did            JPLV. From this figure is was observed that stereo is dense up
+not improve as craters came closer. This was believed to             unto the leading edge of the negative obstacle. Additionally,
+be because as the camera gets closer to the crater, more of          at 5 m, the far edge of the negative obstacle was captured
+the crater becomes visible and the discontinuities become            in the disparity values. At 10 m, the far edge, did contain
+smaller. However, as the crater becomes further than 10 m,           some disparity values but it was sparse. While not fully
+the stereo began to degrade. Additionally, for the hybrid            representative of the Lunar surface, this demonstrated that
+stereo and Canny technique, the Canny detection started de-          current stereo techniques do have the capability to work in
+tection at 10 m and led to a significant jump in performance.        low light conditions at the ranges necessary. The data was
+                                                                     also used to evaluate the edge detection techniques. The JPLV
+In terms of algorithm comparison, JPLV disparity disconti-           disparity discontinuity and Canny edge detection hybrid was
+nuity performed better than SGBM disparity discontinuity             found to be the best on simulation data and therefore it
+which is likely due JPLV having more holes than SGBM.                was used on the real data. Figure 9 demonstrates sample
+These holes at the boundary helped the disparity discontinuity       detections at different ranges. These detection results did
+detector find a better edge. However, for HED, it performed          contain false positives on some of the vegetation as the false
+well with either stereo technique, likely due to its representa-     positive rejection was not run. Vegetation is not present
+tion of depth containing height values. HED was used with            on the moon, however, objects such as rocks could present
+its out of the box weights from its authors. It likely could be      similar issues. Overall, the negative obstacle edge detection
+improved with finetuning on a Lunar dataset.                         qualitatively performs well.
+
+In addition to quantitative results, samples of crater rim de-              6. LOCALIZATION PERFORMANCE
+tection overlays are in Figure 8. These results were on crater
+1 which is a nearly 10 m in diameter crater. Both methods            In this section, we provide Monte Carlo results on the per-
+were able to detect the craters well, but JPLV HED did have          formance of the proposed ShadowNav filtering algorithm.
+more falloff at 17 m than the Canny detector. However,               For each simulation, we analyzed the performance of the
+the Canny edge detector was optimized for this environment           ShadowNav filter on the basis of the following metrics:
+where as HED was a generalized detector. Overall the
+generalization of HED was extremely promising as a crater
+rim detection approach.
+
+                                                                  8
+     (a) Ground truth error for traj. 1. (b) Filter covariance for traj. 1. (c) Ground truth error for traj. 2. (d) Filter covariance for traj. 2.
+
+Figure 10: A comparison of the four proposed resampling schemes demonstrated that systematic resampling empirically
+outperforms the other scheme in terms of relatively lower ground truth error and reduced uncertainty in the filter.
+
+                                                                                       Mahalanobis distance: The final metric we computed was the
+                                                                                       Mahalanobis distance, which measures the distance between
+                                                                                       and the particle filter distribution and ground truth posi-
+                                                                                       tion. We approximately computed this by fitting a Gaussian
+                                                                                       distribution N (µt, t) to the particle filter distribution, for
+                                                                                       which the Mahalnobis distance is simply a weighted 2-norm
+
+                                                                                          (µt - gtt)T (t)-1(µt - gtt).
+
+(a) Ground truth error.                   (b) Filter covariance.                       A. Resampling Scheme Comparison
+
+Figure 11: Monte Carlo simulations for trajectories 1­3                                In this section, we compared the baseline systematic resam-
+demonstrated the efficacy of the Q-Score based particle                                pling approach detailed in Alg. 3 against three other resam-
+filtering approach at accomplishing global rover localiza-                             pling methods utilized: multinomial, residual, and stratified
+tion.                                                                                  (we refer the reader to [21], [29], [30] for a thorough review
+                                                                                       of these approaches.) Figure 10 presents the ground truth
+                                                                                       error and filter uncertainty for the four different resampling
+                                                                                       approaches. We saw that, for the two trajectories compared
+                                                                                       in Figure 10, systematic resampling led to comparable ground
+                                                                                       truth error as the other resampling approaches, but that
+                                                                                       systematic resampling outperformed the other approaches in
+                                                                                       terms of the overall uncertainty of the filter. Indeed, we note
+                                                                                       that multinomial resampling, the most commonly employed
+                                                                                       resampling technique, fared quite poorly in terms of the
+                                                                                       variance of the filter uncertainty (Fig. 10b and 10d).
+
+   (a) Traj. 1 traverse ­ case A. (b) Traj. 1 traverse ­ case B.                       B. Baseline Performance Evaluation
+
+Figure 12: Two Monte Carlo trials for trajectory 1 are                                 Finally, we evaluated the performance of the proposed Shad-
+illustrated with the ground truth in red and the weighted                              owNav particle filter approach on three test trajectories. Our
+average belief µt in blue. The comparatively better per-                               analysis consisted of Monte Carlos simulations with 25 seeds
+formance of the filter in case A (left) was due to false                               and utilizing 2% odometry noise and initial belief distribution
+positive crater rim measurements in case B (right) that led                            with 0 =3 m. Each simulation was run with Ns = 100
+to worse localization.                                                                 particles and systematic resampling as the resampling scheme
+                                                                                       with Neff,thresh = 50 as the resampling threshold.
+Ground truth error: We computed the weighted average
+                                                                                       Figure 11 shows Monte Carlo simulation results for the three
+mean µt =  Ns   witbit  at  time  t  for  the  filter  using  the  particle            test trajectories. We saw that the initial uncertainty in the filter
+           i=1                                                                         began at approximately 3 m as expected by sampling from a
+weights and beliefs and compute the 2-distance to the ground                           distribution with 0 =3 m. Thereafter, the filter was able to
+truth gtt, i.e., µt - gtt 2.                                                           improve the rover position estimate, which led to an absolute
+                                                                                       error reduction of 4 m. Further, we see in Table 2 that the
+Particle filter uncertainty: To capture the uncertainty asso-                          metrics computed at the final time step indicate convergence
+                                                                                       of the filter, with an average final error of 4 m and an
+ciated with the current belief, we additionally computed the                           absolute error reduction of 4 m.
+
+weighted covariance matrix t =            Ns   w~it  (bti  -  µt  )(bit  -  µt  ),     As seen in Figure 13, while the filter performed well on
+                                          i=1                                          trajectories 2 and 3, the filter was less performant for the
+where w~it are the normalized weights detailed in Alg. 3. The                          trajectory 1 test case. Figure 12 illustrates the performance
+metric we report at each time step was the square root of                              of the filter on trajectory 1 for two different random seeds
+                                                                                       as the rover starts from the northern edge of the orbital map
+the largest eigenvalue max(t), which corresponded to the                               and moves southward. During the middle portion of this
+worst case variance of the estimation error [27], [28].                                traverse, the craters were out-of-sight for the rover and, as we
+
+                                                                                    9
+         (a) Trajectory 1          (b) Trajectory 2                              (c) Trajectory 3
+
+Figure 13: The final ground truth error distribution for 25 Monte Carlo simulations showed filter convergence to  4m
+error in all cases for trajectories 2 and 3 and for the majority of cases for trajectory 1.
+
+Table 2: The metrics computed at the end of a long-range
+lunar traverse indicate convergence of the particular filter
+on trajectories 2 and 3, but spurious measurements from
+unlabeled crater lead to relatively poor performance on
+trajectory 1.
+
+Traj. 1     Error     Uncertainty  Mahalanobis Dist.
+Traj. 2
+Traj. 3  3.84 ± 2.78  1.84 ± 1.12     8.74 ± 10.03
+         1.75 ± 0.78  1.32 ± 0.76      2.75 ± 1.88
+         1.68 ± 0.7   1.39 ± 0.61      2.92 ± 1.91
+
+                                                                       (a) Simulated image from (b) Perfect depth: blue is close,
+
+                                                                       Blender.  red is far
+
+see in Figure 11, false positive observations led to increases         Figure 14: Crater 1 viewed from 5 m away from front rim.
+in the error and uncertainty in the filter. As the crater in
+the southern portion of the orbital map became observable              observations with our Q-Score. Finally we demonstrate abso-
+for the rover, we saw that the estimate quickly improved in            lute localization within our simulation environment with less
+case A (Fig. 12a), but continues to have a residual error in           than 4 m error, and an absolute error reduction of 4 m upon
+case B (Fig. 12b). This poor convergence behavior was also             detecting craters. These results show promise for further
+explained by false positive observations, wherein the filter           investigation in the future on more simulation environments
+had difficulty reconciling the front edge of the rim with the          as well as on to be collected real analogue datasets.
+back edge, an issue that requires further investigation.
+                                                                       D. Future Work
+C. Debugging
+                                                                       In the future, we seek to perform several updates and addi-
+When testing the particle filter, we found it helpful to generate      tional evaluations. The primary focus is to experimentally
+"perfect" datasets where ground truth depth was generated              collect a nighttime dataset using representative hardware in
+directly from the simulator as shown in Figure 14b) and crater         an analogue Lunar environment with negative obstacles to
+edges were plotted into the rover frame using their exact              evaluate the system. Additional evaluation is planned to
+known world coordinates (see Fig. 8a-8c). This approach                evaluate the performance of the proposed approach along
+uncovered bugs with our perception and projection pipeline             longer trajectories, on more varied Lunar type locales, and
+as well as the particle filter pipeline and it is highly recom-        for different rover specific parameters such as camera height
+mended to build such a dataset for all similar work.                   off of the ground. Finally, we plan to validate our proposed
+                                                                       approach on a flight-like embedded computer (e.g., a Snap-
+                   7. CONCLUSIONS                                      dragon) to demonstrate that it is computationally feasible for
+                                                                       use onboard a Lunar rover.
+In this work we present a system to perform autonomous
+absolute localization on a Lunar rover while it is in darkness.                        ACKNOWLEDGMENTS
+This system entails using a stereo camera and illuminator. We
+enhanced a Blender based simulation with a custom Lunar                The research was carried out at the Jet Propulsion Labo-
+texture and an implementation of the Hapke model to model              ratory, California Institute of Technology, under a contract
+surface reflectance as accurately as possible. We further              with the National Aeronautics and Space Administration
+demonstrate both geometric and learning based techniques               (80NM0018D0004). The authors would like to thank Yang
+for detecting the leading edge of a crater with ability to             Cheng, Olivier Lamarre, and Scott Tepsuporn for their dis-
+detect some craters out to 20 m range. We propose a method             cussions during the development of this work.
+of matching the detected leading crater rims with known
+craters within an orbital map and using these matches to score
+
+                                                                   10
+                     REFERENCES                                          A. Colaprete, R. Elphic, S. Li, P. Lucey, Y. Liu,
+                                                                         S. Hosseini, K. D. Retherford, K. Zacny, J. Atkin-
+[1] K. Ennico-Smith, A. Colaprete, R. Elphic, J. Captain,                son, M. Benna, W. Farrell, D. Needham, L. Gertsch,
+      J. Quinn, and K. Zachny, "The Volatiles Investigating              M. Delitsky, and P. Hayne, "Science from the lunar per-
+      Polar Exploration Rover payload," in Lunar and Plane-              manently shadowed regions," in Lunar and Planetary
+      tary Science Conference, 2020.                                     Science Conference, 2020.
+
+[2] A. Colaprete, R. C. Elphic, M. Shirley, K. Ennico-             [15] B. Wu, R. W. K. Potter, P. Ludivig, A. S. Chung,
+      Smith, D. S. S. Lim, Z. Zacny, and J. Captain,                     and T. Seabrook, "Absolute localization through orbital
+      "The Volatiles Investigating Polar Exploration Rover               maps and surface perspective imagery: A synthetic lu-
+      (VIPER) mission ­ measurements and constraints," in                nar dataset and neural network approach," in IEEE/RSJ
+      Lunar and Planetary Science Conference, 2021.                      Int. Conf. on Intelligent Robots & Systems, 2019.
+
+[3] National Academies of Sciences, Engineering, and               [16] V. Franchi and E. Ntagiou, "Planetary rover localisa-
+      Medicine, "Origins, worlds, and life: A decadal strat-             tion via surface and orbital image matching," in IEEE
+      egy for planetary science and astrobiology 2023­2032."             Aerospace Conference, 2022.
+      National Academy Press, Tech. Rep., 2022.
+                                                                   [17] A. Howard, A. I. Ansar, T. E. Litwin, and S. B. Gold-
+[4] J. T. Keane, S. M. Tikoo, and J. Elliott, "Endurance: Lu-            berg. (2009) Jet Propulsion Laboratory Stereo Vision
+      nar South Pole-Atken Basin traverse and sample return              software suite (JPLV). Software available from https:
+      rover," National Academy Press, Tech. Rep., 2022.                  //software.nasa.gov/software/NPO-18593-1T.
+
+[5] L. Matthies, S. Daftry, S. Tepsuporn, Y. Cheng, D. Atha,       [18] H. Hirschmuller, "Stereo processing by semiglobal
+      R. M. Swan, S. Ravichandar, and M. Ono, "Lunar                     matching and mutual information," IEEE Transactions
+      rover localization using craters as landmarks," in IEEE            on Pattern Analysis & Machine Intelligence, vol. 30,
+      Aerospace Conference, 2022.                                        no. 2, pp. 328­341, 2008.
+
+[6] S. Daftry, Z. Chen, Y. Cheng, S. Tepsuporn, B. Coltin,         [19] J. Canny, "A computational approach to edge detection,"
+      U. Naam, M. M. Lanssie, S. Khattak, M. Deans,                      IEEE Transactions on Pattern Analysis & Machine In-
+      and L. Matthies, "LunarNav: Crater-based localization              telligence, vol. 8, no. 6, pp. 679­698, 1986.
+      for long-range autonomous rover navigation," in IEEE
+      Aerospace Conference, 2023.                                  [20] S. Xie and Z. Tu, "Holistically-nested edge detection,"
+                                                                         in IEEE Int. Conf. on Computer Vision, 2015.
+[7] H. Hiesinger, C. H. van der Bogert, J. H. Pasckert,
+      L. Funcke, L. Giacomini, L. R. Ostrach, and M. S.            [21] M. S. Arulampalam, S. Maskell, N. Gordon, and
+      Robinson, "How old are young lunar craters?" Journal               T. Clapp, "A tutorial on particle filters for on-
+      of Geophysical Research, vol. 117, no. 12, pp. 1­15,               line nonlinear/non-Gaussian Bayesian tracking," IEEE
+      2012.                                                              Transactions on Signal Processing, vol. 50, no. 2, pp.
+                                                                         174­188, 2002.
+[8] M. S. Robinson, S. M. Brylow, M. Tschimmel,
+      D. Humm, S. J. Lawrence, P. C. Thomas, B. W. Denevi,         [22] C. Gentner, S. Zhang, and T. Jost, "Log-PF: Particle
+      E. Bowman-Cisneros, J. Zerr, M. A. Ravine, M. A.                   filtering in logarithm domain," Journal of Electrical and
+      Caplinger, F. T. Ghaemi, J. A. Schaffner, M. C. Malin,             Computer Engineering, vol. 2018, 2018.
+      P. Mahanti, A. Bartels, J. Anderson, T. N. Tran, E. M.
+      Eliason, A. S. McEwen, E. Turtle, B. L. Jolliff, and         [23] B. Hapke, Theory of reflectance and emittance spec-
+      H. Hiesinger, "Lunar Reconnaissance Orbiter (LROC)                 troscopy. Cambridge Univ. Press, 2012.
+      camera instrument overview," Space Science Reviews,
+      vol. 150, 2010.                                              [24] ----, "Bidirectional reflectance spectroscopy: 5. the
+                                                                         coherent backscatter opposition effect and anisotropic
+[9] E. Cisneros, A. Awumah, H. M. Brown, A. C. Mar-                      scattering," Icarus, vol. 157, no. 2, pp. 523­534, 2002.
+      tin, K. N. Paris, R. Z. Povilaitis, A. K. Boyd, M. S.
+      Robinson, and LROC Team, "Lunar Reconnaissance               [25] F. Schmidt and S. Bourguignon, "Efficiency of BRDF
+      Orbiter camera permanently shadowed region imaging                 sampling and bias on the average photometric behav-
+      ­ atlas and controlled mosaics," in Lunar and Planetary            ior," Icarus, vol. 317, pp. 10­26, 2019.
+      Science Conference, 2017.
+                                                                   [26] X. Xu, J. Liu, D. Liu, B. Liu, and R. Shu, "Photo-
+[10] Blender - a 3D modelling and rendering package. Soft-               metric correction of Chang'E-1 interference imaging
+      ware available from https://www.blender.org/.                      spectrometer's (IIM) limited observing geometries data
+                                                                         with Hapke model," Remote Sensing, vol. 12, no. 22, p.
+[11] J. V. Hook, R. Schwartz, K. Ebadi, K. Coble, and                    3676, 2020.
+      C. Padgett, "Topographical landmarks for ground-level
+      terrain relative navigation on Mars," in IEEE Aerospace      [27] S. Joshi and S. Boyd, "Sensor selection via convex
+      Conference, 2022.                                                  optimization," IEEE Transactions on Signal Processing,
+                                                                         vol. 57, no. 2, 2009.
+[12] K. Ebadi, K. Coble, D. Atha, R. Schwartz, C. Padgett,
+      and J. V. Hook, "Semantic mapping in unstructured en-        [28] L. Carlone and S. Karaman, "Attention and anticipation
+      vironments: Toward autonomous localization of plane-               in fast visual-inertial navigation," IEEE Transactions on
+      tary robotic explorers," in IEEE Aerospace Conference,             Robotics, vol. 35, no. 1, 2019.
+      2022.
+                                                                   [29] T. Li, M. Bolic´, and P. M. Djuric´, "Resampling meth-
+[13] J. W. Hwangbo, K. Di, and R. Li, "Integration of orbital            ods for particle filtering," IEEE Transactions on Signal
+      and ground image networks for the automation of rover              Processing, vol. 32, no. 3, pp. 70­86, 2015.
+      localization," in American Society for Photogrammetry
+      and Remote Sensing Annual Conference, 2009.                  [30] C. Kuptametee and N. Aunsri, "A review of resampling
+                                                                         techniques in particle filtering framework," Measure-
+[14] D. Hurley, P. Prem, A. Stickle, C. Hibbitts, A. Deutsch,            ment, vol. 193, 2022.
+
+                                                               11
+                     BIOGRAPHY[                                                                          John Elliott is a principal engineer
+                                                                                                        in JPL's Mission Concept Systems De-
+                          Abhishek Cauligi is a Robotics Tech-                                          velopment group. He currently serves
+                         nologist in the Robotic Surface Mobility                                       as Program Engineer for the Planetary
+                         Group at NASA Jet Propulsion Labo-                                             Science Formulation office. His recent
+                         ratory, California Institute of Technol-                                       tasks have included serving as study
+                         ogy. Abhishek received his B.S. in                                             lead for the Planetary Decadal Survey's
+                         Aerospace Engineering from the Uni-                                            three lunar rover mission concept stud-
+                         versity of Michigan - Ann Arbor and                                            ies, Intrepid, INSPIRE, and Endurance,
+                         his PhD. in Aeronautics and Astronau-                                          and performing systems engineering and
+                         tics from Stanford University. His re-                leadership roles on a number of recent Discovery and New
+                         search interests lie in leveraging recent             Frontiers mission proposals. Mr. Elliott's past experience
+advances in nonlinear optimization, machine learning, and                      includes six years in the terrestrial nuclear power industry
+control theory towards planning and control for complex                        with Bechtel Corporation in addition to 30 years in aerospace
+robotic systems.                                                               systems at TRW and JPL.
+
+                         R. Michael Swan is a Robotics Systems                                           Larry Matthies is the technology co-
+                         Engineer at NASA Jet Propulsion Lab-                                           ordinator in the Mars Exploration Pro-
+                         oratory, California Institute of Technol-                                      gram Office at JPL. He received B.S.,
+                         ogy. He received his B.S. in Computer                                          M. Math,and PhD degrees in Computer
+                         Engineering from Walla Walla Univer-                                           Science from the University of Regina
+                         sity and his M.S. in Computer Science                                          (1979), University of Waterloo (1981),
+                         from the University of Southern Califor-                                       and Carnegie Mellon University (1989).
+                         nia. He is interested in robotic surface                                       He has been with JPL for more than
+                         and aerial autonomy, perception, simu-                                         32 years. He has conducted technology
+                         lation, and robotic system architecture.                                       development in perception systems for
+                                                                               autonomous navigation of robotic vehicles for land, sea,
+                                                                               air, and space. He supervised the JPL Computer Vision
+                                                                               group for 21 years. He led development of computer vision
+                                                                               algorithms for Mars rovers, landers, and helicopters. He is a
+                                                                               Fellow of the IEEE and a member of the editorial boards of
+                                                                               Autonomous Robots and the Journal of Field Robotics.
+
+                          Hiro Ono is the Group Leader of                                               Deegan Atha is a Robotics Technologist
+                         the Robotic Surface Mobility Group at                                          within the Perception Systems Group of
+                         NASA Jet Propulsion Laboratory, Cal-                                           the Mobility and Robotic Systems Sec-
+                         ifornia Institute of Technology. Since                                         tion at the Jet Propulsion Laboratory.
+                         he joined JPL in 2013, he has led a                                            He received his B.S. degree from Purdue
+                         number of research projects on Mars                                            University in Electrical Engineering and
+                         rover autonomy, as well as three NIAC                                          his M.S. in Computer Science from the
+                         studies on Enceladus Vent Explorer and                                         Georgia Institute of Technology. He is
+                         Comet Hitchhiker. Hiro was a flight soft-                                      currently the Principal Investigator for
+                         ware developer of M2020's Enhanced                                             the ShadowNav task and leading the se-
+AutoNav and the lead of M2020 Landing Site Traversability                      mantic perception effort for the DARPA RACER project. His
+Analysis. He also led the development of a machine learning-                   interests are in the infusion of machine learning and robotic
+based Martian terrain classifier, SPOC (Soil Property and                      perception into autonomous systems operating in unstruc-
+Object Classification), which won JPL's Software of the Year                   tured environments.
+Award in 2020.
+
+                          Shreyansh Daftry is a Robotics Tech-
+                         nologist at NASA Jet Propulsion Labora-
+                         tory, California Institute of Technology.
+                         He received his M.S. degree in Robotics
+                         from the Robotics Institute, Carnegie
+                         Mellon University, and his B.S. degree
+                         in Electronics and Communication En-
+                         gineering. His research interest lies
+                         at the intersection of space technology
+                         and autonomous robotic systems, with
+an emphasis on machine learning applications to percep-
+tion, planning, and decision making. At JPL, he is the
+Group Leader of the Perception Systems group, is working
+on the Mars Sample Recovery Helicopter mission, and has
+led/contributed to technology development for autonomous
+navigation of ground, airborne, and subterranean robots.
+
+                                                                           12
+

@@ -30,6 +30,29 @@ one only by telling the others and editing this file in the same commit.
   (`C:\Monad-Hackathon-Project\data\terrain\`), git-ignored and rebuilt by the
   script.
 
+## Terrain display (display only; the simulation never reads it)
+
+`data/terrain/display/display.json` in the main checkout lists the files,
+parameters and sources. Built by `python sim/terrain_display.py build`.
+Real: the LOLA backdrops (`backdrop_near.npz`, 5 m over 5 km; `backdrop.npz`,
+20 m over the 20 km tile). Everything else is made up and marked so.
+
+At strength `s` (`display.json`, default 1; one knob for all made-up detail):
+
+- height = sim grid (bicubic) + s x (8 m detail tile at world xy mod 8 m +
+  rim lips + rocks)
+- albedo = (1 + s(albedo - 1)) x (1 + s(detail_albedo - 1)); rocks at
+  `rock_albedo`
+- shading: Hapke, Xu et al. 2020 Eqs. (5)-(12) (Cauligi 2023 ref. [26]), with
+  the `hapke_*` parameters
+- backdrop: `backdrop_near` over `backdrop`, the drive area over both; lower
+  each backdrop by 0.5 m plus r^2/2R; add s x `far_detail_height` (512 m
+  period) to both
+- rocks: `rocks.npy` rows `[x, y, long, short, height, yaw, seed]`; draw the
+  first round(s x K)
+- Python: `terrain_display.Display().patch(xmin, ymin, nx, ny, res)`
+- Arrays run rows north, like the sim grid. PNG row 0 is the south edge.
+
 ## Scene (`sim/scene.py`), gives
 
 One 3D scene draws both views, so the camera image the vision step reads is

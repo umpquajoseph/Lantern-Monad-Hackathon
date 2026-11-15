@@ -87,3 +87,16 @@ Doorbells (SendMessage `to` = these addresses; all sessions share the name
 - Background task bf7q1xpd8 renders a 30 m display-layer drive to
   `data/previews/display_drive.mp4` (10 fps, 6 s); re-encode at 6 fps for a
   10 s clip and send it to Joseph.
+
+## Update 11:21
+
+- `lantern_data/` pushed on `joseph` (198c1eb): shoemaker.npz, synthetic.npz,
+  display/; friend sets LANTERN_DATA to it.
+- Terrain worker hit its timebox on CR1 (report archived 11:21): cr1.npz
+  works, 53 real craters, 12% filled, but only 8% of points have a mapped
+  crater within 15 m (shoemaker 100%), and fill seams draw false edges.
+  Options: (a) keep shoemaker for demo, CR1 as real-data validation;
+  (b) biharmonic fill (20 min) and sparse-landmark nav; (c) hybrid.
+  Worker and I recommend (a). WAITING ON JOSEPH.
+- Teammate branch `origin/step-1-chain` has a contract, Foundry tests and a
+  Python client (67cde98). `origin/ritvik` exists, unread.

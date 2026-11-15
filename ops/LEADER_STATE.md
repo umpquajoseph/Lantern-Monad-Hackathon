@@ -349,3 +349,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:18 nav: top-down lidar panel 40304d4 (grey safe, amber crater floor, red no-go, 5 m rings), nav unchanged. Integrator to merge with viewer 6207b6b + perf d083a5c/replay; scene re-renders mission once more on that head (not the fresh-noise rescan).
 - 14:19 integrator: 46d42d0 (nav 40304d4, viewer 6207b6b, perf d083a5c). Scene told to stop the 700376d render and render the mission from 46d42d0 now.
 - 14:19 scene: 700376d render stopped clean; mission render on 46d42d0 started about 14:22, ETA 14:32.
+- 14:19 perf: replay=cam1 a775a0f (pass 2 11.7 s to 1.1 s on a 12-step slice, byte-identical); integrator asked to merge. Speeds future mission renders only.

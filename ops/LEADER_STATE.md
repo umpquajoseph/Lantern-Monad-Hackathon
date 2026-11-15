@@ -363,3 +363,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:30 integrator: final mission-demo (2fad40b) live on :8000, 267 steps, 951 camera + 240 top-down lidar frames, 8 checkpoints, no console errors.
 - 14:31 viewer: top-down lidar checks out on final mission (main site + Mission Control captions); lidar_fp_frame agreed with nav; caption flash fixes before 14:40, toggle after. Leader read lidar-mission.png: baked legend unreadable at ~340 px; told nav to enlarge or drop it.
 - 14:32 Joseph: top-down lidar approved as is (legend change withdrawn). A/B camera toggle must also switch the 3D follow target -> viewer, bundled with caption flash fix.
+- 14:33 viewer 94e4623: camera caption flash fixed (b379938, 56 to 0 changes within a step), camera A/B sets 3D follow, lidar caption right from load. Integrator asked to merge. Toggle approved to land after 14:40.

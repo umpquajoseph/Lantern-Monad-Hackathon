@@ -320,3 +320,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 13:55 Joseph: full runs only at the final merge; workers run only relevant checks. fyi sent to nav, perf, scene, viewer, integrator, designer. Integrator: :8000 shows both 1250 runs; integration a9cc2b3 has perf 8dbdcf8+c8f3537.
 - 13:56 Joseph: final merge 15:00. Deadlines sent to all six: last push 14:40, freeze 14:45, full runs 14:45-15:00, main 15:00 on his word.
 - 13:57 viewer: fixed 200° Lambert fill pushed 56aae1e; integrator told to merge. Run 2 A crosses a 12.6 m crater at up to 12°, which is under the 15° SLOPE_LIMIT_DEG (rover.py:21), so it is legal. Designer: all merged, nothing pending.
+- 13:57 perf: lidar 95 to 26 ms/frame, identical on 24 scans, 4c33567 (lidar.py only, nav asked). Integrator told to merge. Perf next: set_rover rebuilds.

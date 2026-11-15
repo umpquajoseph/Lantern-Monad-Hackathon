@@ -333,3 +333,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:04 Joseph: demo is Kellen's 2-site run_mission.py (demo-mission). Mailed integrator (merge now), scene (final render is run_mission --no-chain), nav (prove planner on mission), viewer (ice look on mission_player), perf (keep run_mission working). TODO.md updated.
 - 14:04 perf: c935f02 pool 2 workers x 5 threads (~0.15 s/display frame), 8cf1093 frames without plan overlay (byte-identical). Integrator told to merge with demo-mission.
 - 14:04 scene: run_mission --stamp demo --no-chain estimate 6-7 min (259 steps, ~234 live frames, 696 display frames). Starts on integrator's confirm.
+- 14:05 scene: run_mission.py:575 replaced index.json with mission-demo only. Told scene to merge it instead (mission first, run1/run2 backups kept), 2 lines in Kellen's file, via step-6-resume.

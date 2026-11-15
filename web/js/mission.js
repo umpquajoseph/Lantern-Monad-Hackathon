@@ -57,7 +57,7 @@ const NARROW = matchMedia("(max-width: 760px)");
 const S = {
   lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
-  opts: { routes: true, hazards: true, nogo: true, truth: false }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
+  opts: { routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
   view: "fp",          // camera box tab: "fp" (first person), "sat" (overhead map), "lidar"
   player: null,        // MissionPlayer: checkpoints and live chain
   autoB: { armed: true, at: 0 },   // switch to the Prospector once after the Surveyor's find
@@ -560,7 +560,7 @@ function bind() {
     setTab(b.dataset.tab);
   }));
   $("collapse").onclick = () => $("panel").classList.toggle("closed");
-  for (const k of ["routes", "hazards", "nogo", "truth"]) {
+  for (const k of ["routes", "hazards", "nogo", "truth", "particles", "rims"]) {
     $("opt-" + k).onchange = (e) => {
       S.opts[k] = e.target.checked;
       world.setVisibility({ fill: true, tracks: S.opts.routes, truth: S.opts.truth });
@@ -789,7 +789,7 @@ function render(panels) {
   const run = S.run, t = S.t;
   if (!run) return;
   world.currentT = t;
-  world.update(t, { tracks: S.opts.routes });
+  world.update(t, { tracks: S.opts.routes, particles: S.opts.particles });
   updateSteepShade(t);
   for (const a of run.agencies) {
     updateSuspension(a, t);
@@ -984,10 +984,20 @@ function drawFpOverlay(fr, cv, small) {
     c.lineWidth = 3 * k; c.strokeStyle = "#ff5d5d"; c.fillStyle = "rgba(255,93,93,.18)"; c.fill(); c.stroke();
     if (top) { c.fillStyle = "#ff5d5d"; c.font = font(13); c.fillText(h.hazard_id ? `FLAGGED ${h.hazard_id} · KEEP CLEAR` : "OBSTACLE", top[0] - 34 * k, top[1] - 8); }
   }
+  // Rim points the navigation used at this step (sensor frames only; display frames sit between steps).
+  const rr = run.steps[fr.k].rovers[a];
+  if (S.opts.rims && !fr.sub && rr && rr.rims) {
+    c.fillStyle = col;
+    for (const [f, l] of rr.rims) {
+      const wx = pose[0] + f * Math.cos(pose[2]) - l * Math.sin(pose[2]), wy = pose[1] + f * Math.sin(pose[2]) + l * Math.cos(pose[2]);
+      const q = P(wx, wy, 0);
+      if (q) c.fillRect(q[0] - 3 * k, q[1] - 3 * k, 6 * k, 6 * k);
+    }
+  }
   const sites = registryAt(tf);
   for (const s of run.log.satellite_sites || []) {
     const r = [...sites.values()].find((v) => v.target === s.id);
-    const ice = r && (r.surveyor === "Positive" || r.prospector === "Positive");
+    const ice = (r && (r.surveyor === "Positive" || r.prospector === "Positive")) || siteVerdict(s.id, tf) === "ice";
     const color = ice ? ICE_CSS : r ? "#9aa7b8" : "#e0a83a";
     const base = P(s.x, s.y), tip = P(s.x, s.y, 6);
     if (!base || !tip || base[2] > 250) continue;
@@ -1185,6 +1195,42 @@ function renderRover(t) {
       </div></div>`;
   }).join("");
   $("now").querySelectorAll(".rv").forEach((el) => (el.onclick = () => { exitFocus(true); setRover(el.dataset.rover); }));
+  $("navt").innerHTML = navTable(run, k);
+  if (!$("standin").dataset.done) {
+    $("standin").dataset.done = "1";
+    const si = run.standin || run.log.standins;
+    $("standin").hidden = !si;
+    if (si) {
+      const lines = Object.entries(si).map(([kk, v]) => (String(v).startsWith(kk) ? v : `${kk.replace(/_/g, " ")}: ${v}`));
+      const chainLine = run.fakeTx ? " Transaction hashes in this log are stand-ins; ?key= posts them live." : "";
+      $("standin").innerHTML = `<b>Stand-ins:</b> ${esc(Object.keys(si).map((kk) => kk.replace(/_/g, " ")).join(", "))}.${chainLine} Camera frames are real renders.` +
+        `<details><summary>Details</summary><ul>${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></details>`;
+    }
+  }
+}
+
+// Where each rover thinks it is against where it is (the old page's HUD table).
+function navTable(run, k) {
+  const rows = run.agencies.map((a) => {
+    const r = run.rover(a, k);
+    const [tx, ty] = r.true_pose;
+    const err = Math.hypot(r.estimate[0] - tx, r.estimate[1] - ty);
+    const odo = r.odom_pose ? Math.hypot(r.odom_pose[0] - tx, r.odom_pose[1] - ty) : NaN;
+    const odoCell = !isFinite(odo) ? "n/a" : odo.toFixed(1) === err.toFixed(1) ? "same" : `${odo.toFixed(1)} m`;
+    return `<tr><td><i class="dot ${a}"></i>${a}</td><td>${r.nav_on ? "crater rims" : "odometry only"}</td><td>±${r.sigma.toFixed(1)} m</td><td>${err.toFixed(1)} m</td><td>${odoCell}</td></tr>`;
+  }).join("");
+  const nav = run.nav ? run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim() : "";
+  return `<table class="navt"><thead><tr><th></th><th>Steering by</th><th title="The rover's own 1-sigma estimate of its position error">Thinks within</th>` +
+    `<th title="Distance from the estimate to the hidden true position">Actually off</th><th title="Where odometry alone would put it, distance from the true position">Odometry alone</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table>` + (nav ? `<div class="hint small" title="${esc(run.nav)}">${esc(nav)}${S.opts.particles ? "; dots in 3D are its particles" : ""}</div>` : "");
+}
+
+// A mission site's verdict once the Surveyor has published it (log.states).
+function siteVerdict(id, t) {
+  const site = ((S.run.log.mission || {}).sites || []).find((x) => x.id === id);
+  if (!site) return null;
+  const pub = ((S.run.log.states || {}).A || []).find((q) => q.state === "PUBLISHING" && q.objective.includes(id));
+  return pub && t >= pub.t ? site.verdict : null;
 }
 
 // One line over the play bar: who is doing what, and how fast time runs.
@@ -1374,19 +1420,25 @@ function bindVerify(root) {
 }
 
 function renderRegistry(t) {
-  const sites = [...registryAt(t).values()];
-  const key = `reg|` + sites.map((s) => `${s.target}${s.stage}${s.surveyor}${s.prospector}`).join();
+  const run = S.run, k = run.stepAt(t);
+  const sites = (run.log.mission || {}).sites || [];
+  const evs = run.events.filter((e) => e.k <= k);
+  const key = `sites|${sites.map((x) => siteVerdict(x.id, t)).join()}|${evs.length}`;
   if ($("reg-body").dataset.key === key) return;
   $("reg-body").dataset.key = key;
   $("reg-count").textContent = sites.length ? String(sites.length) : "";
-  $("reg-body").innerHTML = sites.map((s) => {
-    const n = STAGE_N[s.stage];
-    const pips = [1, 2, 3].map((i) => `<i class="${i <= n ? "on" : ""}"></i>`).join("");
-    return `<tr data-site="${s.site_id}"><td><b>${esc(s.target)}</b></td><td><span class="pips" title="${s.stage}">${pips}</span></td>
-      <td><span class="res ${s.surveyor}">${s.surveyor === "Unknown" ? "pending" : s.surveyor}</span></td>
-      <td><span class="res ${s.prospector}">${s.stage === "ProspectorAnalyzed" ? s.prospector : s.surveyor === "Positive" ? "queued" : "–"}</span></td></tr>`;
-  }).join("") || `<tr><td colspan="4" class="hint">No sites yet.</td></tr>`;
-  $("reg-body").querySelectorAll("tr[data-site]").forEach((tr) => (tr.onclick = () => openSite(tr.dataset.site)));
+  $("reg-body").innerHTML = sites.map((x) => {
+    const v = siteVerdict(x.id, t);
+    const find = evs.find((e) => e.type === "find" && e.site_id === x.id);
+    const chk = evs.find((e) => e.type === "check" && e.site_id === x.id);
+    const sv = v === "ice" ? `<span class="res Positive">ice</span>` : v === "dry" ? `<span class="res Negative">dry</span>` : `<span class="hint">pending</span>`;
+    const pv = chk ? `<span class="res ${chk.agrees ? "Positive" : "Negative"}">${chk.agrees ? "confirmed" : "disputed"}</span>` : find ? `<span class="hint">queued</span>` : "–";
+    return `<tr><td><b>${esc(x.id)}</b></td><td>${find ? `find #${find.find_id}` : "–"}</td><td>${sv}</td><td>${pv}</td></tr>`;
+  }).join("") || `<tr><td colspan="4" class="hint">No sites.</td></tr>`;
+  const finds = run.findsAt ? run.findsAt(k) : [];
+  $("finds").innerHTML = finds.length ? finds.map((f) => `<div class="find"><b>Find #${f.find_id}</b> at ${esc(f.site_id || "")} · ${ROLE[f.agency] || f.agency} ${f.agency} · ±${f.sigma.toFixed(2)} m · ${f.reading.toFixed(2)}${esc(run.unit || "")}` +
+    ` · <span class="res ${f.status === "confirmed" ? "Positive" : f.status === "disputed" ? "Negative" : "Inconclusive"}">${esc(f.status)}</span></div>`).join("")
+    : `<p class="hint">No finds yet.</p>`;
 }
 
 async function openSite(sid) {

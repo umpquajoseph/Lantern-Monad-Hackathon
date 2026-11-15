@@ -65,6 +65,8 @@
       <label class="ck"><input type="checkbox" id="opt-routes" checked> Routes</label>
       <label class="ck"><input type="checkbox" id="opt-hazards" checked> Obstacles</label>
       <label class="ck"><input type="checkbox" id="opt-nogo" checked> Steep ground <span class="hint">(over 15&deg;, no-go)</span></label>
+      <label class="ck"><input type="checkbox" id="opt-particles" checked> Particles <span class="hint">(position guesses)</span></label>
+      <label class="ck"><input type="checkbox" id="opt-rims" checked> Rim points <span class="hint">(on the camera)</span></label>
       <label class="ck"><input type="checkbox" id="opt-truth"> Hidden ice <span class="hint">(rovers can't see it)</span></label>
     </div>
   </div>
@@ -80,7 +82,7 @@
     <button data-tab="chain" title="On chain"><svg><use href="#i-chain"/></svg></button>
   </nav>
   <div class="pane-wrap">
-    <section class="pane" data-pane="rover"><div id="now"></div></section>
+    <section class="pane" data-pane="rover"><div id="now"></div><h2>Navigation</h2><div id="navt"></div><div class="standin" id="standin" hidden></div></section>
     <section class="pane" data-pane="science" hidden>
       <h2 id="sci-title">Science</h2>
       <div id="sci-empty" class="hint">No drilling yet.</div>
@@ -93,9 +95,11 @@
     <section class="pane" data-pane="sites" hidden>
       <h2>Sites <span class="hint" id="reg-count"></span></h2>
       <table class="reg">
-        <thead><tr><th>Site</th><th>Stage</th><th>Surveyor</th><th>Prospector</th></tr></thead>
+        <thead><tr><th>Site</th><th>On chain</th><th>Surveyor</th><th>Prospector</th></tr></thead>
         <tbody id="reg-body"></tbody>
       </table>
+      <h2>Finds</h2>
+      <div id="finds"></div>
     </section>
     <section class="pane" data-pane="chain" hidden>
       <h2>On chain</h2>

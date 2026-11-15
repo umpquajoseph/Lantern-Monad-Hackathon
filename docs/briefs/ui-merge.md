@@ -96,7 +96,7 @@ only for Joseph-level decisions.
 | handle | doorbell address |
 |---|---|
 | leader | `Hackathon project setup review [5247c4]` |
-| viewer | `uds:\.\pipe\LOCAL\cc-msg-a233f82a3c78cbd382c1279676ac4ac8` |
-| integrator | `uds:\.\pipe\LOCAL\cc-msg-e4aa78077ba4f6511766cd4cc20730b8` |
-| scene | `uds:\.\pipe\LOCAL\cc-msg-003a54f5030ab1d0041668abdbf2f6dc` |
-| nav | `uds:\.\pipe\LOCAL\cc-msg-59eaf1ab18281c7b3e7ae7586c689f2a` |
+| viewer | `uds:\\.\pipe\LOCAL\cc-msg-a233f82a3c78cbd382c1279676ac4ac8` |
+| integrator | `uds:\\.\pipe\LOCAL\cc-msg-e4aa78077ba4f6511766cd4cc20730b8` |
+| scene | `uds:\\.\pipe\LOCAL\cc-msg-003a54f5030ab1d0041668abdbf2f6dc` |
+| nav | `uds:\\.\pipe\LOCAL\cc-msg-59eaf1ab18281c7b3e7ae7586c689f2a` |

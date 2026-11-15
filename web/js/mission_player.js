@@ -27,8 +27,11 @@ export class MissionPlayer {
     this.busy = false;
     this.restart();
     if (this.live.enabled) this.live.probe().then((info) => {
-      if (!info || !info.signers || !info.signers.A || !info.signers.B) {
-        this.hooks.note(`<b>Live chain off:</b> the uplink has no signing keys yet (${info ? "api/chain reachable" : "api/chain missing"}).`);
+      if (!info || !info.signers || !info.signers.A || !info.signers.B || !info.keyed) {
+        const why = !info ? "api/chain is missing" : !info.keyed ? "DEMO_KEY is not set on the server" : "the uplink has no signing keys yet";
+        const box = document.getElementById("checkpoint");
+        const keep = this.active && this.active.step === 0 && box ? box.innerHTML + " " : "";
+        this.hooks.note(`${keep}<span class="cp-tag err">Live chain off</span> ${why}; showing the recorded transactions.`);
         this.live.key = null;
       }
     });

@@ -64,7 +64,8 @@ module.exports = async (req, res) => {
   let body = req.body;
   if (typeof body === "string") { try { body = JSON.parse(body); } catch { body = null; } }
   if (!body || typeof body !== "object") return res.status(400).json({ ok: false, error: "JSON body expected" });
-  if (process.env.DEMO_KEY && body.key !== process.env.DEMO_KEY) return res.status(403).json({ ok: false, error: "wrong or missing demo key" });
+  if (!process.env.DEMO_KEY) return res.status(503).json({ ok: false, error: "uplink not configured: DEMO_KEY is not set in the Vercel environment" });
+  if (body.key !== process.env.DEMO_KEY) return res.status(403).json({ ok: false, error: "wrong or missing demo key" });
   try {
     if (body.call === "postFind") {
       const { x, y, sigma, reading, data_hash } = body;

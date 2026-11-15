@@ -671,8 +671,10 @@ def main():
     ap.add_argument("--score-rims", type=int, default=0, metavar="N",
                     help="score vision rims against sim/rim_truth.py on every Nth live frame (needs that file)")
     ap.add_argument("--vision", action="store_true",
-                    help="navigate on the camera (sim/vision.py rims) and lidar (sim/lidar.py hazards); "
-                         "off by default until both runs pass with it")
+                    help="(the default) navigate on the camera (sim/vision.py rims) and lidar (sim/lidar.py hazards)")
+    ap.add_argument("--standin-rims", action="store_true",
+                    help="navigate on stand-in rims from the crater map, with no camera vision or lidar "
+                         "(the routes of the runs made before vision was the default)")
     ap.add_argument("--stamp", default=None, help="run_id suffix (default: now, YYYYMMDD-HHMM); reuse one to overwrite a run")
     ap.add_argument("--display", choices=("full", "detail", "off"), default="full",
                     help="first-person terrain display layer (sim/scene.py): full = rim lips and rocks, "
@@ -692,8 +694,13 @@ def main():
         ap.error("--fill-sub needs the --stamp of the run to fill")
     if args.resume and not args.stamp:
         ap.error("--resume needs the --stamp of the run to finish")
-    if args.resume and (args.vision or args.no_render):
-        ap.error("--resume finishes a run made without --vision; it renders, so not with --no-render")
+    if args.resume and args.no_render:
+        ap.error("--resume renders, so not with --no-render")
+    # Vision and lidar are on unless asked off. --resume finishes runs made on
+    # stand-in rims, so it keeps them off.
+    if args.resume and args.vision:
+        ap.error("--resume finishes a run made with --standin-rims; it cannot add vision")
+    args.vision = not (args.standin_rims or args.resume or args.no_render)
 
     t = time.perf_counter()
     tpath = default_path()

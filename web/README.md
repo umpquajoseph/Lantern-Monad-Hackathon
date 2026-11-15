@@ -10,16 +10,18 @@ tracks and the ±σ circle; every find with its status; and the chain feed.
 
 ```
 python web/build_assets.py        # once: terrain -> web/assets/terrain/ (~30 MB)
-python web/make_standin_run.py    # until run_demo.py exists: two stand-in runs (~7 min)
+python web/collect_runs.py        # copy run_demo.py output from data/runs/ into web/runs/
 python web/serve.py               # http://localhost:8000
 ```
 
-`web/assets/` and `web/runs/` are generated and git-ignored.
+`web/assets/` and `web/runs/` are generated and git-ignored. Without real runs,
+`python web/make_standin_run.py` makes two scripted ones (~10 min).
 
 ## Real runs
 
-`run_demo.py` writes `runs/<run_id>/` (log.json and fp/). Copy each run
-folder into `web/runs/` and list it in `web/runs/index.json`:
+`run_demo.py` writes `data/runs/<run_id>/` (log.json and fp/) and a list in
+`data/runs/index.json`. `web/collect_runs.py` copies them into `web/runs/`
+and writes the page's index (run_demo.py's plain list also loads as is):
 
 ```json
 {"runs": [{"run_id": "run1-...", "label": "Run 1: crater fixes on", "path": "runs/run1-.../log.json"}]}

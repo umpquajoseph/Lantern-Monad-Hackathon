@@ -14,7 +14,7 @@ FP.fx = FP.w / 2 / Math.tan((FP.hfov / 2) * Math.PI / 180);
 
 const state = {
   runs: [], run: null, t: 0, playing: false, speed: 200, cam: "A",
-  opts: { fill: true, tracks: true, rims: true, truth: true },
+  opts: { fill: true, tracks: true, rims: true, truth: false },
   lastEventsKey: "",
 };
 
@@ -76,10 +76,16 @@ async function openRun(id, t) {
 
   const si = run.standin;
   $("standin").hidden = !si;
-  if (si) $("standin-text").textContent = "Scripted poses, a stand-in position estimate and fake transaction hashes. Nothing was posted to Monad. The first-person frames are real renders.";
+  if (si) {
+    // Say what is not real yet, in the log's own words.
+    const lines = Object.entries(si).map(([k, v]) => (String(v).startsWith(k) ? v : `${k}: ${v}`));
+    const parts = Object.keys(si).join(", ");
+    $("standin-text").innerHTML = `Not real yet: ${parts}. Nothing was posted to Monad; the transaction hashes are fake. ` +
+      `The first-person frames are real renders. <details><summary>Details</summary><ul>${lines.map((l) => `<li>${l}</li>`).join("")}</ul></details>`;
+  }
 
   const ch = run.chain || {};
-  $("chain-hint").textContent = ch.contract ? `contract ${short(ch.contract)}` : si ? "not posted" : "";
+  $("chain-hint").textContent = ch.contract && /^0x/.test(ch.contract) ? `contract ${short(ch.contract)}` : ch.contract || (si ? "not posted" : "");
 
   const ticks = $("ticks");
   ticks.innerHTML = "";
@@ -259,10 +265,10 @@ function record(run, k) {
   const fl = $("finds");
   if (!finds.length) fl.innerHTML = `<div class="empty">No finds yet.</div>`;
   else fl.innerHTML = finds.map((f) => {
-    const checks = f.checks.map((c) => `${c.agency} ${c.agrees ? "agrees" : "disagrees"} (reading ${c.reading.toFixed(2)})`).join(", ");
+    const checks = f.checks.map((c) => `${c.agency} ${c.agrees ? "agrees" : "disagrees"} (reading ${c.reading.toFixed(2)}${run.unit})`).join(", ");
     return `<div class="find"><span class="id c-${f.agency}">#${f.find_id}</span>` +
       `<span>Ice found by ${f.agency}, ±${f.sigma.toFixed(1)} m</span><span class="status ${f.status}">${f.status}</span>` +
-      `<span class="meta">reading ${f.reading.toFixed(2)}${checks ? " · " + checks : " · waiting for another agency"}</span></div>`;
+      `<span class="meta">reading ${f.reading.toFixed(2)}${run.unit}${checks ? " · " + checks : " · waiting for another agency"}</span></div>`;
   }).join("");
 
   const evs = run.eventsUpTo(k).slice().reverse();
@@ -272,9 +278,9 @@ function record(run, k) {
   const ex = run.chain && run.chain.explorer;
   $("feed").innerHTML = evs.length ? evs.map((e) => {
     const what = e.type === "find"
-      ? `postFind #${e.find_id} · ±${e.sigma.toFixed(1)} m · reading ${e.reading.toFixed(2)}`
-      : `checkFind #${e.find_id} · ${e.agrees ? "agrees" : "disagrees"} · reading ${e.reading.toFixed(2)}`;
-    const tx = run.standin
+      ? `postFind #${e.find_id} · ±${e.sigma.toFixed(1)} m · reading ${e.reading.toFixed(2)}${run.unit}`
+      : `checkFind #${e.find_id} · ${e.agrees ? "agrees" : "disagrees"} · reading ${e.reading.toFixed(2)}${run.unit}`;
+    const tx = run.fakeTx && !ex
       ? `${short(e.tx)}<span class="fake">fake tx</span>`
       : ex ? `<a href="${ex.replace(/\/$/, "")}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx)}</a>` : short(e.tx);
     return `<div class="ev${e.tx === fresh ? " new" : ""}"><span class="t">${fmtClock(e.t).slice(2)}</span>` +

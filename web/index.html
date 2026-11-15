@@ -34,7 +34,7 @@
     <label class="ck"><input type="checkbox" id="opt-fill" checked> Fill light</label>
     <label class="ck"><input type="checkbox" id="opt-tracks" checked> Tracks</label>
     <label class="ck"><input type="checkbox" id="opt-rims" checked> Rim points</label>
-    <label class="ck"><input type="checkbox" id="opt-truth" checked> Real ice</label>
+    <label class="ck" title="The hidden ice map. The rovers never see it."><input type="checkbox" id="opt-truth"> Hidden truth: real ice</label>
   </nav>
 
   <div class="sb-legend">
@@ -43,7 +43,7 @@
     <div class="lg"><i class="ln true"></i>True track</div>
     <div class="lg"><i class="ln odom"></i>Odometry only</div>
     <div class="lg"><i class="ln est"></i>Estimate, with ±σ circle</div>
-    <div class="lg"><i class="dm"></i>Real ice, hidden from rovers</div>
+    <div class="lg"><i class="dm"></i>Hidden truth: real ice</div>
   </div>
   <div class="sb-foot">
     <a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">ShadowNav, JPL 2023</a>
@@ -57,7 +57,7 @@
       <div class="psub" id="story">&nbsp;</div>
     </div>
     <div class="standin" id="standin" hidden>
-      <span class="tag">Stand-in run</span>
+      <span class="tag">Stand-ins in this run</span>
       <span id="standin-text"></span>
     </div>
   </header>

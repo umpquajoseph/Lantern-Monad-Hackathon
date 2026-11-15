@@ -325,7 +325,7 @@ export class World {
 
   // ------------------------------------------------------------ overlays
   lineMat(color, width, { dashed = false, opacity = 1 } = {}) {
-    const m = new LineMaterial({ color, linewidth: width, dashed, dashSize: 2, gapSize: 1.5, transparent: opacity < 1, opacity, worldUnits: false });
+    const m = new LineMaterial({ color, linewidth: width, dashed, dashSize: 0.8, gapSize: 0.8, transparent: opacity < 1, opacity, worldUnits: false });
     m.resolution.set(this.el.clientWidth, this.el.clientHeight);
     this.lineMats.push(m);
     return m;
@@ -395,7 +395,7 @@ export class World {
       const T = run.tracks[a];
       const t = {
         truth: this.drape(T.truth, this.lineMat(COLORS.track, 2, { opacity: 0.85 })),
-        odom: this.drape(T.odom, this.lineMat(COLORS.odom, 2, { dashed: true, opacity: 0.9 })),
+        odom: this.drape(T.odom, this.lineMat(COLORS.odom, 1.5, { dashed: true, opacity: 0.55 })),
         est: this.drape(T.est, this.lineMat(COLORS[a], 3)),
       };
       for (const l of Object.values(t)) this.overlay.add(l.line);
@@ -417,7 +417,7 @@ export class World {
       const d = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: COLORS.truth }));
       d.position.copy(this.groundL(ice.x, ice.y, 0.8));
       d.scale.set(1, 1, 1.6);
-      const lbl = this.label("Real ice", "#d8f3ff");
+      const lbl = this.label("Hidden truth: ice", "#d8f3ff");
       lbl.position.set(0, 0, 0.9);
       d.add(lbl);
       const ring = this.ring(ice.x, ice.y, ice.radius, this.lineMat(COLORS.truth, 1.5, { dashed: true, opacity: 0.8 }));

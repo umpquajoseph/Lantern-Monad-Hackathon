@@ -281,8 +281,8 @@ function record(run, k) {
       ? `postFind #${e.find_id} · ±${e.sigma.toFixed(1)} m · reading ${e.reading.toFixed(2)}${run.unit}`
       : `checkFind #${e.find_id} · ${e.agrees ? "agrees" : "disagrees"} · reading ${e.reading.toFixed(2)}${run.unit}`;
     const tx = run.fakeTx && !ex
-      ? `${short(e.tx)}<span class="fake">fake tx</span>`
-      : ex ? `<a href="${ex.replace(/\/$/, "")}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx)}</a>` : short(e.tx);
+      ? `<span class="fake">fake tx</span><span class="h">${short(e.tx)}</span>`
+      : ex ? `<a class="h" href="${ex.replace(/\/$/, "")}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx)}</a>` : `<span class="h">${short(e.tx)}</span>`;
     return `<div class="ev${e.tx === fresh ? " new" : ""}"><span class="t">${fmtClock(e.t).slice(2)}</span>` +
       `<span class="who c-${e.agency}">${e.agency}</span><span>${what}</span><span class="tx">${tx}</span></div>`;
   }).join("") : `<div class="empty">No transactions yet.</div>`;

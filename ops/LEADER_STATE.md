@@ -294,3 +294,9 @@ Read mail, then `mv` it to `leader/archive/`.
   C:\Monad-Hackathon-vision-data). Looked: blue detected rim points sit on
   the dark rim crescent; red x lidar hazards; amber planned path.
 - 13:35 integrator: integration db4abbb (main + step-6-resume + step-6-perf) pushed; :8000 serves run1-20261115-1250, particles, no console errors. Run 2 still 1108 until scene's resume (13:40).
+- 13:38 Joseph: worker to fix Calvin's vision/pathfinding/lidar into his
+  code. Brief docs/briefs/nav.md, handoff ops/mailboxes/nav/inbox/
+  20261115-133840_leader_handoff.md (Joseph opens `nav`). Problems found:
+  A abandons goal at step 42 (HAZARD_CELL_FRAC 0.01, permanent pingpong
+  blocks, hazards never clear); jagged path (no turn-rate limit, unsmoothed
+  A*); lidar panel = raw range image. Calvin told in vision-sync.md.

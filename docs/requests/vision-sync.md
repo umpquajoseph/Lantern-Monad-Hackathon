@@ -71,3 +71,16 @@ vision (`CLAUDE.md`). Once `checkpoint` is pushed:
 
 The `sim/rover.py` hazard blocking changes the planner's routes for
 everyone, so put its before/after for run 1 in the same commit message.
+
+## Update 13:38, from the lead
+
+Joseph asked for a worker, `nav`, to finish integrating vision, the hazard
+planner and lidar on the team's branch (`step-6-nav` from `integration`).
+Three problems came up in a vision run of run 1:
+- A abandons its goal: one hazard point blocks a whole 2 m cell at
+  `HAZARD_CELL_FRAC = 0.01`, and blocks never clear.
+- The path is jagged: no turn-rate limit, and the A* route is not smoothed.
+- The lidar panel shows a raw range image.
+If you are still changing `sim/rover.py`, `sim/vision.py` or `sim/lidar.py`,
+please push soon and tell the lead, so `nav` merges your work rather than
+duplicating it.

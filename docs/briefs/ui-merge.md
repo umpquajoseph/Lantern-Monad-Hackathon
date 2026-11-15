@@ -1,4 +1,4 @@
-# Brief: Ritvik's layout, playing Kellen's mission (handle `viewer`)
+# Brief: Ritvik's layout, playing Kellen's mission (handle `ui`)
 
 Read `CLAUDE.md`, `ops/PROTOCOL.md`, `docs/handoffs.md` ("Mission log") and
 this file first.
@@ -76,3 +76,27 @@ Mail the leader, with screenshots read back:
 
 Push to `step-5-ui`, then ask the integrator to merge. No full renders: use
 `data/runs/mission-demo` as it is.
+
+## Talking to others
+
+Your handle is `ui`. Your inbox is `ops/mailboxes/ui/inbox/`, in
+`C:\Monad-Hackathon-Project`. Mailboxes are git-ignored, so write files
+there directly. Mail `ts` comes from `date`. No commit message names a
+person. Give the leader your doorbell address in your first mail. Act
+without waiting: decide, build, check, push, then report. Ask the leader
+only for Joseph-level decisions.
+
+- `viewer` owns today's `web/js` and built the frost, route, lidar toggle and
+  A/B follow you are carrying over. Ask it how any of them work. It may have
+  started `step-5-ui` before this job moved to you; check
+  `origin/step-5-ui` and its mail first.
+- `integrator` merges your branch into `integration` and checks it.
+- RAM is short: one local server at a time, stop it when done, no renders.
+
+| handle | doorbell address |
+|---|---|
+| leader | `Hackathon project setup review [5247c4]` |
+| viewer | `uds:\.\pipe\LOCAL\cc-msg-a233f82a3c78cbd382c1279676ac4ac8` |
+| integrator | `uds:\.\pipe\LOCAL\cc-msg-e4aa78077ba4f6511766cd4cc20730b8` |
+| scene | `uds:\.\pipe\LOCAL\cc-msg-003a54f5030ab1d0041668abdbf2f6dc` |
+| nav | `uds:\.\pipe\LOCAL\cc-msg-59eaf1ab18281c7b3e7ae7586c689f2a` |

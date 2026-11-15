@@ -157,3 +157,10 @@ Read mail, then `mv` it to `leader/archive/`.
   fix, 15/32 lamp, particles, labels), ETA 13:10. 1108 rerun (old code)
   must not be published. Joseph is frustrated that run 2 still shows the
   old 11:08 log; told him vision means a rerun, not a rebuild.
+- 12:56 Joseph: "its just taking froever". Started worker `perf`
+  (local_a6c203cf-f014-4fa6-913e-5f7101e31550), brief docs/briefs/performance.md
+  (7fb785d): faster rerun and asset build, identical output, measure first,
+  own worktree C:\Monad-Hackathon-perf on step-6-perf, coordinates with scene,
+  no heavy benchmarks before 13:10. Doorbell address comes in its first mail.
+  Scene lets the 1108 rerun finish (12:55) so run 2 stays consistent until
+  1250 lands about 13:10; run_demo.py writes index.json itself.

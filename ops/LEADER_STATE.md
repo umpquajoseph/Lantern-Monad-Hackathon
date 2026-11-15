@@ -97,6 +97,6 @@ Doorbells (SendMessage `to` = these addresses; all sessions share the name
   crater within 15 m (shoemaker 100%), and fill seams draw false edges.
   Options: (a) keep shoemaker for demo, CR1 as real-data validation;
   (b) biharmonic fill (20 min) and sparse-landmark nav; (c) hybrid.
-  Worker and I recommend (a). WAITING ON JOSEPH.
+  DECIDED 11:25: real craters tossed, shoemaker stays ("lets toss real craters and keep current terain"). Terrain worker told to hold.
 - Teammate branch `origin/step-1-chain` has a contract, Foundry tests and a
   Python client (67cde98). `origin/ritvik` exists, unread.

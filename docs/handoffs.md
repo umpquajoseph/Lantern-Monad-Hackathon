@@ -33,13 +33,18 @@ the one the judges see.
 scene = Scene(height, craters, x0, y0, cell)
 scene.set_rover(agency, true_pose)            # (x, y, heading)
 img, depth = scene.first_person(agency)       # img (h, w, 3) uint8,
-                                              # depth (h, w) float32 metres
-                                              # from the camera, NaN for sky
+                                              # depth (h, w) float32: straight-line
+                                              # range in metres from the camera
+                                              # along each pixel's ray (not
+                                              # z-depth), NaN for sky
 img = scene.third_person(agency, overlays)    # (h, w, 3) uint8
 ```
 
 - `overlays`: optional dict with `true_track (K, 2)`, `odom_track (K, 2)`,
   `estimate (x, y)`, `sigma` (metres), `finds` (list of `get_finds()` dicts).
+- Also: `scene.camera_model()` gives the intrinsics and pitch, and
+  `scene.depth_to_rover(depth)` turns depth into rover-frame points
+  `[x_fwd, y_left, z_up]` for the vision step.
 - The first-person camera and lamp follow ShadowNav: camera 2.5 m above the
   ground, lamp 0.2 m below it, 60° horizontal field of view (Atha et al. 2024,
   sections IV and V).

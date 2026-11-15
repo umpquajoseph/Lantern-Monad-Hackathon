@@ -113,17 +113,30 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
 }
 ```
 
-- `fp/<agency>_<step>.jpg`: the first-person frame from `scene.first_person`.
+- `fp/<agency>_<step>.jpg`: the first-person frame from `scene.first_person`,
+  a sensor frame. It is rendered live in the sim loop, right after the rover
+  drives and before it localises, so vision can read it there.
 - Per rover, optional `fp_sub`: `[[f, "fp/A_0039_1.jpg"], ...]`, extra
   first-person frames between step k and step k+1, f in (0, 1) ascending,
   about every 0.5 m driven (`run_demo.py --sub-frame-m`). Frame f is at the
   pose interpolated as `web/js/data.js poseAt` does: x, y linear, heading
   along the shorter turn, the camera's own rover only. A player shows the
   last frame with f at or below the playback fraction, else `fp_frame`.
+  These are display frames, not sensor frames: they are rendered after the
+  sim from the logged poses, in parallel, and no rover ever sees them.
+- Per rover `particles`: `[[x, y, w], ...]`, the navigation filter's
+  particles after the step (ParticleNav, 100), world metres to 1 cm, `w`
+  the normalised weight (sums to 1, 4 decimals). Empty list without a filter.
+- Top level `frames`: one sentence each for `fp_frame` and `fp_sub` saying
+  how they were made (sensor frame vs interpolated display frame).
 - Also written by `run_demo.py` (additive): top level `standins`, `dt_s`,
   `final_finds`, `truth.ice_units`, `truth.find_threshold_wt`; per rover
   `mode`, `ice_reading`, `est_error`, `distance`. `index.json` in
   `data/runs/` lists the runs.
+- `standins` lists only parts that are stand-ins for something still to be
+  built. A real part gets its own top-level string naming what it is: `nav`
+  (the particle filter) and `planner` (A* under the 15 deg slope limit, 2 m
+  baseline, 0.25 m grid). The viewer shows those as real.
 - `truth` is what the rovers cannot know: the hidden ice map. The viewer may
   show it only as a labelled reveal ("hidden truth"), never as something a
   rover saw. Ice is under the surface, so it is never drawn as visible

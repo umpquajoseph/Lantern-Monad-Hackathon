@@ -9,7 +9,7 @@ tracks and the ±σ circle; every find with its status; and the chain feed.
 ## Run it locally
 
 ```
-python web/build_assets.py        # once: terrain -> web/assets/terrain/ (~30 MB)
+python web/build_assets.py        # once: terrain -> web/assets/terrain/ (~37 MB)
 python web/collect_runs.py        # copy run_demo.py output from data/runs/ into web/runs/
 python web/serve.py               # http://localhost:8000
 ```
@@ -43,4 +43,5 @@ the bytes, so it works whether or not the host also gzips them.
 ## URL
 
 - `?run=<run_id>` opens a run; `&t=<seconds>` opens it paused at that time.
+- `?quality=low` draws the drive area at 0.5 m and uses smaller shadow maps, for weak GPUs.
 - Space plays and pauses; the arrow keys step.

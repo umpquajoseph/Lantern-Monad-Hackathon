@@ -8,6 +8,8 @@ import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer
 import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+import { regolith, lampIntensity, fillIntensity, TONE_GLSL } from "./regolith.js";
+import { fetchF32 } from "./data.js";
 
 // ShadowNav (Atha et al. 2024, sections IV and V), as in sim/scene.py:
 // camera 2.5 m above the ground, lamp 0.2 m below it.
@@ -19,14 +21,25 @@ const LAMP_INNER_DEG = 30;     // scene.py, assumed
 const LAMP_OUTER_DEG = 45;     // scene.py, assumed
 const LAMP_FADE_END_M = 80;    // scene.py, assumed
 const CHASE_BACK_M = 14, CHASE_UP_M = 8;  // scene.py, assumed
+// Exposure as sim/scene.py (step-6-scene 2c0fbba), assumed there: flat ground
+// 5 m ahead of the rover shows at 0.6 on screen through the tone curve.
+const EXPOSURE_REF_RANGE_M = 5, EXPOSURE_REF_LEVEL = 0.6;
+const LAMP_RGB = [1.0, 0.93, 0.8];   // sim/terrain_look.py, assumed (linear)
+const FILL_RGB = [0.62, 0.68, 0.82]; // sim/terrain_look.py, assumed (linear)
+const FILL_LEVEL = 0.22, FILL_EL_DEG = 35;  // sim/terrain_look.py, assumed
+// Viewer only, assumed: the fill comes from this far round from the view
+// direction, so it never sits behind the camera, where Hapke's opposition
+// surge would make a bright blob (terrain worker, 20261115-114023).
+const FILL_FROM_VIEW_DEG = 110;
 
-// Viewer-only, assumed.
-const FINE_STRIDE = 2;         // fine tiles drawn at 0.5 m (every 2nd 0.25 m sample)
+// Viewer only, assumed. "low" is for weak GPUs (?quality=low).
+const QUALITY = {
+  high: { fineStride: 1, shadow: 4096, nearStride: 1, farStride: 2, rocks: true },
+  low: { fineStride: 2, shadow: 2048, nearStride: 2, farStride: 4, rocks: true },
+};
 const COARSE_STRIDE = 2;       // coarse map drawn at 2 m
 const FINE_PAD_M = 70;         // load 0.25 m tiles within this of each rover
 const DRAPE_M = 0.18;          // lines float this far above the ground
-const LAMP_INTENSITY = 90;     // candela-ish, tuned by eye against scene.py's look
-const MOON_R = 1737400;        // m, for the backdrop's horizon drop
 
 export const COLORS = {
   A: 0x5aa7ff, B: 0xf2994a,
@@ -35,10 +48,15 @@ export const COLORS = {
 };
 
 export class World {
-  constructor(el, terrain) {
+  constructor(el, terrain, quality = "high") {
     this.el = el;
     this.terrain = terrain;
+    this.quality = quality in QUALITY ? quality : "high";
+    this.q = QUALITY[this.quality];
     const m = terrain.meta;
+    // display.json params (Xu et al. 2020 Table 1, old highland), via build_assets.py.
+    this.hapke = m.hapke || { hapke_w: 0.48, hapke_b: 0.232, hapke_bs0: 1.5867, hapke_hs: 0.0626 };
+    this.moonR = (m.display && m.display.moon_radius_m) || 1737400;
     this.o = new THREE.Vector3(m.x0 + 0.5 * (m.cols - 1) * m.cell, m.y0 + 0.5 * (m.rows - 1) * m.cell,
       0.5 * (m.hmin + m.hmin + 65535 * m.hscale));
 
@@ -46,7 +64,10 @@ export class World {
     r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
-    r.toneMapping = THREE.ACESFilmicToneMapping;
+    // sim/scene.py's tone curve, then the sRGB display curve.
+    THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
+      "vec3 CustomToneMapping( vec3 color ) { return color; }", TONE_GLSL);
+    r.toneMapping = THREE.CustomToneMapping;
     r.toneMappingExposure = 1.0;
     el.appendChild(r.domElement);
 
@@ -55,7 +76,7 @@ export class World {
     el.appendChild(this.labels.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x020304);
+    this.scene.background = new THREE.Color(0x000000);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.3, 30000);
     this.camera.up.set(0, 0, 1);
     this.camera.position.set(0, -60, 40);
@@ -65,16 +86,18 @@ export class World {
     this.controls.minDistance = 3;
     this.controls.maxDistance = 4000;
 
-    // Fill light: only so a viewer can see the ground. The rovers' cameras
-    // never get it (sim/scene.py draws the first-person view lamp only).
-    // A low cool key from one side brings out crater relief, like a raking light.
-    this.fill = new THREE.HemisphereLight(0x9fb0d0, 0x101114, 0.35);
-    this.scene.add(this.fill);
-    this.fillDir = new THREE.DirectionalLight(0xa8b6d4, 0.9);
-    this.fillDir.position.set(-0.8, 0.45, 0.32);
-    this.scene.add(this.fillDir);
-
-    this.stars();
+    // Fill light: the one cheat, labelled on screen and switchable. It is
+    // there only so a viewer can see the ground; the rovers' cameras never
+    // get it. Level and colour as sim/terrain_look.py's chase view.
+    const fc = new THREE.Color().setRGB(...FILL_RGB, THREE.LinearSRGBColorSpace);
+    this.fill = new THREE.DirectionalLight(fc, fillIntensity(this.hapke, { level: FILL_LEVEL, elDeg: FILL_EL_DEG }));
+    this.scene.add(this.fill, this.fill.target);
+    // The rover bodies are not regolith: a trace of ambient keeps their dark sides readable.
+    this.ambient = new THREE.AmbientLight(fc, 0.03);
+    this.scene.add(this.ambient);
+    this.lampI = lampIntensity(this.hapke, { camH: CAMERA_HEIGHT_M, lampBelow: LAMP_BELOW_CAMERA_M,
+      pitchDeg: CAMERA_PITCH_DEG, refRange: EXPOSURE_REF_RANGE_M, refLevel: EXPOSURE_REF_LEVEL });
+    // No stars: a camera exposed for lamp-lit ground cannot see them.
     this.terrainMaterial();
     this.fineMeshes = new Map();
     this.rovers = {};
@@ -101,68 +124,43 @@ export class World {
     for (const m of this.lineMats) m.resolution.set(w, h);
   }
 
-  stars() {
-    const n = 2500, p = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2;
-      const z = Math.abs(u) * 0.9 + 0.05, s = Math.sqrt(1 - z * z);
-      p.set([Math.cos(th) * s * 20000, Math.sin(th) * s * 20000, z * 20000], i * 3);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(p, 3));
-    const s = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: 1.2, sizeAttenuation: false, transparent: true, opacity: 0.7 }));
-    s.frustumCulled = false;
-    this.starField = s;
-    this.scene.add(s);
-  }
-
   // ------------------------------------------------------------- terrain
   terrainMaterial() {
     const m = this.terrain.meta;
     const base = this.terrain.base;
     const loader = new THREE.TextureLoader();
-    // Display albedo and close-up detail from the terrain worker, if built.
-    const opts = { color: 0x9a9a9a, roughness: 1, metalness: 0 };
-    if (m.albedo) {
-      const t = loader.load(base + m.albedo.file);
+    const tex = (file, repeat) => {
+      const t = loader.load(base + file);
       t.colorSpace = THREE.NoColorSpace;
       t.anisotropy = 8;
-      opts.map = t;
-      opts.color = 0xb8b8b8;
-    }
-    if (m.detail) {
-      const n = loader.load(base + m.detail.normal);
-      n.wrapS = n.wrapT = THREE.RepeatWrapping;
-      n.channel = 1;
-      n.colorSpace = THREE.NoColorSpace;
-      opts.normalMap = n;
-      opts.normalScale = new THREE.Vector2(1, 1);
-    }
+      if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      return t;
+    };
+    const strength = (m.display && m.display.strength) ?? 1;
+    const albedo = m.albedo ? tex(m.albedo.file) : null;
+    const detailN = m.detail ? tex(m.detail.normal, true) : null;
+    const detailA = m.detail ? tex(m.detail.albedo, true) : null;
     this.mask = new THREE.DataTexture(new Uint8Array(this.terrain.ntr * this.terrain.ntc), this.terrain.ntc, this.terrain.ntr,
       THREE.RedFormat, THREE.UnsignedByteType);
     this.mask.needsUpdate = true;
-    this.fineMat = new THREE.MeshStandardMaterial(opts);
-    this.coarseMat = new THREE.MeshStandardMaterial(opts);
+    const drive = { hapke: this.hapke, albedo, normalMap: detailN, detailAlb: detailA, strength };
+    this.fineMat = regolith(drive);
     // The coarse map is not drawn where a fine tile is loaded.
-    const gridMin = new THREE.Vector2(m.x0 - this.o.x, m.y0 - this.o.y);
-    this.coarseMat.onBeforeCompile = (sh) => {
-      sh.uniforms.uMask = { value: this.mask };
-      sh.uniforms.uGridMin = { value: gridMin };
-      sh.uniforms.uTileM = { value: this.terrain.tileM };
-      sh.uniforms.uTiles = { value: new THREE.Vector2(this.terrain.ntc, this.terrain.ntr) };
-      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vXY;")
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvXY = position.xy;");
-      sh.fragmentShader = sh.fragmentShader.replace("#include <common>",
-        "#include <common>\nvarying vec2 vXY;\nuniform sampler2D uMask;\nuniform vec2 uGridMin;\nuniform float uTileM;\nuniform vec2 uTiles;")
-        .replace("void main() {", `void main() {
-          vec2 tij = floor((vXY - uGridMin) / uTileM);
-          if (all(greaterThanEqual(tij, vec2(0.0))) && all(lessThan(tij, uTiles))) {
-            if (texelFetch(uMask, ivec2(tij), 0).r > 0.5) discard;
-          }`);
-    };
+    this.coarseMat = regolith({ ...drive,
+      uniforms: {
+        uMask: { value: this.mask },
+        uGridMin: { value: new THREE.Vector2(m.x0 - this.o.x, m.y0 - this.o.y) },
+        uTileM: { value: this.terrain.tileM },
+        uTiles: { value: new THREE.Vector2(this.terrain.ntc, this.terrain.ntr) },
+      },
+      discard: `vec2 tij = floor((vXY - uGridMin) / uTileM);
+        if (all(greaterThanEqual(tij, vec2(0.0))) && all(lessThan(tij, uTiles))) {
+          if (texelFetch(uMask, ivec2(tij), 0).r > 0.5) discard;
+        }` });
+    this.farNormal = m.far_detail ? tex(m.far_detail.normal, true) : null;
   }
 
-  gridGeometry(grid, stride, { uv = true, drop = null } = {}) {
+  gridGeometry(grid, stride, { uv = true, drop = null, uvPeriod = null } = {}) {
     const ri = [], cj = [];
     for (let i = 0; i < grid.rows; i += stride) ri.push(i);
     if (ri[ri.length - 1] !== grid.rows - 1) ri.push(grid.rows - 1);
@@ -175,7 +173,7 @@ export class World {
     const m = this.terrain.meta;
     // Albedo covers the sim grid's cells: [x0 - cell/2, x0 + cols*cell - cell/2].
     const ax0 = m.x0 - m.cell / 2, ay0 = m.y0 - m.cell / 2, aw = m.cols * m.cell, ah = m.rows * m.cell;
-    const per = m.detail ? m.detail.period_m : 8;
+    const per = uvPeriod || (m.detail ? m.detail.period_m : 8);
     let p = 0, q = 0;
     for (let a = 0; a < nr; a++) {
       const i = ri[a], y = grid.y0 + i * grid.cell;
@@ -217,28 +215,81 @@ export class World {
     this.coarse = coarse;
   }
 
+  // Real LOLA round the drive area: the 5 m near backdrop over the 20 m far
+  // one, each with a hole where a finer layer is drawn. Lowered 0.5 m so the
+  // seams hide, and by r^2 / 2R for the horizon (display.json, "backdrop").
   async buildBackdrop() {
-    const b = await this.terrain.loadBackdrop();
-    if (!b) return;
     const m = this.terrain.meta;
-    const da = { x0: m.x0 - 1, y0: m.y0 - 1, x1: m.x0 + m.cols * m.cell + 1, y1: m.y0 + m.rows * m.cell + 1 };
-    const ox = this.o.x, oy = this.o.y;
-    // Lowered 0.5 m so seams hide, and by r^2 / 2R for the horizon
-    // (terrain worker's display.json, "backdrop").
-    const geo = this.gridGeometry(b, 2, { uv: false, drop: (x, y) => 0.5 + ((x - ox) ** 2 + (y - oy) ** 2) / (2 * MOON_R) });
-    const mat = new THREE.MeshStandardMaterial({ color: 0x8a8a8a, roughness: 1, metalness: 0 });
-    const lo = new THREE.Vector2(da.x0 - ox, da.y0 - oy), hi = new THREE.Vector2(da.x1 - ox, da.y1 - oy);
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uLo = { value: lo };
-      sh.uniforms.uHi = { value: hi };
-      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vXY;")
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvXY = position.xy;");
-      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vXY;\nuniform vec2 uLo;\nuniform vec2 uHi;")
-        .replace("void main() {", "void main() {\n if (all(greaterThan(vXY, uLo + 2.0)) && all(lessThan(vXY, uHi - 2.0))) discard;");
-    };
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.receiveShadow = false;
-    this.scene.add(mesh);
+    const ox = this.o.x, oy = this.o.y, R = this.moonR;
+    const drop = (x, y) => 0.5 + ((x - ox) ** 2 + (y - oy) ** 2) / (2 * R);
+    const rect = (g) => ({ x0: g.x0, y0: g.y0, x1: g.x0 + (g.cols - 1) * g.cell, y1: g.y0 + (g.rows - 1) * g.cell });
+    const hole = (b, pad) => ({ lo: new THREE.Vector2(b.x0 - ox + pad, b.y0 - oy + pad), hi: new THREE.Vector2(b.x1 - ox - pad, b.y1 - oy - pad) });
+    const drive = rect({ x0: m.x0, y0: m.y0, rows: m.rows, cols: m.cols, cell: m.cell });
+    const per = m.far_detail ? m.far_detail.period_m : 512;
+    const near = await this.terrain.loadBackdrop("backdrop_near");
+    const far = await this.terrain.loadBackdrop("backdrop");
+    const layers = [];
+    if (near) layers.push({ g: near, stride: this.q.nearStride, hole: hole(drive, 2) });
+    if (far) layers.push({ g: far, stride: this.q.farStride, hole: near ? hole(rect(near), 40) : hole(drive, 2) });
+    for (const L of layers) {
+      const geo = this.gridGeometry(L.g, L.stride, { drop, uvPeriod: per });
+      const mat = regolith({ hapke: this.hapke, normalMap: this.farNormal,
+        uniforms: { uLo: { value: L.hole.lo }, uHi: { value: L.hole.hi } },
+        discard: "if (all(greaterThan(vXY, uLo)) && all(lessThan(vXY, uHi))) discard;" });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+    }
+  }
+
+  // Rocks from the terrain worker's rocks.npy (made up, and listed as made up
+  // in display.json): one instanced mesh per loaded fine tile.
+  async loadRocks() {
+    const r = this.terrain.meta.rocks;
+    if (!r || !this.q.rocks) return;
+    const a = await fetchF32(this.terrain.base + r.file);
+    const T = this.terrain, n = a.length / 7;
+    this.rocksByTile = new Map();
+    for (let i = 0; i < n; i++) {
+      const x = a[i * 7] + T.meta.x0, y = a[i * 7 + 1] + T.meta.y0;
+      const k = T.tileKey(x, y);
+      if (!k) continue;
+      if (!this.rocksByTile.has(k)) this.rocksByTile.set(k, []);
+      this.rocksByTile.get(k).push([x, y, a[i * 7 + 2], a[i * 7 + 3], a[i * 7 + 4], a[i * 7 + 5], a[i * 7 + 6]]);
+    }
+    this.rockMat = regolith({ hapke: this.hapke, color: r.rock_albedo, flat: true });
+    this.rockSink = r.sink_frac;
+    // A lumpy unit rock: z from 0 (base) to 1 (top), x and y about [-1, 1].
+    const g = new THREE.IcosahedronGeometry(1, 1);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const k = 1 + 0.18 * Math.sin(3.1 * x + 1.7 * y) + 0.12 * Math.sin(5.3 * y - 2.1 * z) + 0.08 * Math.sin(7.7 * z + x);
+      p.setXYZ(i, x * k, y * k, Math.max(0, (z * k + 1) / 2));
+    }
+    g.computeVertexNormals();
+    this.rockGeo = g;
+    for (const [key, mesh] of this.fineMeshes) if (mesh && !mesh.userData.rocks) this.addRocks(key, mesh);
+  }
+
+  addRocks(key, tileMesh) {
+    const list = this.rocksByTile && this.rocksByTile.get(key);
+    if (!list || !list.length) return;
+    const im = new THREE.InstancedMesh(this.rockGeo, this.rockMat, list.length);
+    const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = new THREE.Vector3();
+    const zAxis = new THREE.Vector3(0, 0, 1), c = new THREE.Color();
+    list.forEach(([x, y, lng, sht, h, yaw, seed], i) => {
+      Q.setFromAxisAngle(zAxis, yaw);
+      S.set(lng / 2, sht / 2, h);
+      M.compose(this.groundL(x, y, -this.rockSink * h), Q, S);
+      im.setMatrixAt(i, M);
+      // Brightness varies about 10% per rock, as sim/terrain_display.py.
+      im.setColorAt(i, c.setScalar(1 + 0.1 * Math.sin(seed * 12.9898 + 4.1) * 1.4));
+    });
+    im.castShadow = true;
+    im.receiveShadow = true;
+    tileMesh.add(im);
+    tileMesh.userData.rocks = im;
   }
 
   // Load 0.25 m tiles near the rovers, drop the rest.
@@ -249,12 +300,13 @@ export class World {
       this.fineMeshes.set(key, null);
       this.terrain.loadTile(key).then((g) => {
         if (!this.fineMeshes.has(key)) return;
-        const mesh = new THREE.Mesh(this.gridGeometry(g, FINE_STRIDE), this.fineMat);
+        const mesh = new THREE.Mesh(this.gridGeometry(g, this.q.fineStride), this.fineMat);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         this.scene.add(mesh);
         this.fineMeshes.set(key, mesh);
         this.setMask(key, 1);
+        if (this.rockGeo) this.addRocks(key, mesh);
       });
     }
     for (const [key, mesh] of this.fineMeshes) {
@@ -263,6 +315,7 @@ export class World {
       if (this.fineMeshes.size <= 12) continue;
       this.scene.remove(mesh);
       mesh.geometry.dispose();
+      if (mesh.userData.rocks) mesh.userData.rocks.dispose();
       this.fineMeshes.delete(key);
       this.setMask(key, 0);
     }
@@ -299,17 +352,19 @@ export class World {
       g.add(w);
     }
     // The lamp: 0.2 m below the camera, aimed along it, 15 deg down.
-    const lamp = new THREE.SpotLight(0xffeedd, LAMP_INTENSITY, LAMP_FADE_END_M, THREE.MathUtils.degToRad(LAMP_OUTER_DEG),
-      1 - LAMP_INNER_DEG / LAMP_OUTER_DEG, 2);
+    // three.js smoothsteps the cone from the outer edge in to
+    // cos(outer * (1 - penumbra)) = cos(inner), and falls off as 1/d^2 to 80 m.
+    const lamp = new THREE.SpotLight(new THREE.Color().setRGB(...LAMP_RGB, THREE.LinearSRGBColorSpace), this.lampI,
+      LAMP_FADE_END_M, THREE.MathUtils.degToRad(LAMP_OUTER_DEG), 1 - LAMP_INNER_DEG / LAMP_OUTER_DEG, 2);
     lamp.position.set(0.12, 0, CAMERA_HEIGHT_M - LAMP_BELOW_CAMERA_M);
     const p = THREE.MathUtils.degToRad(CAMERA_PITCH_DEG);
     lamp.target.position.set(0.12 + 10 * Math.cos(p), 0, CAMERA_HEIGHT_M - LAMP_BELOW_CAMERA_M - 10 * Math.sin(p));
     lamp.castShadow = true;
-    lamp.shadow.mapSize.set(2048, 2048);
+    lamp.shadow.mapSize.set(this.q.shadow, this.q.shadow);
     lamp.shadow.camera.near = 0.3;
     lamp.shadow.camera.far = LAMP_FADE_END_M;
-    lamp.shadow.bias = -0.0004;
-    lamp.shadow.normalBias = 0.04;
+    lamp.shadow.bias = -0.0001;
+    lamp.shadow.normalBias = 0.03;
     g.add(lamp, lamp.target);
 
     const tag = document.createElement("div");
@@ -455,7 +510,7 @@ export class World {
 
   setVisibility({ fill, tracks, truth }) {
     this.fill.visible = fill;
-    this.fillDir.visible = fill;
+    this.ambient.visible = fill;
     for (const t of Object.values(this.tracks || {})) for (const l of Object.values(t)) l.line.visible = tracks;
     for (const o of this.truthObjs || []) o.visible = truth;
     for (const o of Object.values(this.estDots || {})) o.visible = tracks;
@@ -561,7 +616,12 @@ export class World {
 
   render() {
     this.controls.update();
-    this.starField.position.copy(this.camera.position);
+    // The fill comes from the side of the view, never from behind the camera.
+    const cam = this.camera.position, t = this.controls.target;
+    const az = Math.atan2(t.y - cam.y, t.x - cam.x) + THREE.MathUtils.degToRad(FILL_FROM_VIEW_DEG);
+    const el = THREE.MathUtils.degToRad(FILL_EL_DEG);
+    this.fill.target.position.copy(t);
+    this.fill.position.set(t.x + 100 * Math.cos(az) * Math.cos(el), t.y + 100 * Math.sin(az) * Math.cos(el), t.z + 100 * Math.sin(el));
     this.renderer.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
   }

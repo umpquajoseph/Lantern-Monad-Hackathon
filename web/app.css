@@ -179,6 +179,7 @@ select:focus { outline: none; border-color: var(--accent); }
 .scrub input { width: 100%; margin: 0; accent-color: var(--accent); position: relative; z-index: 1; background: transparent; }
 .ticks { position: absolute; left: 7px; right: 7px; top: 0; bottom: 0; pointer-events: none; }
 .tick { position: absolute; top: 1px; width: 2px; height: 7px; margin-left: -1px; }
+.speednote { font: var(--f-hint) var(--mono); color: var(--hint); white-space: nowrap; }
 .clock { font: var(--f-hint) var(--mono); color: var(--hint); white-space: nowrap; min-width: 150px; text-align: right; }
 
 /* ------------------------------------------------------------------ record */

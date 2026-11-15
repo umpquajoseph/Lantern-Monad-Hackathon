@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lantern Spec</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column: goal -> problem -> how it works -> demo -> why a chain -> parts -> build order -> day */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --fg: #161922;
+  --muted: #5b6172;
+  --line: #dadee7;
+  --accent: #3346b8;
+  --accent-soft: #e7eafa;
+  --warm: #c2410c;
+  --warm-soft: #fbeadf;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111319; --surface: #191c24; --fg: #e7e9ef; --muted: #9aa0b2;
+    --line: #2b2f3a; --accent: #95a6ff; --accent-soft: #222944; --warm: #fb923c; --warm-soft: #3a2518; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111319; --surface: #191c24; --fg: #e7e9ef; --muted: #9aa0b2;
+  --line: #2b2f3a; --accent: #95a6ff; --accent-soft: #222944; --warm: #fb923c; --warm-soft: #3a2518; color-scheme: dark;
+}
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6; }
+.wrap {
+  max-width: 800px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+  display: flex; flex-direction: column; gap: 44px;
+}
+header { display: flex; flex-direction: column; gap: 12px; }
+.eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 40px; line-height: 1.1; margin: 0; text-wrap: balance; }
+.lede { font-size: 17px; margin: 0; max-width: 62ch; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 4px; }
+nav.toc a { font-size: 13px; color: var(--accent); text-decoration: none; padding: 3px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); }
+nav.toc a:hover, nav.toc a:focus-visible { border-color: var(--accent); outline: none; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 22px; margin: 0 0 12px; text-wrap: balance; scroll-margin-top: 16px; }
+.sub { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin: 22px 0 8px; }
+section p { margin: 0 0 10px; max-width: 68ch; }
+section p:last-child { margin-bottom: 0; }
+ul.plain { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 68ch; }
+ol.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; counter-reset: step; max-width: 68ch; }
+ol.steps li { counter-increment: step; display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; }
+ol.steps li::before { content: counter(step); font-family: var(--font-display); font-weight: 600; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 13px; }
+.table-box { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td:first-child { white-space: nowrap; }
+code { font-family: var(--font-mono); font-size: 13px; }
+.note { color: var(--muted); font-size: 14px; }
+a { color: var(--accent); }
+.goal { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 16px 20px; display: grid; gap: 10px; }
+.goal p { margin: 0; max-width: 68ch; }
+.goal .big { font-family: var(--font-display); font-size: 19px; font-weight: 600; line-height: 1.4; }
+.figure { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 12px; overflow-x: auto; }
+.figure svg { display: block; width: 100%; min-width: 600px; height: auto; }
+.parts { display: grid; grid-template-columns: 1fr; gap: 14px; }
+th { white-space: nowrap; }
+.card { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 14px 16px; display: grid; gap: 8px; align-content: start; }
+.card h3 { font-family: var(--font-display); font-size: 17px; margin: 0; display: flex; gap: 8px; align-items: baseline; }
+.card h3 .n { font-size: 12px; color: var(--accent); background: var(--accent-soft); border-radius: 99px; padding: 0 8px; }
+.card dl { margin: 0; display: grid; grid-template-columns: 74px 1fr; gap: 6px 10px; font-size: 14px; max-width: 72ch; }
+.card dt { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; padding-top: 2px; }
+.card dd { margin: 0; min-width: 0; }
+@media (max-width: 640px) { .parts { grid-template-columns: 1fr; } h1 { font-size: 32px; } td:first-child { white-space: normal; } }
+
+svg .group { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 5; }
+svg .box { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+svg .box-chain { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+svg .box-in { fill: var(--surface); stroke: var(--accent); stroke-width: 1; }
+svg .box-out { fill: var(--surface); stroke: var(--muted); stroke-width: 1.2; }
+svg .t { fill: var(--fg); font: 600 13px var(--font-body); }
+svg .s { fill: var(--muted); font: 400 12px var(--font-body); }
+svg .sf { fill: var(--fg); font: 500 12px var(--font-body); }
+svg .g { fill: var(--muted); font: 600 12px var(--font-body); letter-spacing: .04em; }
+svg .tc { fill: var(--accent); font: 700 14px var(--font-display); }
+svg .num { fill: var(--accent); font: 700 12px var(--font-display); }
+svg .arr { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+svg .arr-back { stroke: var(--warm); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+svg .ah2 { fill: var(--muted); }
+svg .ah3 { fill: var(--warm); }
+svg .back-lbl { fill: var(--warm); font: 500 12px var(--font-body); }
+svg .floor { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+svg .unc { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+svg .dot { fill: var(--accent); }
+svg .ice { fill: var(--fg); }
+svg .trackA { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+svg .trackB { fill: none; stroke: var(--warm); stroke-width: 2.5; }
+svg .ahA { fill: var(--accent); }
+svg .ahB { fill: var(--warm); }
+svg .lblA { fill: var(--accent); font: 600 13px var(--font-body); }
+svg .lblB { fill: var(--warm); font: 600 13px var(--font-body); }
+svg .ptitle { fill: var(--fg); font: 700 14px var(--font-display); }
+svg .ok { fill: var(--accent); font: 600 12px var(--font-body); }
+svg .bad { fill: var(--warm); font: 600 12px var(--font-body); }
+svg .badge { fill: var(--fg); }
+svg .bn { fill: var(--bg); font: 700 12px var(--font-display); }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Hackathon spec · Monad Blitz Oregon · Sunday 15 November 2026 · working name</div>
+    <h1>Lantern</h1>
+    <p class="lede">A shared map of lunar ice that rovers write themselves. Each rover drives through a dark crater by recognising craters in its lamp light, reports ice with how sure it is of the location, and checks the reports of other agencies' rovers. The map lives on Monad, so no agency owns it and none can change another's entries.</p>
+    <nav class="toc" aria-label="Contents">
+      <a href="#goal">The goal</a><a href="#problem">The problem</a><a href="#how">How it works</a><a href="#demo">The demo</a>
+      <a href="#chain">Why a blockchain</a><a href="#parts">The parts, in build order</a><a href="#order">Upgrades</a><a href="#day">The day</a>
+    </nav>
+  </header>
+
+  <section id="goal">
+    <h2>The goal</h2>
+    <div class="goal">
+      <p class="big">When a rover reports ice on the Moon, anyone should be able to see the report, see how precise its location is, and see whether another agency has gone and checked it.</p>
+      <p>Lantern simulates that: two rovers from two agencies, navigating in the dark, writing finds and checks to one public record. It is built to do three things at once.</p>
+      <ul class="plain">
+        <li>Win Monad Blitz with a project where the chain does real work: it holds the record and enforces who may check what.</li>
+        <li>Give PROSPECT the dark-driving navigation sim its RASC-AL proposal needs (area 3, due 24 February 2027).</li>
+        <li>Show that a find is only as useful as its location. A find whose location is 20 m uncertain cannot be confirmed, so better navigation makes the shared map trustworthy.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="problem">
+    <h2>The problem</h2>
+    <ul class="plain">
+      <li>Rovers in shadowed craters are driven from Earth. VIPER's wheels turn at 10 cm/s, but it averages about 0.8 cm/s because people plan each move. PROSPECT's Scout has to average about 7.4 cm/s, roughly nine times faster.</li>
+      <li>Wheel and visual odometry drift about 2% of the distance driven, so after 500 m the position error passes 10 m. Today a person on Earth re-anchors the rover by matching its images to orbital maps.</li>
+      <li>ShadowNav (JPL, 2023) showed in simulation that a rover can do this itself in the dark. A lamp below the camera puts a shadow on the near rim of each crater, and the rover matches those rims to craters on the orbital map.</li>
+      <li>Several nations plan to prospect the same few shadowed craters. The Artemis Accords ask signatories to share scientific data openly (section 8). They do not require reports of prospecting finds, since their resource section covers extraction (section 10), so the pitch should not claim they do.</li>
+      <li>No shared record says where ice has been found, how precisely, and whether anyone else has confirmed it.</li>
+    </ul>
+  </section>
+
+  <section id="how">
+    <h2>How it works</h2>
+    <p>Each rover runs the same loop every few metres: see, locate, plan, drive, measure. When it finds ice or checks someone else's find, it posts that to the contract. Before it plans, it reads other agencies' finds from the chain so it can go and check them.</p>
+    <div class="figure">
+      <svg viewBox="0 0 720 900" role="img" aria-label="Flowchart, each box tagged with the build step that makes it. A terrain and crater map feeds each rover. Inside each rover, every few metres: render the lamp-lit camera view, find crater rims, estimate position with a particle filter, plan the route, drive and measure ice. Finds and checks go to the Lantern contract on Monad, which stores finds and checks and enforces the checking rules. A dashboard and the block explorer read from the chain. A dashed arrow shows each rover's planner reading other agencies' finds from the chain.">
+        <defs>
+          <marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah2"/></marker>
+          <marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah3"/></marker>
+        </defs>
+        <rect x="60" y="12" width="600" height="60" rx="8" class="box"/>
+        <text x="76" y="34" class="num">STEP 2</text><text x="134" y="34" class="t">Terrain and crater map</text>
+        <text x="76" y="56" class="s">Synthetic, or a real LOLA tile. The list of small craters is the rover's orbital map.</text>
+        <rect x="44" y="98" width="632" height="460" rx="12" class="group"/>
+        <text x="60" y="120" class="g">EACH ROVER, EVERY FEW METRES</text>
+        <path d="M360 72 L360 132" class="arr" marker-end="url(#m1)"/>
+
+        <rect x="60" y="136" width="600" height="60" rx="8" class="box"/>
+        <text x="76" y="158" class="num">STEP 6</text><text x="134" y="158" class="t">Render the camera view</text>
+        <text x="76" y="180" class="s">The lamp sits below the camera, so each crater's near rim falls in shadow.</text>
+        <path d="M360 196 L360 218" class="arr" marker-end="url(#m1)"/>
+
+        <rect x="60" y="222" width="600" height="60" rx="8" class="box"/>
+        <text x="76" y="244" class="num">STEP 6</text><text x="134" y="244" class="t">Find crater rims</text>
+        <text x="76" y="266" class="s">Edge detection on the shadow lines, placed around the rover using depth.</text>
+        <path d="M360 282 L360 304" class="arr" marker-end="url(#m1)"/>
+
+        <rect x="60" y="308" width="600" height="60" rx="8" class="box"/>
+        <text x="76" y="330" class="num">STEP 3</text><text x="134" y="330" class="t">Estimate position</text>
+        <text x="76" y="352" class="s">A particle filter matches the rims to the crater map. Output: position and its uncertainty.</text>
+        <path d="M360 368 L360 390" class="arr" marker-end="url(#m1)"/>
+
+        <rect x="60" y="394" width="600" height="60" rx="8" class="box"/>
+        <text x="76" y="416" class="num">STEP 4</text><text x="134" y="416" class="t">Plan the route</text>
+        <text x="76" y="438" class="s">Avoids slopes over 15°. Heads for new ground, or for another agency's find to check.</text>
+        <path d="M360 454 L360 476" class="arr" marker-end="url(#m1)"/>
+
+        <rect x="60" y="480" width="600" height="60" rx="8" class="box"/>
+        <text x="76" y="502" class="num">STEP 4</text><text x="134" y="502" class="t">Drive and measure</text>
+        <text x="76" y="524" class="s">A simulated ice sensor. A strong reading is a find. A reading at another agency's find is a check.</text>
+        <path d="M360 540 L360 590" class="arr" marker-end="url(#m1)"/>
+        <text x="372" y="580" class="s">posts finds and checks</text>
+
+        <rect x="60" y="594" width="600" height="190" rx="10" class="box-chain"/>
+        <text x="76" y="618" class="num">STEP 1</text><text x="134" y="618" class="tc">Lantern contract on Monad</text>
+        <rect x="80" y="636" width="180" height="128" rx="6" class="box-in"/>
+        <text x="94" y="658" class="t">Finds</text>
+        <text x="94" y="680" class="s">Where the ice is, how</text>
+        <text x="94" y="698" class="s">sure the rover is of</text>
+        <text x="94" y="716" class="s">that spot, the reading,</text>
+        <text x="94" y="734" class="s">a hash of the raw data.</text>
+        <rect x="270" y="636" width="180" height="128" rx="6" class="box-in"/>
+        <text x="284" y="658" class="t">Checks</text>
+        <text x="284" y="680" class="s">Another agency's rover</text>
+        <text x="284" y="698" class="s">measures at the find.</text>
+        <text x="284" y="716" class="s">Agree or disagree,</text>
+        <text x="284" y="734" class="s">both are kept.</text>
+        <rect x="460" y="636" width="180" height="128" rx="6" class="box-in"/>
+        <text x="474" y="658" class="t">Rules</text>
+        <text x="474" y="680" class="s">Only another agency</text>
+        <text x="474" y="698" class="s">can check a find, and</text>
+        <text x="474" y="716" class="s">only from close to it.</text>
+        <text x="474" y="734" class="s">Status updates.</text>
+        <path d="M360 784 L360 810" class="arr" marker-end="url(#m1)"/>
+
+        <rect x="60" y="814" width="600" height="56" rx="8" class="box-out"/>
+        <text x="76" y="836" class="num">STEP 5</text><text x="134" y="836" class="t">Dashboard and block explorer</text>
+        <text x="76" y="856" class="s">Camera view, map of every find and its status, and the chain feed, read from the chain.</text>
+
+        <path d="M60 690 L24 690 L24 424 L56 424" class="arr-back" marker-end="url(#m2)"/>
+        <text x="16" y="557" class="back-lbl" transform="rotate(-90 16 557)" text-anchor="middle">rovers read other agencies' finds</text>
+        <text x="360" y="892" class="s" text-anchor="middle">Grey arrows: data flow. Orange dashed arrow: each rover reads the chain before it plans a route.</text>
+      </svg>
+    </div>
+  </section>
+
+  <section id="demo">
+    <h2>The demo, about three minutes</h2>
+    <p>Two space agencies, A and B, each run one rover in the same dark crater. The demo runs twice. The first run uses crater-based navigation. The second run turns it off for rover A, and that run shows why navigation matters to the record.</p>
+    <div class="figure">
+      <svg viewBox="0 0 640 300" role="img" aria-label="Two top-down maps of the same crater. Left, with crater fixes: rover A reports ice with a small uncertainty circle around the real ice; rover B drives to it, finds ice, and the status is confirmed. Right, with rover A on odometry only: it reports the ice about 20 metres from where it is, with a large uncertainty circle; rover B drives to the reported spot, finds no ice, and the status is disputed.">
+        <defs>
+          <marker id="mA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ahA"/></marker>
+          <marker id="mB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ahB"/></marker>
+        </defs>
+
+        <rect x="10" y="10" width="300" height="250" rx="12" class="floor"/>
+        <text x="26" y="34" class="ptitle">Run 1: crater fixes on</text>
+        <text x="26" y="54" class="ok">Status: confirmed by agency B</text>
+        <circle cx="160" cy="135" r="14" class="unc"/>
+        <rect x="155" y="130" width="10" height="10" transform="rotate(45 160 135)" class="ice"/>
+        <text x="160" y="90" class="sf" text-anchor="middle">B finds ice here</text>
+        <text x="160" y="110" class="lblA" text-anchor="middle">A's find, ±3 m</text>
+        <path d="M40 240 C 70 215, 110 180, 146 147" class="trackA" marker-end="url(#mA)"/>
+        <path d="M285 240 C 255 220, 215 185, 174 147" class="trackB" marker-end="url(#mB)"/>
+        <text x="26" y="252" class="lblA">Rover A</text>
+        <text x="236" y="252" class="lblB">Rover B</text>
+        <circle cx="66" cy="196" r="11" class="badge"/><text x="66" y="200" class="bn" text-anchor="middle">1</text>
+        <circle cx="228" cy="130" r="11" class="badge"/><text x="228" y="134" class="bn" text-anchor="middle">2</text>
+        <circle cx="262" cy="196" r="11" class="badge"/><text x="262" y="200" class="bn" text-anchor="middle">3</text>
+
+        <rect x="330" y="10" width="300" height="250" rx="12" class="floor"/>
+        <text x="346" y="34" class="ptitle">Run 2: A on odometry only</text>
+        <text x="346" y="54" class="bad">Status: disputed by agency B</text>
+        <circle cx="510" cy="140" r="55" class="unc"/>
+        <circle cx="510" cy="140" r="3.5" class="dot"/>
+        <rect x="470" y="160" width="10" height="10" transform="rotate(45 475 165)" class="ice"/>
+        <text x="488" y="182" class="sf">real ice</text>
+        <text x="510" y="78" class="lblA" text-anchor="middle">A's find, ±20 m</text>
+        <text x="510" y="124" class="sf" text-anchor="middle">B: no ice</text>
+        <path d="M360 240 C 390 220, 430 195, 463 173" class="trackA" marker-end="url(#mA)"/>
+        <path d="M605 240 C 590 200, 560 165, 520 146" class="trackB" marker-end="url(#mB)"/>
+        <text x="346" y="252" class="lblA">Rover A</text>
+        <text x="556" y="252" class="lblB">Rover B</text>
+        <circle cx="610" cy="196" r="11" class="badge"/><text x="610" y="200" class="bn" text-anchor="middle">4</text>
+
+        <text x="320" y="288" class="s" text-anchor="middle">Blue: agency A. Orange: agency B. Diamond: the real ice. Blue circle: where A says it is, with its uncertainty.</text>
+      </svg>
+    </div>
+    <ol class="steps">
+      <li>Rover A drives in the dark. The camera view shows crater rims picked out by the lamp, and on the map A's estimate stays on its true track while plain odometry drifts away.</li>
+      <li>A finds ice and posts it: where it is, how sure A is of that spot, and the sensor reading. The find shows on the dashboard and on the Monad block explorer as reported.</li>
+      <li>B, from the other agency, reads the find from the chain, drives to it with its own navigation and measures. The ice is there, so B posts a check that agrees, and the status changes to confirmed.</li>
+      <li>Run 2, with A's crater fixes off. After a kilometre of odometry alone A is about 20 m unsure of its position, so the ice could be anywhere in a circle 40 m wide. B measures at the reported spot, finds nothing, and posts a check that disagrees. The find stays on the record, marked disputed.</li>
+    </ol>
+  </section>
+
+  <section id="chain">
+    <h2>Why a blockchain</h2>
+    <ul class="plain">
+      <li>No single owner. Rival agencies can all write to it, and none can edit or delete another's entry. A record on one agency's server would depend on trusting that agency.</li>
+      <li>The rules run on the chain. Only a different agency can check a find, and only from close to where it was reported. The contract sets the status, and no agency can override it.</li>
+      <li>Disagreements stay public. A disputed find is kept and marked, which is how MEWChain treats failed replications.</li>
+    </ul>
+    <p class="note">The chain cannot prove a rover was where it says. That is why each find carries its uncertainty, and why trust comes from independent checks.</p>
+  </section>
+
+  <section id="parts">
+    <h2>The parts, in build order</h2>
+    <p>The program is six parts, built in this order. The step numbers match the tags on the flowchart. One person can build all six in about six hours, and the demo runs end to end after step 5. With more people, each takes a step, and the "takes" and "gives" lines are the hand-offs between them.</p>
+    <div class="parts">
+      <div class="card">
+        <h3><span class="n">Step 1 · 45 min</span>Chain</h3>
+        <dl>
+          <dt>Does</dt><dd>Keeps the shared record and enforces the checking rules.</dd>
+          <dt>Takes</dt><dd>Finds and checks, posted from Python.</dd>
+          <dt>Gives</dt><dd>Every find with its status: reported, confirmed or disputed. The functions are in the table below.</dd>
+          <dt>How</dt><dd>A Solidity contract on Monad testnet, built and tested with Foundry. A Python client with web3.py. One throwaway testnet key per agency, never committed.</dd>
+          <dt>Done</dt><dd>A find and a check post from Python and read back, and the contract refuses a check that breaks the rules.</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h3><span class="n">Step 2 · 30 min</span>Terrain</h3>
+        <dl>
+          <dt>Does</dt><dd>Makes the crater floor and the orbital crater map.</dd>
+          <dt>Gives</dt><dd>A height grid with 0.25 m cells, and a crater list (centre and diameter). The crater list is what the rover's orbital map contains.</dd>
+          <dt>How</dt><dd>Rolling noise terrain plus craters drawn from a size distribution. A real LOLA tile can replace the noise later (see upgrades). The output stays the same, so nothing else changes.</dd>
+          <dt>Done</dt><dd>A top-down plot shows the terrain with its mapped craters.</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h3><span class="n">Step 3 · 90 min</span>Navigation</h3>
+        <dl>
+          <dt>Does</dt><dd>Works out where the rover is.</dd>
+          <dt>Takes</dt><dd>Odometry each step, with 2% drift (from a scripted drive until step 4). Rim points around the rover. The crater list.</dd>
+          <dt>Gives</dt><dd>A position estimate and its uncertainty, every step.</dd>
+          <dt>How</dt><dd>ShadowNav's particle filter: 100 guesses of the position, each scored by how close the seen rims fall to mapped craters (the Q-Score), resampled when fewer than 50 guesses carry the weight. Heading is assumed known, as from a star tracker. Until step 6, the rim points are stand-ins: points on the near rims of mapped craters within 15 m of the true position, with noise added and some missed, in the same format vision will give.</dd>
+          <dt>Done</dt><dd>The estimate stays on the true track while odometry alone drifts. The log shows the filter's reported uncertainty next to its true error, because on trajectory 1 ShadowNav's filter reported 1.84 m against a true error of 3.84 m (Table 2).</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h3><span class="n">Step 4 · 60 min</span>Rover loop</h3>
+        <dl>
+          <dt>Does</dt><dd>Runs the two rovers, one per agency, and decides what each does next.</dd>
+          <dt>Takes</dt><dd>Each rover's estimate, the height grid, and the finds read from the chain.</dd>
+          <dt>Gives</dt><dd>Each rover's true pose and odometry every step, its readings, and the finds and checks to post.</dd>
+          <dt>How</dt><dd>Route search on a slope map with a 15° limit, toward new ground or another agency's find. A simulated ice sensor over a hidden ice map. A strong reading becomes a find. A reading at another agency's find becomes a check that agrees or disagrees.</dd>
+          <dt>Done</dt><dd>Both rovers finish a run on stand-in rims, one posting a find and the other checking it.</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h3><span class="n">Step 5 · 45 min</span>Dashboard</h3>
+        <dl>
+          <dt>Does</dt><dd>Shows the judges what is happening.</dd>
+          <dt>Takes</dt><dd>The sim's state each step, the contract's events, and the camera image once step 6 makes it.</dd>
+          <dt>Gives</dt><dd>One window: the map with the true, odometry and estimated tracks and every find, a feed of chain transactions, and the camera view with rims marked. Plus a backup video of a good run.</dd>
+          <dt>Done</dt><dd>A full run plays live, end to end.</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h3><span class="n">Step 6 · 90 min</span>Vision</h3>
+        <dl>
+          <dt>Does</dt><dd>Shows what the rover's camera sees in the dark and finds the crater rims in it. Replaces the stand-in rims.</dd>
+          <dt>Takes</dt><dd>The height grid and each rover's true pose (position and heading).</dd>
+          <dt>Gives</dt><dd>The camera image, and rim points in metres relative to the rover.</dd>
+          <dt>How</dt><dd>Raycast the height grid from the camera. The lamp sits below the camera, and shadows come from a second cast from the lamp's position, compared by depth. Canny finds the shadow lines, and the renderer's depth, with noise added, places each rim point.</dd>
+          <dt>Done</dt><dd>Rim points from any pose line up with the mapped craters, the filter runs on them, and the dashboard shows the camera view.</dd>
+          <dt>Risk</dt><dd>The step most likely to run over, so it comes last and the demo runs without it. ShadowNav's authors found bugs in this same projection pipeline by testing on exact rim points, which is what the stand-ins are (section 6C). A second person should start it at build start.</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="sub">Contract functions</div>
+    <div class="table-box"><table>
+      <tr><td><code>postFind</code></td><td>Position, uncertainty, ice reading and a hash of the raw data. Returns a find ID. The status starts as reported.</td></tr>
+      <tr><td><code>checkFind</code></td><td>A find ID, the checker's position and uncertainty, its reading, and agree or disagree. Refused if the checker is the same agency as the finder, or if it measured farther from the find than three times the two uncertainties added together.</td></tr>
+      <tr><td><code>getFind</code></td><td>Everything about a find, the agencies that agree and disagree, and its status: disputed if any agency disagrees, confirmed if at least one agrees and none disagree.</td></tr>
+    </table></div>
+    <p class="note">Positions are in south polar stereographic metres, the same frame as the LOLA maps, stored as whole centimetres. Each agency is one signing address, fixed when the contract is deployed. Any other address is refused, so no one can confirm their own find from a second wallet.</p>
+
+    <div class="sub">Where the method comes from</div>
+    <p>From ShadowNav: the lamp below the camera (section 3A, Figure 3), Canny rim detection beyond 10 m with 80% of the near arc found at 10 m and some arcs out to 20 m (sections 1, 5 and 7), and the particle filter with the Q-Score and systematic resampling (Algorithms 1 to 3, settings in section 6B). Simplified for one day: plain lamp shading instead of the Hapke lunar reflectance model, depth from the renderer instead of stereo matching, no near-range depth-jump detector, and heading assumed known.</p>
+  </section>
+
+  <section id="order">
+    <h2>Upgrades, after the core</h2>
+    <div class="table-box"><table>
+      <tr><td>Real terrain</td><td>A window of the LOLA south-pole elevation map at 10 m per pixel, upsampled. It gives real slopes, but its pixels are too coarse to show ShadowNav-size craters (4 to 12 m), so those are still added. The 10 m file is 4.8 GB, so download it tonight. Data is not code. <a href="https://pgda.gsfc.nasa.gov/products/90">LOLA south pole DEMs</a></td></tr>
+      <tr><td>Safety zones</td><td>The Accords ask agencies to announce safety zones around their work (section 11). A rover posts the area it is drilling in, and other rovers route around it.</td></tr>
+      <tr><td>Many rovers</td><td>Several agencies posting and checking at once, with the time from post to read shown on the dashboard.</td></tr>
+      <tr><td>Web dashboard</td><td>A cleaner live view that reads the chain in the browser.</td></tr>
+      <tr><td>Stereo and lunar shading</td><td>Two-camera stereo matching and the Hapke model, as ShadowNav does.</td></tr>
+    </table></div>
+  </section>
+
+  <section id="day">
+    <h2>The day</h2>
+    <p>9 AM to 9 PM in EMU Ballroom 244: workshops in the morning, building in the afternoon, demos in the evening, with the top six teams pitching in a final round. No code before the event. The build window is not published, so the plan assumes seven hours: six for the core and one of slack.</p>
+    <div class="table-box"><table>
+      <tr><th>Done by</th><th>What</th></tr>
+      <tr><td>Tonight</td><td>Testnet wallets and faucet MON, Foundry installed, Python with numpy, OpenCV, matplotlib and web3.py, the terrain file if real, ShadowNav section 3 read. Ask the organizers how judging works.</td></tr>
+      <tr><td class="num">+1.25 h</td><td>Steps 1 and 2</td></tr>
+      <tr><td class="num">+2.75 h</td><td>Step 3</td></tr>
+      <tr><td class="num">+3.75 h</td><td>Step 4</td></tr>
+      <tr><td class="num">+4.5 h</td><td>Step 5. The demo runs end to end.</td></tr>
+      <tr><td class="num">+6 h</td><td>Step 6. Feature freeze.</td></tr>
+      <tr><td class="num">+7 h</td><td>Slack used. Rehearse the pitch.</td></tr>
+    </table></div>
+    <p class="note">If time runs short, demo the last step that runs. Run without the display, the same code gives PROSPECT area 3 numbers: position error against speed and fix rate.</p>
+  </section>
+
+  <section>
+    <h2>Sources</h2>
+    <ul class="plain note">
+      <li>Cauligi et al., <a href="https://arxiv.org/abs/2301.04630">ShadowNav: Crater-Based Localization for Nighttime and Permanently Shadowed Region Lunar Navigation</a>, JPL, 2023. Error of 1.7 to 3.8 m in Table 2, from simulation.</li>
+      <li>PROSPECT Team Brief, RASC-AL 2027 Theme 3, 13 October 2026. VIPER 0.8 cm/s, Scout 7.4 cm/s, 15° slope limit.</li>
+      <li><a href="https://www.nasa.gov/wp-content/uploads/2022/11/Artemis-Accords-signed-13Oct2020.pdf">The Artemis Accords</a>, NASA text (PDF), sections 8, 10 and 11.</li>
+      <li><a href="https://pgda.gsfc.nasa.gov/products/90">A New View of the Lunar South Pole from LOLA</a>, Barker, NASA Goddard PGDA.</li>
+      <li><a href="https://docs.monad.xyz">Monad documentation</a>, for the testnet RPC and chain ID.</li>
+    </ul>
+  </section>
+</div>
+
+</html>

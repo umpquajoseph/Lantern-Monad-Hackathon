@@ -1,0 +1,277 @@
+"""A forward lidar mounted beside the front camera.
+
+It ray-casts the same ground the camera sees (sim/scene.py's surface: the
+sim grid plus the display layer's rocks and rim lips around each rover), so
+camera and lidar agree. Output each scan, in the rover frame
+[x_forward, y_left, z_up] relative to the lidar:
+
+  points  (N, 3) returns, with range noise
+  image   (rows, cols) range image for the lidar view (NaN = no return)
+
+hazards() turns the points into the cells the rover must not drive into:
+crater interiors (ground below the local surface), rocks (ground above it)
+and slopes over the planner's limit. Craters count from the moment the lidar
+sees them, so the rover diverts as soon as one comes into view.
+
+Every number below is ASSUMED unless it names a source: no source in
+docs/sources/ specifies a lidar for this rover.
+"""
+from __future__ import annotations
+
+import math
+
+import numpy as np
+
+import cv2
+
+# --- mounting and scan pattern (ASSUMED: a forward-looking solid-state
+# lidar, like the wedge scanners used on planetary rover testbeds)
+LIDAR_RIGHT_OF_CAMERA_M = 0.25   # beside the camera on the mast head
+LIDAR_HEIGHT_M = 2.5             # same height as the camera (sim/scene.py CAMERA_HEIGHT_M)
+H_FOV_DEG = 120.0                # horizontal field of view
+H_STEP_DEG = 0.5                 # horizontal resolution
+V_ANGLES_DEG = np.linspace(-35.0, -2.0, 40)  # beam elevations, below level
+MAX_RANGE_M = 30.0
+MIN_RANGE_M = 1.0
+RANGE_NOISE_M = 0.02             # 1-sigma range noise
+MARCH_STEP_M = 0.25              # ray march step, then refined by bisection
+MARCH_BLOCK = 8                  # march steps sampled per height call (speed only; ranges do not depend on it)
+
+# --- hazards (ASSUMED)
+HAZ_CELL_M = 0.5                 # hazard grid cell
+HAZ_RANGE_M = (2.0, 25.0)        # where the scan is dense enough to judge
+HAZ_HALF_WIDTH_M = 15.0
+RING_CELLS = 6                   # 3 m: ring radius used to judge a dip (craters 2.3-20 m wide)
+DEPRESSION_M = 0.35              # this far below a 3 m ring: inside a crater (94% of such cells
+                                 # lie in a mapped crater on shoemaker.npz; 0.15 m gave 36%)
+ROCK_STEP_M = 0.15               # this far above its 1.5 m ring: a rock
+DETECT_ROCKS = False             # off: at this scan density no setting found real rocks (precision 0 on
+                                 # shoemaker.npz), and the tallest display rock stands 0.28 m, under
+                                 # the 0.3 m wheel radius in sim/scene.py
+SLOPE_LIMIT_DEG = 15.0           # spec step 4
+MIN_RETURNS = 3
+
+# --- the lidar panel (display only)
+VIEW_SIZE = (800, 280)           # the viewer's panel is 400 x 140 (web/app.css .lidar); drawn at 2x
+VIEW_RANGE_M = 25.0              # top of the panel: the far edge of the judged band (HAZ_RANGE_M)
+
+
+class Lidar:
+    NAME = ("lidar: forward scanner beside the camera, 120 x 33 deg, ray-cast on the camera's ground "
+            "(sim/lidar.py); hazards = crater interiors and slopes over 15 deg")
+
+    def __init__(self, scene, rng: np.random.Generator):
+        self.scene = scene
+        self.rng = rng
+        self.az = np.radians(np.arange(-H_FOV_DEG / 2, H_FOV_DEG / 2 + 1e-9, H_STEP_DEG))
+        self.el = np.radians(V_ANGLES_DEG)
+
+    def origin(self, pose):
+        """Lidar position in the scene's local frame, and heading."""
+        sc = self.scene
+        x, y, h = pose
+        lx = x - sc.origin[0] + LIDAR_RIGHT_OF_CAMERA_M * math.sin(h)
+        ly = y - sc.origin[1] - LIDAR_RIGHT_OF_CAMERA_M * math.cos(h)
+        gz = float(sc.grid.height(x - sc.origin[0], y - sc.origin[1]))
+        return np.array([lx, ly, gz + LIDAR_HEIGHT_M]), h
+
+    def scan(self, pose):
+        """(points (N, 3) rover frame [fwd, left, up] from the lidar, range image (rows, cols))."""
+        O, h = self.origin(pose)
+        EL, AZ = np.meshgrid(self.el, self.az, indexing="ij")          # (rows, cols)
+        dx = np.cos(EL) * np.cos(AZ + h)
+        dy = np.cos(EL) * np.sin(AZ + h)
+        dz = np.sin(EL)
+        from sim.scene import _par   # row-chunked threads; same arithmetic per point
+        surf = self.scene.surface
+        # March MARCH_BLOCK steps per height call on the rays still live, then
+        # bisect every hit ray together. Each sample and bisection step is the
+        # same arithmetic as a step-by-step march, so ranges are unchanged.
+        ts = np.arange(MIN_RANGE_M + MARCH_STEP_M, MAX_RANGE_M + 1e-9, MARCH_STEP_M)
+        fdx, fdy, fdz = dx.ravel(), dy.ravel(), dz.ravel()
+        rng = np.full(fdx.shape, np.nan)
+        first = np.full(fdx.shape, -1)
+        live = np.arange(len(fdx))
+        for s0 in range(0, len(ts), MARCH_BLOCK):
+            if len(live) == 0:
+                break
+            tb = ts[s0:s0 + MARCH_BLOCK]
+            px = O[0] + fdx[live, None] * tb[None, :]
+            py = O[1] + fdy[live, None] * tb[None, :]
+            pz = O[2] + fdz[live, None] * tb[None, :]
+            below = pz <= _par(surf.height, px, py)
+            got = below.any(axis=1)
+            first[live[got]] = s0 + np.argmax(below[got], axis=1)   # first step at or under the ground
+            live = live[~got]
+        hit = np.flatnonzero(first >= 0)
+        if len(hit):
+            fi = first[hit]
+            hi_t = ts[fi]
+            lo_t = np.where(fi > 0, ts[np.maximum(fi - 1, 0)], MIN_RANGE_M)
+            hdx, hdy, hdz = fdx[hit], fdy[hit], fdz[hit]
+            for _ in range(6):   # bisection to ~4 mm
+                mid = 0.5 * (lo_t + hi_t)
+                under = O[2] + hdz * mid <= surf.height(O[0] + hdx * mid, O[1] + hdy * mid)
+                hi_t = np.where(under, mid, hi_t)
+                lo_t = np.where(under, lo_t, mid)
+            rng[hit] = hi_t
+        rng = rng.reshape(EL.shape)
+        rng = rng + RANGE_NOISE_M * self.rng.standard_normal(rng.shape)
+        ok = np.isfinite(rng)
+        # Rover frame: x forward, y left, z up, origin at the lidar.
+        fx = rng * np.cos(EL) * np.cos(AZ)
+        fy = rng * np.cos(EL) * np.sin(AZ)
+        fz = rng * np.sin(EL)
+        pts = np.column_stack([fx[ok], fy[ok], fz[ok]])
+        return pts, rng
+
+    def hazards(self, pts, grids=False):
+        """(centres (K, 2) [fwd, left], kinds list of "crater" | "rock" | "slope"), rover frame.
+        grids=True: the judged grids instead (for view()): known, crater,
+        rock, slope as (nx, ny) bools over HAZ_RANGE_M x +-HAZ_HALF_WIDTH_M."""
+        if len(pts) == 0 and not grids:
+            return np.zeros((0, 2)), []
+        c = HAZ_CELL_M
+        x0, x1 = HAZ_RANGE_M
+        sel = (pts[:, 0] >= x0) & (pts[:, 0] < x1) & (np.abs(pts[:, 1]) < HAZ_HALF_WIDTH_M)
+        p = pts[sel]
+        nx = int(math.ceil((x1 - x0) / c))
+        ny = int(math.ceil(2 * HAZ_HALF_WIDTH_M / c))
+        ix = np.clip(((p[:, 0] - x0) / c).astype(int), 0, nx - 1)
+        iy = np.clip(((p[:, 1] + HAZ_HALF_WIDTH_M) / c).astype(int), 0, ny - 1)
+        flat = ix * ny + iy
+        cnt = np.bincount(flat, minlength=nx * ny)
+        zsum = np.bincount(flat, weights=p[:, 2], minlength=nx * ny)
+        zmax = np.full(nx * ny, -np.inf)
+        np.maximum.at(zmax, flat, p[:, 2])
+        known = (cnt >= MIN_RETURNS).reshape(nx, ny)
+        zmean = np.where(known.ravel(), zsum / np.maximum(cnt, 1), np.nan).reshape(nx, ny)
+        zmax = np.where(known.ravel(), zmax, np.nan).reshape(nx, ny)
+        # Compare each cell with the mean of a symmetric ring of cells around
+        # it: on any tilted plane that mean equals the cell's own height, so
+        # plain slopes do not read as rocks or dips.
+        def ring_mean(rad):
+            offs = [(di, dj) for di in range(-rad, rad + 1) for dj in range(-rad, rad + 1)
+                    if max(abs(di), abs(dj)) == rad]
+            pad = np.pad(zmean, rad, constant_values=np.nan)
+            stack = np.stack([pad[rad + di:rad + di + nx, rad + dj:rad + dj + ny] for di, dj in offs])
+            n = np.sum(np.isfinite(stack), axis=0)
+            m = np.nansum(stack, axis=0) / np.maximum(n, 1)
+            return np.where(n >= len(offs) // 2, m, np.nan)
+
+        with np.errstate(all="ignore"):
+            near = ring_mean(1)                     # 1.5 m: rocks
+            far = ring_mean(RING_CELLS)             # crater-sized ring
+            rock = zmax - near
+            depr = far - zmean
+            gx = np.full((nx, ny), np.nan)
+            gy = np.full((nx, ny), np.nan)
+            b = 2  # +-1 m: a 2 m central difference (docs/handoffs.md step 2)
+            gx[b:-b, :] = (zmean[2 * b:, :] - zmean[:-2 * b, :]) / (2 * b * c)
+            gy[:, b:-b] = (zmean[:, 2 * b:] - zmean[:, :-2 * b]) / (2 * b * c)
+            slope = np.degrees(np.arctan(np.hypot(gx, gy)))
+        is_crater = known & (depr > DEPRESSION_M)
+        is_rock = known & ~is_crater & (rock > ROCK_STEP_M) & DETECT_ROCKS
+        is_slope = known & ~is_crater & ~is_rock & (slope > SLOPE_LIMIT_DEG)
+        if grids:
+            return dict(known=known, crater=is_crater, rock=is_rock, slope=is_slope)
+        hi, hj = np.nonzero(is_crater | is_rock | is_slope)
+        centres = np.column_stack([x0 + (hi + 0.5) * c, -HAZ_HALF_WIDTH_M + (hj + 0.5) * c])
+        kinds = ["crater" if is_crater[i, j] else "rock" if is_rock[i, j] else "slope" for i, j in zip(hi, hj)]
+        return centres, kinds
+
+    def points_from_image(self, rng_img):
+        """Rover-frame points [fwd, left, up] from a range image, as scan() makes them."""
+        EL, AZ = np.meshgrid(self.el, self.az, indexing="ij")
+        ok = np.isfinite(rng_img)
+        r = rng_img[ok]
+        return np.column_stack([r * np.cos(EL[ok]) * np.cos(AZ[ok]), r * np.cos(EL[ok]) * np.sin(AZ[ok]),
+                                r * np.sin(EL[ok])])
+
+    def view(self, rng_img, size=VIEW_SIZE):
+        """The lidar panel (RGB uint8): what this scan told the rover, seen from
+        above, forward up, rover at the bottom centre. Grey: ground the lidar
+        judged safe. Amber: crater floor (the planner avoids it). Red: steeper
+        than 15 deg (no-go). Black: no return, or too few returns to judge
+        (hidden behind a rise, or outside the scan). Rings every 5 m."""
+        W, H = size
+        img = np.zeros((H, W, 3), np.uint8)
+        px_m = (H - 14) / VIEW_RANGE_M                  # pixels per metre
+        ox, oy = W // 2, H - 8                          # rover position in the image
+        pts = self.points_from_image(rng_img)
+        g = self.hazards(pts, grids=True)
+        c = HAZ_CELL_M
+        x0 = HAZ_RANGE_M[0]
+        # Every return, faintly: shows how far the scan reached past the judged band.
+        if len(pts):
+            u = np.rint(ox - pts[:, 1] * px_m).astype(int)
+            v = np.rint(oy - pts[:, 0] * px_m).astype(int)
+            ok = (u >= 0) & (u < W) & (v >= 0) & (v < H)
+            img[v[ok], u[ok]] = (55, 55, 60)
+        colours = [(g["known"], (95, 98, 104)), (g["crater"], (240, 160, 40)),
+                   (g["rock"], (240, 160, 40)), (g["slope"], (230, 50, 40))]
+        for mask, col in colours:
+            for i, j in zip(*np.nonzero(mask)):
+                fwd0, left0 = x0 + i * c, -HAZ_HALF_WIDTH_M + j * c
+                u0 = int(round(ox - (left0 + c) * px_m))
+                u1 = int(round(ox - left0 * px_m))
+                v0 = int(round(oy - (fwd0 + c) * px_m))
+                v1 = int(round(oy - fwd0 * px_m))
+                img[max(v0, 0):max(v1, 0), max(u0, 0):max(u1, 0)] = col
+        ring = (150, 150, 150)
+        half_fov = math.radians(H_FOV_DEG / 2)
+        for rr in range(5, int(VIEW_RANGE_M) + 1, 5):
+            cv2.ellipse(img, (ox, oy), (int(rr * px_m), int(rr * px_m)), 0, -90 - H_FOV_DEG / 2,
+                        -90 + H_FOV_DEG / 2, ring, 1, cv2.LINE_AA)
+            tx, ty = ox + int(rr * px_m * math.sin(half_fov)) + 3, oy - int(rr * px_m * math.cos(half_fov))
+            cv2.putText(img, f"{rr} m", (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, ring, 1, cv2.LINE_AA)
+        for sgn in (-1, 1):
+            e = (ox + int(sgn * VIEW_RANGE_M * px_m * math.sin(half_fov)), oy - int(VIEW_RANGE_M * px_m * math.cos(half_fov)))
+            cv2.line(img, (ox, oy), e, ring, 1, cv2.LINE_AA)
+        tri = np.array([[ox, oy - 7], [ox - 5, oy + 5], [ox + 5, oy + 5]], np.int32)
+        cv2.fillPoly(img, [tri], (255, 255, 255))
+        y = 18
+        for label, col in (("no-go: steeper than 15 deg", (230, 50, 40)), ("crater floor: avoided", (240, 160, 40)),
+                           ("judged safe", (95, 98, 104))):
+            cv2.rectangle(img, (6, y - 11), (17, y), col, -1)
+            cv2.putText(img, label, (22, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (230, 230, 230), 1, cv2.LINE_AA)
+            y += 20
+        return img
+
+    def to_camera_frame(self, centres):
+        """Hazard centres from the lidar origin to the camera origin (rover frame)."""
+        c = np.asarray(centres, float).reshape(-1, 2).copy()
+        c[:, 1] -= LIDAR_RIGHT_OF_CAMERA_M   # the lidar sits to the right (negative y_left)
+        return c
+
+
+def regenerate(run_dir, display="detail"):
+    """Redraw lidar/<agency>_<step>.jpg for a finished run from its log, no
+    camera render: each logged lidar frame is scanned again at the step's
+    true pose (fresh range noise) and drawn with view()."""
+    import json
+    from pathlib import Path
+    from sim.scene import Scene
+    from sim.terrain import TERRAIN_DIR, load_terrain, default_path
+    run_dir = Path(run_dir)
+    log = json.loads((run_dir / "log.json").read_text())
+    h, cr, x0, y0, cell = load_terrain(default_path())
+    scene = Scene(h, cr, x0, y0, cell, display=display, display_dir=TERRAIN_DIR / "display")
+    lid = Lidar(scene, np.random.default_rng(0))
+    n = 0
+    for k, s in enumerate(log["steps"]):
+        for ag, r in s["rovers"].items():
+            scene.set_rover(ag, r["true_pose"])
+        for ag, r in s["rovers"].items():
+            name = r.get("lidar_frame")
+            if not name or not name.endswith(f"_{k:04d}.jpg"):
+                continue
+            _, rimg = lid.scan(r["true_pose"])
+            cv2.imwrite(str(run_dir / name), lid.view(rimg)[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 85])
+            n += 1
+    return n
+
+
+if __name__ == "__main__":
+    import sys
+    print(f"{regenerate(*sys.argv[1:])} lidar frames redrawn")

@@ -2,6 +2,7 @@
 import { Terrain, Run, loadIndex, fmtClock } from "./data.js";
 import { World, COLORS } from "./world.js";
 import { MapView } from "./map.js";
+import { MissionPlayer, ensureStyles } from "./mission_player.js";
 
 const $ = (id) => document.getElementById(id);
 const hex = (c) => "#" + c.toString(16).padStart(6, "0");
@@ -12,9 +13,12 @@ const short = (h) => (h ? h.slice(0, 10) + "…" + h.slice(-6) : "");
 const FP = { w: 640, h: 480, hfov: 60, pitch: 15, camH: 2.5 };
 FP.fx = FP.w / 2 / Math.tan((FP.hfov / 2) * Math.PI / 180);
 
+// Plain names for the log's stand-in keys; others print with "_" as a space.
+const PART_NAMES = { nav: "navigation", rims: "rim detection", planner: "route planner", chain: "chain", ice_sensor: "ice sensor" };
+
 const state = {
   runs: [], run: null, t: 0, playing: false, speed: 200, cam: "A",
-  opts: { fill: true, tracks: true, rims: true, truth: false },
+  opts: { fill: true, tracks: true, particles: true, rims: true, nogo: false, truth: false },
   lastEventsKey: "",
 };
 
@@ -33,6 +37,7 @@ async function main() {
   world.buildTerrain();
   world.buildBackdrop();
   world.loadRocks();
+  world.initPatches();
   map = new MapView($("map"), terrain);
 
   state.runs = await loadIndex("runs/");
@@ -42,7 +47,8 @@ async function main() {
     b.className = "nav";
     b.dataset.run = r.run_id;
     const [head, ...rest] = r.label.split(":");
-    b.innerHTML = `${head}<span class="sub">${rest.join(":").trim() || "&nbsp;"}</span>`;
+    const st = r.status ? ` <span class="st ${r.status}">${r.status}</span>` : "";
+    b.innerHTML = `${head}<span class="sub">${rest.join(":").trim() || "&nbsp;"}${st}</span>`;
     b.onclick = () => openRun(r.run_id, 0);
     list.appendChild(b);
   });
@@ -81,16 +87,40 @@ async function openRun(id, t) {
   if (si) {
     // Say what is not real yet, in the log's own words.
     const lines = Object.entries(si).map(([k, v]) => (String(v).startsWith(k) ? v : `${k}: ${v}`));
-    const parts = Object.keys(si).join(", ");
-    $("standin-text").innerHTML = `Not real yet: ${parts}. Nothing was posted to Monad; the transaction hashes are fake. ` +
-      `The first-person frames are real renders. <details><summary>Details</summary><ul>${lines.map((l) => `<li>${l}</li>`).join("")}</ul></details>`;
+    const parts = Object.keys(si).map((k) => PART_NAMES[k] || k.replace(/_/g, " ")).join(", ");
+    // Say the chain is fake only when it is (run.fakeTx: a chain stand-in, or no explorer in the log).
+    const chainLine = run.fakeTx ? " Nothing is posted to Monad yet; the transaction hashes are fake." : " The chain is real: every hash links to Monad testnet.";
+    $("standin-text").innerHTML = `Stand-ins: ${parts}.${chainLine} Camera frames are real renders. ` +
+      `<details><summary>Details</summary><ul>${lines.map((l) => `<li>${l}</li>`).join("")}</ul></details>`;
   }
 
   const ch = run.chain || {};
   $("chain-hint").textContent = ch.contract && /^0x/.test(ch.contract) ? `contract ${short(ch.contract)}` : ch.contract || (si ? "not posted" : "");
 
+  // Mission checkpoints and live chain calls (docs/handoffs.md, "Mission log").
+  ensureStyles();
+  let box = $("checkpoint");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "checkpoint"; box.className = "checkpoint"; box.hidden = true;
+    $("story").insertAdjacentElement("afterend", box);
+  }
+  state.player = new MissionPlayer(run, {
+    pause: (t) => { state.t = t; state.playing = false; $("play").textContent = "Play"; render(true); },
+    resume: () => { if (!state.playing) togglePlay(); },
+    note: (html) => { box.hidden = !html; box.innerHTML = html || ""; },
+    rerender: () => { state.lastEventsKey = ""; render(true); },
+  });
+
   const ticks = $("ticks");
   ticks.innerHTML = "";
+  for (const c of (run.log.mission && run.log.mission.checkpoints) || []) {
+    const d = document.createElement("div");
+    d.className = "tick cp";
+    d.style.left = `${(100 * run.times[c.step]) / run.tEnd}%`;
+    d.title = c.label;
+    ticks.appendChild(d);
+  }
   for (const e of run.events) {
     const d = document.createElement("div");
     d.className = "tick";
@@ -106,6 +136,7 @@ async function openRun(id, t) {
   world.setVisibility(state.opts);
   map.setRun(run);
   $("loading").hidden = true;
+  reserveHeights(run);
   render(true);
 }
 
@@ -114,7 +145,11 @@ function bindControls() {
   $("back").onclick = () => stepBy(-1);
   $("fwd").onclick = () => stepBy(1);
   $("speed").onchange = (e) => { state.speed = Number(e.target.value); speedNote(); };
-  $("time").oninput = (e) => { state.t = Number(e.target.value); render(); };
+  $("time").oninput = (e) => {
+    const t = Number(e.target.value);
+    if (t < state.t && state.player) state.player.rewound(t);
+    state.t = t; render();
+  };
   document.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
   setView("A");
   document.querySelectorAll("#cam-seg button").forEach((b) => (b.onclick = () => {
@@ -128,15 +163,34 @@ function bindControls() {
     render(true);
   }));
   for (const k of Object.keys(state.opts)) {
+    if (!$("opt-" + k)) continue;   // a toggle the page does not offer keeps its default
+    state.opts[k] = $("opt-" + k).checked;   // the markup's checked state is the default
     $("opt-" + k).onchange = (e) => {
       state.opts[k] = e.target.checked;
       world.setVisibility(state.opts);
       map.opts = state.opts;
       $("vnote").hidden = !state.opts.fill;
+      if (state.run) reserveHeights(state.run);
       render(true);
     };
   }
   map.opts = state.opts;
+  // Live boxes are sized for the page as laid out: measure again when the
+  // width changes or the web fonts arrive.
+  let resizeT = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(() => state.run && reserveHeights(state.run), 150);
+  });
+  if (document.fonts) document.fonts.ready.then(() => state.run && reserveHeights(state.run));
+  // Click the camera frame to enlarge it (the page styles .fp.big); a second
+  // click or Esc closes it. The rim canvas is redrawn at the new size.
+  const fp = document.querySelector(".fp");
+  const setBig = (on) => { fp.classList.toggle("big", on); render(true); };
+  if (fp) fp.addEventListener("click", () => setBig(!fp.classList.contains("big")));
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Escape" && fp && fp.classList.contains("big")) { e.preventDefault(); setBig(false); }
+  });
   window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT" && e.target.type !== "range" && e.target.type !== "checkbox") return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
@@ -165,7 +219,7 @@ function setView(v) {
 
 function togglePlay() {
   if (!state.run) return;
-  if (!state.playing && state.t >= state.run.tEnd) state.t = 0;
+  if (!state.playing && state.t >= state.run.tEnd) { state.t = 0; if (state.player) state.player.restart(); }
   state.playing = !state.playing;
   $("play").textContent = state.playing ? "Pause" : "Play";
 }
@@ -175,7 +229,9 @@ function stepBy(n) {
   state.playing = false;
   $("play").textContent = "Play";
   const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(state.t) + n));
+  const back = run.times[k] < state.t;
   state.t = run.times[k];
+  if (back && state.player) state.player.rewound(state.t);
   render();
 }
 
@@ -184,9 +240,10 @@ function loop(now) {
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
   if (state.playing && state.run) {
+    const prev = state.t;
     state.t += dt * state.speed;
     if (state.t >= state.run.tEnd) { state.t = state.run.tEnd; state.playing = false; $("play").textContent = "Play"; }
-    render();
+    if (!(state.player && state.player.tick(prev, state.t))) render();
   }
   world.render();
   requestAnimationFrame(loop);
@@ -203,31 +260,54 @@ function render(force = false) {
   world.update(t, state.opts);
   map.update(t);
   $("time").value = t;
-  $("clock").textContent = `${fmtClock(t)} · step ${k + 1}/${run.steps.length}`;
+  // Fixed length: the step number is padded with figure spaces (U+2007, the
+  // width of a digit, never collapsed), so the clock never changes width.
+  const n = String(run.steps.length);
+  $("clock").textContent = `${fmtClock(t)} · step ${String(k + 1).padStart(n.length, "\u2007")}/${n}`;
   hud(run, k);
-  if (force || k !== lastK || lastCamKey !== state.cam) { camera(run, k); lastCamKey = state.cam; }
+  const fr = run.frameNear(state.cam, t);
+  const camKey = `${state.cam}:${fr ? fr.src : "-"}`;
+  if (force || camKey !== lastCamKey) { camera(run, fr, k); lastCamKey = camKey; }
   if (force || k !== lastK) record(run, k);
   lastK = k;
 }
 
 function hud(run, k) {
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   const rows = run.agencies.map((a) => {
     const r = run.rover(a, k);
     const [tx, ty] = r.true_pose;
     const err = Math.hypot(r.estimate[0] - tx, r.estimate[1] - ty);
     const odo = r.odom_pose ? Math.hypot(r.odom_pose[0] - tx, r.odom_pose[1] - ty) : NaN;
-    const nav = r.nav_on ? "crater fixes on " : `<span class="off">crater fixes off</span>`;
-    return `<div class="row"><span class="ag" style="color:${hex(COLORS[a])}">${a}</span><span>${nav}</span>` +
-      `<span><span class="k">σ</span> ${r.sigma.toFixed(1)} m</span>` +
-      `<span><span class="k">true error</span> ${err.toFixed(1)} m</span>` +
-      `<span><span class="k">odometry error</span> ${odo.toFixed(1)} m</span></div>`;
+    const by = r.nav_on ? "crater rims" : `<span class="off">odometry only</span>`;
+    // "same" only when the two printed numbers are the same, not by assumption.
+    const odoCell = !isFinite(odo) ? `<td class="k">n/a</td>`
+      : odo.toFixed(1) === err.toFixed(1) ? `<td class="k">same</td>` : `<td>${odo.toFixed(1)} m</td>`;
+    return `<tr><td class="ag" style="color:${hex(COLORS[a])}">${a}</td><td>${by}</td>` +
+      `<td>±${r.sigma.toFixed(1)} m</td><td>${err.toFixed(1)} m</td>${odoCell}</tr>`;
   });
-  $("hud").innerHTML = rows.join("");
+  const out = [`<table class="hudt"><thead><tr><th></th><th>Steering by</th>` +
+    `<th title="The rover's own 1-sigma estimate of its position error">Thinks it is within</th>` +
+    `<th title="Distance from the estimate to the hidden true position">Actually off by</th>` +
+    `<th title="Where odometry alone would put it, distance from the true position">Odometry alone</th></tr></thead>` +
+    `<tbody>${rows.join("")}</tbody></table>`];
+  if (run.nav) {
+    // "ShadowNav particle filter (Cauligi et al. 2023, Algs. 1-3), 100 particles, ..."
+    // -> "ShadowNav particle filter, 100 particles"; the full line on hover.
+    const short = run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim();
+    const dots = run.hasParticles && state.opts.tracks && state.opts.particles ? "; dots are its particles, larger for more weight" : "";
+    out.push(`<div class="hud-src" title="${esc(run.nav)}">${short}${dots}</div>`);
+  }
+  if (run.planner) {
+    // "A* on a 2 m grid; a cell is blocked if ..." -> "Route: A* on a 2 m grid"; the full line on hover.
+    const short = run.planner.split(/[;(]/)[0].replace(/[.,\s]+$/, "");
+    out.push(`<div class="hud-src" title="${esc(run.planner)}">Route: ${short}</div>`);
+  }
+  $("hud").innerHTML = out.join("");
 }
 
-function camera(run, k) {
+function camera(run, fr, k) {
   const a = state.cam;
-  const fr = run.frameAt(a, k);
   const img = $("fp-img");
   $("fp-empty").hidden = !!fr;
   if (fr) {
@@ -236,16 +316,147 @@ function camera(run, k) {
       img.src = fr.src;
     }
   } else img.removeAttribute("src");
+  $("fp-cap").innerHTML = captionHtml(run, a, fr ? fr.k : k, !!(fr && fr.sub));
+  // Lidar panel: the scan taken with this step's live frame (run_demo.py --vision).
+  const r = run.rover(a, fr ? fr.k : k);
+  const li = $("lidar-img");
+  // Runs without --vision have no lidar: hide the panel rather than show an empty box.
+  if (run.hasLidar === undefined) run.hasLidar = run.agencies.some((ag) => run.steps.some((_, j) => run.rover(ag, j).lidar_frame));
+  li.parentElement.hidden = $("lidar-cap").hidden = !run.hasLidar;
+  if (r.lidar_frame) {
+    const src = run.dir + r.lidar_frame;
+    if (li.dataset.src !== src) { li.dataset.src = src; li.src = src; }
+  } else {
+    li.removeAttribute("src");
+    delete li.dataset.src;
+  }
+  $("lidar-cap").textContent = lidarCapText(run, a, fr ? fr.k : k);
+  // Rim points are logged per step, in that step's pose: draw them only on a step's own frame.
+  drawRims(run, a, fr ? fr.k : k, !!(fr && fr.sub));
+  drawPlan(run, a, fr, k);
+}
+
+// The rover's planned route (logged per step as "plan", world xy, out to
+// ~20 m) as an amber dashed line on the camera image, projected from the pose of the
+// frame shown, so the line moves with every frame (every 0.5 m with
+// sub-frames) and bends as soon as the rover re-plans around a crater.
+function drawPlan(run, a, fr, k) {
+  const kk = fr ? fr.k : k;
+  const r = run.rover(a, kk);
+  if (!r.plan || r.plan.length < 2) return;
+  const c = $("fp-rims").getContext("2d");
+  // The pose the shown image was taken from: its step, plus the sub-frame's
+  // fraction toward the next step.
+  const k1 = Math.min(kk + 1, run.steps.length - 1);
+  // Only a sub-frame's f is a fraction past its step; a step's own frame is
+  // at its step (frameNear gives step k+1's frame f = 1 with k = k+1).
+  const tf = run.times[kk] + (fr && fr.sub ? fr.f : 0) * (run.times[k1] - run.times[kk]);
+  const [x, y, h] = run.poseAt(a, tf);
+  const camZ = terrain.heightAt(x, y) + FP.camH;
+  const p = (FP.pitch * Math.PI) / 180, cp = Math.cos(p), sp = Math.sin(p);
+  const ch = Math.cos(h), sh = Math.sin(h);
+  // Dashes 0.6 m long with 0.4 m gaps along the route, each drawn as a
+  // projected line segment, thicker nearer the rover.
+  c.strokeStyle = "rgba(255, 200, 60, 0.95)";
+  c.lineCap = "round";
+  const DASH = 0.6, GAP = 0.4;
+  const proj = (wx, wy) => {
+    const dx = wx - x, dy = wy - y;
+    const f = dx * ch + dy * sh, l = -dx * sh + dy * ch;
+    const z = terrain.heightAt(wx, wy) + 0.05 - camZ;
+    const Xc = -l, Yc = f * sp + z * cp, Zc = f * cp - z * sp;
+    if (Zc <= 0.5) return null;
+    return [FP.w / 2 + (FP.fx * Xc) / Zc, FP.h / 2 - (FP.fx * Yc) / Zc, Math.hypot(f, l)];
+  };
+  // Walk the route, emitting [start, end] world points for each dash.
+  let pos = 0, on = true, left = DASH, start = r.plan[0];
+  for (let i = 0; i + 1 < r.plan.length; i++) {
+    const [ax, ay] = r.plan[i], [bx, by] = r.plan[i + 1];
+    const seg = Math.hypot(bx - ax, by - ay);
+    let s0 = 0;
+    while (s0 < seg) {
+      const take = Math.min(left, seg - s0);
+      const s1 = s0 + take;
+      const p1 = [ax + (bx - ax) * s1 / seg, ay + (by - ay) * s1 / seg];
+      if (on) {
+        const pa = proj(start[0], start[1]), pb = proj(p1[0], p1[1]);
+        if (pa && pb) {
+          c.lineWidth = Math.max(1.2, Math.min(6, 20 / Math.max(pa[2], 1)));
+          c.beginPath(); c.moveTo(pa[0], pa[1]); c.lineTo(pb[0], pb[1]); c.stroke();
+        }
+      }
+      left -= take; s0 = s1; pos += take;
+      if (left <= 1e-9) { on = !on; left = on ? DASH : GAP; start = p1; }
+    }
+  }
+}
+
+function captionHtml(run, a, k, sub) {
   const r = run.rover(a, k);
-  $("fp-cap").innerHTML = `Rover ${a}. Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.` +
+  // Say how far apart the recorded frames are, from the log.
+  const gapM = run.frameSpacing(a);
+  const every = gapM ? `, one frame per ${gapM < 10 ? gapM.toFixed(1).replace(/\.0$/, "") : Math.round(gapM)} m` : "";
+  return `Recorded lamp-only view from rover ${a}${every}. 60° view, camera 2.5 m up. Click to enlarge.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
-    (state.opts.rims && r.rims && r.rims.length ? ` ${r.rims.length} rim points${run.standin ? " (stand-in, from the crater map)" : ""}.` : "");
-  drawRims(run, a, fr ? fr.k : k);
+    (state.opts.rims && r.rims && r.rims.length && !sub ? ` ${r.rims.length} rim points${run.standin && run.standin.rims ? " (stand-in, from the crater map)" : " from the camera"}.` : "") +
+    (r.plan && !sub ? " Amber dots: the route it plans to drive, re-planned every 2 m." : "") +
+    (r.lidar_frame && !sub ? " Red marks: lidar hazards." : "");
+}
+
+// Lidar panel caption: the scan taken with this step's live frame (run_demo.py --vision).
+const LIDAR_TOPDOWN_W = 800;   // sim/lidar.py Lidar.view on step-6-nav 40304d4: 800 x 280
+function lidarCapText(run, a, k) {
+  const r = run.rover(a, k);
+  if (!r.lidar_frame) return "No lidar in this run.";
+  const hz = r.lidar_hazards || {};
+  // Two image kinds, told apart by width (step-6-nav 40304d4): the top-down
+  // map of what the scan found is 800 px wide; the older range image is 400.
+  const topDown = $("lidar-img").naturalWidth >= LIDAR_TOPDOWN_W;
+  return (topDown
+    ? `Rover ${a} lidar, from above: what this scan found. Grey safe, amber crater floor (avoided), red too steep (no-go). `
+    : `Rover ${a} lidar, beside the camera: 120° x 33°, near warm, far cool. `) +
+    `This scan: ${hz.crater || 0} crater cells, ${hz.slope || 0} steep cells.`;
+}
+
+// Text that changes as a run plays must not move the page. Each live box is
+// given, as its min-height, the height of the tallest text it will show in
+// this run, measured on the page as laid out now. Called when the run, the
+// window size or a toggle changes; playing then never moves anything.
+function reserveHeights(run) {
+  const last = run.steps.length - 1;
+  const caps = new Set(), stories = new Set(), lidarCaps = new Set();
+  for (let k = 0; k <= last; k++) {
+    for (const a of run.agencies) for (const sub of [false, true]) caps.add(captionHtml(run, a, k, sub));
+    for (const a of run.agencies) lidarCaps.add(lidarCapText(run, a, k));
+    stories.add(story(run, k, run.findsAt(k)));
+  }
+  const evsAll = run.eventsUpTo(last).slice().reverse();
+  const boxes = [
+    [$("fp-cap"), caps],
+    [$("lidar-cap"), lidarCaps],
+    [$("story"), stories],
+    // Finds and transactions only accumulate: the run's end is the most.
+    [$("finds"), [findsHtml(run, []), findsHtml(run, run.findsAt(last))]],
+    [$("feed"), [feedHtml(run, [], null), feedHtml(run, evsAll, null)]],
+  ];
+  for (const [el, htmls] of boxes) {
+    if (!el) continue;
+    const keep = el.innerHTML;
+    el.style.minHeight = "";
+    let h = 0;
+    for (const html of htmls) { el.innerHTML = html; h = Math.max(h, el.getBoundingClientRect().height); }
+    el.innerHTML = keep;
+    const cs = getComputedStyle(el);
+    if (cs.boxSizing !== "border-box") {
+      h -= parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    }
+    el.style.minHeight = `${Math.ceil(h)}px`;
+  }
 }
 
 // Rim points [x_fwd, y_left] in the rover frame, projected into the image
 // with the scene's pinhole model and the ground height under each point.
-function drawRims(run, a, k) {
+function drawRims(run, a, k, none = false) {
   const cv = $("fp-rims");
   const W = cv.clientWidth, H = cv.clientHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -253,7 +464,7 @@ function drawRims(run, a, k) {
   cv.height = Math.round(H * dpr);
   const c = cv.getContext("2d");
   c.setTransform((W * dpr) / FP.w, 0, 0, (H * dpr) / FP.h, 0, 0);
-  if (!state.opts.rims) return;
+  if (!state.opts.rims || none) return;
   const r = run.rover(a, k);
   if (!r.rims) return;
   const [x, y, h] = r.true_pose;
@@ -273,32 +484,37 @@ function drawRims(run, a, k) {
 
 function record(run, k) {
   const finds = run.findsAt(k);
-  const fl = $("finds");
-  if (!finds.length) fl.innerHTML = `<div class="empty">No finds yet.</div>`;
-  else fl.innerHTML = finds.map((f) => {
+  $("finds").innerHTML = findsHtml(run, finds);
+  const evs = run.eventsUpTo(k).slice().reverse();
+  const key = evs.map((e) => e.tx).join();
+  const fresh = key !== state.lastEventsKey && state.lastEventsKey !== "" ? evs[0] && evs[0].tx : null;
+  state.lastEventsKey = key;
+  $("feed").innerHTML = feedHtml(run, evs, fresh);
+  $("story").innerHTML = story(run, k, finds);
+}
+
+function findsHtml(run, finds) {
+  if (!finds.length) return `<div class="empty">No finds yet.</div>`;
+  return finds.map((f) => {
     const checks = f.checks.map((c) => `${c.agency} ${c.agrees ? "agrees" : "disagrees"} (reading ${c.reading.toFixed(2)}${run.unit})`).join(", ");
     return `<div class="find"><span class="id c-${f.agency}">#${f.find_id}</span>` +
       `<span>Ice found by ${f.agency}, ±${f.sigma.toFixed(1)} m</span><span class="status ${f.status}">${f.status}</span>` +
       `<span class="meta">reading ${f.reading.toFixed(2)}${run.unit}${checks ? " · " + checks : " · waiting for another agency"}</span></div>`;
   }).join("");
+}
 
-  const evs = run.eventsUpTo(k).slice().reverse();
-  const key = evs.map((e) => e.tx).join();
-  const fresh = key !== state.lastEventsKey && state.lastEventsKey !== "" ? evs[0] && evs[0].tx : null;
-  state.lastEventsKey = key;
+function feedHtml(run, evs, fresh) {
   const ex = run.chain && run.chain.explorer;
-  $("feed").innerHTML = evs.length ? evs.map((e) => {
+  return evs.length ? evs.map((e) => {
     const what = e.type === "find"
       ? `postFind #${e.find_id} · ±${e.sigma.toFixed(1)} m · reading ${e.reading.toFixed(2)}${run.unit}`
       : `checkFind #${e.find_id} · ${e.agrees ? "agrees" : "disagrees"} · reading ${e.reading.toFixed(2)}${run.unit}`;
     const tx = run.fakeTx && !ex
       ? `<span class="fake">fake tx</span><span class="h">${short(e.tx)}</span>`
       : ex ? `<a class="h" href="${ex.replace(/\/$/, "")}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx)}</a>` : `<span class="h">${short(e.tx)}</span>`;
-    return `<div class="ev${e.tx === fresh ? " new" : ""}"><span class="t">${fmtClock(e.t).slice(2)}</span>` +
+    return `<div class="ev${e.tx === fresh ? " new" : ""}${e.live ? " live" : ""}"><span class="t">${fmtClock(e.t).slice(2)}</span>` +
       `<span class="who c-${e.agency}">${e.agency}</span><span>${what}</span><span class="tx">${tx}</span></div>`;
   }).join("") : `<div class="empty">No transactions yet.</div>`;
-
-  $("story").innerHTML = story(run, k, finds);
 }
 
 // One line that says what is happening, for someone who just walked up.
@@ -306,6 +522,7 @@ function story(run, k, finds) {
   const f = finds[0];
   const a = run.agencies[0];
   const r = run.rover(a, k);
+  if (!f && run.log.mission) return missionStory(run, k);
   if (!f) return r.nav_on
     ? `Rover A drives in the dark and fixes its position on lamp-lit crater rims. Its estimate stays on the true track; plain odometry drifts.`
     : `Rover A drives on odometry alone. Its position error grows with every metre, and so does its σ.`;
@@ -313,6 +530,25 @@ function story(run, k, finds) {
   if (f.status === "reported") return `${f.agency} posted a find at <b>±${f.sigma.toFixed(1)} m</b>. ${other}, from another agency, reads it from the chain and drives there to check.`;
   if (f.status === "confirmed") return `${other} measured ice at the reported spot. The find is <b>confirmed</b> on chain.`;
   return `${other} found no ice at the reported spot: ${f.agency}'s position was off by more than the ice patch. The find stays on the record, <b>disputed</b>.`;
+}
+
+// Before the first find in a mission log (run_mission.py): what the
+// Surveyor is doing, from its logged phase ("to S1", "survey S1", ...), and
+// which sites it has already found dry.
+function missionStory(run, k) {
+  const roles = run.log.roles || {};
+  const name = (ag) => `The ${roles[ag] || "rover"} (${ag})`;
+  const [sv, pr] = ["A", "B"].map((ag) => (run.agencies.includes(ag) ? ag : run.agencies[0]));
+  const phase = run.rover(sv, k).phase || "";
+  const m = /^(to|survey) (\S+)/.exec(phase);
+  const sites = run.log.mission.sites || [];
+  const at = m ? sites.findIndex((x) => x.id === m[2]) : -1;
+  const dry = sites.slice(0, Math.max(at, 0)).filter((x) => x.verdict === "dry").map((x) => x.id);
+  const before = dry.length ? `${dry.join(" and ")} ${dry.length > 1 ? "were" : "was"} dry. ` : "";
+  const doing = !m ? `${name(sv)} is ${phase || "driving"}.`
+    : m[1] === "to" ? `${name(sv)} drives to orbital candidate ${m[2]}.`
+    : `${name(sv)} surveys ${m[2]} for ice.`;
+  return `${before}${doing} ${name(pr)} waits for a find on chain.`;
 }
 
 window.lantern = { state, get world() { return world; }, get map() { return map; } };

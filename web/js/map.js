@@ -2,7 +2,35 @@
 // uncertainty circle, finds with status, and the real ice when the log has it.
 import { COLORS } from "./world.js";
 
+const PLAN_CSS = "rgba(255, 200, 60, 0.95)";   // the camera view's plan colour (main.js drawPlan)
+
 const hex = (c) => "#" + c.toString(16).padStart(6, "0");
+
+const FINE_SHADE_PX_PER_M = 2;   // viewer only, assumed: above this zoom, draw 0.25 m hillshade
+const FINE_SHADE_CACHE = 9;       // tile hillshades kept (513 px square each, ~1 MB)
+
+// No-go look, from the designer (viewer only): 1 px lines at 135 deg every
+// 5 px in the page's "disputed" red, and a 1 px edge.
+const NOGO_HATCH_PX = 5;
+const NOGO_LINE = "rgba(229, 87, 79, 0.75)";
+const NOGO_EDGE = "rgba(229, 87, 79, 0.8)";
+// Below this zoom, no hatch or edge: a flat tint (designer).
+const NOGO_DETAIL_PX_PER_M = 2;
+const NOGO_TINT = "rgba(229, 87, 79, 0.22)";
+
+// One repeat of the hatch: a diagonal from top-left to bottom-right, drawn
+// three times so the tile joins its neighbours without a gap.
+function hatchTile(p, dpr) {
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = p;
+  const c = cv.getContext("2d");
+  c.strokeStyle = NOGO_LINE;
+  c.lineWidth = dpr;
+  c.beginPath();
+  for (const o of [-p, 0, p]) { c.moveTo(o, 0); c.lineTo(o + p, p); }
+  c.stroke();
+  return cv;
+}
 
 export class MapView {
   constructor(canvas, terrain) {
@@ -12,6 +40,12 @@ export class MapView {
     this.img = new Image();
     this.img.onload = () => this.draw();
     this.img.src = terrain.base + terrain.meta.map.file;
+    // The planner's no-go ground, red on clear (build_assets.py, from sim/rover.py).
+    if (terrain.meta.nogo) {
+      this.nogo = new Image();
+      this.nogo.onload = () => this.draw();
+      this.nogo.src = terrain.base + terrain.meta.nogo.file;
+    }
     this.mode = "site";
     this.zoom = 1;
     this.pan = [0, 0];
@@ -57,6 +91,119 @@ export class MapView {
     return { cx: x, cy: y, span: 90 };
   }
 
+  // Hillshade of one 0.25 m tile, as build_assets.py hillshade(): light from
+  // azimuth 315, elevation 25 deg; grey = 40 + 170 * shade^0.8. Cached, few.
+  fineShade(key) {
+    if (!this.shades) this.shades = new Map();
+    if (this.shades.has(key)) {
+      const v = this.shades.get(key);
+      this.shades.delete(key); this.shades.set(key, v);   // most recent last
+      return v;
+    }
+    const g = this.terrain.tiles.get(key);
+    if (!g) {
+      if (!this.shadeWait) this.shadeWait = new Set();
+      if (!this.shadeWait.has(key)) {
+        this.shadeWait.add(key);
+        this.terrain.loadTile(key).then(() => { this.shadeWait.delete(key); this.draw(); });
+      }
+      return null;
+    }
+    const { rows, cols, cell, z } = g;
+    const cv = document.createElement("canvas");
+    cv.width = cols; cv.height = rows;
+    const ctx = cv.getContext("2d");
+    const im = ctx.createImageData(cols, rows);
+    const az = (315 * Math.PI) / 180, el = (25 * Math.PI) / 180;
+    const lx = Math.cos(el) * Math.sin(az), ly = Math.cos(el) * Math.cos(az), lz = Math.sin(el);
+    for (let i = 0; i < rows; i++) {
+      const i0 = Math.max(i - 1, 0), i1 = Math.min(i + 1, rows - 1);
+      for (let j = 0; j < cols; j++) {
+        const j0 = Math.max(j - 1, 0), j1 = Math.min(j + 1, cols - 1);
+        const gx = (z[i * cols + j1] - z[i * cols + j0]) / ((j1 - j0) * cell);
+        const gy = (z[i1 * cols + j] - z[i0 * cols + j]) / ((i1 - i0) * cell);
+        const sh = Math.max(0, (-gx * lx - gy * ly + lz) / Math.sqrt(gx * gx + gy * gy + 1));
+        const v = 40 + 170 * Math.pow(Math.min(sh, 1), 0.8);
+        const o = ((rows - 1 - i) * cols + j) * 4;   // north up
+        im.data[o] = im.data[o + 1] = im.data[o + 2] = v;
+        im.data[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(im, 0, 0);
+    const out = { cv, g };
+    this.shades.set(key, out);
+    while (this.shades.size > FINE_SHADE_CACHE) this.shades.delete(this.shades.keys().next().value);
+    return out;
+  }
+
+  drawFineShade(c, X, Y, cx, cy, vw, vh) {
+    const T = this.terrain;
+    const keys = new Set();
+    for (const fx of [-0.5, 0, 0.5]) for (const fy of [-0.5, 0, 0.5]) {
+      const k = T.tileKey(cx + fx * vw, cy + fy * vh);
+      if (k) keys.add(k);
+    }
+    if (keys.size > FINE_SHADE_CACHE) return;
+    c.imageSmoothingEnabled = true;
+    for (const k of keys) {
+      const sh = this.fineShade(k);
+      if (!sh) continue;
+      const { g } = sh;
+      const sx = this.view.s;
+      c.drawImage(sh.cv, X(g.x0 - g.cell / 2), Y(g.y0 + (g.rows - 0.5) * g.cell), g.cols * g.cell * sx, g.rows * g.cell * sx);
+    }
+  }
+
+  // The no-go ground as a thin red hatch inside a 1 px red edge, so the
+  // hillshade reads between the lines. Built in screen pixels, so the lines
+  // stay crisp at any zoom; rebuilt only when the view changes.
+  nogoLayer(W, H, dpr, X, Y, s) {
+    const m = this.terrain.meta;
+    const key = `${W}x${H}@${dpr}:${X(m.x0).toFixed(2)},${Y(m.y0).toFixed(2)}:${s}`;
+    if (this.nogoCache && this.nogoCache.key === key) return this.nogoCache.cv;
+    const Wd = Math.round(W * dpr), Hd = Math.round(H * dpr);
+    const mk = () => { const cv = document.createElement("canvas"); cv.width = Wd; cv.height = Hd; return [cv, cv.getContext("2d")]; };
+    // The mask: one pixel per 0.25 m sim cell, centred on the grid points.
+    const [mask, mc] = mk();
+    mc.setTransform(dpr, 0, 0, dpr, 0, 0);
+    mc.imageSmoothingEnabled = m.cell * s < 1;   // averaged when shrunk, sharp cells when enlarged
+    const nx0 = m.x0 - m.cell / 2, ny1 = m.y0 + (m.rows - 0.5) * m.cell;
+    mc.drawImage(this.nogo, X(nx0), Y(ny1), m.cols * m.cell * s, m.rows * m.cell * s);
+    // Zoomed out, most no-go spots are smaller than the hatch spacing and the
+    // edge would ring every crater: a flat tint over the averaged mask, so
+    // small spots go faint and large slopes read solid.
+    if (s < NOGO_DETAIL_PX_PER_M) {
+      mc.globalCompositeOperation = "source-in";
+      mc.setTransform(1, 0, 0, 1, 0, 0);
+      mc.fillStyle = NOGO_TINT;
+      mc.fillRect(0, 0, Wd, Hd);
+      this.nogoCache = { key, cv: mask };
+      return mask;
+    }
+    // Hatch inside the mask.
+    const [out, oc] = mk();
+    oc.drawImage(mask, 0, 0);
+    oc.globalCompositeOperation = "source-in";
+    oc.fillStyle = oc.createPattern(hatchTile(Math.round(NOGO_HATCH_PX * dpr), dpr), "repeat");
+    oc.fillRect(0, 0, Wd, Hd);
+    // Edge: the mask minus the mask shrunk by 1 px each way.
+    const [ero, ec] = mk();
+    ec.drawImage(mask, 0, 0);
+    ec.globalCompositeOperation = "destination-in";
+    for (const [dx, dy] of [[dpr, 0], [-dpr, 0], [0, dpr], [0, -dpr]]) ec.drawImage(mask, dx, dy);
+    const [edge, gc] = mk();
+    gc.drawImage(mask, 0, 0);
+    gc.globalCompositeOperation = "destination-out";
+    gc.drawImage(ero, 0, 0);
+    gc.globalCompositeOperation = "source-in";
+    gc.fillStyle = NOGO_EDGE;
+    gc.fillRect(0, 0, Wd, Hd);
+    oc.globalCompositeOperation = "source-over";
+    oc.drawImage(edge, 0, 0);
+    this.nogoCache = { key, cv: out };
+    return out;
+  }
+
   update(t) { this.t = t; this.draw(); }
 
   draw() {
@@ -88,6 +235,14 @@ export class MapView {
       c.imageSmoothingEnabled = s < 2;
       c.globalAlpha = 0.85;
       c.drawImage(this.img, X(x0), Y(y1), g.cols * g.cell * s, g.rows * g.cell * s);
+      // Zoomed in, the 1 m image goes blocky: draw the 0.25 m tiles in view instead.
+      if (s > FINE_SHADE_PX_PER_M) this.drawFineShade(c, X, Y, cx, cy, W / s, H / s);
+      if (this.opts.nogo && this.nogo && this.nogo.complete && this.nogo.naturalWidth) {
+        c.globalAlpha = 1;
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        c.drawImage(this.nogoLayer(W, H, dpr, X, Y, s), 0, 0);
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
       c.globalAlpha = 1;
     }
 
@@ -133,10 +288,30 @@ export class MapView {
       }
     }
 
+    // Planned route (logged per step as "plan", world xy from the rover
+    // forward): amber dashes, as on the camera image (main.js drawPlan).
+    for (const a of run.agencies) {
+      const plan = run.rover(a, k).plan;
+      if (!plan || plan.length < 2) continue;
+      c.lineJoin = c.lineCap = "round";
+      c.setLineDash([]);
+      c.strokeStyle = "rgba(13, 14, 16, 0.7)";
+      c.lineWidth = 4;
+      path(plan, plan.length);
+      c.setLineDash([6, 4]);
+      c.strokeStyle = PLAN_CSS;
+      c.lineWidth = 2;
+      path(plan, plan.length);
+      c.setLineDash([]);
+      c.lineCap = "butt";
+    }
+
     // Real ice, hidden from the rovers.
     if (this.opts.truth && run.truth) {
       for (const ice of run.truth.ice || []) {
         const px = X(ice.x), py = Y(ice.y), r = Math.max(5, ice.radius * s);
+        c.fillStyle = "rgba(207, 238, 255, 0.22)";   // frost, as frost.js
+        c.beginPath(); c.arc(px, py, r, 0, Math.PI * 2); c.fill();
         c.strokeStyle = hex(COLORS.truth);
         c.setLineDash([3, 3]);
         c.lineWidth = 1;
@@ -175,6 +350,18 @@ export class MapView {
     for (const a of run.agencies) {
       const r = run.rover(a, k);
       const col = hex(COLORS[a]);
+      // The filter's particles after step k: dot area follows weight.
+      const ps = r.particles;
+      if (this.opts.tracks && this.opts.particles && ps && ps.length) {
+        c.fillStyle = col;
+        c.strokeStyle = "#0d0e10";
+        c.lineWidth = 1;
+        const n = ps.length;
+        for (const [px, py, w] of ps) {
+          const rad = Math.min(5, Math.max(1.5, 2.2 * Math.sqrt(Math.max(w, 0) * n)));
+          c.beginPath(); c.arc(X(px), Y(py), rad, 0, Math.PI * 2); c.fill(); c.stroke();
+        }
+      }
       if (this.opts.tracks) {
         const [ex, ey] = r.estimate;
         c.strokeStyle = col;

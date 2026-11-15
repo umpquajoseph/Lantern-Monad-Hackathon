@@ -55,11 +55,16 @@ float hapkeRadf(float mu0, float mu, float g) {
 }
 varying vec3 vViewPosition;
 struct LambertMaterial { vec3 diffuseColor; float specularStrength; };
+// Set per light by the light loop (see LIGHTS_BEGIN): directional lights are
+// the viewer fill, shaded Lambert as sim/scene.py shades its fill; spot
+// lights are the rover lamps, shaded Hapke.
+bool gFillLight = false;
 void RE_Direct_Lambert(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal,
     const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in LambertMaterial material,
     inout ReflectedLight reflectedLight) {
   float mu0 = dot(geometryNormal, directLight.direction);
   if (mu0 <= 0.0) return;
+  if (gFillLight) { reflectedLight.directDiffuse += directLight.color * mu0 * BRDF_Lambert(material.diffuseColor); return; }
   float mu = dot(geometryNormal, geometryViewDir);
   float g = acos(clamp(dot(directLight.direction, geometryViewDir), -1.0, 1.0));
   reflectedLight.directDiffuse += directLight.color * hapkeRadf(mu0, mu, g) * material.diffuseColor;
@@ -72,6 +77,17 @@ void RE_IndirectDiffuse_Lambert(const in vec3 irradiance, const in vec3 geometry
 #define RE_Direct RE_Direct_Lambert
 #define RE_IndirectDiffuse RE_IndirectDiffuse_Lambert
 `;
+
+// three's light loop, with each light marked fill (directional) or lamp.
+const LIGHTS_BEGIN = (() => {
+  const s = THREE.ShaderChunk.lights_fragment_begin;
+  const out = s
+    .replace("getDirectionalLightInfo( directionalLight, directLight );", "getDirectionalLightInfo( directionalLight, directLight ); gFillLight = true;")
+    .replace("getSpotLightInfo( spotLight, geometryPosition, directLight );", "getSpotLightInfo( spotLight, geometryPosition, directLight ); gFillLight = false;")
+    .replace("getPointLightInfo( pointLight, geometryPosition, directLight );", "getPointLightInfo( pointLight, geometryPosition, directLight ); gFillLight = false;");
+  if (out === s || !/gFillLight = true/.test(out)) console.error("regolith: light loop not marked; fill shades as Hapke");
+  return out;
+})();
 
 // opts:
 //   hapke       meta.hapke
@@ -114,6 +130,7 @@ export function regolith(opts) {
         `#ifdef USE_DETAIL_ALB\nuniform sampler2D uDetailAlb;\n#endif\n` +
         Object.keys(opts.uniforms || {}).map((k) => `uniform ${glslType(opts.uniforms[k].value)} ${k};`).join("\n"))
       .replace("#include <lights_lambert_pars_fragment>", HAPKE_GLSL)
+      .replace("#include <lights_fragment_begin>", LIGHTS_BEGIN)
       .replace("#include <map_fragment>", `
         #ifdef USE_ALB_FACTOR
           diffuseColor.rgb *= 1.0 + uS * (texture2D(uAlb, vAlbUv).r * (255.0 / 128.0) - 1.0);
@@ -136,15 +153,24 @@ function glslType(v) {
   return "float";
 }
 
-// sim/scene.py's tone curve (step-6-scene 2c0fbba): v = (1 - exp(-k L))^(1/2.2)
-// with k = -ln(1 - 0.6^2.2), so L = 1 shows at 0.6. The ^(1/2.2) is left to
-// the renderer's sRGB output, which is close to it.
-export const TONE_K = -Math.log(1 - Math.pow(0.6, 2.2));
+// sim/scene.py's tone curve (step-6-scene 2c8af7e, scene.py:83-87 and
+// _tone_lin, assumed there): in display-linear light y, straight below
+// TONE_KNEE = 0.6, then a soft shoulder y = k + w (1 - exp(-(y - k) / w)),
+// w = 1 - k, so hot ground rolls off toward white instead of clipping. The
+// renderer's input is y itself; its sRGB output stands in for scene.py's
+// DISPLAY_GAMMA = 2.2.
+export const TONE_KNEE = 0.6;
+export const DISPLAY_GAMMA = 2.2;
 export const TONE_GLSL = /* glsl */`vec3 CustomToneMapping( vec3 color ) {
-  return 1.0 - exp(-${TONE_K.toFixed(6)} * toneMappingExposure * max(color, 0.0));
+  vec3 y = toneMappingExposure * max(color, 0.0);
+  const float k = ${TONE_KNEE.toFixed(4)}, w = ${(1 - TONE_KNEE).toFixed(4)};
+  return mix(y, k + w * (1.0 - exp(-(y - k) / w)), step(k, y));
 }`;
-// Linear radiance that shows at display value v through that curve.
-export function radianceFor(v) { return -Math.log(1 - Math.pow(v, 2.2)) / TONE_K; }
+// Display-linear input that shows at display value v through that curve.
+export function radianceFor(v) {
+  const y = Math.pow(v, DISPLAY_GAMMA), k = TONE_KNEE, w = 1 - TONE_KNEE;
+  return y <= k ? y : k - w * Math.log(1 - (y - k) / w);
+}
 
 // The lamp intensity that puts flat ground refRange ahead of the rover at
 // refLevel on screen, the rule sim/scene.py uses for the rover camera
@@ -167,7 +193,11 @@ export function lampIntensity(hp, { camH, lampBelow, pitchDeg, refRange, refLeve
 // Fill-light intensity as sim/terrain_look.py: flat ground under the fill
 // alone shows at `level`, using that file's reference geometry (sun at elDeg,
 // mu = 0.7, phase 60 deg).
-export function fillIntensity(hp, { level, elDeg }) {
-  const flat = hapkeRadf(Math.sin((elDeg * Math.PI) / 180), 0.7, (60 * Math.PI) / 180, hp);
-  return radianceFor(level) / flat;
-}
+// sim/scene.py _fill_rgb (step-6-scene, scene.py:1131), in display-linear
+// light before the tone curve: albedo * level * (wrap + (1 - wrap) * max(N.s, 0)).
+// Directional part and wrap part (ambient light) are both Lambert.
+export const FILL_WRAP = 0.35;   // scene.py:1131, assumed there
+// The fill is shaded Lambert (albedo * N.L / pi), as scene.py's, so the
+// directional light's intensity is level * (1 - wrap) * pi.
+export function fillIntensity(level) { return level * (1 - FILL_WRAP) * Math.PI; }
+export function fillAmbient(level) { return level * FILL_WRAP * Math.PI; }

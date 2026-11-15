@@ -113,7 +113,22 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
 }
 ```
 
-- `fp/<agency>_<step>.jpg`: the first-person frame from `scene.first_person`.
+- `fp/<agency>_<step>.jpg`: the first-person frame from `scene.first_person`,
+  a sensor frame. It is rendered live in the sim loop, right after the rover
+  drives and before it localises, so vision can read it there.
+- Per rover, optional `fp_sub`: `[[f, "fp/A_0039_1.jpg"], ...]`, extra
+  first-person frames between step k and step k+1, f in (0, 1) ascending,
+  about every 0.5 m driven (`run_demo.py --sub-frame-m`). Frame f is at the
+  pose interpolated as `web/js/data.js poseAt` does: x, y linear, heading
+  along the shorter turn, the camera's own rover only. A player shows the
+  last frame with f at or below the playback fraction, else `fp_frame`.
+  These are display frames, not sensor frames: they are rendered after the
+  sim from the logged poses, in parallel, and no rover ever sees them.
+- Per rover `particles`: `[[x, y, w], ...]`, the navigation filter's
+  particles after the step (ParticleNav, 100), world metres to 1 cm, `w`
+  the normalised weight (sums to 1, 4 decimals). Empty list without a filter.
+- Top level `frames`: one sentence each for `fp_frame` and `fp_sub` saying
+  how they were made (sensor frame vs interpolated display frame).
 - Also written by `run_demo.py` (additive): top level `standins`, `dt_s`,
   `final_finds`, `truth.ice_units`, `truth.find_threshold_wt`; per rover
   `mode`, `ice_reading`, `est_error`, `distance`. `index.json` in
@@ -171,15 +186,155 @@ post_find(agency, x, y, sigma, reading, data_hash) -> find_id
 check_find(agency, find_id, x, y, sigma, reading, agrees) -> tx_hash
 get_finds() -> list[dict]   # each: id, agency, x, y, sigma, reading,
                             # agree (agencies), disagree (agencies), status
+                            # plus: address, data_hash, time (block timestamp)
 ```
 
 - `agency` is `"A"` or `"B"`; the client maps it to the key in `.env`.
 - On chain, positions and sigmas are whole centimetres, `data_hash` is
-  `bytes32`, and status is reported, confirmed or disputed.
+  `bytes32`, and status is reported, confirmed or disputed. The client takes
+  metres and gives back metres; `status` comes back as one of the strings
+  `"reported"`, `"confirmed"`, `"disputed"`.
+- `reading` is the ice sensor reading as wt% water-equivalent (float, e.g.
+  `5.6`); on chain it is hundredths of wt% (`uint32`, ASSUMED unit, see
+  `contracts/src/Lantern.sol`).
+- `data_hash`: `bytes` (32) or a `0x` hex string. `chain.hash_raw(obj)` makes
+  one from the raw readings (canonical JSON, sorted keys, keccak256).
 - Check rule: refused if the checker's agency is the finder's, or if
-  `dx² + dy² > (3 × (sigma_find + sigma_check))²`, all in centimetres.
+  `dx² + dy² > (3 × (sigma_find + sigma_check))²`, all in centimetres. Also
+  refused: a second check of the same find by the same agency, and any write
+  from an address that is not one of the agencies fixed at deployment. A
+  refusal raises `chain.LanternRefused` with `.name` in `OwnFind`,
+  `AlreadyChecked`, `TooFar`, `NoSuchFind`, `NotAnAgency` and `.values` its
+  arguments; nothing is sent.
+- Also available: `chain.client().tx_log` (every transaction sent: `kind`,
+  `agency`, `tx_hash`, `url`, `block`, `gas_used`, `seconds`, `find_id`),
+  `chain.client().last_tx` (hash of the last one, as the spine's stand-in
+  has it), `chain.client().run_log_chain()` (the run log's `chain` block:
+  `chain_id`, `contract`, `explorer` as the explorer's *base* URL so the
+  viewer links `<explorer>/tx/<hash>`, plus `contract_url` and `verified`),
+  `post_safety_zone(agency, x, y, radius, until, purpose) -> zone_id` and
+  `get_zones()` (Artemis Accords section 11 upgrade).
+- For `run_demo.py`: `chain.run_scope()` is a drop-in for `ChainStandin`,
+  with the same `post_find`, `check_find`, `get_finds`, `last_tx` and a
+  `STANDIN` of `None`. Its `get_finds()` returns only the finds posted since
+  the scope was made (the contract keeps every find from every run), with
+  their real on-chain IDs (0-based), and is cached for 2 s between the
+  scope's own writes so a rover polling every step stays under the public
+  RPC's 20 req/s. Verified end to end: the unmodified spine ran both demo
+  runs against the testnet contract (2026-11-15, see `contracts/README.md`).
+- Read-only use needs no keys: the address and ABI come from
+  `sim/lantern_deployment.json` and `sim/lantern_abi.json` (committed, written
+  by `contracts/deploy.sh`). The web viewer can read the same two files.
+
+## Results ledger (`sim/results.py`, `sim/survey.py`, `survey/`), gives
+
+After a run, one master file per run and its results on Monad, next to Lantern:
+
+- `python sim/results.py build data/runs/<run_id>` reads `log.json` (above) and
+  writes `data/runs/<run_id>/results.json`: per rover the path it believes it
+  drove (`estimate`, or `odom_pose` when nav is off) with sigma, its length and a
+  downsampled copy for the chain; per find x, y, sigma, lat/lon, reading, a
+  modelled ice quantity (`ice.area_m2`, `ice.depth_m`, `ice.mass_kg`), modelled
+  volatiles (`volatiles_ppm`, `volatiles_kg`, 8 species from LCROSS, Colaprete
+  et al. 2010 Table 2), its checks and its status; run totals; and
+  `results_hash`, keccak256 of the canonical file without `truth` and `chain`.
+- `python sim/survey.py post data/runs/<run_id>` posts to `LanternSurvey`
+  (`survey/src/LanternSurvey.sol`): one traverse per rover, one assay per find
+  (signed by the finder, refused for anyone else), one run record with
+  `results_hash`. It writes the transactions into `results.json` under `chain`.
+  `--post-finds` first posts finds and checks that have no `tx` (stand-in chain
+  runs) to Lantern. Re-running skips what is already on chain.
+- Reads for the viewer: `SurveyClient().runs()`, `.traverses()`, `.assays()`;
+  ABI and address in `sim/survey_abi.json`, `sim/survey_deployment.json`.
+- Optional, asked of the spine: a per-step `"reading"` (wt%) in each rover's
+  dict. With it the deposit extent is measured along the track; without it the
+  area is one sensor footprint (sim/ice.py FOOTPRINT_RADIUS_M). Nothing breaks either way.
+- Writers are Lantern's agencies (`isAgency`), so it needs no keys of its own.
 
 ## Step 5, dashboard, takes
 
 - The per-step state above for both rovers, `get_finds()`, and from step 6 the
   camera image `np.ndarray (h, w)` or `(h, w, 3)` with `rims` to overlay.
+
+## Mission (`sim/roles.py`, `sim/mission.py`), gives
+
+The Surveyor and Prospector mission behind Mission Control (`web/mission.html`).
+Its parts and storage rules are in `docs/ARCHITECTURE.md` and `docs/storage.md`;
+this is only what crosses into other steps.
+
+- `python sim/roles.py run [--render] --publish-run data/runs` writes the
+  mission's store (`mission.json`, `run_log.json`, `evidence/<cid>.json`) and
+  publishes it as a run: `data/runs/<id>/log.json` plus an entry in
+  `data/runs/index.json`, beside `run_demo.py`'s entries. `app.py` then copies
+  it into `web/runs/` like any other run.
+- The run log follows "Run log" above, with the mission's additions read only
+  by `web/js/mission.js`: per-step `science`, and `report_cid`, `route_cid`,
+  `record_id` on its events.
+- Navigation is `sim/nav.py` (ParticleNav) on the rim-point stand-in, the same
+  as `run_demo.py`. First-person frames come from `sim/scene.py` through
+  `sim/mission_render.py`.
+- Chain: the demo's chain is Lantern (step 1 above). The mission's own
+  registry, `registry/` and `sim/registry_client.py`, runs on a local anvil or
+  an offline mock and is not used by the demo.
+
+## Mission log (`run_mission.py` writes it; the demo page replays it with checkpoints)
+
+The demo is one precomputed run of the real autonomy, replayed on the hosted
+site. It is a run log as above, with these additions. Everything here is
+additive: a viewer that reads only the run-log fields still works.
+
+Top level:
+
+- `roles`: `{"A": "Surveyor", "B": "Prospector"}`.
+- `mission.sites`: the orbital candidates, in visiting order:
+  `[{"id": "S1", "x", "y", "radius", "order": 1, "verdict": "dry" | "ice" | null, "kind": "orbital candidate"}]`
+  (world metres). The map highlights them from the start; `verdict` is the
+  end state, so a viewer that wants the reveal in order uses the `site`
+  events below.
+- `mission.checkpoints`: where playback pauses, in step order:
+  `[{"id", "step", "t", "label", "say", "pause": true}]`. The player, on
+  crossing `step` while playing, stops there when `pause` is true and shows
+  `label`; `say` is one line for whoever is talking. Pressing play goes on.
+  Ids today: `overview` (step 0), `divert-A` (the step before the Surveyor's
+  lidar first marks a crater its orbital map does not show), `arrive-S1`,
+  `arrive-S2`, `dispatch-B`, `divert-B`, `arrive-B`, `end`. A checkpoint is
+  absent when its moment did not happen in the run.
+- `mission.unmapped_craters`: `[{"x", "y", "diameter", "for": "A" | "B"}]`, the
+  craters left out of the planning map on purpose (as a 5 m orbital DEM would
+  miss them), one per rover's first leg; `mission.unmapped_note` says so in
+  words. Each rover's `sees_unmapped_crater` (per step) turns true when its
+  lidar first marks that crater; the `divert-A` / `divert-B` checkpoint is
+  the step before. Empty when the run had no sensors.
+- `mission.survey_phases`, `mission.prospect_phases`: the instrument phase
+  names in order (see `instrument` below).
+- `satellite_sites` and `states` (`{"A": [{"t", "state", "objective"}]}`):
+  the same shapes `sim/roles.py` writes, for the mission page.
+- `lidar`: a sentence saying the lidar is simulated from the terrain, or null.
+
+Per step:
+
+- `mission_events`: beside `events` (which stays chain transactions only,
+  `find` and `check`): `{"type": "site", "agency": "A", "site_id", "verdict": "dry" | "ice",
+  "reading", "x", "y", "sigma", "on_chain": bool, "find_id"?, "tx"?}` when a
+  survey ends, and `{"type": "dispatch", "agency": "B", "find_id", "site_id", "x", "y", "read_from": "chain"}`
+  when the Prospector reads a find and sets off. A dry site is not posted on
+  chain; its `site` event is the only record.
+- `events` entries carry `site_id` too.
+
+Per rover, per step (added to the run-log fields):
+
+- `role`: `"Surveyor"` or `"Prospector"`.
+- `phase`: one short line of what it is doing: `"to S1"`, `"survey S1"`,
+  `"to S2"`, `"done"`, `"wait for a find"`, `"to find 17"`, `"prospect find 17"`.
+- `site_id`: the site it is heading for or working at, else null.
+- `plan`: the path it is about to drive, `[[x, y], ...]` world metres from
+  the rover forward (the dashed line), on steps where it moved; `[]` otherwise.
+  The planned route bends when the lidar marks a hazard on it.
+- `instrument`: `{"name", "progress" (0..1), "step", "of"}` while a survey or
+  prospecting sequence runs, else null. Names come from the phase lists above.
+- `lidar_hazard_total`: hazard cells the lidar marked on this frame (0 off),
+  beside the spine's `lidar_hazards` by kind and `lidar_frame`.
+
+Honesty: `standins` lists what is still simulated (the ice sensor and the
+instrument sequences). The chain block, the hashes and the finds are real
+when the run was made with the agency keys; the page shows "fake tx" otherwise.

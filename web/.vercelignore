@@ -1,0 +1,11 @@
+# What the Vercel CLI leaves out of the upload (it does not read .gitignore).
+# The page needs index.html, app.css, js/, assets/ and runs/. The rest is for
+# building the site locally. web/check_site.py applies the same list.
+*.py
+__pycache__/
+README.md
+.gitignore
+.vercel/
+# web/api/ runs on Vercel; the CLI installs package.json there
+!api/
+!package.json

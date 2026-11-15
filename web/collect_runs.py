@@ -3,15 +3,20 @@
     python web/collect_runs.py                  # real runs only
     python web/collect_runs.py --with-standins  # also list web/make_standin_run.py's runs
 
-Reads C:\\Monad-Hackathon-Project\\data\\runs\\index.json (a list of
-{run_id, label, dir, status}) and writes web/runs/index.json.
+Reads <data>/runs/index.json (a list of {run_id, label, dir, status}; <data> is
+LANTERN_DATA or sim/terrain.py's default) and writes web/runs/index.json.
 """
 import argparse
 import json
 import shutil
+import sys
 from pathlib import Path
 
-SRC = Path(r"C:\Monad-Hackathon-Project\data\runs")
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from sim.terrain import DATA  # noqa: E402
+
+SRC = DATA / "runs"  # LANTERN_DATA/runs, or the default in sim/terrain.py
 DST = Path(__file__).resolve().parent / "runs"
 STANDINS = ["run1-standin", "run2-standin"]
 

@@ -1,0 +1,226 @@
+# Hosting the demo
+
+**Live: https://lantern-teal.vercel.app** (Vercel project `lantern` in
+Kellen's scope `kellensniders-projects`, Hobby plan). Since 12:39 PST it
+carries the real-chain runs with camera frames (chain session, from
+`integration` with the chain patch; since 12:49 the textured re-render
+with the display layer on: run1-real2 and run2-real2). Every
+`python web/publish.py vercel` replaces it in about two minutes.
+
+Share **only the alias above**. The per-deployment URLs the CLI prints
+(`lantern-<hash>-kellensniders-projects.vercel.app`) redirect to a Vercel
+login: deployment protection is on for those by default, and off for the
+production alias.
+
+The judges' link is a hosted copy of `web/`. Nothing on the server runs: the
+page is static files, with relative paths, and loads three.js from jsdelivr.
+Two folders in `web/` are generated and git-ignored, so the hosted copy is
+`web/` **as it is on disk**, not as it is in git:
+
+| Folder | Made by | What it is |
+|---|---|---|
+| `web/assets/terrain/` | `python web/build_assets.py` | the terrain, 37 MB, same for every run |
+| `web/runs/` | `python web/collect_runs.py` (or `app.py`) | `index.json`, one `log.json` and `fp/*.jpg` per run |
+
+`web/chain.html` is a second page: it reads the Lantern contract live in the
+judge's browser (finds, checks, safety zones, explorer links) from
+`chain/lantern_deployment.json` and `chain/lantern_abi.json`. Those two are
+copies made by `python web/collect_chain.py` on a branch that has the chain
+step's `sim/lantern_deployment.json` (`step-1-chain` and its children); after
+any fresh contract deploy, refresh them before publishing. `check_site.py`
+warns when a real-chain run was posted to a different contract than the
+page reads. The replay page `index.html` does not depend on it.
+
+`web/publish.py` does the rest. Every command below first prunes `web/runs/`
+(files no listed log names, such as the `_1`, `_2`, `_3` frame variants the
+integration renderer writes beside each frame: 71 MB of the real runs that
+the page never fetches), then runs `web/check_site.py`, which follows every
+file the page fetches and refuses to deploy a site with a hole in it.
+
+## Merge notes for Joseph (branch `step-5-hosting`, 2026-11-15 12:50 PST)
+
+Everything is pushed; the live site matches the branch plus the generated
+folders. What the branch holds, by owner:
+
+| Files | Origin | Note |
+|---|---|---|
+| `web/vercel.json`, `web/.vercelignore`, `web/check_site.py`, `web/publish.py`, `docs/hosting.md` | Kellen's hosting session, new | Host config, site check, publish, this runbook |
+| `web/chain.html`, `web/js/chain.js`, `web/collect_chain.py`, `web/chain/*.json` | Chain session's `step-5-chain-feed` at 915f0da, taken as files | Separate page; drop it by deleting these four paths, `index.html` does not depend on it |
+| `sim/terrain.py` (data default), `run_demo.py`, `web/build_assets.py`, `web/collect_runs.py`, `web/make_standin_run.py` | Owners' files, one line each | The `C:\` literals became the one default in `sim/terrain.py` (LANTERN_DATA, else the Windows checkout, else `data/` beside the repo); Windows behaviour unchanged |
+| `web/js/main.js` (stand-in banner) | Viewer's file, one line | The banner said "nothing was posted to Monad" on real-chain runs; the sentence now follows `run.fakeTx`. Take or redo |
+| `web/.gitignore`, `.gitignore` | `.vercel/` and `.env*` added | The Vercel CLI writes both in `web/` |
+| `docs/WORKING.md` | One row, with the timeline | |
+
+Not in git, on purpose: `web/assets/` (terrain, 37 MB, `build_assets.py`),
+`web/runs/` (the two runs, `collect_runs.py`), `web/.vercel/` (project
+link) and `web/.env.local` (CLI token). The runs on the live site are the
+chain session's `run1-real2` and `run2-real2` from
+`/Users/ksnider/Monad-Hackathon-Project/data/runs` on Kellen's Mac.
+
+`app.py` on `integration` keeps its own `C:\` default; switching it to
+`from sim.terrain import DATA` makes it match, optional.
+
+The Vercel project is in Kellen's personal Hobby scope. Republishing from
+another checkout works as is: `publish.py vercel` re-links to the project by
+name. From a machine that is not Kellen's it needs `VERCEL_TOKEN` (below).
+
+## 1. Build the site
+
+On Joseph's Windows checkout, `python app.py --no-serve` (branch `integration`)
+builds whatever is missing and copies the runs into `web/runs/`. By hand, on
+any machine:
+
+```
+python web/build_assets.py        # terrain -> web/assets/terrain/
+python run_demo.py                # both runs -> <data>/runs/  (about 5 min with frames)
+python web/collect_runs.py        # <data>/runs -> web/runs/
+python web/publish.py check       # complete? sizes? exit 0 means yes
+```
+
+`<data>` is `LANTERN_DATA` if set, else `C:\Monad-Hackathon-Project\data` when
+that exists, else `data/` beside the repo (`sim/terrain.py`). On a Mac with
+no built terrain: `export LANTERN_DATA="$PWD/lantern_data"` uses the committed
+copy.
+
+## 2. Put it on Vercel
+
+### Route A, upload from the machine that built it (recommended)
+
+One-time, on that machine: Node 20 or newer, then `npx vercel login` (opens a
+browser; any GitHub account works). After that, every time the site changes:
+
+```
+python web/publish.py vercel              # production: the demo link
+python web/publish.py vercel --preview    # a throwaway URL to look at first
+```
+
+The first run creates a Vercel project named `lantern` and links `web/` to it
+(`web/.vercel/`, git-ignored). The command prints the URL; paste it into
+`docs/WORKING.md`. `web/vercel.json` tells Vercel there is no build, and
+`web/.vercelignore` keeps the Python scripts out of the upload. The Vercel
+CLI does not read `.gitignore`, so the generated folders go up.
+
+On the first `vercel link` the CLI also tries to connect the GitHub
+repository and prints "Failed to connect umpquajoseph/Monad-Hackathon-Project"
+when the Vercel account cannot see the private repo. Harmless: that is only
+the Git integration (Route B), and the upload goes ahead. It also writes
+`web/.env.local` (a token, git-ignored, never uploaded).
+
+**Publishing from Joseph's machine.** The project lives in Kellen's Hobby
+scope, which has no collaborators, so either:
+
+- Kellen makes a token at vercel.com/account/tokens and Joseph sets
+  `VERCEL_TOKEN` in his shell, then runs `python web/publish.py vercel`
+  (the script links to the existing `lantern` project by name); or
+- Joseph runs `python web/publish.py branch`, Kellen checks out `deploy`
+  somewhere and runs `python web/publish.py vercel --site <that folder>`.
+
+### Route B, GitHub to Vercel (auto-deploy on push)
+
+```
+python web/publish.py branch
+```
+
+copies the site into an orphan branch `deploy` (site at the root, no source,
+no history worth keeping) and pushes it. One-time, in the Vercel dashboard:
+
+1. Add New, Project, import `umpquajoseph/Monad-Hackathon-Project`.
+   Framework Preset **Other**, leave Build Command and Output Directory
+   as they are, Deploy. (This first deploy is of `main`, which has no site;
+   ignore it.)
+2. Settings, Environments, Production, Branch Tracking: `deploy`. Save.
+3. Settings, Git, Ignored Build Step, Custom command:
+   `if [ "$VERCEL_GIT_COMMIT_REF" != "deploy" ]; then exit 0; else exit 1; fi`
+   Otherwise every push to every step branch makes a useless preview
+   deployment, and Hobby allows 100 deployments a day.
+4. Deployments, Redeploy the latest `deploy` commit.
+
+From then on `python web/publish.py branch` is the whole deploy.
+
+### Route C, GitHub Pages, a second link for free
+
+The same `deploy` branch serves on GitHub Pages: repository Settings, Pages,
+Source "Deploy from a branch", branch `deploy`, folder `/ (root)`. The URL is
+`https://umpquajoseph.github.io/Monad-Hackathon-Project/`. The page lives
+under a sub-path there, which is why every path in `web/` stays relative
+(`check_site.py` fails on an absolute one). Pages is slower to update
+(a minute or two) and has a 1 GB site limit; fine as a backup link.
+
+The repository is private today (its GitHub page answers 404 when logged
+out). Pages from a private repository needs GitHub Pro or Team; on a free
+account, make the repository public first (judges may want to read the code
+anyway). Vercel's GitHub integration works with private repositories.
+
+### No account at all
+
+In an exported copy (`python web/publish.py export DIR`, then `cd DIR`),
+`npx vercel deploy --temporary` deploys without logging in. It expires unless
+claimed from the printed link. Last resort only.
+
+## 3. After deploying
+
+Open the URL in a fresh browser window and look: the terrain draws, both runs
+are listed, play runs, the camera panel shows frames, a transaction hash
+opens the explorer, `?run=<run_id>&t=600` opens paused at that time. Check
+the console for 404s. Then try it at phone width.
+
+## Limits and things to keep true
+
+- **100 MB** total upload is the figure in Vercel's Hobby limits page;
+  Vercel's June 2026 changelog says CLI limits were removed, and a 61 MB
+  upload went through. `check_site.py` warns over 100 MB. Terrain is 37 MB;
+  the real runs' named frames are 24 MB (about 28 KB each, 855 frames).
+  If an upload is ever refused: `run_demo.py --frame-every 2`, or re-encode
+  the frames at JPEG quality 70 (25% smaller, 44 dB PSNR, measured).
+- **No `web/public/` folder**: Vercel's "Other" preset would serve that
+  instead of the site.
+- **Relative paths only** in `index.html`, the css and the js.
+- **Internet at the venue**: three.js comes from jsdelivr, pinned to 0.170.0.
+  If the venue network blocks CDNs, copy `three.module.js` and the addons
+  into `web/vendor/` and point the import map at them.
+- Rebuilt terrain or new runs are not live until published again.
+- The site is public. The logs hold poses, finds, tx hashes and the contract
+  address, nothing else; keys never leave `.env`.
+
+## The demo mission and the live uplink
+
+The hosted demo is one precomputed run of `run_mission.py` (format:
+`docs/handoffs.md`, "Mission log"). The page pauses at its checkpoints, and
+on every play-through posts the mission's two chain calls for real:
+
+| Moment | What the page does |
+|---|---|
+| Surveyor's survey at S2 ends | `postFind` as agency A, the mission's exact values, new transaction |
+| Prospector's instrument sequence ends | `checkFind` as agency B on the find just posted, new transaction |
+
+The calls go through `web/api/chain.js`, a Vercel serverless function that
+holds the agency keys. Nothing is in git: the keys live in the Vercel
+project's environment. One-time setup, from a machine logged in to the
+Vercel CLI, in `web/` (linked to the project):
+
+```
+printf '%s' "$AGENCY_A_PRIVATE_KEY" | npx vercel env add AGENCY_A_PRIVATE_KEY production
+printf '%s' "$AGENCY_B_PRIVATE_KEY" | npx vercel env add AGENCY_B_PRIVATE_KEY production
+printf '%s' "$(openssl rand -hex 6)"  | npx vercel env add DEMO_KEY production
+```
+
+(Source `.env` first, or paste each value when the CLI asks. Repeat with
+`preview` in place of `production` to test on preview deployments.) Then
+publish once more; `GET /api/chain` answers `{"signers": {"A": true, "B": true}}`
+when the keys are in.
+
+The demo link carries the key: `https://lantern-teal.vercel.app/?key=<DEMO_KEY>`.
+Without it the page is a plain replay with the recorded hashes. With it,
+each play-through adds a find and a check to the contract (about 0.03 MON
+each from the agencies' testnet gas; the wallets hold about 9 MON). Anyone
+with the link can trigger them, which is the point of the demo; the key
+only keeps strangers from spending the gas.
+
+Build the run on a machine with VTK (three minutes with frames):
+
+```
+export LANTERN_DATA="$PWD/lantern_data"
+python run_mission.py --out data/runs --stamp demo     # real chain when .env has the keys
+python web/build_assets.py && LANTERN_DATA="$PWD/data" python web/collect_runs.py
+python web/publish.py vercel
+```

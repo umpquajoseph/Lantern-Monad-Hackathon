@@ -12,6 +12,9 @@ const FINE_SHADE_CACHE = 9;       // tile hillshades kept (513 px square each, ~
 const NOGO_HATCH_PX = 5;
 const NOGO_LINE = "rgba(229, 87, 79, 0.75)";
 const NOGO_EDGE = "rgba(229, 87, 79, 0.8)";
+// Below this zoom, no hatch or edge: a flat tint (designer).
+const NOGO_DETAIL_PX_PER_M = 2;
+const NOGO_TINT = "rgba(229, 87, 79, 0.22)";
 
 // One repeat of the hatch: a diagonal from top-left to bottom-right, drawn
 // three times so the tile joins its neighbours without a gap.
@@ -164,6 +167,17 @@ export class MapView {
     mc.imageSmoothingEnabled = m.cell * s < 1;   // averaged when shrunk, sharp cells when enlarged
     const nx0 = m.x0 - m.cell / 2, ny1 = m.y0 + (m.rows - 0.5) * m.cell;
     mc.drawImage(this.nogo, X(nx0), Y(ny1), m.cols * m.cell * s, m.rows * m.cell * s);
+    // Zoomed out, most no-go spots are smaller than the hatch spacing and the
+    // edge would ring every crater: a flat tint over the averaged mask, so
+    // small spots go faint and large slopes read solid.
+    if (s < NOGO_DETAIL_PX_PER_M) {
+      mc.globalCompositeOperation = "source-in";
+      mc.setTransform(1, 0, 0, 1, 0, 0);
+      mc.fillStyle = NOGO_TINT;
+      mc.fillRect(0, 0, Wd, Hd);
+      this.nogoCache = { key, cv: mask };
+      return mask;
+    }
     // Hatch inside the mask.
     const [out, oc] = mk();
     oc.drawImage(mask, 0, 0);

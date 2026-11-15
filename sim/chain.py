@@ -47,6 +47,7 @@ Dropping it into run_demo.py (replaces sim/standins.py ChainStandin, same four c
 CLI
     python sim/chain.py finds       # every find on chain, newest last
     python sim/chain.py zones
+    python sim/chain.py balances   # gas left in both agency wallets
     python sim/chain.py demo        # A posts, B confirms, A posts again, B disputes, and the
                                     # contract refuses the checks that break the rules
 """
@@ -625,6 +626,16 @@ def main(argv: list[str]) -> int:
     elif cmd == "zones":
         for z in c.get_zones():
             print(z)
+    elif cmd == "balances":
+        # Gas left for the demo: about 0.05 MON per play-through at 100 gwei
+        # (postFind ~145k gas from A, checkFind ~310k from B), see docs/demo-chain.md.
+        gwei = c.w3.eth.gas_price / 1e9
+        per_run = (145_000 + 310_000) * gwei * 1e-9
+        for letter in ("A", "B"):
+            bal = c.balance(letter)
+            print(f"agency {letter} {c.address_of(letter)}  {bal:.4f} MON")
+        print(f"gas price {gwei:.0f} gwei; about {per_run:.3f} MON per play-through; "
+              f"{int(c.contract.functions.findCount().call())} finds on the contract")
     elif cmd == "demo":
         _demo(c)
     else:

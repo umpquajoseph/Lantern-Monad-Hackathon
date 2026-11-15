@@ -60,7 +60,8 @@ const S = {
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
   opts: { fill: true, routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
   player: null,        // MissionPlayer: checkpoints and live chain
-  autoB: { armed: true, at: 0 },   // switch to the Prospector once after the Surveyor's find
+  autoB: { armed: true, at: 0 },
+  holdUntil: 0,        // wall time (performance.now) a checkpoint hold ends; 0 = no hold   // switch to the Prospector once after the Surveyor's find
 };
 let terrain, world, map, rigs = {}, ov, sci = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
 let satObjs = [], tagEls = {}, extras = {}, dressed = {}, odo = {}, susp = {};
@@ -140,9 +141,16 @@ async function openRun(entry) {
 
   ensureStyles();
   S.player = new MissionPlayer(run, {
-    pause: (tt) => { S.playing = false; S.t = tt; setPlayIcon(); },
-    resume: () => { S.playing = true; setPlayIcon(); },
-    note: (html) => { const b = $("checkpoint"); b.hidden = !html; b.innerHTML = html || ""; },
+    pause: (tt) => { S.holdUntil = 0; S.playing = false; S.t = tt; setPlayIcon(); },
+    resume: () => { S.holdUntil = 0; S.playing = true; setPlayIcon(); },
+    // A checkpoint: stop the clock here for `sec` of wall time, still "playing", then go on.
+    hold: (tt, sec) => { S.t = tt; S.holdUntil = performance.now() + sec * 1000; S.holdSec = sec; },
+    note: (html) => {
+      const b = $("checkpoint");
+      b.hidden = !html;
+      b.innerHTML = (html || "") + (html && S.holdUntil ? `<i class="cp-bar" style="animation-duration:${S.holdSec}s"></i>` : "");
+      b.classList.toggle("holding", !!(html && S.holdUntil));
+    },
     rerender: () => { $("chain-now").dataset.key = ""; render(true); },
   });
   setChainBadge();
@@ -570,11 +578,13 @@ function buildTimeline() {
 // ---------------------------------------------------------------- controls
 function bind() {
   $("play").onclick = togglePlay;
-  $("restart").onclick = () => { S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; S.player.restart(); rearmAutoB(0); render(true); };
+  $("checkpoint").onclick = (e) => { if (S.holdUntil && !e.target.closest("a")) S.holdUntil = performance.now(); };   // go on now
+  $("restart").onclick = () => { S.holdUntil = 0; S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; S.player.restart(); rearmAutoB(0); render(true); };
   $("speed").onchange = (e) => (S.speed = Number(e.target.value));
   $("focus").onchange = (e) => { S.focus = e.target.checked; if (!S.focus) exitFocus(); };
   $("scrub").oninput = (e) => {
     const nt = (Number(e.target.value) / 1000) * S.run.tEnd;
+    S.holdUntil = 0;
     if (nt < S.t) { S.player.rewound(nt); rearmAutoB(nt); }
     else if (!S.player.busy) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
     S.t = nt; exitFocus(); S.dismissed = null; render(true);
@@ -681,6 +691,7 @@ function setChainBadge() {
 function stepBy(n) {
   const run = S.run;
   if (S.player.busy) return;
+  S.holdUntil = 0;
   S.playing = false;
   setPlayIcon();
   const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(S.t) + n));
@@ -699,6 +710,8 @@ function setPlayIcon() {
 
 function togglePlay() {
   if (S.player && S.player.busy) return;   // a live chain post is in flight
+  // Pause during a checkpoint hold: stay here, keep the card, no auto-resume.
+  if (S.holdUntil) { S.holdUntil = 0; S.playing = false; $("checkpoint").classList.remove("holding"); setPlayIcon(); return; }
   if (S.t >= S.run.tEnd) { S.t = 0; S.player.restart(); rearmAutoB(0); }
   S.playing = !S.playing;
   if (S.playing && S.player && !(S.player.active && S.player.active.step === 0 && S.t === 0)) $("checkpoint").hidden = true;
@@ -812,7 +825,8 @@ function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const prevT = S.t;
-  if (S.playing && S.run) {
+  if (S.holdUntil && now >= S.holdUntil) { S.holdUntil = 0; $("checkpoint").hidden = true; }
+  if (S.playing && S.run && !S.holdUntil) {
     let adv = dt * (S.focusEv ? focusSpeed(S.focusEv) : S.speed);
     if (S.focus && !S.focusEv) {
       // Never jump over a science stop at high speed: stop at its start.

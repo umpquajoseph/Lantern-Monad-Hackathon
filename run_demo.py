@@ -267,15 +267,40 @@ def _write_jpg(path, img):
     cv2.imwrite(str(path), img[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
 
 
+def _thin_marks(hz, kinds, hz_world, cell_m=1.5, max_range_m=25.0, max_marks=30):
+    """Crater cells only, one mark per cell_m square, nearest first: the lidar
+    flags 0.5 m cells, and marking every one buries the camera view."""
+    if len(hz) == 0:
+        return hz_world
+    keep, seen = [], set()
+    order = np.argsort(np.hypot(hz[:, 0], hz[:, 1]))
+    for i in order:
+        if kinds[i] != "crater" or np.hypot(*hz[i]) > max_range_m:
+            continue
+        key = (int(hz[i, 0] // cell_m), int(hz[i, 1] // cell_m))
+        if key in seen:
+            continue
+        seen.add(key)
+        keep.append(i)
+        if len(keep) >= max_marks:
+            break
+    return hz_world[keep] if keep else np.zeros((0, 2))
+
+
 class LiveCamera:
     """Sensor frames, fp/<agency>_<step>.jpg: taken inside the sim loop right
     after a rover drives and before it localises, as its camera would (vision
     reads them there once it lands). The other rover is wherever it is at
     that moment in the loop."""
 
-    def __init__(self, scene, run_dir, frame_every=1, sensors=True):
+    def __init__(self, scene, run_dir, frame_every=1, sensors=True, replay=None):
         """run_dir None: sense only, write no files (pass 1, so A's path matches pass 2).
-        sensors: run vision (rims) and lidar (hazards) on each live frame."""
+        sensors: run vision (rims) and lidar (hazards) on each live frame.
+        replay: pass 1's LiveCamera. Pass 2 puts both rovers at the same poses
+        as pass 1 until A's find, so while a shot's inputs (step, both poses,
+        sensor noise states) equal pass 1's, its frame and sensor results are
+        pass 1's: they are taken from there instead of computed twice. The
+        first mismatch ends the replay for the run."""
         self.scene, self.run_dir, self.frame_every = scene, run_dir, frame_every
         if run_dir is not None:
             (run_dir / "fp").mkdir(parents=True, exist_ok=True)
@@ -289,6 +314,11 @@ class LiveCamera:
         self.t_vision, self.t_lidar = [], []   # seconds per live frame, for the timing summary
         self.score_every = 0                   # score vision on every Nth live frame (sim/rim_truth.py)
         self.scores = []
+        self.record = [] if run_dir is None else None   # pass 1: every shot's inputs and results
+        self._replay = replay.record if replay is not None else None
+        self._ri = 0
+        self.replayed = 0
+        self._rovers = ()
 
     def attach(self, agency, rng_vision, rng_lidar):
         """Per-run sensor noise streams, so pass 1 and pass 2 see the same."""
@@ -302,43 +332,85 @@ class LiveCamera:
             self.scene.set_rover(r.agency, pose)
             self._posed[r.agency] = pose
 
+    def _sync(self):
+        """Put every rover in the scene at its current pose. Between its shots
+        a rover's pose does not change, so this is the scene the old
+        place-on-shoot order built; a replayed shot leaves the scene behind."""
+        for o in self._rovers:
+            self._place(o)
+
     def start(self, rovers):
-        for r in rovers:
-            self._place(r)
+        self._rovers = tuple(rovers)
+        self._sync()
+
+    def _key(self, k, r):
+        ag = r.agency
+        noise = ((self.vis[ag].rng.bit_generator.state, self.lid[ag].rng.bit_generator.state)
+                 if ag in self.vis else None)
+        return (k, ag, tuple(float(v) for v in r.true), tuple(tuple(_pose_log(o)) for o in self._rovers), noise)
+
+    def _from_replay(self, key):
+        """Pass 1's results for this shot, or None (and no replay from here on)."""
+        if self._replay is None or self.score_every:
+            return None
+        rec = self._replay[self._ri] if self._ri < len(self._replay) else None
+        if rec is None or rec["key"] != key:
+            self._replay = None
+            return None
+        self._ri += 1
+        self.replayed += 1
+        return rec
 
     def shoot(self, k, r, moved):
         ag = r.agency
-        self._place(r)
         self._moved[ag] = self._moved.get(ag, 0) + (1 if moved else 0)
         if k == 0 or ag not in self.last or (moved and self._moved[ag] % self.frame_every == 0):
-            t0 = time.perf_counter()
-            img, depth = self.scene.first_person(ag)
-            self.times.append(time.perf_counter() - t0)
+            key = self._key(k, r) if (self.record is not None or self._replay is not None) else None
+            rec = self._from_replay(key) if key is not None else None
+            if rec is not None:
+                img = np.repeat(rec["grey"][..., None], 3, axis=2)  # first_person's own layout
+                rims, rng_img, hz, kinds = rec["rims"], rec["rng_img"], rec["hz"], rec["kinds"]
+                if ag in self.vis:
+                    self.vis[ag].rng.bit_generator.state = rec["noise_after"][0]
+                    self.lid[ag].rng.bit_generator.state = rec["noise_after"][1]
+            else:
+                self._sync()
+                t0 = time.perf_counter()
+                img, depth = self.scene.first_person(ag)
+                self.times.append(time.perf_counter() - t0)
+                rims = rng_img = hz = kinds = None
+                if ag in self.vis:
+                    # Vision: rim points for the particle filter. Lidar: crater and
+                    # slope hazards for the planner, from the moment they are seen.
+                    t1 = time.perf_counter()
+                    rims = self.vis[ag].rims(img, depth)
+                    t2 = time.perf_counter()
+                    pts, rng_img = self.lid[ag].scan(r.true)
+                    hz, kinds = self.lid[ag].hazards(pts)
+                    self.t_vision.append(t2 - t1)
+                    self.t_lidar.append(time.perf_counter() - t2)
+                    if self.score_every and len(self.t_vision) % self.score_every == 0:
+                        try:
+                            from sim.rim_truth import rim_truth, score   # branch step-6-rim-truth
+                            self.scores.append(score(rims, rim_truth(self.scene, ag, depth)))
+                        except ImportError:
+                            self.score_every = 0
+                if self.record is not None:
+                    noise_after = ((self.vis[ag].rng.bit_generator.state, self.lid[ag].rng.bit_generator.state)
+                                   if ag in self.vis else None)
+                    self.record.append(dict(key=key, grey=img[..., 0].copy(), rims=rims, rng_img=rng_img,
+                                            hz=hz, kinds=kinds, noise_after=noise_after))
             name = f"fp/{ag}_{k:04d}.jpg"
-            rims, shown = None, img
+            shown = img
             if ag in self.vis:
-                # Vision: rim points for the particle filter. Lidar: crater and
-                # slope hazards for the planner, from the moment they are seen.
-                t1 = time.perf_counter()
-                rims = self.vis[ag].rims(img, depth)
-                t2 = time.perf_counter()
-                pts, rng_img = self.lid[ag].scan(r.true)
-                hz, kinds = self.lid[ag].hazards(pts)
-                self.t_vision.append(t2 - t1)
-                self.t_lidar.append(time.perf_counter() - t2)
-                if self.score_every and len(self.t_vision) % self.score_every == 0:
-                    try:
-                        from sim.rim_truth import rim_truth, score   # branch step-6-rim-truth
-                        self.scores.append(score(rims, rim_truth(self.scene, ag, depth)))
-                    except ImportError:
-                        self.score_every = 0
+                rims = np.array(rims, copy=True)
                 hz_world = rover_to_world(self.lid[ag].to_camera_frame(hz), r.true)
                 r.add_hazards(hz_world)
                 self.haz_count[ag] = {kk: kinds.count(kk) for kk in ("crater", "slope")}
                 if self.run_dir is not None:
                     # Lidar hazards are marked on the saved frame; the planned
                     # route is drawn live by the viewer from the logged "plan".
-                    shown = draw_plan(img, [], r.true, self.scene, hz_world)
+                    shown = draw_plan(img, [], r.true, self.scene, _thin_marks(hz, kinds, hz_world))
                     lname = f"lidar/{ag}_{k:04d}.jpg"
                     _write_jpg(self.run_dir / lname, self.lid[ag].view(rng_img))
                     self.last_lidar[ag] = lname
@@ -560,7 +632,7 @@ def main():
         run_id = f"{scn['key']}-{stamp}"
         run_dir = out / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        cam = LiveCamera(scene, run_dir, args.frame_every, sensors=args.vision) if scene is not None else None
+        cam = LiveCamera(scene, run_dir, args.frame_every, sensors=args.vision, replay=cam1) if scene is not None else None
         if args.resume:
             cam = _FrameNames(run_dir, args.frame_every)
         if cam is not None:

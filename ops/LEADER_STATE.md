@@ -312,3 +312,4 @@ Read mail, then `mv` it to `leader/archive/`.
   runs, smallest runs, stop own servers, priority nav/perf > scene display
   frames > screenshots. Ports kept: 8000, 8020, 8030.
 - 13:50 integrator 4df9ff8: merged Calvin 706ffd7, step-6-nav, ritvik fa03e9b, perf f1a2461, rim-truth d118d5a. Calvin's stale main.js broke the site on load; restored viewer's, kept his drawPlan. --no-render matches 1250. 4.6 GB free. Calvin told (vision-sync.md) to merge integration before touching web/.
+- 13:52 viewer fd24e5a: lamp pool matches scene's third_person at run1-1250 step 134; fill was ~6x too dim (0.22 taken as display, not linear), now matches (ground 103 vs 103). Asked to fix fill azimuth to scene's 200 deg. Nav asked for one-line status (no commits since 13:40).

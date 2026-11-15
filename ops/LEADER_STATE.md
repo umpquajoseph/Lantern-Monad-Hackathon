@@ -293,3 +293,4 @@ Read mail, then `mv` it to `leader/archive/`.
   launch.json "lantern-vision" (checkpoint worktree, LANTERN_DATA=
   C:\Monad-Hackathon-vision-data). Looked: blue detected rim points sit on
   the dark rim crescent; red x lidar hazards; amber planned path.
+- 13:35 integrator: integration db4abbb (main + step-6-resume + step-6-perf) pushed; :8000 serves run1-20261115-1250, particles, no console errors. Run 2 still 1108 until scene's resume (13:40).

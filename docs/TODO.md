@@ -1,6 +1,6 @@
 # Lantern: to do after the checkpoint merge
 
-Updated 13:05. The checkpoint merge is in progress: `integrator` is putting
+Updated 13:06. The checkpoint merge goes to a new worker, `merger`, which puts
 every branch on `checkpoint`. It goes into `main` on Joseph's word.
 
 ## The demo (decided)

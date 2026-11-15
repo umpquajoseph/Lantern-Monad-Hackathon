@@ -206,3 +206,8 @@ Read mail, then `mv` it to `leader/archive/`.
   SAMEORIGIN, so no embed). Live demo = laptop posts with keys, site's chain
   feed (Kellen's chain.js) shows each tx, links open Monadscan. To-do list
   docs/TODO.md (e60d4fc).
+- 13:06 Joseph: "give the merge to a new agent. it needs to clean everything
+  up". Withdrew 130335 from integrator (it had read it, no checkpoint branch
+  pushed). Brief docs/briefs/merge.md; handoff
+  ops/mailboxes/merger/inbox/20261115-130601_leader_handoff.md. Joseph
+  opens the `merger` session. Integrator keeps integrating into integration.

@@ -640,8 +640,10 @@ def summary(store):
     print(f"           cache {c['path']}: telemetry {c['telemetry']}, events {c['events']}, "
           f"survey {c['survey']}, reports {c['reports']}, outbox {c['outbox']}")
     for e in store.db.events(store.id, "route_reuse"):
-        print(f"  route reuse by {e['agency']} to {e['target_id']}: {e['mode']}: reused {e['reused_m']} m, "
-              f"patched {e['patches']} segment(s), dropped {e['dropped_points']} blocked point(s)")
+        extra = (f": reused {e['reused_m']} m, patched {e['patches']} segment(s), dropped {e['dropped_points']} "
+                 f"blocked point(s)") if "reused_m" in e else ""
+        clear = f", {e['clearance_m']} m clear of {', '.join(e['flagged_on_route'])}" if e.get("clearance_m") is not None else ""
+        print(f"  route to {e['target_id']} for {e['agency']}: {e.get('chosen', e['mode'])} ({e['mode']}{extra}){clear}")
     print(f"  ran in {m['wall_seconds']} s")
 
 

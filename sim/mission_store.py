@@ -112,7 +112,7 @@ class MissionStore:
         local view    -> reports/<id>.json, with the hidden truth
         """
         route = EV.make_route(self.id, record["agency"], record["target"]["id"], est_track, record["t"],
-                              sigma=record["position"]["sigma"])
+                              sigma=record["position"]["sigma"], hazards=record.get("route_hazards"))
         route_ref = self.ev.put(route, "route")
         report = EV.make_report(self.id, record, route_ref, parent_report_cid)
         report_ref = self.ev.put(report, "report")

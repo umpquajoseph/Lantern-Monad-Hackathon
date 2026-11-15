@@ -290,6 +290,8 @@ export class MapView {
     if (this.opts.truth && run.truth) {
       for (const ice of run.truth.ice || []) {
         const px = X(ice.x), py = Y(ice.y), r = Math.max(5, ice.radius * s);
+        c.fillStyle = "rgba(207, 238, 255, 0.22)";   // frost, as frost.js
+        c.beginPath(); c.arc(px, py, r, 0, Math.PI * 2); c.fill();
         c.strokeStyle = hex(COLORS.truth);
         c.setLineDash([3, 3]);
         c.lineWidth = 1;

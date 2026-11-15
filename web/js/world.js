@@ -10,6 +10,7 @@ import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { regolith, lampIntensity, fillIntensity, fillAmbient, TONE_GLSL } from "./regolith.js";
 import { fetchF32 } from "./data.js";
+import { frostPatch } from "./frost.js";
 
 // ShadowNav (Atha et al. 2024, sections IV and V), as in sim/scene.py:
 // camera 2.5 m above the ground, lamp 0.2 m below it.
@@ -695,15 +696,31 @@ uniform vec4 uP1;`)
     }
     // Real ice, hidden from the rovers (stand-in runs carry it).
     this.truthObjs = [];
-    for (const ice of (run.truth && run.truth.ice) || []) {
+    for (const [i, ice] of ((run.truth && run.truth.ice) || []).entries()) {
       const d = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: COLORS.truth }));
       d.position.copy(this.groundL(ice.x, ice.y, 0.8));
       d.scale.set(1, 1, 1.6);
       // Marker only: the sidebar legend names it, and a text label here
       // would cover the find label at the same spot.
       const ring = this.ring(ice.x, ice.y, ice.radius, this.lineMat(COLORS.truth, 1.5, { dashed: true, opacity: 0.8 }));
-      this.overlay.add(d, ring);
-      this.truthObjs.push(d, ring);
+      const frost = frostPatch(this, ice.x, ice.y, ice.radius, `${run.log.run_id}:${i}`);
+      this.overlay.add(d, ring, frost);
+      this.truthObjs.push(d, ring, frost);
+    }
+    // Mission sites the Surveyor called ice (run_mission.py's log): a frost
+    // patch from the moment of that verdict. It is the find, not hidden truth,
+    // so it shows whatever the truth toggle says.
+    this.iceSites = [];
+    const verdictT = {};
+    for (const st of run.steps) for (const e of st.mission_events || []) {
+      if (e.type === "site" && e.verdict === "ice" && !(e.site_id in verdictT)) verdictT[e.site_id] = st.t;
+    }
+    for (const site of (run.log.mission && run.log.mission.sites) || []) {
+      if (site.verdict !== "ice") continue;
+      const frost = frostPatch(this, site.x, site.y, site.radius || 6, `${run.log.run_id}:${site.id}`);
+      frost.visible = false;
+      this.overlay.add(frost);
+      this.iceSites.push({ obj: frost, t: verdictT[site.id] ?? 0 });
     }
     this.findObjs = new Map();
     this.lastFollowPos = null;
@@ -787,6 +804,7 @@ uniform vec4 uP1;`)
     const run = this.run;
     if (!run) return;
     const k = run.stepAt(t);
+    for (const s of this.iceSites || []) s.obj.visible = t >= s.t;
     const pts = [];
     for (const a of run.agencies) {
       const [x, y, h] = run.poseAt(a, t);

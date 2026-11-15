@@ -225,6 +225,117 @@ PROSPECTOR_PHASES = (
 )
 
 
+# ---- The Surveyor: no arm, no drill -----------------------------------------
+# The Surveyor carries a mast camera and a neutron spectrometer, and leaves
+# drilling to the Prospector. At a site it parks short of it, faces it, maps
+# the ground with the camera, sits still for a neutron dwell, and takes a
+# photo. A dwell averages many readings, so it is steadier than the readings
+# taken on the move, but it still only sees hydrogen averaged over the top
+# metre ([PB] p. 5): it says "worth drilling", the Prospector's core says how
+# much and how deep.
+# ASSUMED, demo timings, as PHASES.
+SURVEY_PHASES = (
+    ("park", 2.0),            # stop short of the site, facing it
+    ("mast_pan", 6.0),        # camera pans across the site
+    ("terrain_map", 10.0),    # stereo map of the ground: slopes, rocks
+    ("neutron_dwell", 10.0),  # sit still and count neutrons
+    ("photo", 3.0),           # a still of the site, for the report
+)
+# ASSUMED. A new obstacle on the way: stop, face it, map it, photograph it,
+# flag it in the route so the next rover plans around it.
+HAZARD_PHASES = (
+    ("stop", 2.0), ("mast_pan", 5.0), ("terrain_map", 10.0), ("photo", 3.0), ("flag", 3.0),
+)
+# ASSUMED. Neutron readings per point in a dwell, and the points: the site
+# centre and six around it at this radius.
+DWELL_READINGS = 6
+DWELL_RING_M = 3.0
+
+
+def site_survey_sample(deposits, x, y, rng, terrain_stats):
+    """The Surveyor's dwell at TRUE site centre (x, y), plus its camera's map
+    of the ground. No core: nothing below the surface is sampled."""
+    pts = [(0.0, 0.0)] + [(DWELL_RING_M * math.cos(a), DWELL_RING_M * math.sin(a))
+                          for a in np.linspace(0, 2 * math.pi, 6, endpoint=False)]
+    dwell = []
+    for dx, dy in pts:
+        w = np.mean([resources.neutron_reading(deposits, x + dx, y + dy, rng) for _ in range(DWELL_READINGS)])
+        dwell.append([round(dx, 2), round(dy, 2), round(float(w), 3)])
+    return {
+        "kind": "site_survey",
+        "instrument": "mast camera + neutron spectrometer dwell (simulated)",
+        "dwell": dwell,
+        "dwell_readings_per_point": DWELL_READINGS,
+        "water_wt_pct": round(float(np.mean([d[2] for d in dwell])), 3),
+        "water_wt_pct_peak": round(float(max(d[2] for d in dwell)), 3),
+        "terrain": terrain_stats,
+        "unit": "wt% water-equivalent hydrogen, top 1 m",
+    }
+
+
+def classify_survey(sample):
+    """Neutron dwell -> verdict, with the same 1 wt% threshold as a core. The
+    dwell mean over the site is the reading."""
+    w = sample["water_wt_pct"]
+    if w >= ICE_THRESHOLD_WT_PCT:
+        return {"verdict": "ice", "reading": w, "ice_top_m": None}
+    if w >= TRACE_FRACTION * ICE_THRESHOLD_WT_PCT:
+        return {"verdict": "trace", "reading": w, "ice_top_m": None}
+    return {"verdict": "dry", "reading": w, "ice_top_m": None}
+
+
+def run_site_survey(agency, target, deposits, t, site_true, site_est, sigma, true_pose,
+                    est_track, true_track, terrain_stats, seed=None):
+    """The Surveyor's record for a site: same shape as run_science's, with a
+    dwell and a terrain map in place of a core."""
+    rng = np.random.default_rng(seed)
+    sample = site_survey_sample(deposits, site_true[0], site_true[1], rng, terrain_stats)
+    result = classify_survey(sample)
+    data_hash, hash_alg = canonical_hash(sample)
+    lat, lon = south_polar_to_latlon(site_est[0], site_est[1])
+    route, route_len = last_route(est_track)
+    true_route, _ = last_route(true_track)
+    phases, t0 = [], float(t)
+    for name, dur in SURVEY_PHASES:
+        phases.append({"name": name, "t0": round(t0, 2), "dur": dur})
+        t0 += dur
+    x, y, s = round(float(site_est[0]), 2), round(float(site_est[1]), 2), round(float(sigma), 2)
+    if result["verdict"] == "ice":
+        chain = {"call": "post_find", "args": dict(agency=agency, x=x, y=y, sigma=s, reading=result["reading"],
+                                                   data_hash=data_hash)}
+    else:
+        chain = {"call": None, "args": None}
+    chain.update(status="pending" if chain["call"] else "not_for_chain", tx=None, find_id=target.get("find_id"))
+    w = sample["water_wt_pct"]
+    summary = {"ice": f"neutron dwell {w:.2f} wt% over the site: worth a core",
+               "trace": f"neutron dwell {w:.2f} wt%: some hydrogen, below the threshold",
+               "dry": f"neutron dwell {w:.2f} wt%: dry"}[result["verdict"]]
+    return {
+        "schema": SCHEMA,
+        "record_id": f"{agency}-{target['id']}-t{int(round(t)):06d}",
+        "agency": agency,
+        "t": round(float(t), 2),
+        "target": {k: target.get(k) for k in ("id", "kind", "purpose", "find_id", "source")},
+        "position": {"x": x, "y": y, "sigma": s, "lat": round(lat, 6), "lon": round(lon, 6),
+                     "frame": "world metres (south polar stereographic on LOLA)",
+                     "source": "rover estimate plus the camera's range to the site"},
+        "route": {"length_m": round(route_len, 1), "points": route, "source": "rover estimate"},
+        "sample": sample,
+        "result": dict(result, summary=summary),
+        "phases": phases,
+        "attempts": 1,
+        "data_hash": data_hash,
+        "hash_alg": f"{hash_alg} of canonical JSON (sorted keys) of `sample`",
+        "chain": chain,
+        "HIDDEN_TRUTH": {
+            "true_pose": [round(float(v), 3) for v in true_pose],
+            "site_true": [round(float(v), 3) for v in site_true],
+            "position_error_m": round(math.hypot(site_true[0] - site_est[0], site_true[1] - site_est[1]), 2),
+            "true_route": true_route,
+        },
+    }
+
+
 def run_science(agency, target, deposits, t, true_pose, estimate, sigma,
                 est_track, true_track, seed=None, attempts=1, phases_spec=PHASES):
     """Run the arm-and-drill sequence at a target and return the record.

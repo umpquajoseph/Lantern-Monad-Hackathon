@@ -1,6 +1,6 @@
 // Frost patch: the viewer's marker for ground with water ice. White at the
-// core, pale blue at a ragged edge, mottled, with crystal speckle and a few
-// glints that twinkle. Drawn for people watching only; the rovers' camera
+// core, pale blue at a soft ragged edge, faintly mottled, with a couple of
+// slow glints. Drawn for people watching only; the rovers' camera
 // frames (sim/scene.py) carry no ice. The look is assumed, not measured.
 import * as THREE from "three";
 
@@ -8,7 +8,7 @@ export const ICE_HEX = 0xcfeeff;     // rings, labels, ticks: one ice colour
 export const ICE_CSS = "#cfeeff";
 const LIFT_M = 0.12;                 // above the ground, so the patch does not sink into it
 const GRID = 20;                     // draping grid, cells per side
-const GLINTS_PER_M2 = 0.5;
+const GLINTS = 3;                    // per patch, slow and faint
 
 function rng(seed) {
   let a = seed >>> 0;
@@ -48,10 +48,10 @@ function frostTexture(seed) {
       let edge = 0.84;
       for (const [k, p, amp] of waves) edge += amp * Math.sin(k * a + p);
       const d = Math.hypot(u, v) / edge;
-      const n = 0.6 * n1((u + 1) / 2, (v + 1) / 2) + 0.4 * n2((u + 1) / 2, (v + 1) / 2);
-      const alpha = Math.min(1, Math.max(0, (1 - d) / 0.22)) * (0.5 + 0.5 * n);
+      const n = 0.8 * n1((u + 1) / 2, (v + 1) / 2) + 0.2 * n2((u + 1) / 2, (v + 1) / 2);
+      const alpha = Math.min(1, Math.max(0, (1 - d) / 0.3)) * (0.78 + 0.22 * n);
       const t = Math.min(1, d) ** 1.5;            // 0 core (white) .. 1 edge (pale blue)
-      const lift = 0.85 + 0.15 * n;
+      const lift = 0.94 + 0.06 * n;
       const o = 4 * (y * N + x);
       img.data[o] = (246 - 110 * t) * lift;
       img.data[o + 1] = (251 - 50 * t) * lift;
@@ -60,18 +60,12 @@ function frostTexture(seed) {
     }
   }
   c.putImageData(img, 0, 0);
-  // Crystal speckle: bright dots and short needles at 60 degree steps.
-  const inside = () => { for (;;) { const u = R() * 2 - 1, v = R() * 2 - 1; if (Math.hypot(u, v) < 0.72) return [((u + 1) / 2) * N, ((v + 1) / 2) * N]; } };
-  for (let i = 0; i < 160; i++) {
-    const [px, py] = inside();
-    c.fillStyle = `rgba(255,255,255,${0.35 + 0.5 * R()})`;
-    c.fillRect(px, py, 1 + (R() < 0.2), 1 + (R() < 0.2));
-  }
-  c.lineWidth = 0.8;
-  for (let i = 0; i < 50; i++) {
-    const [px, py] = inside(), ang = (Math.floor(R() * 3) * Math.PI) / 3 + 0.2 * (R() - 0.5), L = 3 + 7 * R();
-    c.strokeStyle = `rgba(235,248,255,${0.3 + 0.4 * R()})`;
-    c.beginPath(); c.moveTo(px - Math.cos(ang) * L, py - Math.sin(ang) * L); c.lineTo(px + Math.cos(ang) * L, py + Math.sin(ang) * L); c.stroke();
+  // A light sparkle: a few faint dots, no streaks.
+  for (let i = 0; i < 40; i++) {
+    const u = R() * 2 - 1, v = R() * 2 - 1;
+    if (Math.hypot(u, v) > 0.7) continue;
+    c.fillStyle = `rgba(255,255,255,${0.15 + 0.2 * R()})`;
+    c.fillRect(((u + 1) / 2) * N, ((v + 1) / 2) * N, 1, 1);
   }
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -114,26 +108,26 @@ export function frostPatch(world, x, y, radius, seed = 0) {
   mesh.renderOrder = 2;
 
   // Glints: additive points whose colour pulses, so black means unseen.
-  const n = Math.max(6, Math.round(GLINTS_PER_M2 * Math.PI * radius * radius));
+  const n = GLINTS;
   const gp = new Float32Array(3 * n), gc = new Float32Array(3 * n), phase = [], rate = [];
   for (let i = 0; i < n; i++) {
     const r = radius * 0.75 * Math.sqrt(R()), a = R() * 6.283;
     const v = world.groundL(x + r * Math.cos(a), y + r * Math.sin(a), LIFT_M + 0.05);
     gp.set([v.x, v.y, v.z], 3 * i);
-    phase.push(R() * 6.283); rate.push(0.8 + 1.6 * R());
+    phase.push(R() * 6.283); rate.push(0.3 + 0.3 * R());
   }
   const pg = new THREE.BufferGeometry();
   pg.setAttribute("position", new THREE.BufferAttribute(gp, 3));
   pg.setAttribute("color", new THREE.BufferAttribute(gc, 3));
   const glints = new THREE.Points(pg, new THREE.PointsMaterial({
-    map: glintTexture(), size: 0.45, sizeAttenuation: true, vertexColors: true,
+    map: glintTexture(), size: 0.3, sizeAttenuation: true, vertexColors: true,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
   }));
   glints.renderOrder = 3;
   glints.onBeforeRender = () => {
     const s = performance.now() / 1000;
     for (let i = 0; i < n; i++) {
-      const k = Math.max(0, Math.sin(s * rate[i] + phase[i])) ** 8;
+      const k = 0.5 * Math.max(0, Math.sin(s * rate[i] + phase[i])) ** 8;
       gc[3 * i] = 0.85 * k; gc[3 * i + 1] = 0.95 * k; gc[3 * i + 2] = k;
     }
     pg.attributes.color.needsUpdate = true;

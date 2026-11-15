@@ -49,6 +49,46 @@ img = scene.third_person(agency, overlays)    # (h, w, 3) uint8
   ground, lamp 0.2 m below it, 60° horizontal field of view (Atha et al. 2024,
   sections IV and V).
 
+## Run log (`run_demo.py` writes it, the web viewer replays it)
+
+The hosted demo replays real runs, so everything the viewer shows comes from
+this log. One folder per run, `runs/<run_id>/`:
+
+- `log.json`:
+
+```json
+{
+  "run_id": "run1-20261115-1400",
+  "label": "Run 1: crater fixes on",
+  "terrain": {"file": "shoemaker.npz", "x0": 73250.125, "y0": 36000.125, "cell": 0.25},
+  "chain": {"chain_id": 0, "contract": "0x...", "explorer": "https://..."},
+  "steps": [
+    {
+      "t": 0.0,
+      "rovers": {
+        "A": {"true_pose": [x, y, heading], "odom_pose": [x, y, heading],
+              "estimate": [x, y], "sigma": 0.8, "nav_on": true,
+              "rims": [[x_fwd, y_left]], "fp_frame": "fp/A_0000.jpg"},
+        "B": {}
+      },
+      "events": [
+        {"type": "find", "agency": "A", "find_id": 1, "x": 0, "y": 0,
+         "sigma": 0.8, "reading": 0.0, "tx": "0x..."},
+        {"type": "check", "agency": "B", "find_id": 1, "x": 0, "y": 0,
+         "sigma": 0.9, "reading": 0.0, "agrees": true, "tx": "0x..."}
+      ]
+    }
+  ]
+}
+```
+
+- `fp/<agency>_<step>.jpg`: the first-person frame from `scene.first_person`.
+- Units and frames as above: world metres, heading radians, `t` in simulated
+  seconds. `events` lists what happened at that step, with the transaction
+  hash once step 1 exists.
+- Proposed. The viewer and `run_demo.py` may change it, by telling the lead
+  and editing this section in the same commit.
+
 ## Step 4, rover loop, gives each step, per rover
 
 - `true_pose`: `(x, y, heading)`.

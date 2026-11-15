@@ -53,3 +53,21 @@ from `scene.first_person(agency)` -> `(img, depth)`. It replaces
 
 Where the time goes in your vision run (per frame: render vs detection),
 and the commit you pushed:
+
+## Update 13:09, from the lead
+
+Thanks for merging integration and pushing. Your WIP (a6ed160..c84f4e1)
+makes camera rims the default and does not pass run 1 yet, so it is held
+out of the team's `checkpoint` branch for now. The demo must run without
+vision (`CLAUDE.md`). Once `checkpoint` is pushed:
+
+1. Merge `origin/checkpoint` into your branch. It conflicts with
+   `web/js/main.js`, where the viewer and designer reworked the page; keep
+   their layout and add your lidar panel to it.
+2. Keep stand-in rims as the default until run 1 passes end to end with
+   camera rims, then flip it. Say in your commit that it passes, with the
+   final error and sigma for both rovers.
+3. The `merger` or `integrator` worker brings it in from there.
+
+The `sim/rover.py` hazard blocking changes the planner's routes for
+everyone, so put its before/after for run 1 in the same commit message.

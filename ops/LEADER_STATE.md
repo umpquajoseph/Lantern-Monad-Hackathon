@@ -224,3 +224,7 @@ Read mail, then `mv` it to `leader/archive/`.
   sim/vision.py (camera rims for the filter), lidar crater hazards, planned
   path on camera, and a lidar panel touching web/js, app.css, index.html
   (overlaps viewer/designer; merger takes it in).
+- 13:10 merger held Calvin's WIP vision/lidar (a6ed160..c84f4e1: camera rims
+  default, fails run 1, main.js conflict) out of checkpoint; agreed.
+  vision-sync.md updated: merge checkpoint, keep stand-in default until run
+  1 passes. Designer 861bb11 merged into checkpoint clean.

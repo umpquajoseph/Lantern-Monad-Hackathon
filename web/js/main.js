@@ -341,7 +341,8 @@ function captionHtml(run, a, k, sub) {
   return `Recorded lamp-only view from rover ${a}${every}. 60° view, camera 2.5 m up. Click to enlarge.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
     (state.opts.rims && r.rims && r.rims.length && !sub ? ` ${r.rims.length} rim points${run.standin && run.standin.rims ? " (stand-in, from the crater map)" : " from the camera"}.` : "") +
-    (r.lidar_frame && !sub ? " Amber dots: planned path. Red marks: lidar hazards." : "");
+    (r.plan && !sub ? " Amber dots: the route it plans to drive, re-planned every 2 m." : "") +
+    (r.lidar_frame && !sub ? " Red marks: lidar hazards." : "");
 }
 
 // Lidar panel caption: the scan taken with this step's live frame (run_demo.py --vision).

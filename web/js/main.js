@@ -14,7 +14,7 @@ FP.fx = FP.w / 2 / Math.tan((FP.hfov / 2) * Math.PI / 180);
 
 const state = {
   runs: [], run: null, t: 0, playing: false, speed: 200, cam: "A",
-  opts: { fill: true, tracks: true, rims: true, nogo: true, truth: false },
+  opts: { fill: true, tracks: true, particles: true, rims: true, nogo: true, truth: false },
   lastEventsKey: "",
 };
 
@@ -129,6 +129,7 @@ function bindControls() {
     render(true);
   }));
   for (const k of Object.keys(state.opts)) {
+    if (!$("opt-" + k)) continue;   // a toggle the page does not offer keeps its default
     $("opt-" + k).onchange = (e) => {
       state.opts[k] = e.target.checked;
       world.setVisibility(state.opts);
@@ -229,7 +230,13 @@ function hud(run, k) {
     // "ShadowNav particle filter (Cauligi et al. 2023, Algs. 1-3), 100 particles, ..."
     // -> "ShadowNav particle filter, 100 particles"; the full line on hover.
     const short = run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim();
-    rows.push(`<div class="row src" title="${run.nav.replace(/"/g, "&quot;")}"><span class="k">estimate and σ:</span><span>${short}</span></div>`);
+    const dots = run.hasParticles && state.opts.tracks && state.opts.particles ? "; dots are its particles, larger for more weight" : "";
+    rows.push(`<div class="row src" title="${run.nav.replace(/"/g, "&quot;")}"><span class="k">estimate and σ:</span><span>${short}${dots}</span></div>`);
+  }
+  if (run.planner) {
+    // "A* on a 2 m grid; a cell is blocked if ..." -> "A* on a 2 m grid"; the full line on hover.
+    const short = run.planner.split(/[;(]/)[0].replace(/[.,\s]+$/, "");
+    rows.push(`<div class="row src" title="${run.planner.replace(/"/g, "&quot;")}"><span class="k">route:</span><span>${short}</span></div>`);
   }
   $("hud").innerHTML = rows.join("");
 }

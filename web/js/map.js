@@ -7,6 +7,29 @@ const hex = (c) => "#" + c.toString(16).padStart(6, "0");
 const FINE_SHADE_PX_PER_M = 2;   // viewer only, assumed: above this zoom, draw 0.25 m hillshade
 const FINE_SHADE_CACHE = 9;       // tile hillshades kept (513 px square each, ~1 MB)
 
+// No-go look, from the designer (viewer only): 1 px lines at 135 deg every
+// 5 px in the page's "disputed" red, and a 1 px edge.
+const NOGO_HATCH_PX = 5;
+const NOGO_LINE = "rgba(229, 87, 79, 0.75)";
+const NOGO_EDGE = "rgba(229, 87, 79, 0.8)";
+// Below this zoom, no hatch or edge: a flat tint (designer).
+const NOGO_DETAIL_PX_PER_M = 2;
+const NOGO_TINT = "rgba(229, 87, 79, 0.22)";
+
+// One repeat of the hatch: a diagonal from top-left to bottom-right, drawn
+// three times so the tile joins its neighbours without a gap.
+function hatchTile(p, dpr) {
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = p;
+  const c = cv.getContext("2d");
+  c.strokeStyle = NOGO_LINE;
+  c.lineWidth = dpr;
+  c.beginPath();
+  for (const o of [-p, 0, p]) { c.moveTo(o, 0); c.lineTo(o + p, p); }
+  c.stroke();
+  return cv;
+}
+
 export class MapView {
   constructor(canvas, terrain) {
     this.cv = canvas;
@@ -129,6 +152,56 @@ export class MapView {
     }
   }
 
+  // The no-go ground as a thin red hatch inside a 1 px red edge, so the
+  // hillshade reads between the lines. Built in screen pixels, so the lines
+  // stay crisp at any zoom; rebuilt only when the view changes.
+  nogoLayer(W, H, dpr, X, Y, s) {
+    const m = this.terrain.meta;
+    const key = `${W}x${H}@${dpr}:${X(m.x0).toFixed(2)},${Y(m.y0).toFixed(2)}:${s}`;
+    if (this.nogoCache && this.nogoCache.key === key) return this.nogoCache.cv;
+    const Wd = Math.round(W * dpr), Hd = Math.round(H * dpr);
+    const mk = () => { const cv = document.createElement("canvas"); cv.width = Wd; cv.height = Hd; return [cv, cv.getContext("2d")]; };
+    // The mask: one pixel per 0.25 m sim cell, centred on the grid points.
+    const [mask, mc] = mk();
+    mc.setTransform(dpr, 0, 0, dpr, 0, 0);
+    mc.imageSmoothingEnabled = m.cell * s < 1;   // averaged when shrunk, sharp cells when enlarged
+    const nx0 = m.x0 - m.cell / 2, ny1 = m.y0 + (m.rows - 0.5) * m.cell;
+    mc.drawImage(this.nogo, X(nx0), Y(ny1), m.cols * m.cell * s, m.rows * m.cell * s);
+    // Zoomed out, most no-go spots are smaller than the hatch spacing and the
+    // edge would ring every crater: a flat tint over the averaged mask, so
+    // small spots go faint and large slopes read solid.
+    if (s < NOGO_DETAIL_PX_PER_M) {
+      mc.globalCompositeOperation = "source-in";
+      mc.setTransform(1, 0, 0, 1, 0, 0);
+      mc.fillStyle = NOGO_TINT;
+      mc.fillRect(0, 0, Wd, Hd);
+      this.nogoCache = { key, cv: mask };
+      return mask;
+    }
+    // Hatch inside the mask.
+    const [out, oc] = mk();
+    oc.drawImage(mask, 0, 0);
+    oc.globalCompositeOperation = "source-in";
+    oc.fillStyle = oc.createPattern(hatchTile(Math.round(NOGO_HATCH_PX * dpr), dpr), "repeat");
+    oc.fillRect(0, 0, Wd, Hd);
+    // Edge: the mask minus the mask shrunk by 1 px each way.
+    const [ero, ec] = mk();
+    ec.drawImage(mask, 0, 0);
+    ec.globalCompositeOperation = "destination-in";
+    for (const [dx, dy] of [[dpr, 0], [-dpr, 0], [0, dpr], [0, -dpr]]) ec.drawImage(mask, dx, dy);
+    const [edge, gc] = mk();
+    gc.drawImage(mask, 0, 0);
+    gc.globalCompositeOperation = "destination-out";
+    gc.drawImage(ero, 0, 0);
+    gc.globalCompositeOperation = "source-in";
+    gc.fillStyle = NOGO_EDGE;
+    gc.fillRect(0, 0, Wd, Hd);
+    oc.globalCompositeOperation = "source-over";
+    oc.drawImage(edge, 0, 0);
+    this.nogoCache = { key, cv: out };
+    return out;
+  }
+
   update(t) { this.t = t; this.draw(); }
 
   draw() {
@@ -163,11 +236,10 @@ export class MapView {
       // Zoomed in, the 1 m image goes blocky: draw the 0.25 m tiles in view instead.
       if (s > FINE_SHADE_PX_PER_M) this.drawFineShade(c, X, Y, cx, cy, W / s, H / s);
       if (this.opts.nogo && this.nogo && this.nogo.complete && this.nogo.naturalWidth) {
-        c.globalAlpha = 0.3;
-        // One pixel per 0.25 m sim cell, centred on the grid points.
-        const nx0 = m.x0 - m.cell / 2, ny1 = m.y0 + (m.rows - 0.5) * m.cell;
-        c.drawImage(this.nogo, X(nx0), Y(ny1), m.cols * m.cell * s, m.rows * m.cell * s);
         c.globalAlpha = 1;
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        c.drawImage(this.nogoLayer(W, H, dpr, X, Y, s), 0, 0);
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
       c.globalAlpha = 1;
     }

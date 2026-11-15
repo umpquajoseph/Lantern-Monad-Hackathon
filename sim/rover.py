@@ -329,6 +329,11 @@ class Rover:
             c = abs((want - dh + math.pi) % (2 * math.pi) - math.pi) + 0.1 * CRATER_COST * self._crater_share(x, y, h + dh, d)
             if best_cost is None or c < best_cost - 1e-9:
                 turn, best_cost = dh, c
+        if turn is not None and abs(turn) <= lim:
+            # The clear heading nearest the aim is inside the turn limit (the
+            # aim is behind and only the way ahead is clear): drive it.
+            self.true = np.array([x + d * math.cos(h + turn), y + d * math.sin(h + turn), h + turn])
+            return d, turn
         if turn is None:
             turn = math.radians(POINT_TURN_DEG)
         self.true = np.array([x, y, h + turn])
@@ -492,7 +497,11 @@ class Rover:
         way instead of being stuck."""
         if d <= 0:
             return True
-        n = max(1, int(math.ceil(d / self.slope.cell)))
+        # A sensing rover checks every half cell: sampling once per 0.25 m
+        # cell skipped the steep cells a step clips between samples (up to
+        # 16.5 deg crossed on the harness runs). Stand-in runs keep the old
+        # sampling, so their routes are unchanged.
+        n = max(1, int(math.ceil(d / (0.5 * self.slope.cell if steep_only else self.slope.cell))))
         f = np.arange(1, n + 1) / n
         px, py = x + f * d * math.cos(h), y + f * d * math.sin(h)
         if not (self.slope.inside(px[-1], py[-1]) and self.slope.inside(px[0], py[0])):

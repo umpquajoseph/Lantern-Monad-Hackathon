@@ -100,3 +100,7 @@ Doorbells (SendMessage `to` = these addresses; all sessions share the name
   DECIDED 11:25: real craters tossed, shoemaker stays ("lets toss real craters and keep current terain"). Terrain worker told to hold.
 - Teammate branch `origin/step-1-chain` has a contract, Foundry tests and a
   Python client (67cde98). `origin/ritvik` exists, unread.
+
+## Update 11:22
+
+- Integrator briefed (`docs/briefs/integrator.md`, branch `integration`, handle `integrator`, Opus). Owns the single launch app and glue; may merge worker branches into `integration` only. Waiting for Joseph to open its session.

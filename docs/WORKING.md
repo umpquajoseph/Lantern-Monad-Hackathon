@@ -1,6 +1,6 @@
 # Who is working on what
 
-**Last updated: 2026-11-15 11:25 PST.** Stable checkpoint: tag `checkpoint-1105`. Before you start something, add a
+**Last updated: 2026-11-15 11:22 PST.** Stable checkpoint: tag `checkpoint-1105`. Before you start something, add a
 row here and push. When you finish, change its status. Formats passed
 between parts are in `docs/handoffs.md`: read it before writing a function
 another part calls.
@@ -15,6 +15,7 @@ another part calls.
 | Real-crater terrain from a 1 m south-pole DTM (Hemmi et al. 2025, CR1 connecting ridge), LOLA build stays default until reviewed (step 2) | Joseph, agent `terrain` | `step-2-terrain-real` | `sim/terrain*.py`, `data/terrain/` | 11:13 | dropped 11:25: too few real craters for the demo; not merged |
 | Web viewer: the hosted demo page, replaying runs with live 3D third person, first-person frames, map, finds and chain feed (step 5) | Joseph, agent `viewer` | `step-5-viewer` | `web/` | 10:55 | building |
 | Demo spine: `run_demo.py` writing both demo runs end to end, hidden ice map and sensor, stand-ins for nav, planner and chain (steps 4 and 5 glue) | Joseph, agent `scene` | `step-4-spine` | `run_demo.py`, `sim/rover.py`, `sim/ice.py`, `sim/standin_*.py` | 10:58 | building |
+| Integration: one launchable app wiring terrain, display layer, scene, spine, chain and viewer together | Joseph, agent `integrator` | `integration` | `app.py` and glue; asks owners for changes in their files | 11:22 | starting |
 | Briefs, review, merging into `joseph` | Joseph, lead session | `joseph` | `docs/`, `ops/PROTOCOL.md` | 10:00 | ongoing |
 
 ## Not claimed yet

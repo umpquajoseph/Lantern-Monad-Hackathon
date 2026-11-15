@@ -152,3 +152,8 @@ Read mail, then `mv` it to `leader/archive/`.
   camera panel 311/294 px because #fp-cap (main.js:281) adds the rim-count
   sentence only on full frames with rims. Task to viewer (124835): per-step
   text must never move layout; check by sampling header top each frame.
+- 12:52 Run 1203 was stale (stopped partway). Scene started the fast rerun
+  run1/run2-20261115-1250 on 21cca99 (ParticleNav, Calvin's planner, B start
+  fix, 15/32 lamp, particles, labels), ETA 13:10. 1108 rerun (old code)
+  must not be published. Joseph is frustrated that run 2 still shows the
+  old 11:08 log; told him vision means a rerun, not a rebuild.

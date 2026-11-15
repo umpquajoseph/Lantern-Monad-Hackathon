@@ -172,6 +172,10 @@ class Rover:
         self.haz_2m = np.zeros(slope.deg.shape, dtype=bool)
         self.n_hazard_cells = 0
         self.stuck_turns = 0      # turns in place because no way forward was clear
+        # True when the rover drives on its camera and lidar (run_demo.py
+        # --vision). The back-and-forth guard and turning in place apply only
+        # then, so stand-in runs keep exactly the spine's routes.
+        self.sensing = False
 
     def set_goal(self, goal_xy):
         """Plan from where the rover believes it is."""
@@ -215,14 +219,14 @@ class Rover:
         # planner. Block the planning cell it was heading into, so the next
         # local plan goes another way.
         self._hist = (getattr(self, "_hist", []) + [self.true[:2].copy()])[-3:]
-        if moved > 0 and len(self._hist) == 3 and np.hypot(*(self._hist[2] - self._hist[0])) < 0.5:
+        if self.sensing and moved > 0 and len(self._hist) == 3 and np.hypot(*(self._hist[2] - self._hist[0])) < 0.5:
             sm = self.slope
             hx, hy = self._hist[1]
             bi = int(np.clip((hy - sm.y0) // sm.b, 0, self.haz_2m.shape[0] - 1))
             bj = int(np.clip((hx - sm.x0) // sm.b, 0, self.haz_2m.shape[1] - 1))
             self.haz_2m[bi, bj] = True
             self.pingpong_blocks = getattr(self, "pingpong_blocks", 0) + 1
-        if moved == 0.0 and d > 1e-6:
+        if self.sensing and moved == 0.0 and d > 1e-6:
             # Dead end: no clear heading, not even back the way it came. Turn in
             # place so the camera looks at new ground; hazards it then sees
             # feed the next local plan, which can lead off in another direction.

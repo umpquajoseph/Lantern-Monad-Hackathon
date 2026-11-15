@@ -43,7 +43,7 @@ LOCAL_PLAN_MAX_CELLS = 3000     # assumed: local A* search budget (2 m cells)
 # The earlier rule closed a whole 2 m cell for any one hazard point of either
 # kind (fraction 0.01), which fenced rover A in among the small craters near
 # its start on run 1 (it turned back at step 42).
-STEEP_CELL_FRAC = 0.5      # assumed
+STEEP_CELL_FRAC = 0.01     # assumed: any steep point closes its cell, as the fine check would refuse it
 CRATER_COST = 4.0          # assumed: a crater cell costs 1 + 4 x its crater share to cross
 HAZARD_CELL_FRAC = STEEP_CELL_FRAC   # old name, kept for readers of this module
 

@@ -230,7 +230,7 @@ def check(site: Path) -> Report:
                 rep.err(f"{rid}: no steps")
             if log.get("run_id") != rid:
                 rep.warn(f"{rid}: index says run_id {rid!r}, log says {log.get('run_id')!r}; ?run= links use the index")
-            events = sum(len(s.get("events", [])) for s in steps)
+            events = sum(1 for s in steps for e in s.get("events", []) if e.get("tx"))
             if events == 0:
                 rep.warn(f"{rid}: no chain events (no find, no check); the story has no ending")
             chain = log.get("chain") or {}

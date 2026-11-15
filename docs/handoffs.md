@@ -276,3 +276,65 @@ this is only what crosses into other steps.
 - Chain: the demo's chain is Lantern (step 1 above). The mission's own
   registry, `registry/` and `sim/registry_client.py`, runs on a local anvil or
   an offline mock and is not used by the demo.
+
+## Mission log (`run_mission.py` writes it; the demo page replays it with checkpoints)
+
+The demo is one precomputed run of the real autonomy, replayed on the hosted
+site. It is a run log as above, with these additions. Everything here is
+additive: a viewer that reads only the run-log fields still works.
+
+Top level:
+
+- `roles`: `{"A": "Surveyor", "B": "Prospector"}`.
+- `mission.sites`: the orbital candidates, in visiting order:
+  `[{"id": "S1", "x", "y", "radius", "order": 1, "verdict": "dry" | "ice" | null, "kind": "orbital candidate"}]`
+  (world metres). The map highlights them from the start; `verdict` is the
+  end state, so a viewer that wants the reveal in order uses the `site`
+  events below.
+- `mission.checkpoints`: where playback pauses, in step order:
+  `[{"id", "step", "t", "label", "say", "pause": true}]`. The player, on
+  crossing `step` while playing, stops there when `pause` is true and shows
+  `label`; `say` is one line for whoever is talking. Pressing play goes on.
+  Ids today: `overview` (step 0), `divert-A` (the step before the Surveyor's
+  lidar first marks a crater its orbital map does not show), `arrive-S1`,
+  `arrive-S2`, `dispatch-B`, `divert-B`, `arrive-B`, `end`. A checkpoint is
+  absent when its moment did not happen in the run.
+- `mission.unmapped_craters`: `[{"x", "y", "diameter", "for": "A" | "B"}]`, the
+  craters left out of the planning map on purpose (as a 5 m orbital DEM would
+  miss them), one per rover's first leg; `mission.unmapped_note` says so in
+  words. Each rover's `sees_unmapped_crater` (per step) turns true when its
+  lidar first marks that crater; the `divert-A` / `divert-B` checkpoint is
+  the step before. Empty when the run had no sensors.
+- `mission.survey_phases`, `mission.prospect_phases`: the instrument phase
+  names in order (see `instrument` below).
+- `satellite_sites` and `states` (`{"A": [{"t", "state", "objective"}]}`):
+  the same shapes `sim/roles.py` writes, for the mission page.
+- `lidar`: a sentence saying the lidar is simulated from the terrain, or null.
+
+Per step:
+
+- `mission_events`: beside `events` (which stays chain transactions only,
+  `find` and `check`): `{"type": "site", "agency": "A", "site_id", "verdict": "dry" | "ice",
+  "reading", "x", "y", "sigma", "on_chain": bool, "find_id"?, "tx"?}` when a
+  survey ends, and `{"type": "dispatch", "agency": "B", "find_id", "site_id", "x", "y", "read_from": "chain"}`
+  when the Prospector reads a find and sets off. A dry site is not posted on
+  chain; its `site` event is the only record.
+- `events` entries carry `site_id` too.
+
+Per rover, per step (added to the run-log fields):
+
+- `role`: `"Surveyor"` or `"Prospector"`.
+- `phase`: one short line of what it is doing: `"to S1"`, `"survey S1"`,
+  `"to S2"`, `"done"`, `"wait for a find"`, `"to find 17"`, `"prospect find 17"`.
+- `site_id`: the site it is heading for or working at, else null.
+- `plan`: the path it is about to drive, `[[x, y], ...]` world metres from
+  the rover forward (the dashed line), on steps where it moved; `[]` otherwise.
+  The planned route bends when the lidar marks a hazard on it.
+- `instrument`: `{"name", "progress" (0..1), "step", "of"}` while a survey or
+  prospecting sequence runs, else null. Names come from the phase lists above.
+- `lidar_hazard_total`: hazard cells the lidar marked on this frame (0 off),
+  beside the spine's `lidar_hazards` by kind and `lidar_frame`.
+
+Honesty: `standins` lists what is still simulated (the ice sensor and the
+instrument sequences). The chain block, the hashes and the finds are real
+when the run was made with the agency keys; the page shows "fake tx" otherwise.

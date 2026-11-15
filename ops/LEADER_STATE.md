@@ -400,3 +400,8 @@ Read mail, then `mv` it to `leader/archive/`.
 - Joseph notifies on: ui stage 1 ready (he will look). main moves only on his word.
 - Pre-cease list given to Joseph (14:5x): 1 Kellen renders mission with real chain from final main (real hashes); 2 check hosted link after republish (mission plays, ?key posts, Monadscan links, phone); 3 backup screen recording; 4 README update for the mission + hosted link + contract (leader offered to do it on joseph; awaiting yes); 5 fresh contract deploy + forge test (Kellen). Joseph does deck + pitch. About 30 min of slack after the merge.
 - Watcher: re-arm after each mail (command in the state file header).
+
+## 14:57
+- ui stage 1 pushed (step-5-ui 868598d), mail archived. Plays mission in Mission Control, 3-tab camera box, auto-switch to B. Open Qs for Joseph: switch earlier (survey verdict 3216 s)? merge stage 1 now? Stage 2 in progress.
+- README rewritten around run_mission.py on joseph (a968485).
+- Archived perf, nav, designer. scene told to stop its watcher (archive refused: live work). Kept ui, viewer, integrator.

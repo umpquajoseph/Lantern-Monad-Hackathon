@@ -152,11 +152,8 @@ function bindControls() {
   };
   document.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
   setView("A");
-  document.querySelectorAll("#cam-seg button").forEach((b) => (b.onclick = () => {
-    state.cam = b.dataset.ag;
-    document.querySelectorAll("#cam-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-    render(true);
-  }));
+  // The camera's A / B is the same choice as Follow rover A / B: one sets both.
+  document.querySelectorAll("#cam-seg button").forEach((b) => (b.onclick = () => setView(b.dataset.ag)));
   document.querySelectorAll("#map-seg button").forEach((b) => (b.onclick = () => {
     map.setMode(b.dataset.map);
     document.querySelectorAll("#map-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
@@ -334,6 +331,7 @@ function camera(run, fr, k) {
     delete li.dataset.src;
   }
   $("lidar-cap").textContent = lidarCapText(run, a, fr ? fr.k : k);
+  li.onload = () => { $("lidar-cap").textContent = lidarCapText(run, a, fr ? fr.k : k); };
   // Rim points are logged per step, in that step's pose: draw them only on a step's own frame.
   drawRims(run, a, fr ? fr.k : k, !!(fr && fr.sub));
   drawPlan(run, a, fr, k);
@@ -414,7 +412,8 @@ function lidarCapText(run, a, k) {
   const hz = r.lidar_hazards || {};
   // Two image kinds, told apart by width (step-6-nav 40304d4): the top-down
   // map of what the scan found is 800 px wide; the older range image is 400.
-  const topDown = $("lidar-img").naturalWidth >= LIDAR_TOPDOWN_W;
+  // Until the image has loaded its width is 0: say top-down, the current kind.
+  const w = $("lidar-img").naturalWidth, topDown = !(w > 0 && w < LIDAR_TOPDOWN_W);
   return (topDown
     ? `Rover ${a} lidar, from above: what this scan found. Grey safe, amber crater floor (avoided), red too steep (no-go). `
     : `Rover ${a} lidar, beside the camera: 120° x 33°, near warm, far cool. `) +

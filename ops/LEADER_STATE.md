@@ -334,3 +334,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:04 perf: c935f02 pool 2 workers x 5 threads (~0.15 s/display frame), 8cf1093 frames without plan overlay (byte-identical). Integrator told to merge with demo-mission.
 - 14:04 scene: run_mission --stamp demo --no-chain estimate 6-7 min (259 steps, ~234 live frames, 696 display frames). Starts on integrator's confirm.
 - 14:05 scene: run_mission.py:575 replaced index.json with mission-demo only. Told scene to merge it instead (mission first, run1/run2 backups kept), 2 lines in Kellen's file, via step-6-resume.
+- 14:05 integrator: integration d94fe83 has demo-mission and perf; run_mission --no-render: S1 dry, S2 ice, confirmed; :8000 clean. Scene cleared to start final render.

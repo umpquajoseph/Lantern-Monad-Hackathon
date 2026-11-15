@@ -52,6 +52,7 @@ const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop 
 const FOCUS_WALL_S = 3;    // asked for: the final-site drill plays in about this many real seconds (135-270 s of sim time)
 const FOCUS_LEAD_S = 3;    // the close-up starts this many sim seconds before the stop
 const FOCUS_TAIL_S = 3;    // and holds this long after it
+const BOTH_IN_SHOT_M = 20; // assumed: the drill close-up widens to frame the other rover when it is this near
 const NARROW = matchMedia("(max-width: 760px)");
 // Candidate sites from orbit (S1, S2): green in 3D, on the camera and on the map
 // (asked for: "the site rings can be green"), so amber means the planned route only.
@@ -839,11 +840,26 @@ function closeUp(ev) {
   const [x, y, h] = S.run.poseAt(ev.agency, ev.t0);
   const c = Math.cos(h), s = Math.sin(h);
   const at = (fx, fy) => [x + fx * c - fy * s, y + fx * s + fy * c];
-  const [dx, dy] = at(1.55, -0.42);
-  const [ex, ey] = at(4.2, -4.6);
+  let [dx, dy] = at(1.55, -0.42);
+  let [ex, ey] = at(4.2, -4.6);
+  let eh = 2.8;
+  // At the final site the Surveyor is parked a few metres off: pull back and look
+  // across the line between them, so both rovers are in shot (the close-up alone
+  // framed only the Prospector).
+  const other = ev.agency === "B" ? "A" : null;
+  if (other && S.run.agencies.includes(other)) {
+    const [ox, oy] = S.run.poseAt(other, ev.t0);
+    const sep = Math.hypot(ox - dx, oy - dy);
+    if (sep > 1 && sep < BOTH_IN_SHOT_M) {
+      let nx = -(oy - dy) / sep, ny = (ox - dx) / sep;            // across the A-B line
+      if (nx * (ex - dx) + ny * (ey - dy) < 0) { nx = -nx; ny = -ny; }   // on the close-up's side
+      const mx = (dx + ox) / 2, my = (dy + oy) / 2, d = Math.max(6, 1.1 * sep + 3);
+      [dx, dy, ex, ey, eh] = [mx, my, mx + nx * d, my + ny * d, 2.8 + 0.3 * sep];
+    }
+  }
   world.follow = "none";
   world.controls.target.copy(world.groundL(dx, dy, 0.7));
-  world.camera.position.copy(world.groundL(ex, ey, 2.8));
+  world.camera.position.copy(world.groundL(ex, ey, eh));
   world.controls.update();
 }
 
@@ -914,10 +930,38 @@ function loop(now) {
 }
 
 // ------------------------------------------------------------------ render
+// A very dim rim light on both rover models (asked for: "a very dim rover rim light
+// would be good"): a glow at grazing view angles, added in each rover material's
+// own shader, so it lights the rover silhouettes and nothing else. Viewer only:
+// the rover camera images are rendered offline and never see it.
+const ROVER_RIM_RGB = [0.11, 0.13, 0.16], ROVER_RIM_POW = 2.5;   // assumed, display only
+function addRoverRim(a) {
+  const g = (world.rovers[a] || {}).g;
+  if (!g) return;
+  let n = 0;
+  g.traverse((o) => { if (o.isMesh) n++; });
+  if (g.userData.rimN === n) return;   // models can arrive late: patch what is new
+  g.userData.rimN = n;
+  g.traverse((o) => {
+    const m = o.isMesh && o.material;
+    if (!m || Array.isArray(m) || m.userData.rim || !(m.isMeshStandardMaterial || m.isMeshPhongMaterial || m.isMeshLambertMaterial)) return;
+    const r = (o.material = m.clone());
+    r.userData.rim = true;
+    r.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+        { float rimF = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
+          totalEmissiveRadiance += vec3(${ROVER_RIM_RGB.map((v) => v.toFixed(3)).join(", ")}) * pow(rimF, ${ROVER_RIM_POW.toFixed(1)}); }`);
+    };
+    r.customProgramCacheKey = () => "lantern-rover-rim";
+    r.needsUpdate = true;
+  });
+}
+
 function render(panels) {
   const run = S.run, t = S.t;
   if (!run) return;
   world.currentT = t;
+  for (const a of run.agencies) addRoverRim(a);
   world.update(t, { tracks: S.opts.routes, particles: S.opts.particles });
   updateSteepShade(t);
   updatePlan3D(t);
@@ -1064,7 +1108,12 @@ function drawFpOverlay(fr, cv, small) {
   const k = small ? 2 : 1;
   const font = (px) => `600 ${px * k}px Barlow, Helvetica, Arial, sans-serif`;
   const a = S.rover, run = S.run, tf = run.times[fr.k];
-  const pose = run.steps[fr.k].rovers[a].true_pose;
+  // The step's logged pose places what the step logged (rims); the shown image's
+  // own pose (a display sub-frame sits fr.f of the way to the next step) projects
+  // everything, so marks stay put on the ground between steps.
+  const stepPose = run.steps[fr.k].rovers[a].true_pose;
+  const kNext = Math.min(fr.k + 1, run.steps.length - 1);
+  const pose = fr.sub ? run.poseAt(a, run.times[fr.k] + fr.f * (run.times[kNext] - run.times[fr.k])) : stepPose;
   const camZ = terrain.heightAt(pose[0], pose[1]) + FP.camH;
   const P = (x, y, lift = 0.05) => project(pose, camZ, x, y, terrain.heightAt(x, y) + lift);
   const col = a === "A" ? "#5aa7ff" : "#f2994a";
@@ -1152,15 +1201,20 @@ function drawFpOverlay(fr, cv, small) {
     c.lineWidth = 3 * k; c.strokeStyle = "#ff5d5d"; c.fillStyle = "rgba(255,93,93,.18)"; c.fill(); c.stroke();
     if (top) { c.fillStyle = "#ff5d5d"; c.font = font(13); c.fillText(h.hazard_id ? `FLAGGED ${h.hazard_id} · KEEP CLEAR` : "OBSTACLE", top[0] - 34 * k, top[1] - 8); }
   }
-  // Rim points the navigation used at this step (sensor frames only; display frames sit between steps).
+  // Rim points the navigation used at this step: rover frame at the step's pose
+  // into the world, then onto the shown image. On a display sub-frame they stay
+  // (asked for: "the crater points keep blinking on and off"), a little fainter.
   const rr = run.steps[fr.k].rovers[a];
-  if (S.opts.rims && !fr.sub && rr && rr.rims) {
+  if (S.opts.rims && rr && rr.rims) {
     c.fillStyle = col;
+    c.globalAlpha = fr.sub ? 0.7 : 1;
+    const cs = Math.cos(stepPose[2]), sn = Math.sin(stepPose[2]);
     for (const [f, l] of rr.rims) {
-      const wx = pose[0] + f * Math.cos(pose[2]) - l * Math.sin(pose[2]), wy = pose[1] + f * Math.sin(pose[2]) + l * Math.cos(pose[2]);
+      const wx = stepPose[0] + f * cs - l * sn, wy = stepPose[1] + f * sn + l * cs;
       const q = P(wx, wy, 0);
       if (q) c.fillRect(q[0] - 3 * k, q[1] - 3 * k, 6 * k, 6 * k);
     }
+    c.globalAlpha = 1;
   }
   const sites = registryAt(tf);
   for (const s of run.log.satellite_sites || []) {
@@ -1302,9 +1356,12 @@ function updateOverlay(t) {
   // During a close-up, clear the markers that would stand in front of the drill.
   const fa = S.focusEv ? S.focusEv.agency : null;
   for (const o of siteObjs.values()) o.beam.visible = !fa;
+  // A science close-up shows the rovers themselves: no estimate dots, rings or
+  // particle clouds on either (at the final site they hid the parked Surveyor).
   for (const ag of S.run.agencies) {
-    if (world.estDots[ag]) world.estDots[ag].visible = S.opts.routes && ag !== fa;
-    if (world.sigmaRings[ag]) world.sigmaRings[ag].visible = S.opts.routes && ag !== fa;
+    if (world.estDots[ag]) world.estDots[ag].visible = S.opts.routes && !fa;
+    if (world.sigmaRings[ag]) world.sigmaRings[ag].visible = S.opts.routes && !fa;
+    if (fa && world.particles && world.particles[ag]) world.particles[ag].visible = false;
   }
   const done = new Set([...sites.values()].map((s) => s.target));
   for (const o of satObjs) o.g.visible = !done.has(o.id);
@@ -1464,14 +1521,15 @@ function story(run, k, finds) {
   const f = finds[0];
   if (!f) return missionStory(run, k);
   const other = run.agencies.find((x) => x !== f.agency);
-  const nm = (ag) => `The ${ROLE[ag] || "rover"} (${ag})`;
-  if (f.status === "reported") return `${nm(f.agency)} posted a find at <b>±${f.sigma.toFixed(1)} m</b>. ${nm(other)}, from another agency, reads it from the chain and drives there to check.`;
+  // Short enough for two lines in the top bar at 1366 px (asked for: the story sits left of the rover picker).
+  const nm = (ag) => `${ROLE[ag] || "Rover"} ${ag}`;
+  if (f.status === "reported") return `${nm(f.agency)} posted a find at <b>±${f.sigma.toFixed(1)} m</b>. ${nm(other)}, another agency, reads it on chain and goes to check.`;
   if (f.status === "confirmed") return `${nm(other)} measured ice at the reported spot. The find is <b>confirmed</b> on chain.`;
-  return `${nm(other)} found no ice at the reported spot: ${f.agency}'s position was off by more than the ice patch. The find stays on the record, <b>disputed</b>.`;
+  return `${nm(other)} found no ice there: ${f.agency}'s position was off. The find stays on record, <b>disputed</b>.`;
 }
 
 function missionStory(run, k) {
-  const name = (ag) => `The ${ROLE[ag] || "rover"} (${ag})`;
+  const name = (ag) => `${ROLE[ag] || "Rover"} ${ag}`;
   const [sv, pr] = ["A", "B"].map((ag) => (run.agencies.includes(ag) ? ag : run.agencies[0]));
   const phase = run.rover(sv, k).phase || "";
   const m = /^(to|survey) (\S+)/.exec(phase);

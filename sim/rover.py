@@ -148,7 +148,9 @@ class Rover:
         self.nav = nav
         self.slope = slope
         self.rng = rng
-        est0 = self.true[:2] + nav.err
+        est0 = self.true[:2] + nav.err       # the simulation's landing error, applied once
+        if hasattr(nav, "start"):            # a real filter: give it the starting belief only
+            nav.start(est0, self.true[2])    # heading assumed known at start (spec step 3)
         self.estimate = est0.copy()
         self.sigma = nav.sigma
         self.odom = np.array([est0[0], est0[1], self.true[2]])     # dead-reckoned pose, starts at the estimate
@@ -261,6 +263,12 @@ class Rover:
         self.distance += d
         return (d_o, dh_o), (self.odom[:2] - before) - true_disp
 
-    def localize(self, odom_err_xy, d, n_rims):
-        self.estimate, self.sigma = self.nav.update(odom_err_xy, d, n_rims, self.true[:2])
+    def localize(self, odom_err_xy, d, n_rims, odom=None, rims=None):
+        """Update the estimate. A real filter (sim/nav.py) gets only the
+        odometry and the rim points; the stand-in gets its tracked error."""
+        if hasattr(self.nav, "step"):
+            est, self.sigma = self.nav.step(odom, rims)
+            self.estimate = np.asarray(est, dtype=np.float64)
+        else:
+            self.estimate, self.sigma = self.nav.update(odom_err_xy, d, n_rims, self.true[:2])
         return self.estimate, self.sigma

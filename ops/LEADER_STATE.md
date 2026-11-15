@@ -277,3 +277,4 @@ Read mail, then `mv` it to `leader/archive/`.
   frames (35-45%), one core only (threads), camera horizon duplicates lamp's
   (66 ms). Order approved: pool sizing, pass reuse, threads, horizon. Mail
   after each fix.
+- 13:28 perf fix 4 (716b088): pool rounds before floor, 3.4 GB free -> 2 workers. Scene owns main()/--resume, perf keeps LiveCamera/pool/scene.py. Next: pass-1 replay.

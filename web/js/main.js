@@ -205,7 +205,9 @@ function render(force = false) {
   $("time").value = t;
   $("clock").textContent = `${fmtClock(t)} · step ${k + 1}/${run.steps.length}`;
   hud(run, k);
-  if (force || k !== lastK || lastCamKey !== state.cam) { camera(run, k); lastCamKey = state.cam; }
+  const fr = run.frameNear(state.cam, t);
+  const camKey = `${state.cam}:${fr ? fr.k : -1}`;
+  if (force || camKey !== lastCamKey) { camera(run, fr, k); lastCamKey = camKey; }
   if (force || k !== lastK) record(run, k);
   lastK = k;
 }
@@ -225,9 +227,8 @@ function hud(run, k) {
   $("hud").innerHTML = rows.join("");
 }
 
-function camera(run, k) {
+function camera(run, fr, k) {
   const a = state.cam;
-  const fr = run.frameAt(a, k);
   const img = $("fp-img");
   $("fp-empty").hidden = !!fr;
   if (fr) {
@@ -236,7 +237,7 @@ function camera(run, k) {
       img.src = fr.src;
     }
   } else img.removeAttribute("src");
-  const r = run.rover(a, k);
+  const r = run.rover(a, fr ? fr.k : k);
   // The camera records one frame per logged stop; say how far apart they are.
   const stepM = run.speed[a] && run.log.dt_s ? run.speed[a] * run.log.dt_s : null;
   const every = stepM ? `, one frame per ${stepM < 10 ? stepM.toFixed(1).replace(/\.0$/, "") : Math.round(stepM)} m stop` : "";

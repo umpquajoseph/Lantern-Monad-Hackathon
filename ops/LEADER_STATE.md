@@ -286,3 +286,10 @@ Read mail, then `mv` it to `leader/archive/`.
   (script, pitch, backup video) and `chainqa` (Foundry, forge suites, anvil
   end-to-end); asked who owns the main UI (Ritvik vs designer) and the
   mission sim (Kellen).
+- 13:35 Vision run done (475 s, render 569 ms + vision 32 + lidar 91 per
+  live frame): run 1 confirmed, A 1.24 m off sigma 0.75, B 0.72 m sigma
+  0.72. No index.json written by main's run_demo --only (scene's fix is on
+  step-6-resume); wrote it by hand. Served at http://localhost:8030 via
+  launch.json "lantern-vision" (checkpoint worktree, LANTERN_DATA=
+  C:\Monad-Hackathon-vision-data). Looked: blue detected rim points sit on
+  the dark rim crescent; red x lidar hazards; amber planned path.

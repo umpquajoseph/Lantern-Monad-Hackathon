@@ -153,7 +153,7 @@ a:hover { text-decoration: underline; }
 }
 .titles { min-width: 0; flex: 1; }
 .ptitle { font-size: var(--f-title); font-weight: 600; letter-spacing: 0.005em; }
-.psub { margin-top: 3px; font-size: var(--f-body); color: var(--soft); min-height: 1.45em; max-width: 78ch; }
+.psub { margin-top: 3px; font-size: var(--f-body); color: var(--soft); min-height: 1.45em; max-width: 96ch; }
 .psub b { color: var(--fg); font-weight: 600; }
 
 /* Honesty: what in this run is not real yet. Quiet, but always on screen. */
@@ -320,7 +320,7 @@ select:focus { outline: none; border-color: var(--accent); }
   .sb-nav .sb-section, .sb-nav .ck, .sb-nav .keys, .sb-foot { display: none; }
   #run-list { display: contents; }
   .nav, #run-list .nav { width: auto; flex: 1 1 40%; padding: 6px 10px; border: 1px solid var(--hairline); box-shadow: none; }
-  .nav[aria-current="true"], .nav[aria-current="true"]:hover { box-shadow: none; border-color: var(--accent); }
+  .nav[aria-current="true"], #run-list .nav[aria-current="true"], .nav[aria-current="true"]:hover { box-shadow: none; border-color: var(--accent); }
   .page { grid-template-columns: 1fr; grid-template-rows: auto auto auto; height: auto; }
   .head { grid-column: 1; flex-direction: column; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--hairline); }
   .standin { flex: none; }

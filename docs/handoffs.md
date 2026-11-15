@@ -19,6 +19,12 @@ one only by telling the others and editing this file in the same commit.
   `y = y0 + i * cell`: rows run north. A GeoTIFF's rows run south, so flip it.
 - `craters`: `np.ndarray (N, 3)`, rows `[x, y, diameter]` in metres. This is the
   rover's orbital map.
+- Slope for planning: measure it across `SLOPE_BASELINE_M` = 2 m (ASSUMED,
+  about one rover length), not across one 0.25 m cell. Across single cells
+  the walls of the deeper mapped craters reach about 27°, so a 0.25 m slope
+  map would wall off every crater interior. Across 5 m the drive area is
+  99.8% under 15° (terrain report, 2026-11-15). The 15° limit itself is the
+  spec's.
 - On disk: `sim/terrain.py` has `load_terrain(path) -> (height, craters, x0, y0,
   cell)`. The built file is `data/terrain/*.npz` in the main checkout
   (`C:\Monad-Hackathon-Project\data\terrain\`), git-ignored and rebuilt by the

@@ -245,7 +245,10 @@ class TargetBoard:
         t = dict(id=tid, kind="water_ice", purpose="check", x=float(find["x"]),
                  y=float(find["y"]), radius=3.0 * float(find["sigma"]),
                  find_id=find["id"], finder_agency=find["agency"],
-                 source="chain find", status="open", claimed_by=None, record_id=None)
+                 source="chain find", status="open", claimed_by=None, record_id=None,
+                 # Evidence refs (sim/evidence.py): the finder's report, and
+                 # its completed route, which the checker may reuse.
+                 report_cid=find.get("report_cid"), route_cid=find.get("route_cid"))
         self.targets.append(t)
         return t
 

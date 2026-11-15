@@ -42,37 +42,46 @@ Needs numpy, scipy, matplotlib; web3 for keccak hashes that match
 | Blockchain reporting: outbox, push in order | `sim/mission_store.py` `push_outbox` | step 1 `LanternClient` |
 | Animation of a science stop | `science/science_anim.js` | |
 
-## Where the data goes (JSON)
+## Where the data goes
 
-`data/missions/<mission_id>/` (git-ignored; set `LANTERN_OUT` to move it):
+Three layers; the full design is in [storage.md](storage.md).
 
-| File | Holds |
-|---|---|
-| `mission.json` | manifest: terrain, planner, stand-ins, per-rover summary |
-| `telemetry.jsonl` | pose, estimate, sigma, battery, comms, mode, every 10 m |
-| `events.jsonl` | start, depart, arrive, science, fault, abort, return, docked, ... |
-| `survey.jsonl` | every neutron reading |
-| `resource_map.json` | survey binned at 20 m |
-| `targets.json` | every target and its end status |
-| `science/records/*.json` | one record per science stop |
-| `outbox.json` | chain calls, in order, with dependencies |
-| `run_log.json` | the run in the `docs/handoffs.md` run-log format |
-| `HIDDEN_TRUTH.json` | deposits, for the labelled reveal only |
-| `map.png` | the mission from above |
+- **Chain**: per find, position, sigma, reading and the 32-byte dataHash,
+  which is also the report's IPFS CID digest.
+- **Evidence** (`data/evidence/objects/<cid>.json`): one report and one
+  thinned route per science stop, write-once, verified on every read.
+- **Cache** (`data/lantern.db`, SQLite): telemetry, events, survey, reports
+  index, outbox, chain index.
+
+Per mission, `data/missions/<mission_id>/` (git-ignored; `LANTERN_OUT` moves
+it) keeps the small files people and the viewer read: `mission.json`,
+`reports/<id>.json` (evidence refs plus the hidden truth), `outbox.json`,
+`targets.json`, `resource_map.json`, `run_log.json`, `HIDDEN_TRUTH.json`,
+`map.png`.
 
 ## For the chain step (leader's Claude)
 
-```python
-from sim.mission_store import MissionStore, push_outbox
-from sim.chain import LanternClient          # step 1
-push_outbox(MissionStore.latest(), LanternClient())
+```bash
+python sim/mission.py push --dry-run     # the calls, in order
+python sim/mission.py push               # post (needs sim/chain.py and .env)
+python sim/mission.py verify             # dataHash -> CID -> report -> route
 ```
 
-Safety zones first, then finds, then checks; a check waits for its find and
-gets its real find id. A safety zone's `until` is set at post time to now +
-`hold_s`, because the contract takes unix seconds in the future. Posting
-again skips what is posted. Tested against a fake client with the same
-signatures; not yet against the live contract.
+Safe to repeat: it reads the contract first and skips anything already
+there (finds by dataHash, checks by find and agency, zones by the report CID
+in their purpose). Tested against a fake client with the same signatures
+and refusal rules; not yet against the live contract.
+
+## For app.py (the team's base)
+
+```bash
+python sim/mission.py run --publish-run <DATA>/runs
+```
+
+adds the mission as a run next to `run_demo.py`'s, so `python app.py` shows
+it in the viewer. On Joseph's machine `<DATA>` is
+`C:\Monad-Hackathon-Project\data`; on a Mac use `data/runs` (not
+`lantern_data/`, which is committed).
 
 ## For the viewer
 

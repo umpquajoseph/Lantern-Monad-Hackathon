@@ -1,8 +1,8 @@
 {
  "schema": "lantern.science/1",
- "record_id": "A-T07-t000280",
+ "record_id": "A-T07-t000250",
  "agency": "A",
- "t": 280.0,
+ "t": 249.84,
  "target": {
   "id": "T07",
   "kind": "water_ice",
@@ -11,79 +11,35 @@
   "source": "orbital candidate (simulated)"
  },
  "position": {
-  "x": 73373.0,
-  "y": 36176.1,
+  "x": 73371.87,
+  "y": 36176.73,
   "sigma": 0.8,
-  "lat": -87.302692,
-  "lon": 63.754683,
+  "lat": -87.302716,
+  "lon": 63.753942,
   "frame": "world metres (south polar stereographic on LOLA)",
   "source": "rover estimate"
  },
  "route": {
-  "length_m": 30.3,
+  "length_m": 27.0,
+  "ref": "bafkrwibl3svhgcmlxl4ictabibmdej6bxfnyz64eatgxpvlawbca2d2hpq",
   "points": [
    [
-    73370.12,
-    36150.12
+    73369.61,
+    36152.06
    ],
    [
-    73372.2,
-    36150.88
+    73367.92,
+    36162.11
    ],
    [
-    73373.68,
-    36152.27
+    73368.37,
+    36170.11
    ],
    [
-    73373.16,
-    36154.2
-   ],
-   [
-    73372.11,
-    36155.95
-   ],
-   [
-    73371.8,
-    36157.86
-   ],
-   [
-    73371.58,
-    36159.82
-   ],
-   [
-    73371.64,
-    36161.89
-   ],
-   [
-    73371.53,
-    36164.29
-   ],
-   [
-    73372.07,
-    36166.39
-   ],
-   [
-    73372.76,
-    36168.93
-   ],
-   [
-    73373.21,
-    36170.93
-   ],
-   [
-    73373.03,
-    36172.91
-   ],
-   [
-    73373.16,
-    36174.96
-   ],
-   [
-    73373.0,
-    36176.1
+    73371.87,
+    36176.73
    ]
-  ],
-  "source": "rover estimate"
+  ]
  },
  "sample": {
   "instrument": "1 m drill + mass spectrometer (simulated)",
@@ -91,99 +47,99 @@
   "profile": [
    {
     "depth_m": 0.1,
-    "water_wt_pct": 0.076
+    "water_wt_pct": 0.359
    },
    {
     "depth_m": 0.2,
-    "water_wt_pct": 0.039
+    "water_wt_pct": 0.064
    },
    {
     "depth_m": 0.3,
-    "water_wt_pct": 0.107
-   },
-   {
-    "depth_m": 0.4,
     "water_wt_pct": 0.0
    },
    {
+    "depth_m": 0.4,
+    "water_wt_pct": 0.115
+   },
+   {
     "depth_m": 0.5,
-    "water_wt_pct": 0.068
+    "water_wt_pct": 0.0
    },
    {
     "depth_m": 0.6,
-    "water_wt_pct": 3.301
+    "water_wt_pct": 2.848
    },
    {
     "depth_m": 0.7,
-    "water_wt_pct": 4.584
+    "water_wt_pct": 4.522
    },
    {
     "depth_m": 0.8,
-    "water_wt_pct": 4.443
+    "water_wt_pct": 4.424
    },
    {
     "depth_m": 0.9,
-    "water_wt_pct": 4.698
+    "water_wt_pct": 4.86
    },
    {
     "depth_m": 1.0,
-    "water_wt_pct": 4.433
+    "water_wt_pct": 4.468
    }
   ],
-  "water_wt_pct": 4.698,
-  "ilmenite_wt_pct": 1.06,
+  "water_wt_pct": 4.86,
+  "ilmenite_wt_pct": 1.87,
   "regolith_class": "ilmenite-poor: typical highland regolith"
  },
  "result": {
   "verdict": "ice",
-  "reading": 4.292,
+  "reading": 4.224,
   "ice_top_m": 0.5,
-  "summary": "Water ice: 4.29 wt% in the core, starting 50 cm down"
+  "summary": "Water ice: 4.22 wt% in the core, starting 50 cm down"
  },
  "phases": [
   {
    "name": "park",
-   "t0": 280.0,
+   "t0": 249.84,
    "dur": 2.0
   },
   {
    "name": "arm_deploy",
-   "t0": 282.0,
+   "t0": 251.84,
    "dur": 4.0
   },
   {
    "name": "drill",
-   "t0": 286.0,
+   "t0": 255.84,
    "dur": 10.0
   },
   {
    "name": "sample_lift",
-   "t0": 296.0,
+   "t0": 265.84,
    "dur": 3.0
   },
   {
    "name": "analyze",
-   "t0": 299.0,
+   "t0": 268.84,
    "dur": 5.0
   },
   {
    "name": "arm_stow",
-   "t0": 304.0,
+   "t0": 273.84,
    "dur": 4.0
   }
  ],
  "attempts": 1,
- "data_hash": "0x8618f0b0a52f13e399ddf6c7a25a98d85cacfeb3aa6f11d97acb294fce8608ef",
- "hash_alg": "keccak256 of canonical JSON (sorted keys) of `sample`",
+ "data_hash": "0x7192ce79304576c88f50b0b462f7810da15d69775261754b192dd5b69db9b539",
+ "hash_alg": "keccak256 of the report object's canonical JSON (its CID digest)",
  "chain": {
   "call": "post_find",
   "args": {
    "agency": "A",
-   "x": 73373.0,
-   "y": 36176.1,
+   "x": 73371.87,
+   "y": 36176.73,
    "sigma": 0.8,
-   "reading": 4.292,
-   "data_hash": "0x8618f0b0a52f13e399ddf6c7a25a98d85cacfeb3aa6f11d97acb294fce8608ef"
+   "reading": 4.224,
+   "data_hash": "0x7192ce79304576c88f50b0b462f7810da15d69775261754b192dd5b69db9b539"
   },
   "status": "pending",
   "tx": null,
@@ -192,81 +148,97 @@
    "call": "post_safety_zone",
    "args": {
     "agency": "A",
-    "x": 73373.0,
-    "y": 36176.1,
+    "x": 73371.87,
+    "y": 36176.73,
     "radius": 10.0,
     "hold_s": 600.0,
-    "purpose": "drilling at target T07"
+    "purpose": "drilling at T07; report bafkrwidrslhhsmcfo3ei6ufqwrrppainufows52smf2uwgjn2w3j3onvhe"
    },
-   "until_sim_t": 908.0,
+   "until_sim_t": 877.8,
    "status": "pending",
    "tx": null
   }
  },
  "HIDDEN_TRUTH": {
   "true_pose": [
-   73372.475,
-   36176.1,
-   1.482
+   73372.482,
+   36176.177,
+   1.152
   ],
-  "position_error_m": 0.52,
+  "position_error_m": 0.82,
   "true_route": [
    [
-    73370.12,
-    36150.12
+    73369.61,
+    36152.06
    ],
    [
-    73371.96,
-    36150.85
+    73369.12,
+    36154.12
    ],
    [
-    73373.18,
-    36152.97
+    73369.12,
+    36156.12
    ],
    [
-    73372.87,
-    36154.92
+    73369.12,
+    36158.12
    ],
    [
-    73371.99,
-    36156.71
+    73369.12,
+    36160.12
    ],
    [
-    73371.53,
-    36158.65
+    73369.12,
+    36162.12
    ],
    [
-    73371.38,
-    36161.14
+    73369.12,
+    36164.12
    ],
    [
-    73371.43,
-    36163.14
+    73369.12,
+    36166.12
    ],
    [
-    73371.54,
-    36165.14
+    73369.12,
+    36168.12
    ],
    [
-    73371.73,
-    36167.63
+    73369.79,
+    36170.46
+   ],
+   [
+    73370.9,
+    36172.68
    ],
    [
     73371.9,
-    36169.63
-   ],
-   [
-    73372.08,
-    36171.62
-   ],
-   [
-    73372.3,
-    36174.11
+    36174.87
    ],
    [
     73372.48,
-    36176.1
+    36176.18
    ]
   ]
+ },
+ "evidence": {
+  "report": {
+   "cid": "bafkrwidrslhhsmcfo3ei6ufqwrrppainufows52smf2uwgjn2w3j3onvhe",
+   "data_hash": "0x7192ce79304576c88f50b0b462f7810da15d69775261754b192dd5b69db9b539",
+   "sha256": "0xa6ecb61bb0969e0b4adc9b304f75474ed475cb5fd647f9c5dce8b4b289283184",
+   "bytes": 1511,
+   "kind": "report",
+   "storage": "local, not pinned (demo data on this machine only)"
+  },
+  "route": {
+   "cid": "bafkrwibl3svhgcmlxl4ictabibmdej6bxfnyz64eatgxpvlawbca2d2hpq",
+   "data_hash": "0x2bdcaa73098bbaf8814c0140583227c1b95b8cfb8404cd77d560b0440d0f477c",
+   "sha256": "0x10129d33bce8c8f7b1ae195cde5276c9043f6984bd8671adc87a6c0c6ddefdb8",
+   "bytes": 368,
+   "kind": "route",
+   "storage": "local, not pinned (demo data on this machine only)"
+  },
+  "route_points_driven": 52,
+  "route_points_stored": 4
  }
 }

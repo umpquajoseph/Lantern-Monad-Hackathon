@@ -50,6 +50,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import evidence as EV  # noqa: E402
 import health as H  # noqa: E402
 import mission_store as MS  # noqa: E402
 import planner_link  # noqa: E402
@@ -156,8 +157,8 @@ class Mission:
         ex, ey = r.estimate
         self.store.telemetry(dict(t=round(r.t, 1), agency=r.agency, x=round(x, 2), y=round(y, 2),
                                   heading=round(h, 4), est_x=round(ex, 2), est_y=round(ey, 2),
-                                  sigma=r.sigma, odometer_m=round(r.odo, 1),
-                                  **r.health.snapshot(r.t, r.mode)))
+                                  sigma=r.sigma, odom_x=round(r.odom[0], 2), odom_y=round(r.odom[1], 2),
+                                  odometer_m=round(r.odo, 1), **r.health.snapshot(r.t, r.mode)))
 
     def home_dist(self, r):
         return math.dist(r.estimate, r.dock)
@@ -197,7 +198,15 @@ class Mission:
                                 f"{len(left)} targets left, none fits the battery and the sortie time")
         self.board.claim(tgt["id"], r.agency)
         try:
-            route = self.link.plan(r.pose[:2], (tgt["x"], tgt["y"]))
+            reuse = None
+            if tgt.get("route_cid"):
+                # A check: fetch the finder's completed route from evidence
+                # (verified against its CID), and reuse what is still safe.
+                ref = self.store.ev.get(tgt["route_cid"])
+                route, reuse = self.link.reuse(r.pose[:2], ref["points"], (tgt["x"], tgt["y"]))
+                self.ev(r, "route_reuse", target_id=tgt["id"], route_cid=tgt["route_cid"], **reuse)
+            else:
+                route = self.link.plan(r.pose[:2], (tgt["x"], tgt["y"]))
         except planner_link.NoRoute as e:
             tgt["status"] = "unreachable"
             r.stats["unreachable"] += 1
@@ -248,9 +257,15 @@ class Mission:
                                   attempts=tries)
         r.t += SCIENCE_S
         r.health.spend(SCIENCE_WH)
-        self.store.science.save(rec)
+        if tgt["purpose"] == "check":
+            rec["checks_record"] = str(tgt["find_id"]).removeprefix(MS.FIND_REF)
+        # The route evidence is the last ROUTE_LENGTH_M actually driven, by the
+        # rover's own estimate, before thinning.
+        tail, _ = science.last_route(est_xy, spacing=0.0)
+        rec = self.store.publish(rec, tail, parent_report_cid=tgt.get("report_cid"))
         self.board.complete(tgt["id"], rec["record_id"])
         new = MS.outbox_items_for(rec, r.health)
+        self.store.queue(new)
         self.outbox.extend(new)
         v = rec["result"]["verdict"]
         r.stats["targets"] += 1
@@ -266,7 +281,9 @@ class Mission:
                 phases=rec["phases"])
         if v == "ice" and tgt["purpose"] != "check":
             find = dict(id=MS.FIND_REF + rec["record_id"], agency=r.agency,
-                        x=rec["position"]["x"], y=rec["position"]["y"], sigma=rec["position"]["sigma"])
+                        x=rec["position"]["x"], y=rec["position"]["y"], sigma=rec["position"]["sigma"],
+                        report_cid=rec["evidence"]["report"]["cid"],
+                        route_cid=rec["evidence"]["route"]["cid"])
             chk = self.board.add_check_target(find)
             self.ev(r, "check_requested", target_id=chk["id"], for_agency="other agency")
         self.tel(r)
@@ -340,7 +357,8 @@ class Mission:
             live = [r for r in self.rovers.values() if not r.done]
             if not live:
                 break
-            self.leg(min(live, key=lambda r: r.t))
+            with self.store.db.batch():   # one SQLite transaction per leg
+                self.leg(min(live, key=lambda r: r.t))
         self.finish(time.perf_counter() - t0)
         return self.store
 
@@ -368,7 +386,7 @@ class Mission:
             a = np.array(r.track)
             idx = np.clip(np.searchsorted(a[:, 0], times, side="right") - 1, 0, len(a) - 1)
             per[ag] = a[idx]
-        events = self.store.read_lines("events.jsonl")
+        events = self.store.db.events(self.store.id, "science")
         # Finds are numbered 1, 2, ... in the order they were made, as the
         # contract would number them; find_refs maps each back to its record.
         find_no = {}
@@ -384,8 +402,10 @@ class Mission:
             evs, sci = [], []
             for e in events:
                 if t <= e["t"] < t + RUN_LOG_DT_S and e["type"] == "science":
-                    rec = self.store.science.load(e["record_id"])
+                    rec = self.store.load_report(e["record_id"])
                     p, c = rec["position"], rec["chain"]
+                    refs = {"report_cid": rec["evidence"]["report"]["cid"],
+                            "route_cid": rec["evidence"]["route"]["cid"]}
                     # Every stop, dry ones too, with phases for the animation.
                     # Its own key, so a viewer that knows only find and check
                     # events is not confused by it.
@@ -396,7 +416,8 @@ class Mission:
                                     "find_id": find_no[rec["record_id"]], "x": p["x"],
                                     "y": p["y"], "sigma": p["sigma"],
                                     "reading": rec["result"]["reading"], "tx": None,
-                                    "record_id": rec["record_id"]})
+                                    "data_hash": rec["data_hash"],
+                                    "record_id": rec["record_id"], **refs})
                     elif c["call"] == "check_find":
                         ref = str(c["args"]["find_id"]).removeprefix(MS.FIND_REF)
                         evs.append({"type": "check", "agency": rec["agency"],
@@ -404,7 +425,7 @@ class Mission:
                                     "x": p["x"], "y": p["y"],
                                     "sigma": p["sigma"], "reading": rec["result"]["reading"],
                                     "agrees": c["args"]["agrees"], "tx": None,
-                                    "record_id": rec["record_id"]})
+                                    "record_id": rec["record_id"], **refs})
             step = {"t": round(float(t), 1), "rovers": rovers, "events": evs}
             if sci:
                 step["science"] = sci
@@ -425,15 +446,40 @@ class Mission:
             "steps": steps,
         }
 
+    def storage_stats(self):
+        """Where the bytes went, per layer: the numbers behind 'efficient'."""
+        recs = self.store.reports()
+        refs = [r["evidence"] for r in recs]
+        driven = sum(e["route_points_driven"] for e in refs)
+        stored = sum(e["route_points_stored"] for e in refs)
+        ev_bytes = sum(e["report"]["bytes"] + e["route"]["bytes"] for e in refs)
+        finds = sum(1 for r in recs if r["chain"]["call"] == "post_find")
+        checks = sum(1 for r in recs if r["chain"]["call"] == "check_find")
+        return {
+            "chain": {
+                "finds": finds, "checks": checks,
+                # Lantern.sol Find: agency 20 + x 8 + y 8 + sigma 8 + reading 4
+                # + dataHash 32 + time 8 = 88 bytes of fields per find.
+                "bytes_of_fields_per_find": 88,
+                "what": "position, sigma, reading, and the report's keccak256 (which is also its CID digest)",
+            },
+            "evidence": {
+                "objects": 2 * len(refs), "bytes": ev_bytes, "backend": self.store.ev.storage,
+                "route_points_driven": driven, "route_points_stored": stored,
+                "route_thinning": f"{driven} -> {stored} points ({driven / max(stored, 1):.0f}x), "
+                                  f"each within max({EV.ROUTE_TOLERANCE_M} m, its rover sigma)",
+            },
+            "cache": dict(path=str(self.store.db.path), **self.store.db.counts(self.store.id)),
+        }
+
     def finish(self, wall_s):
         self.store.write("targets.json", self.board.to_list())
         self.store.write("HIDDEN_TRUTH.json", {
             "note": "What no rover may know. For the viewer's labelled reveal only.",
             "deposits": [d.__dict__ for d in self.deposits]})
         self.store.write("resource_map.json", self.resource_map())
-        self.outbox.sort(key=lambda i: (i["earliest_post_t"], i["created_t"]))
-        self.store.save_outbox(self.outbox)
-        self.store.flush()
+        self.store.commit()
+        self.store.export_outbox()
         self.store.write("run_log.json", self.run_log())
         rovers = {}
         for ag, r in self.rovers.items():
@@ -458,6 +504,7 @@ class Mission:
             "outbox": {"items": len(self.outbox),
                        "calls": {c: sum(1 for i in self.outbox if i["call"] == c)
                                  for c in ("post_safety_zone", "post_find", "check_find")}},
+            "storage": self.storage_stats(),
             "files": sorted(p.name for p in self.store.dir.iterdir()),
             "wall_seconds": round(wall_s, 1),
         }
@@ -511,7 +558,7 @@ class Mission:
             if t["purpose"] != "check":   # checks sit on their find; the P marker shows them
                 ax.annotate(t["id"], (t["x"], t["y"]), xytext=(6, 6), textcoords="offset points",
                             color="white", fontsize=8, fontweight="bold")
-        for rec in self.store.science.all():
+        for rec in self.store.reports():
             if rec["result"]["verdict"] == "ice":
                 p = rec["position"]
                 star = "*" if rec["target"]["purpose"] != "check" else "P"
@@ -542,7 +589,58 @@ def summary(store):
               f"dry {r['dry']}; faults {r['faults']}; self-found targets {r['discovered']}")
     print(f"  targets: {m['targets']}")
     print(f"  outbox: {m['outbox']['items']} chain calls {m['outbox']['calls']}")
+    s = m["storage"]
+    print(f"  storage: chain {s['chain']['finds']} finds x {s['chain']['bytes_of_fields_per_find']} B; "
+          f"evidence {s['evidence']['objects']} objects, {s['evidence']['bytes'] / 1024:.1f} KiB "
+          f"({s['evidence']['backend']}); routes {s['evidence']['route_thinning']}")
+    c = s["cache"]
+    print(f"           cache {c['path']}: telemetry {c['telemetry']}, events {c['events']}, "
+          f"survey {c['survey']}, reports {c['reports']}, outbox {c['outbox']}")
+    for e in store.db.events(store.id, "route_reuse"):
+        print(f"  route reuse by {e['agency']} to {e['target_id']}: {e['mode']}: reused {e['reused_m']} m, "
+              f"patched {e['patches']} segment(s), dropped {e['dropped_points']} blocked point(s)")
     print(f"  ran in {m['wall_seconds']} s")
+
+
+def verify(store):
+    """Check every report the way an outsider would, from the chain side:
+    rebuild the CID from the find's dataHash, fetch the object by that CID,
+    re-hash it, and follow its route reference the same way."""
+    ok = True
+    for it in store.db.outbox(store.id):
+        if it["call"] != "post_find":
+            continue
+        dh = it["args"]["data_hash"]
+        cid = EV.cid_from_data_hash(dh)
+        try:
+            rep = store.ev.get(cid)                 # verified against the CID
+            route = store.ev.get(rep["refs"]["route"])
+            good = rep["report_id"] == it["record_id"]
+            print(f"  {'OK ' if good else 'BAD'} find {it['record_id']}: dataHash {dh[:12]}... -> "
+                  f"{cid[:20]}... -> report ({rep['result']['verdict']}, {rep['result']['reading_wt_pct']} wt%,"
+                  f" simulated={rep['simulated']}) -> route {len(route['points'])} pts")
+            ok &= good
+        except Exception as e:
+            ok = False
+            print(f"  BAD find {it['record_id']}: {type(e).__name__}: {e}")
+    print("every find's evidence verifies from its dataHash" if ok else "VERIFY FAILED")
+    return ok
+
+
+def publish_run(store, runs_dir):
+    """Add this mission as a run where app.py looks for runs: <runs_dir>/<id>/log.json
+    and an entry in <runs_dir>/index.json. run_demo.py's entries are kept."""
+    import shutil
+    runs_dir = Path(runs_dir)
+    (runs_dir / store.id).mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(store.dir / "run_log.json", runs_dir / store.id / "log.json")
+    idx_path = runs_dir / "index.json"
+    index = json.loads(idx_path.read_text()) if idx_path.exists() else []
+    index = [r for r in index if r.get("run_id") != store.id]
+    index.append({"run_id": store.id, "label": "Science mission: survey, drill, find, check",
+                  "dir": store.id, "status": "mission"})
+    idx_path.write_text(json.dumps(index, indent=1))
+    print(f"published as a run: {runs_dir / store.id / 'log.json'} (python app.py serves it)")
 
 
 def main():
@@ -553,7 +651,11 @@ def main():
     r.add_argument("--planner", choices=("auto", "standin"), default="auto")
     r.add_argument("--terrain")
     r.add_argument("--id")
+    r.add_argument("--publish-run", metavar="RUNS_DIR",
+                   help="also add the mission as a run for app.py (its runs folder, e.g. data/runs)")
     sub.add_parser("list")
+    v = sub.add_parser("verify")
+    v.add_argument("--mission")
     p = sub.add_parser("push")
     p.add_argument("--mission")
     p.add_argument("--dry-run", action="store_true")
@@ -561,13 +663,18 @@ def main():
     if a.cmd == "run":
         store = Mission(a.seed, a.planner, a.terrain, a.id).run()
         summary(store)
-        for rec in store.science.all():
+        for rec in store.reports():
             print(f"    [{rec['record_id']}] {rec['result']['summary']}  "
                   f"(chain: {rec['chain']['call'] or '-'}, true error "
                   f"{rec['HIDDEN_TRUTH']['position_error_m']} m)")
+        if a.publish_run:
+            publish_run(store, a.publish_run)
     elif a.cmd == "list":
         for mid in MS.MissionStore.list():
             print(mid)
+    elif a.cmd == "verify":
+        store = MS.MissionStore.open(a.mission) if a.mission else MS.MissionStore.latest()
+        sys.exit(0 if verify(store) else 1)
     else:
         store = MS.MissionStore.open(a.mission) if a.mission else MS.MissionStore.latest()
         print(f"outbox of {store.id}:")

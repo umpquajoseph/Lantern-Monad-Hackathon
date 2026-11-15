@@ -129,6 +129,70 @@ class RouteLink:
             return self._p.deg > 15.0, self._p.x0, self._p.y0, self._p.b
         return None
 
+    def segment_clear(self, a, b, step=0.5):
+        """True if the straight segment a-b crosses no blocked ground."""
+        n = max(2, int(math.ceil(math.dist(a, b) / step)) + 1)
+        return not any(self.blocked(a[0] + (b[0] - a[0]) * k / (n - 1), a[1] + (b[1] - a[1]) * k / (n - 1))
+                       for k in range(n))
+
+    def reuse(self, start_xy, ref_pts, goal_xy, max_detour=1.25):
+        """Route to goal_xy that follows another rover's completed route where
+        it is still safe on THIS rover's map, and replans only where it is not.
+
+        Never followed blind:
+          1. every reference waypoint is checked against this planner's slope
+             map; waypoints on blocked ground are dropped;
+          2. the rover joins the reference where that is cheapest (distance
+             to the join plus what is left of the reference), planning its
+             own way there;
+          3. each reference segment that crosses blocked ground is replaced by
+             a local plan between its two ends (a patch); the clear ones are
+             kept as they are;
+          4. if the result is more than `max_detour` times the direct plan,
+             the direct plan wins.
+        Returns (route, info)."""
+        ref = [tuple(map(float, p)) for p in ref_pts]
+        if not ref or math.dist(ref[-1], goal_xy) > 0.5:
+            ref.append(tuple(map(float, goal_xy)))
+        kept = [p for p in ref if not self.blocked(*p)]
+        info = {"ref_points": len(ref), "ref_m": round(_length(ref), 1),
+                "dropped_points": len(ref) - len(kept)}
+        direct = self.plan(start_xy, goal_xy)
+        direct_m = _length(direct)
+        info["direct_m"] = round(direct_m, 1)
+        if len(kept) < 2:
+            return direct, dict(info, mode="replanned: reference route not usable",
+                                reused_m=0.0, patches=0, route_m=round(direct_m, 1))
+        rest = [0.0] * len(kept)
+        for i in range(len(kept) - 2, -1, -1):
+            rest[i] = rest[i + 1] + math.dist(kept[i], kept[i + 1])
+        j = min(range(len(kept) - 1), key=lambda i: math.dist(start_xy, kept[i]) + rest[i])
+        try:
+            parts = [self.plan(start_xy, kept[j])]
+            reused = patched = 0.0
+            patches = 0
+            for a, b in zip(kept[j:-1], kept[j + 1:]):
+                if self.segment_clear(a, b):
+                    parts.append(np.array([b]))
+                    reused += math.dist(a, b)
+                else:
+                    patch = self.plan(a, b)
+                    parts.append(patch[1:])
+                    patched += _length(patch)
+                    patches += 1
+        except NoRoute:
+            return direct, dict(info, mode="replanned: reference route could not be repaired",
+                                reused_m=0.0, patches=0, route_m=round(direct_m, 1))
+        route = np.vstack(parts)
+        total = _length(route)
+        if total > max_detour * direct_m:
+            return direct, dict(info, mode="replanned: following it was a detour",
+                                reused_m=0.0, patches=0, route_m=round(direct_m, 1),
+                                reuse_would_be_m=round(total, 1))
+        return route, dict(info, mode="reused reference route", reused_m=round(reused, 1),
+                           patched_m=round(patched, 1), patches=patches,
+                           joined_after_m=round(_length(parts[0]), 1), route_m=round(total, 1))
+
     def free_near(self, x, y, r_max=60.0):
         """Nearest unblocked point to (x, y), searching out to r_max metres."""
         if not self.blocked(x, y):

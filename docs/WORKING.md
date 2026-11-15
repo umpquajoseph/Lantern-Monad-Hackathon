@@ -1,6 +1,6 @@
 # Who is working on what
 
-**Last updated: 2026-11-15 11:38 PST.** Stable checkpoint: tag `checkpoint-1105`.
+**Last updated: 2026-11-15 12:31 PST.** Stable checkpoint: tag `checkpoint-1105`.
 
 **The base is the localhost site.** `python app.py` (branch `integration`) serves the site the
 sim runs on, and the same site gets hosted. All work plugs into it. A part is done when it shows
@@ -20,10 +20,16 @@ another part calls.
 | Real-crater terrain from a 1 m south-pole DTM (Hemmi et al. 2025, CR1 connecting ridge), LOLA build stays default until reviewed (step 2) | Joseph, agent `terrain` | `step-2-terrain-real` | `sim/terrain*.py`, `data/terrain/` | 11:13 | dropped 11:25: too few real craters for the demo; not merged |
 | Web viewer: the hosted demo page, replaying runs with live 3D third person, first-person frames, map, finds and chain feed (step 5) | Joseph, agent `viewer` | `step-5-viewer` | `web/` | 10:55 | merged 11:27; hosting next |
 | Demo spine: `run_demo.py` writing both demo runs end to end, hidden ice map and sensor, stand-ins for nav, planner and chain (steps 4 and 5 glue) | Joseph, agent `scene` | `step-4-spine` | `run_demo.py`, `sim/rover.py`, `sim/ice.py`, `sim/standin_*.py` | 10:58 | done 11:21, merged into `joseph` |
-| Integration: one launchable app wiring terrain, display layer, scene, spine, chain and viewer together | Joseph, agent `integrator` | `integration` | `app.py` and glue; asks owners for changes in their files | 11:22 | running: `python app.py` serves both runs; hosting waits on a host choice |
+| Integration: one launchable app wiring terrain, display layer, scene, spine, chain and viewer together | Joseph, agent `integrator` | `integration` | `app.py` and glue; asks owners for changes in their files | 11:22 | running: `python app.py` serves the site; judge pass 1 done; hosting off for now |
 | Realism, first person: display layer, Hapke reflectance and exposure in the rover camera | Joseph, agent `scene` | `step-6-scene` | `sim/scene.py` | 11:28 | building, about 12:40 |
 | Realism, third person: Hapke shading, rocks and the near backdrop in the site's 3D view | Joseph, agent `viewer` | `step-5-viewer` | `web/` | 11:36 | starting |
 | Realism check: Hapke values against Xu 2020, reference stills, comparisons with ShadowNav images | Joseph, agent `terrain` | `step-2-terrain-realism` | `sim/terrain*.py`, `docs/sources/` | 11:36 | starting |
+| Navigation: particle filter `sim/nav.py` and planner fix `sim/rover.py` | Calvin | `Calvin` -> `integration` | `sim/nav.py`, `sim/rover.py` | 11:55 | in `integration`, run 1 live on the site |
+| Vision: crater rims from first-person frames (step 6) | Calvin | `Calvin` | `sim/vision.py` | 12:20 | building |
+| Rim answer key for scoring vision | Joseph, agent `terrain` | `step-6-rim-truth` | `sim/rim_truth.py` | 12:18 | done 12:25 |
+| Site look: clean, uncluttered layout | Joseph, agent `designer` | `step-5-design` | `web/app.css`, `web/index.html` layout | 12:29 | starting |
+| Contract on Monad testnet with Foundry tests, and the Python client `sim/chain.py` (step 1) | Kellen, agent `chain` | `step-1-chain` | `contracts/`, `sim/chain.py`, `sim/lantern_abi.json`, `sim/lantern_deployment.json` | 10:50 | done 11:25, deployed on Monad testnet (address in `sim/lantern_deployment.json`), demo run on chain; ready to merge |
+| Live chain feed for the viewer: read-only browser reader of the contract, standalone page, wiring note for the viewer owner (brief `docs/briefs/chain-feed.md`) | Kellen, agent `chain-feed` | `step-5-chain-feed` | `web/js/chain.js`, `web/chain.html`, `web/collect_chain.py`, `web/chain/` | 12:00 | done 12:20, pushed; `web/chain.html` reads the live contract; wiring note for the viewer owner at the top of `chain.js` |
 | Briefs, review, merging into `joseph` | Joseph, lead session | `joseph` | `docs/`, `ops/PROTOCOL.md` | 10:00 | ongoing |
 
 ## Not claimed yet

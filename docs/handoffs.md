@@ -159,6 +159,20 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
 - `rims`: `np.ndarray (M, 2)`, rows `[x_forward, y_left]` in metres, rover frame.
 - Stand-in until step 6: points on the near rims of mapped craters within 15 m
   of the true pose, with noise added and some missed.
+- Answer key (step 6 scoring, `sim/rim_truth.py`, details in
+  `docs/requests/rim-answer-key.md`): `rim_truth(scene, agency, depth)`
+  gives the mapped rims in the frame: per point `xy` (rover frame
+  `[x_forward, y_left]`), `uv` (pixels), `crater_id`, `near` (the half
+  arc nearest the camera, Cauligi 2023 sec. 5A), `visible` (3-15 m, 60
+  deg view, not occluded by the frame's depth) and `shadow` (casts the
+  lamp shadow); `rims` (M, 2) is the visible front arc in this format.
+  `score(pred_rims, truth)` returns precision, recall (front arc),
+  recall_shadow, mean_dist_m and the paper's Gaussian score (sigma 0.25
+  m), at a 0.5 m tolerance (assumed).
+- About a third of the rim shadow in `display="full"` frames comes from the
+  invented rim lips (terrain, 4 poses, 15/32 deg lamp cone: 430
+  shadow-casting front-arc points in full against 270 in `display="detail"`;
+  dark rim pixels 1156 against 816).
 
 ## Step 3, navigation, gives each step
 
@@ -172,13 +186,45 @@ post_find(agency, x, y, sigma, reading, data_hash) -> find_id
 check_find(agency, find_id, x, y, sigma, reading, agrees) -> tx_hash
 get_finds() -> list[dict]   # each: id, agency, x, y, sigma, reading,
                             # agree (agencies), disagree (agencies), status
+                            # plus: address, data_hash, time (block timestamp)
 ```
 
 - `agency` is `"A"` or `"B"`; the client maps it to the key in `.env`.
 - On chain, positions and sigmas are whole centimetres, `data_hash` is
-  `bytes32`, and status is reported, confirmed or disputed.
+  `bytes32`, and status is reported, confirmed or disputed. The client takes
+  metres and gives back metres; `status` comes back as one of the strings
+  `"reported"`, `"confirmed"`, `"disputed"`.
+- `reading` is the ice sensor reading as wt% water-equivalent (float, e.g.
+  `5.6`); on chain it is hundredths of wt% (`uint32`, ASSUMED unit, see
+  `contracts/src/Lantern.sol`).
+- `data_hash`: `bytes` (32) or a `0x` hex string. `chain.hash_raw(obj)` makes
+  one from the raw readings (canonical JSON, sorted keys, keccak256).
 - Check rule: refused if the checker's agency is the finder's, or if
-  `dx² + dy² > (3 × (sigma_find + sigma_check))²`, all in centimetres.
+  `dx² + dy² > (3 × (sigma_find + sigma_check))²`, all in centimetres. Also
+  refused: a second check of the same find by the same agency, and any write
+  from an address that is not one of the agencies fixed at deployment. A
+  refusal raises `chain.LanternRefused` with `.name` in `OwnFind`,
+  `AlreadyChecked`, `TooFar`, `NoSuchFind`, `NotAnAgency` and `.values` its
+  arguments; nothing is sent.
+- Also available: `chain.client().tx_log` (every transaction sent: `kind`,
+  `agency`, `tx_hash`, `url`, `block`, `gas_used`, `seconds`, `find_id`),
+  `chain.client().last_tx` (hash of the last one, as the spine's stand-in
+  has it), `chain.client().run_log_chain()` (the run log's `chain` block:
+  `chain_id`, `contract`, `explorer` as the explorer's *base* URL so the
+  viewer links `<explorer>/tx/<hash>`, plus `contract_url` and `verified`),
+  `post_safety_zone(agency, x, y, radius, until, purpose) -> zone_id` and
+  `get_zones()` (Artemis Accords section 11 upgrade).
+- For `run_demo.py`: `chain.run_scope()` is a drop-in for `ChainStandin`,
+  with the same `post_find`, `check_find`, `get_finds`, `last_tx` and a
+  `STANDIN` of `None`. Its `get_finds()` returns only the finds posted since
+  the scope was made (the contract keeps every find from every run), with
+  their real on-chain IDs (0-based), and is cached for 2 s between the
+  scope's own writes so a rover polling every step stays under the public
+  RPC's 20 req/s. Verified end to end: the unmodified spine ran both demo
+  runs against the testnet contract (2026-11-15, see `contracts/README.md`).
+- Read-only use needs no keys: the address and ABI come from
+  `sim/lantern_deployment.json` and `sim/lantern_abi.json` (committed, written
+  by `contracts/deploy.sh`). The web viewer can read the same two files.
 
 ## Step 5, dashboard, takes
 

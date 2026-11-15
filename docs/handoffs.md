@@ -140,6 +140,19 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
 - `rims`: `np.ndarray (M, 2)`, rows `[x_forward, y_left]` in metres, rover frame.
 - Stand-in until step 6: points on the near rims of mapped craters within 15 m
   of the true pose, with noise added and some missed.
+- Answer key (step 6 scoring, `sim/rim_truth.py`, details in
+  `docs/requests/rim-answer-key.md`): `rim_truth(scene, agency, depth)`
+  gives the mapped rims in the frame: per point `xy` (rover frame
+  `[x_forward, y_left]`), `uv` (pixels), `crater_id`, `near` (the half
+  arc nearest the camera, Cauligi 2023 sec. 5A), `visible` (3-15 m, 60
+  deg view, not occluded by the frame's depth) and `shadow` (casts the
+  lamp shadow); `rims` (M, 2) is the visible front arc in this format.
+  `score(pred_rims, truth)` returns precision, recall (front arc),
+  recall_shadow, mean_dist_m and the paper's Gaussian score (sigma 0.25
+  m), at a 0.5 m tolerance (assumed).
+- About a third of the rim shadow in `display="full"` frames comes from the
+  invented rim lips (terrain, 4 poses: 502 shadow-casting front-arc points
+  in full against 327 in `display="detail"`).
 
 ## Step 3, navigation, gives each step
 

@@ -12,6 +12,11 @@ import { World } from "./world.js";
 import { MapView } from "./map.js";
 import { ScienceRig, DRILL_DEPTH_M } from "./science_rig.js";
 import { frostPatch, ICE_HEX, ICE_CSS } from "./frost.js";
+import { MissionPlayer, ensureStyles } from "./mission_player.js";
+// The judges' page plays Kellen's mission log (run_mission.py, docs/handoffs.md
+// "Mission log"): checkpoints and live chain posts come from mission_player.js,
+// the chain feed from the log's find and check events.
+const AUTO_B_HOLD_MS = 3000;   // assumed: wall time on the Surveyor after its ice find, then follow the Prospector
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -26,9 +31,9 @@ const DOING = {
 };
 const PHASE = { park: "Park", nir_scan: "NIR scan", arm_deploy: "Arm out", drill: "Drill 1 m", sample_lift: "Core up",
   analyze: "Analyse", arm_stow: "Stow", stop: "Stop", mast_pan: "Camera pan", terrain_map: "Map terrain",
-  neutron_dwell: "Neutron dwell", photo: "Photo", flag: "Flag" };
+  neutron_dwell: "Neutron dwell", photo: "Photo", flag: "Flag", neutron_survey: "Neutron survey" };
 // What the Surveyor's name tag says during each step of a stop.
-const A_TAG = { mast_pan: "CAMERA PAN", terrain_map: "MAPPING TERRAIN", neutron_dwell: "NEUTRON DWELL", photo: "PHOTO",
+const A_TAG = { park: "PARKED", nir_scan: "NIR SCAN", neutron_survey: "NEUTRON SURVEY", analyze: "ANALYSING", mast_pan: "CAMERA PAN", terrain_map: "MAPPING TERRAIN", neutron_dwell: "NEUTRON DWELL", photo: "PHOTO",
   flag: "FLAGGING HAZARD" };
 const CALL = {
   registerCandidate: "Candidate registered",
@@ -44,7 +49,8 @@ const SPLIT = {
 const MODE_SHORT = { local: "Local chain", monad: "Monad testnet", offline: "Offline" };
 const STAGE_N = { None: 0, Candidate: 1, SurveyorInspected: 2, ProspectorAnalyzed: 3 };
 const SITE_COLOR = { Candidate: 0x9aa7b8, Positive: ICE_HEX, Negative: 0x8d939b, Inconclusive: 0xd9b44a, Analyzed: 0x58b4ff };
-const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop
+const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop (Ritvik's short stops)
+const FOCUS_WALL_S = 12;   // assumed: a mission stop (160-270 s of sim time) plays in about this many real seconds
 const FOCUS_LEAD_S = 3;    // the close-up starts this many sim seconds before the stop
 const FOCUS_TAIL_S = 3;    // and holds this long after it
 const NARROW = matchMedia("(max-width: 760px)");
@@ -52,7 +58,9 @@ const NARROW = matchMedia("(max-width: 760px)");
 const S = {
   lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
-  opts: { routes: true, hazards: true, nogo: true, truth: false }, focus: true, focusEv: null, prev: null, lastPanel: "",
+  opts: { fill: true, routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
+  player: null,        // MissionPlayer: checkpoints and live chain
+  autoB: { armed: true, at: 0 },   // switch to the Prospector once after the Surveyor's find
 };
 let terrain, world, map, rigs = {}, ov, sci = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
 let satObjs = [], tagEls = {}, extras = {}, dressed = {}, odo = {}, susp = {};
@@ -76,7 +84,7 @@ async function main() {
   map = new MissionMap($("map-cv"), terrain);
   const runs = await loadIndex("runs/");
   const want = params.get("run");
-  const entry = runs.find((r) => r.run_id === want) || runs.find((r) => r.status === "mission") || runs[0];
+  const entry = runs.find((r) => r.run_id === want) || runs.find((r) => r.run_id === "mission-demo") || runs[0];
   await openRun(entry);
   bind();
   if (NARROW.matches) $("panel").classList.add("closed");
@@ -89,9 +97,6 @@ async function openRun(entry) {
   $("loading").textContent = "Loading the mission";
   const run = await Run.load("runs/", entry);
   const log = run.log;
-  // This page draws registry sites itself; world.js would otherwise draw the
-  // Lantern-contract finds from the same stops under another name.
-  run.events = [];
   const pts = run.agencies.flatMap((a) => run.tracks[a].truth);
   const keys = [...terrain.keysNear(pts.filter((_, i) => i % 2 === 0), 4)];
   let done = 0;
@@ -101,7 +106,20 @@ async function openRun(entry) {
   S.run = run;
   world.currentT = 0;
   world.setRun(run);
-  world.setVisibility({ fill: true, tracks: S.opts.routes, truth: S.opts.truth });
+  run.hasLidar = run.agencies.some((ag) => run.steps.some((st) => st.rovers[ag] && st.rovers[ag].lidar_frame));
+  for (const b of document.querySelectorAll("[data-sensor]")) {
+    b.onclick = () => setSensor(b.dataset.sensor);
+    if (b.dataset.sensor === "lidar") {
+      b.disabled = !run.hasLidar;
+      b.title = run.hasLidar ? "Lidar (L)" : "No lidar in this run";
+    }
+  }
+  let saved = "camera";
+  try { saved = localStorage.getItem("lantern.sensor") || "camera"; } catch (e) { /* private window */ }
+  S.sensor = run.hasLidar && saved === "lidar" ? "lidar" : "camera";
+  for (const b of document.querySelectorAll("[data-sensor]")) b.setAttribute("aria-selected", String(b.dataset.sensor === S.sensor));
+  world.setVisibility({ fill: S.opts.fill, tracks: S.opts.routes, truth: S.opts.truth });
+  $("vnote").hidden = !S.opts.fill;
   map.setRun(run);
   map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
   document.title = `Lantern Mission Control · ${log.label || entry.label}`;
@@ -114,16 +132,20 @@ async function openRun(entry) {
     }
     for (const e of s.registry || []) reg.push(e);
   });
+  if (!sci.length) sci = missionScience(run);
   sci.sort((a, b) => a.t0 - b.t0);
   reg.sort((a, b) => a.t - b.t);
   hazards = log.hazards || [];
   planned = log.planned_routes || [];
 
-  const R = log.registry || {};
-  const badge = $("chain-badge");
-  badge.className = `chain-badge ${R.mode || "offline"}`;
-  badge.textContent = MODE_SHORT[R.mode] || "No registry";
-  badge.title = [R.label, R.contract ? `Contract ${R.contract}` : ""].filter(Boolean).join("\n");
+  ensureStyles();
+  S.player = new MissionPlayer(run, {
+    pause: (tt) => { S.playing = false; S.t = tt; setPlayIcon(); },
+    resume: () => { S.playing = true; setPlayIcon(); },
+    note: (html) => { const b = $("checkpoint"); b.hidden = !html; b.innerHTML = html || ""; },
+    rerender: () => { $("chain-now").dataset.key = ""; render(true); },
+  });
+  setChainBadge();
 
   // Only the Prospector has an arm and a drill; the Surveyor works with its mast camera.
   for (const a of run.agencies) {
@@ -142,6 +164,42 @@ async function openRun(entry) {
   setRover("A");
   S.t = 0;
   render(true);
+}
+
+// Kellen's mission log has no science events: each rover step carries the
+// instrument phase it ended in ({name, step, of}, docs/handoffs.md "Mission
+// log"). Rebuild Ritvik's science events from them: one event per stop, one
+// phase per run of steps with the same instrument name, spanning those steps.
+function missionScience(run) {
+  const out = [], sites = (run.log.mission || {}).sites || [];
+  for (const a of run.agencies) {
+    let cur = null;
+    run.steps.forEach((st, k) => {
+      const r = st.rovers[a] || {}, ins = r.instrument;
+      const stop = /^(survey|prospect)\b/.test(r.phase || "") ? r.phase : null;
+      if (!ins || !stop || k === 0) { if (cur) { out.push(cur); cur = null; } return; }
+      if (!cur || cur.stop !== stop) {
+        if (cur) out.push(cur);
+        const m = /survey (\S+)/.exec(stop);
+        const fid = /find (\d+)/.exec(stop);
+        const fe = fid ? run.events.find((e) => e.type === "find" && e.find_id === Number(fid[1])) : null;
+        const target = m ? m[1] : fe ? fe.site_id : stop;
+        const site = sites.find((x) => x.id === target);
+        const chk = run.events.find((e) => e.type === "check" && fe && e.find_id === fe.find_id);
+        cur = { agency: a, stop, target_id: target, kind: "site", record_id: `${a}-${stop}`, phases: [],
+          verdict: a === "A" ? (site && site.verdict) || "dry" : chk ? (chk.agrees ? "ice" : "dry") : "ice",
+          observation: a === "A" ? "survey" : "core", reading: null };
+      }
+      const t0 = run.times[k - 1], dur = run.times[k] - run.times[k - 1];
+      const last = cur.phases.at(-1);
+      if (last && last.name === ins.name) last.dur = t0 + dur - last.t0;
+      else cur.phases.push({ name: ins.name, t0, dur });
+      if (r.ice_reading != null) cur.reading = r.ice_reading;
+    });
+    if (cur) out.push(cur);
+  }
+  for (const e of out) { e.t0 = e.phases[0].t0; e.t1 = e.phases.at(-1).t0 + e.phases.at(-1).dur; }
+  return out;
 }
 
 // Each rover gets its own look and a name tag that also says what its
@@ -505,15 +563,24 @@ function buildTimeline() {
   for (const e of sci) add(e.t0, "sci", `${ROLE[e.agency]}: ${e.observation || "science"} at ${e.target_id}`);
   for (const e of reg) if (e.result === "Positive") add(e.t, "ice", `Ice at ${e.target_id} (${ROLE[e.agency]})`);
   for (const h of hazards) add(h.seen_t, "haz", "New obstacle");
+  for (const c of (S.run.log.mission || {}).checkpoints || []) if (c.pause) add(c.t, "cp", `Checkpoint: ${c.label}`);
+  for (const e of S.run.events) add(S.run.times[e.k], "ice", e.type === "find" ? `Ice find posted (${ROLE[e.agency]})` : `Check posted (${ROLE[e.agency]})`);
 }
 
 // ---------------------------------------------------------------- controls
 function bind() {
   $("play").onclick = togglePlay;
-  $("restart").onclick = () => { S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; render(true); };
+  $("restart").onclick = () => { S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; S.player.restart(); rearmAutoB(0); render(true); };
   $("speed").onchange = (e) => (S.speed = Number(e.target.value));
   $("focus").onchange = (e) => { S.focus = e.target.checked; if (!S.focus) exitFocus(); };
-  $("scrub").oninput = (e) => { S.t = (Number(e.target.value) / 1000) * S.run.tEnd; exitFocus(); S.dismissed = null; render(true); };
+  $("scrub").oninput = (e) => {
+    const nt = (Number(e.target.value) / 1000) * S.run.tEnd;
+    if (nt < S.t) { S.player.rewound(nt); rearmAutoB(nt); }
+    else if (!S.player.busy) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
+    S.t = nt; exitFocus(); S.dismissed = null; render(true);
+  };
+  $("step-back").onclick = () => stepBy(-1);
+  $("step-fwd").onclick = () => stepBy(1);
   $("zoom-in").onclick = () => zoom(1 / 1.35);
   $("zoom-out").onclick = () => zoom(1.35);
   document.querySelectorAll("#rover-seg button").forEach((b) => (b.onclick = () => { exitFocus(true); setRover(b.dataset.rover); }));
@@ -532,10 +599,11 @@ function bind() {
     setTab(b.dataset.tab);
   }));
   $("collapse").onclick = () => $("panel").classList.toggle("closed");
-  for (const k of ["routes", "hazards", "nogo", "truth"]) {
+  for (const k of ["fill", "routes", "hazards", "nogo", "truth", "particles", "rims"]) {
     $("opt-" + k).onchange = (e) => {
       S.opts[k] = e.target.checked;
-      world.setVisibility({ fill: true, tracks: S.opts.routes, truth: S.opts.truth });
+      world.setVisibility({ fill: S.opts.fill, tracks: S.opts.routes, truth: S.opts.truth });
+  $("vnote").hidden = !S.opts.fill;
       map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
       render(true);
     };
@@ -553,12 +621,75 @@ function bind() {
   $("full-btn").onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
   $("dr-close").onclick = () => ($("drawer").hidden = true);
   addEventListener("keydown", (e) => {
-    if (e.target.closest("input, select")) return;
+    // Typing in a field: leave its keys alone. The timeline and the checkboxes
+    // keep focus after a click, so they still let the shortcuts through.
+    if (e.target.closest?.("input:not([type=range]):not([type=checkbox]), select, textarea")) return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+    if (e.code === "ArrowRight") { e.preventDefault(); stepBy(1); }
+    if (e.code === "ArrowLeft") { e.preventDefault(); stepBy(-1); }
     if (e.key === "Escape") $("drawer").hidden = true;
     if (e.key === "+" || e.key === "=") zoom(1 / 1.35);
     if (e.key === "-") zoom(1.35);
+    // 1 / 2 blow the rover camera or the satellite map up to the full window (again: back); L flips the lidar view.
+    if (e.key === "1") { exitFocus(true); setCam(S.cam === "first" ? "third" : "first"); }
+    if (e.key === "2") { exitFocus(true); setCam(S.cam === "overhead" ? "third" : "overhead"); }
+    if (e.key === "f" || e.key === "F") $("opt-fill").click();   // fill light on / off
+    if (e.key === "l" || e.key === "L") $(`lid-seg`).querySelector(`[data-lk="${S.lidarKind === "top" ? "fp" : "top"}"]`)?.click();
   });
+}
+
+// The right column: rover camera, satellite map and lidar, stacked and all showing.
+function applyInsets() {
+  $("in-fp").hidden = S.cam === "first";
+  $("in-map").hidden = S.cam === "overhead";
+  $("in-lidar").hidden = !S.run.hasLidar;
+}
+
+// After the Surveyor posts its ice find, hold on it a moment, then follow the
+// Prospector, once per play-through. A rover picked by hand in the hold wins.
+function rearmAutoB(t) {
+  const f = S.run.events.find((e) => e.type === "find");
+  if (f && t >= S.run.times[f.k]) return;
+  // The auto switch fired in this play-through: going back before the find returns to the Surveyor.
+  if (!S.autoB.armed && S.autoB.switched && S.rover === "B") setRover("A");
+  S.autoB = { armed: true, at: 0 };
+}
+
+function autoB(prevT, t, now) {
+  const f = S.run.events.find((e) => e.type === "find");
+  if (!f) return;
+  const ft = S.run.times[f.k];
+  if (S.autoB.armed && !S.autoB.at && prevT < ft && t >= ft) S.autoB = { armed: true, at: now + AUTO_B_HOLD_MS, rover: S.rover };
+  if (S.autoB.at && now >= S.autoB.at) {
+    const untouched = S.rover === S.autoB.rover;
+    S.autoB = { armed: false, at: 0, switched: untouched && S.rover !== "B" };
+    if (S.autoB.switched) { exitFocus(true); setRover("B"); }
+  }
+}
+
+function setChainBadge() {
+  const run = S.run, badge = $("chain-badge");
+  const live = S.player && S.player.liveOn;
+  const real = run.chain && run.chain.explorer && !run.fakeTx;
+  badge.className = `chain-badge ${live || real ? "monad" : "offline"}`;
+  badge.textContent = live ? "Monad testnet · live" : real ? "Monad testnet" : "Recorded";
+  badge.title = live ? "Each find and check is signed and sent to Monad testnet as the replay crosses it."
+    : real ? `Contract ${run.chain.contract}` : "Recorded transactions from the mission log. Add ?key= to post them live.";
+}
+
+// One logged step (one sensor frame) back or forward, paused (main.js stepBy).
+function stepBy(n) {
+  const run = S.run;
+  if (S.player.busy) return;
+  S.playing = false;
+  setPlayIcon();
+  const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(S.t) + n));
+  const back = run.times[k] < S.t;
+  S.t = run.times[k];
+  if (back) { S.player.rewound(S.t); rearmAutoB(S.t); }
+  else $("checkpoint").hidden = true;
+  exitFocus(true);
+  render(true);
 }
 
 function setPlayIcon() {
@@ -567,8 +698,10 @@ function setPlayIcon() {
 }
 
 function togglePlay() {
-  if (S.t >= S.run.tEnd) S.t = 0;
+  if (S.player && S.player.busy) return;   // a live chain post is in flight
+  if (S.t >= S.run.tEnd) { S.t = 0; S.player.restart(); rearmAutoB(0); }
   S.playing = !S.playing;
+  if (S.playing && S.player && !(S.player.active && S.player.active.step === 0 && S.t === 0)) $("checkpoint").hidden = true;
   setPlayIcon();
 }
 
@@ -595,8 +728,7 @@ function setTab(tab) {
 function setCam(cam) {
   S.cam = cam;
   $("fp").hidden = cam !== "first";
-  $("in-fp").hidden = cam === "first";
-  $("in-map").hidden = cam === "overhead";
+  applyInsets();
   $("back-chip").hidden = cam === "third";
   world.labels.domElement.style.display = cam === "first" ? "none" : "";
   if (cam === "third") world.setFollow(S.rover);
@@ -643,19 +775,13 @@ function enterFocus(ev) {
   S.focusEv = ev;
   S.rover = ev.agency;
   document.querySelectorAll("#rover-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.rover === ev.agency)));
-  $("in-map").hidden = false;
   $("back-chip").hidden = true;
   if (ev.agency === "A") {
-    // The Surveyor's stops play in its own camera: what it sees, and what it maps.
-    S.cam = "first";
-    $("fp").hidden = false;
-    $("in-fp").hidden = true;
-    $("back-chip").hidden = false;
-    world.labels.domElement.style.display = "none";
+    // The Surveyor's stops keep the view the user picked (no snap to first person).
   } else {
     S.cam = "third";
     $("fp").hidden = true;
-    $("in-fp").hidden = false;
+    applyInsets();
     world.labels.domElement.style.display = "";
     closeUp(ev);
   }
@@ -677,6 +803,7 @@ function exitFocus(byUser = false) {
   if (p && !byUser) { S.rover = p.rover; setCam(p.cam); setRover(p.rover); }
 }
 
+const focusSpeed = (ev) => Math.min(S.speed, Math.max(FOCUS_SPEED, (ev.t1 - ev.t0) / FOCUS_WALL_S));
 const activeSci = (t) => sci.find((e) => t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + FOCUS_TAIL_S);
 
 // -------------------------------------------------------------------- loop
@@ -684,8 +811,9 @@ let last = performance.now(), lastPanelAt = 0;
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  const prevT = S.t;
   if (S.playing && S.run) {
-    let adv = dt * (S.focusEv ? FOCUS_SPEED : S.speed);
+    let adv = dt * (S.focusEv ? focusSpeed(S.focusEv) : S.speed);
     if (S.focus && !S.focusEv) {
       // Never jump over a science stop at high speed: stop at its start.
       const next = sci.find((e) => e.t0 - FOCUS_LEAD_S > S.t && e.t0 - FOCUS_LEAD_S <= S.t + adv);
@@ -693,8 +821,10 @@ function loop(now) {
     }
     S.t = Math.min(S.run.tEnd, S.t + adv);
     if (S.t >= S.run.tEnd) { S.playing = false; setPlayIcon(); }
+    S.player.tick(prevT, S.t);   // a checkpoint or a live post pauses and sets S.t
   }
   if (S.run) {
+    autoB(prevT, S.t, now);
     const ev = S.focus ? activeSci(S.t) : null;
     if (ev && ev !== S.focusEv && ev !== S.dismissed) enterFocus(ev);
     if (!ev && S.focusEv) exitFocus();
@@ -710,8 +840,9 @@ function render(panels) {
   const run = S.run, t = S.t;
   if (!run) return;
   world.currentT = t;
-  world.update(t, { tracks: S.opts.routes });
-  updateCraterRings(t);
+  world.update(t, { tracks: S.opts.routes, particles: S.opts.particles });
+  updateSteepShade(t);
+  updatePlan3D(t);
   for (const a of run.agencies) {
     updateSuspension(a, t);
     const ev = sci.filter((e) => e.agency === a && t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + 1).at(-1) || null;
@@ -735,6 +866,8 @@ function render(panels) {
   else showFrame($("fp-img"), $("fp-ov"), $("fp-none"), false);
   if (S.cam !== "first") showFrame($("fpi-img"), $("fpi-ov"), $("fpi-none"), true);
   showLidar(t);
+  const cap = sensorCaption(t);
+  if ($("fpi-cap").textContent !== cap) $("fpi-cap").textContent = cap;
   if (S.cam !== "overhead") map.update(t);
   $("clock").textContent = fmtClock(t);
   $("tl-fill").style.width = `${(100 * t) / run.tEnd}%`;
@@ -768,9 +901,8 @@ function instrumentNow(a, t, ev) {
 // the latest one at or before the shown moment, for the selected rover.
 // Runs without lidar keep the box hidden.
 function showLidar(t) {
-  const run = S.run, box = $("in-lidar");
+  const run = S.run;
   if (run.hasLidar === undefined) run.hasLidar = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_frame));
-  box.hidden = !run.hasLidar;
   if (!run.hasLidar) return;
   // Top-down / First person (lidar_fp_frame, step-6-nav 6846caf), only when the run logs both.
   if (run.hasLidarFp === undefined) run.hasLidarFp = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_fp_frame));
@@ -798,11 +930,39 @@ function showLidar(t) {
 }
 
 function showFrame(img, cv, none, small) {
-  const fr = S.run.frameNear(S.rover, S.t);
+  let fr = S.run.frameNear(S.rover, S.t);
+  // Lidar view: Calvin's Lidar.view of the scan taken with that camera frame
+  // (sim/mission_render.py): from above, forward up, rover at the bottom
+  // centre. It is not a camera view, so the route overlay is left off.
+  const lidar = S.sensor === "lidar";
+  img.parentElement.classList.toggle("lidar-on", lidar);
+  if (fr && lidar) {
+    const lf = S.run.steps[fr.k].rovers[S.rover].lidar_frame;
+    fr = lf ? { ...fr, src: S.run.dir + lf, sub: false } : null;
+  }
   none.hidden = !!fr;
   img.hidden = !fr;
   if (fr && img.dataset.src !== fr.src) { img.src = fr.src; img.dataset.src = fr.src; }
+  if (lidar) { cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); return; }
   drawFpOverlay(fr, cv, small);
+}
+
+// Camera | Lidar: one setting for the camera box and the full-screen view.
+function setSensor(v) {
+  if (v === "lidar" && !S.run.hasLidar) v = "camera";
+  S.sensor = v;
+  try { localStorage.setItem("lantern.sensor", v); } catch (e) { /* private window */ }
+  for (const b of document.querySelectorAll("[data-sensor]")) b.setAttribute("aria-selected", String(b.dataset.sensor === v));
+  $("fpi-img").alt = $("fp-img").alt = v === "lidar" ? "Lidar view" : "Rover camera";
+  render(true);
+}
+
+function sensorCaption(t) {
+  if (S.sensor !== "lidar") return "Rover camera";
+  const fr = S.run.frameNear(S.rover, t);
+  const hz = fr ? S.run.steps[fr.k].rovers[S.rover].lidar_hazards || {} : {};
+  const n = (hz.crater || 0) + (hz.slope || 0);
+  return n ? `Lidar · ${n} hazard cells` : "Lidar · clear";
 }
 
 // Project a world point into the recorded camera frame (pinhole, sim/scene.py camera_model()).
@@ -862,6 +1022,44 @@ function drawFpOverlay(fr, cv, small) {
     const msg = st === "REPLANNING" ? "Replanning" : route.kind === "replanned" ? `To ${route.target_id}, around obstacle` : `To ${route.target_id}`;
     c.textAlign = "right"; c.fillText(msg, FP.w - 12, 12 + 14 * k); c.textAlign = "left";
   }
+  // The mission log's planned route ("plan", world xy, out to ~20 m, re-planned
+  // every step) as amber dashes, from the pose the shown image was taken at
+  // (ported from the old page's drawPlan, main.js).
+  const plan = !route && S.opts.routes ? (run.steps[fr.k].rovers[a] || {}).plan : null;
+  if (plan && plan.length > 1) {
+    const k1 = Math.min(fr.k + 1, run.steps.length - 1);
+    const tp = run.times[fr.k] + (fr.sub ? fr.f : 0) * (run.times[k1] - run.times[fr.k]);
+    const [x0, y0, h0] = run.poseAt(a, tp);
+    const camZ0 = terrain.heightAt(x0, y0) + FP.camH;
+    const cp = Math.cos(FP.pitch), sp = Math.sin(FP.pitch), ch = Math.cos(h0), sh = Math.sin(h0);
+    const proj = (wx, wy) => {
+      const dx = wx - x0, dy = wy - y0, f = dx * ch + dy * sh, l = -dx * sh + dy * ch;
+      const z = terrain.heightAt(wx, wy) + 0.05 - camZ0;
+      const Xc = -l, Yc = f * sp + z * cp, Zc = f * cp - z * sp;
+      return Zc <= 0.5 ? null : [FP.w / 2 + (FP.fx * Xc) / Zc, FP.h / 2 - (FP.fx * Yc) / Zc, Math.hypot(f, l)];
+    };
+    c.strokeStyle = "rgba(255, 200, 60, 0.95)";
+    c.lineCap = "round";
+    const DASH = 0.6, GAP = 0.4;
+    let on = true, left = DASH, start = plan[0];
+    for (let i = 0; i + 1 < plan.length; i++) {
+      const [ax, ay] = plan[i], [bx, by] = plan[i + 1], seg = Math.hypot(bx - ax, by - ay);
+      let s0 = 0;
+      while (s0 < seg) {
+        const take = Math.min(left, seg - s0), s1 = s0 + take;
+        const p1 = [ax + ((bx - ax) * s1) / seg, ay + ((by - ay) * s1) / seg];
+        if (on) {
+          const pa = proj(start[0], start[1]), pb = proj(p1[0], p1[1]);
+          if (pa && pb) {
+            c.lineWidth = k * Math.max(1.2, Math.min(6, 20 / Math.max(pa[2], 1)));
+            c.beginPath(); c.moveTo(pa[0], pa[1]); c.lineTo(pb[0], pb[1]); c.stroke();
+          }
+        }
+        left -= take; s0 = s1;
+        if (left <= 1e-9) { on = !on; left = on ? DASH : GAP; start = p1; }
+      }
+    }
+  }
   for (const h of hazards) {
     if (!S.opts.hazards || tf < h.seen_t) continue;
     c.beginPath();
@@ -876,10 +1074,20 @@ function drawFpOverlay(fr, cv, small) {
     c.lineWidth = 3 * k; c.strokeStyle = "#ff5d5d"; c.fillStyle = "rgba(255,93,93,.18)"; c.fill(); c.stroke();
     if (top) { c.fillStyle = "#ff5d5d"; c.font = font(13); c.fillText(h.hazard_id ? `FLAGGED ${h.hazard_id} · KEEP CLEAR` : "OBSTACLE", top[0] - 34 * k, top[1] - 8); }
   }
+  // Rim points the navigation used at this step (sensor frames only; display frames sit between steps).
+  const rr = run.steps[fr.k].rovers[a];
+  if (S.opts.rims && !fr.sub && rr && rr.rims) {
+    c.fillStyle = col;
+    for (const [f, l] of rr.rims) {
+      const wx = pose[0] + f * Math.cos(pose[2]) - l * Math.sin(pose[2]), wy = pose[1] + f * Math.sin(pose[2]) + l * Math.cos(pose[2]);
+      const q = P(wx, wy, 0);
+      if (q) c.fillRect(q[0] - 3 * k, q[1] - 3 * k, 6 * k, 6 * k);
+    }
+  }
   const sites = registryAt(tf);
   for (const s of run.log.satellite_sites || []) {
     const r = [...sites.values()].find((v) => v.target === s.id);
-    const ice = r && (r.surveyor === "Positive" || r.prospector === "Positive");
+    const ice = (r && (r.surveyor === "Positive" || r.prospector === "Positive")) || siteVerdict(s.id, tf) === "ice";
     const color = ice ? ICE_CSS : r ? "#9aa7b8" : "#e0a83a";
     const base = P(s.x, s.y), tip = P(s.x, s.y, 6);
     if (!base || !tip || base[2] > 250) continue;
@@ -890,39 +1098,88 @@ function drawFpOverlay(fr, cv, small) {
   }
 }
 
-// ------------------------------------------------------- crater rings
-// Joseph's crater map (terrain.craters: [x, y, diameter]) drawn as red rim
-// rings on the ground near the rover being followed: 11,000 craters is too
-// many to draw at once, so the rings within CRATER_RING_R_M are rebuilt as
-// one line object whenever the rover has moved CRATER_RING_STEP_M.
-const CRATER_RING_R_M = 150, CRATER_RING_STEP_M = 40, CRATER_RING_SEG = 28;
-let craterRings = null, craterAt = null;
-function updateCraterRings(t) {
-  const [x, y] = S.run.poseAt(S.rover, t);
-  if (craterRings) craterRings.visible = S.opts.nogo;
-  if (!S.opts.nogo || (craterAt && Math.hypot(x - craterAt[0], y - craterAt[1]) < CRATER_RING_STEP_M)) return;
-  craterAt = [x, y];
-  const pos = [];
-  for (const [cx, cy, d] of terrain.craters) {
-    if (Math.abs(cx - x) > CRATER_RING_R_M || Math.abs(cy - y) > CRATER_RING_R_M) continue;
-    const r = d / 2;
-    let prev = null;
-    for (let i = 0; i <= CRATER_RING_SEG; i++) {
-      const a = (i / CRATER_RING_SEG) * Math.PI * 2;
-      const p = world.groundL(cx + r * Math.cos(a), cy + r * Math.sin(a), 0.12);
-      if (prev) pos.push(prev.x, prev.y, prev.z, p.x, p.y, p.z);
-      prev = p;
+// ------------------------------------------------------- planned route in 3D
+// Each rover's logged plan for the shown step ("plan", world xy, out to ~20 m,
+// re-planned every step) draped on the ground as amber dashes, the same line
+// the rover camera and the satellite map draw. Rebuilt when the step changes.
+const PLAN_HEX = 0xffc83c;   // the camera's plan colour, rgba(255, 200, 60) (map.js PLAN_CSS)
+const plan3d = {};
+function updatePlan3D(t) {
+  const run = S.run, k = run.stepAt(t);
+  for (const a of run.agencies) {
+    let o = plan3d[a];
+    if (!o) {
+      const mat = world.lineMat(PLAN_HEX, 3, { dashed: true, opacity: 0.95 });
+      mat.dashSize = 0.6; mat.gapSize = 0.4;   // metres, as the camera's dashes
+      o = plan3d[a] = { mat, line: null, k: -1 };
     }
+    const show = S.opts.routes;
+    if (o.k !== k) {
+      o.k = k;
+      if (o.line) { world.scene.remove(o.line); o.line.geometry.dispose(); o.line = null; }
+      const plan = (run.steps[k].rovers[a] || {}).plan;
+      if (plan && plan.length > 1) {
+        o.line = world.drape(plan, o.mat, 0.5).line;
+        o.line.renderOrder = 3;
+        world.scene.add(o.line);
+      }
+    }
+    if (o.line) o.line.visible = show;
   }
-  if (!craterRings) {
-    craterRings = new THREE.LineSegments(new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0xe5574f, transparent: true, opacity: 0.85 }));
-    craterRings.frustumCulled = false;
-    world.scene.add(craterRings);
+}
+
+// ------------------------------------------------------- steep ground
+// The planner's no-go ground (assets/terrain/nogo.png: sim/rover.py SlopeMap,
+// over 15 deg across 2 m, the overhead map's layer) shaded red on the 3D
+// ground near the rover being followed. One draped grid, rebuilt when the
+// rover has moved STEEP_STEP_M. Unlit, so it reads in the dark.
+const STEEP_HALF_M = 120, STEEP_CELL_M = 0.5, STEEP_STEP_M = 40, STEEP_LIFT_M = 0.06;   // assumed, display only
+const STEEP_OPACITY = 0.55;
+let steepMesh = null, steepAt = null, steepTex = null;
+function updateSteepShade(t) {
+  const m = terrain.meta;
+  if (!m.nogo) return;
+  if (steepMesh) steepMesh.visible = S.opts.nogo;
+  if (!S.opts.nogo) return;
+  const [x, y] = S.run.poseAt(S.rover, t);
+  if (steepAt && Math.hypot(x - steepAt[0], y - steepAt[1]) < STEEP_STEP_M) return;
+  steepAt = [x, y];
+  if (!steepTex) {
+    steepTex = new THREE.TextureLoader().load(terrain.base + m.nogo.file);
+    steepTex.colorSpace = THREE.SRGBColorSpace;
+    steepTex.magFilter = THREE.NearestFilter;
+    steepTex.generateMipmaps = false;
+    steepTex.minFilter = THREE.LinearFilter;
   }
-  craterRings.geometry.dispose();
-  craterRings.geometry = new THREE.BufferGeometry();
-  craterRings.geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  const ax0 = m.x0 - m.cell / 2, ay0 = m.y0 - m.cell / 2, aw = m.cols * m.cell, ah = m.rows * m.cell;
+  const n = Math.round((2 * STEEP_HALF_M) / STEEP_CELL_M) + 1;
+  const cx = Math.round(x / STEEP_CELL_M) * STEEP_CELL_M - STEEP_HALF_M, cy = Math.round(y / STEEP_CELL_M) * STEEP_CELL_M - STEEP_HALF_M;
+  const pos = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2);
+  for (let i = 0, p = 0, q = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    const wx = cx + j * STEEP_CELL_M, wy = cy + i * STEEP_CELL_M;
+    const v = world.groundL(wx, wy, STEEP_LIFT_M);
+    pos[p++] = v.x; pos[p++] = v.y; pos[p++] = v.z;
+    uv[q++] = (wx - ax0) / aw; uv[q++] = (wy - ay0) / ah;
+  }
+  const idx = new Uint32Array((n - 1) * (n - 1) * 6);
+  for (let a = 0, k = 0; a < n - 1; a++) for (let b = 0; b < n - 1; b++) {
+    const v = a * n + b;
+    idx[k++] = v; idx[k++] = v + 1; idx[k++] = v + n; idx[k++] = v + 1; idx[k++] = v + n + 1; idx[k++] = v + n;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  if (!steepMesh) {
+    steepMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: steepTex, transparent: true, opacity: STEEP_OPACITY,
+      depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+    steepMesh.frustumCulled = false;
+    steepMesh.renderOrder = 2;
+    world.scene.add(steepMesh);
+  } else {
+    steepMesh.geometry.dispose();
+    steepMesh.geometry = g;
+  }
 }
 
 function registryAt(t) {
@@ -1034,6 +1291,7 @@ class MissionMap extends MapView {
 
 // ------------------------------------------------------------------ panels
 function renderPanels(t) {
+  renderStory(t);
   renderRover(t);
   renderToast(t);
   renderScience(t);
@@ -1058,6 +1316,95 @@ function renderRover(t) {
       </div></div>`;
   }).join("");
   $("now").querySelectorAll(".rv").forEach((el) => (el.onclick = () => { exitFocus(true); setRover(el.dataset.rover); }));
+  $("navt").innerHTML = navTable(run, k);
+  if (!$("standin").dataset.done) {
+    $("standin").dataset.done = "1";
+    const si = run.standin || run.log.standins;
+    $("standin").hidden = !si;
+    if (si) {
+      const lines = Object.entries(si).map(([kk, v]) => (String(v).startsWith(kk) ? v : `${kk.replace(/_/g, " ")}: ${v}`));
+      const chainLine = run.fakeTx ? " Transaction hashes in this log are stand-ins; ?key= posts them live." : "";
+      $("standin").innerHTML = `<b>Stand-ins:</b> ${esc(Object.keys(si).map((kk) => kk.replace(/_/g, " ")).join(", "))}.${chainLine} Camera frames are real renders.` +
+        `<details><summary>Details</summary><ul>${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></details>`;
+    }
+  }
+}
+
+// Where each rover thinks it is against where it is (the old page's HUD table).
+function navTable(run, k) {
+  const rows = run.agencies.map((a) => {
+    const r = run.rover(a, k);
+    const [tx, ty] = r.true_pose;
+    const err = Math.hypot(r.estimate[0] - tx, r.estimate[1] - ty);
+    const odo = r.odom_pose ? Math.hypot(r.odom_pose[0] - tx, r.odom_pose[1] - ty) : NaN;
+    const odoCell = !isFinite(odo) ? "n/a" : odo.toFixed(1) === err.toFixed(1) ? "same" : `${odo.toFixed(1)} m`;
+    return `<tr><td><i class="dot ${a}"></i>${a}</td><td>${r.nav_on ? "crater rims" : "odometry only"}</td><td>±${r.sigma.toFixed(1)} m</td><td>${err.toFixed(1)} m</td><td>${odoCell}</td></tr>`;
+  }).join("");
+  const nav = run.nav ? run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim() : "";
+  return `<table class="navt"><thead><tr><th></th><th>Steering by</th><th title="The rover's own 1-sigma estimate of its position error">Thinks within</th>` +
+    `<th title="Distance from the estimate to the hidden true position">Actually off</th><th title="Where odometry alone would put it, distance from the true position">Odometry alone</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table>` + navSources(run);
+}
+
+function navSources(run) {
+  const out = [];
+  if (run.nav) {
+    const nav = run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim();
+    const dots = run.hasParticles !== false && S.opts.particles ? "; dots in 3D are its particles" : "";
+    out.push(`<div class="hud-src" title="${esc(run.nav)}">${esc(nav)}${dots}</div>`);
+  }
+  const si = run.standin || {};
+  const rims = si.rims ? "stand-ins from the crater map" : run.log.vision ? "crater rims from the camera frames" : "";
+  if (rims) {
+    const sq = S.opts.rims ? "; squares on the rover camera" : "";
+    out.push(`<div class="hud-src" title="${esc(run.log.vision || si.rims || "")}">Steers on ${rims}${sq}</div>`);
+  }
+  if (run.planner) {
+    const short = run.planner.replace(/^planner:\s*/, "").split(/[;(]/)[0].replace(/[.,\s]+$/, "");
+    out.push(`<div class="hud-src" title="${esc(run.planner)}">Route: ${esc(short)}; amber dashes on the camera</div>`);
+  }
+  return out.join("");
+}
+
+// A mission site's verdict once the Surveyor has published it (log.states).
+function siteVerdict(id, t) {
+  const site = ((S.run.log.mission || {}).sites || []).find((x) => x.id === id);
+  if (!site) return null;
+  const pub = ((S.run.log.states || {}).A || []).find((q) => q.state === "PUBLISHING" && q.objective.includes(id));
+  return pub && t >= pub.t ? site.verdict : null;
+}
+
+// One sentence on what is happening now, for someone who just walked up
+// (main.js story() and missionStory() at 4f51c54, for the mission log).
+function renderStory(t) {
+  const run = S.run, k = run.stepAt(t);
+  const html = story(run, k, run.findsAt(k));
+  if ($("story").dataset.html !== html) { $("story").innerHTML = html; $("story").dataset.html = html; }
+}
+
+function story(run, k, finds) {
+  const f = finds[0];
+  if (!f) return missionStory(run, k);
+  const other = run.agencies.find((x) => x !== f.agency);
+  const nm = (ag) => `The ${ROLE[ag] || "rover"} (${ag})`;
+  if (f.status === "reported") return `${nm(f.agency)} posted a find at <b>±${f.sigma.toFixed(1)} m</b>. ${nm(other)}, from another agency, reads it from the chain and drives there to check.`;
+  if (f.status === "confirmed") return `${nm(other)} measured ice at the reported spot. The find is <b>confirmed</b> on chain.`;
+  return `${nm(other)} found no ice at the reported spot: ${f.agency}'s position was off by more than the ice patch. The find stays on the record, <b>disputed</b>.`;
+}
+
+function missionStory(run, k) {
+  const name = (ag) => `The ${ROLE[ag] || "rover"} (${ag})`;
+  const [sv, pr] = ["A", "B"].map((ag) => (run.agencies.includes(ag) ? ag : run.agencies[0]));
+  const phase = run.rover(sv, k).phase || "";
+  const m = /^(to|survey) (\S+)/.exec(phase);
+  const sites = (run.log.mission || {}).sites || [];
+  const at = m ? sites.findIndex((x) => x.id === m[2]) : -1;
+  const dry = sites.slice(0, Math.max(at, 0)).filter((x) => x.verdict === "dry").map((x) => x.id);
+  const before = dry.length ? `${dry.join(" and ")} ${dry.length > 1 ? "were" : "was"} dry. ` : "";
+  const doing = !m ? `${name(sv)} is ${esc(phase) || "driving"}.`
+    : m[1] === "to" ? `${name(sv)} drives to orbital candidate ${m[2]}.`
+    : `${name(sv)} surveys ${m[2]} for ice.`;
+  return `${before}${doing} ${name(pr)} waits for a find on chain.`;
 }
 
 // One line over the play bar: who is doing what, and how fast time runs.
@@ -1068,10 +1415,10 @@ function renderToast(t) {
     const ev = S.focusEv, a = ev.agency;
     const what = instrumentNow(a, t, ev).toLowerCase() || (a === "A" ? "facing it" : "science");
     const where = ev.kind === "hazard" ? `crater ${ev.target_id} (not on the orbital map)` : ev.target_id;
-    html = `<i class="dot ${a}"></i> <b>${ROLE[a]} ${a}</b> · ${esc(what)} at ${esc(where)}<span class="sp">${FOCUS_SPEED}× for science</span>`;
+    html = `<i class="dot ${a}"></i> <b>${ROLE[a]} ${a}</b> · ${esc(what)} at ${esc(where)}<span class="sp">${Math.round(focusSpeed(ev))}× for science</span>`;
   } else if (t >= run.tEnd) {
-    const ice = [...registryAt(t).values()].filter((s) => siteStatus(s) === "Positive").length;
-    html = `<b>Mission complete</b> · ice at ${ice} site${ice === 1 ? "" : "s"}`;
+    const f = (run.log.final_finds || [])[0];
+    html = f ? `<b>Mission complete</b> · find #${f.id} ${esc(f.status)} on chain` : `<b>Mission complete</b>`;
   } else if (!S.playing && t === 0) {
     html = `Press <b>play</b> to start · drag to look around`;
   } else {
@@ -1127,7 +1474,7 @@ function renderScience(t) {
       const got = d <= depth + 1e-6;
       const nowBin = got && d > depth - 0.1;
       return `<div class="b ${got ? (nowBin && !pastDrill ? "now" : "") : "pending"}"><span>${(d * 100).toFixed(0)} cm</span><span class="bar2"><i style="width:${got ? (100 * w) / max : 0}%"></i></span><span>${got ? w.toFixed(2) + "%" : "…"}</span></div>`;
-    }).join("") : `<div class="hint">Waiting for the core.</div>`;
+    }).join("") : (pastDrill && ev.reading != null ? `<div class="hint">Core reading ${ev.reading.toFixed(2)}${esc(S.run.unit || "")}</div>` : "");
     const analysed = ph.findIndex((p) => p.name === "analyze");
     const done = finished || cur > analysed;
     if (!done) {
@@ -1170,9 +1517,11 @@ function renderSurveyPane(ev, t, cur, finished) {
       html += `<div class="mini-h">Neutron dwell <span class="hint">water-equivalent, top 1 m</span></div>` + d.map(([dx, dy, w], i) =>
         `<div class="b ${i < n ? "" : "pending"}"><span>${i ? `${Math.round((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360}°` : "centre"}</span><span class="bar2"><i style="width:${i < n ? (100 * w) / max : 0}%"></i></span><span>${i < n ? w.toFixed(2) + "%" : "…"}</span></div>`).join("");
     }
+    if (!html && !j && cur >= 0) html = `<div class="hint">${esc(PHASE[names[cur]] || names[cur])}${ev.reading != null && finished ? ` · reading ${ev.reading.toFixed(2)}${esc(S.run.unit || "")}` : ""}</div>`;
     if (!html) html = `<div class="hint">${names[cur] === "mast_pan" ? "Panning the camera across it" : "Stopping and turning to face it"}</div>`;
     $("sci-bins").innerHTML = html;
-    if (!finished && !(done("photo") || (hz && ph.name === "flag"))) { $("sci-result").innerHTML = ""; return; }
+    const after = (name) => names.includes(name) && done(name);
+    if (!finished && !(after("photo") || (hz && ph.name === "flag") || (!j && after("analyze")))) { $("sci-result").innerHTML = ""; return; }
     if (hz) {
       const dtxt = terr && terr.crater_diameter_m ? `Crater ${terr.crater_diameter_m.toFixed(0)} m across, boulders on the rim` : "Boulder field";
       $("sci-result").innerHTML = `<div class="verdict ice">Unsafe<small>flagged</small><span class="sim-tag">SIMULATED</span></div>
@@ -1200,16 +1549,37 @@ function writeHtml(e) {
   </div>`;
 }
 
+// The chain feed: Kellen's postFind and checkFind calls from the mission log,
+// newest first. Recorded hashes unless ?key= posted them live in this play-through.
+function txLink(e) {
+  const run = S.run, ex = run.chain && run.chain.explorer;
+  if (ex && (e.live || !run.fakeTx)) return `<a class="mono" href="${ex.replace(/\/$/, "")}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx, 6, 4)}</a>`;
+  return `<span class="mono">${short(e.tx, 6, 4)}</span> <span class="tag offline">${run.fakeTx ? "stand-in" : "recorded"}</span>`;
+}
+
+function chainHtml(e) {
+  const unit = S.run.unit || "";
+  const head = e.type === "find"
+    ? `postFind #${e.find_id} · ${esc(e.site_id || "")}`
+    : `checkFind #${e.find_id} · ${esc(e.site_id || "")} <span class="res ${e.agrees ? "Positive" : "Negative"}">${e.agrees ? "agrees" : "disagrees"}</span>`;
+  return `<div class="chain-item${e.live ? " live" : ""}">
+    <div class="what"><i class="dot ${e.agency}"></i> ${ROLE[e.agency]} ${e.agency} · ${head}${e.live ? `<span class="tag monad" style="margin-left:auto">Live</span>` : ""}</div>
+    <div class="split"><div><span class="k">Position</span>${e.x.toFixed(1)}, ${e.y.toFixed(1)} ± ${e.sigma.toFixed(2)} m</div><div><span class="k">Reading</span>${e.reading.toFixed(2)}${esc(unit)}</div></div>
+    <div class="verify-row"><span class="hint small">tx ${txLink(e)}${e.live_status ? ` · now <b>${esc(e.live_status)}</b>` : ""}</span></div>
+  </div>`;
+}
+
 function renderChain(t) {
-  const done = reg.filter((e) => e.t <= t);
-  const key = `chain|${done.length}`;
+  const k = S.run.stepAt(t);
+  const done = S.run.events.filter((e) => e.k <= k);
+  const key = `chain|${done.length}|${done.map((e) => e.tx).join()}`;
   if ($("chain-now").dataset.key === key) return;
   $("chain-now").dataset.key = key;
-  $("chain-now").innerHTML = done.length ? writeHtml(done.at(-1))
-    : `<p class="hint">Nothing yet. A record is written when a site is found, drilled, or analysed.</p>`;
-  bindVerify($("chain-now"));
-  $("txs").innerHTML = done.slice(0, -1).reverse().map((e) =>
-    `<li><span class="t">${fmtClock(e.t).replace("T+", "")}</span><span><i class="dot ${e.agency}"></i> ${esc(CALL[e.call])} · <b>${esc(e.target_id)}</b>${e.result ? ` <span class="res ${e.result}">${e.result}</span>` : ""}</span></li>`).join("");
+  $("chain-now").innerHTML = done.length ? [...done].reverse().map(chainHtml).join("")
+    : `<p class="hint">Nothing yet. The Surveyor posts a find when it measures ice; the Prospector posts its check.</p>`;
+  $("txs").innerHTML = "";
+  if (done.length > (S.lastChainN || 0) && S.playing) document.querySelector('.rail [data-tab="chain"]').classList.add("live");
+  S.lastChainN = done.length;
 }
 
 function bindVerify(root) {
@@ -1226,19 +1596,25 @@ function bindVerify(root) {
 }
 
 function renderRegistry(t) {
-  const sites = [...registryAt(t).values()];
-  const key = `reg|` + sites.map((s) => `${s.target}${s.stage}${s.surveyor}${s.prospector}`).join();
+  const run = S.run, k = run.stepAt(t);
+  const sites = (run.log.mission || {}).sites || [];
+  const evs = run.events.filter((e) => e.k <= k);
+  const key = `sites|${sites.map((x) => siteVerdict(x.id, t)).join()}|${evs.length}`;
   if ($("reg-body").dataset.key === key) return;
   $("reg-body").dataset.key = key;
   $("reg-count").textContent = sites.length ? String(sites.length) : "";
-  $("reg-body").innerHTML = sites.map((s) => {
-    const n = STAGE_N[s.stage];
-    const pips = [1, 2, 3].map((i) => `<i class="${i <= n ? "on" : ""}"></i>`).join("");
-    return `<tr data-site="${s.site_id}"><td><b>${esc(s.target)}</b></td><td><span class="pips" title="${s.stage}">${pips}</span></td>
-      <td><span class="res ${s.surveyor}">${s.surveyor === "Unknown" ? "pending" : s.surveyor}</span></td>
-      <td><span class="res ${s.prospector}">${s.stage === "ProspectorAnalyzed" ? s.prospector : s.surveyor === "Positive" ? "queued" : "–"}</span></td></tr>`;
-  }).join("") || `<tr><td colspan="4" class="hint">No sites yet.</td></tr>`;
-  $("reg-body").querySelectorAll("tr[data-site]").forEach((tr) => (tr.onclick = () => openSite(tr.dataset.site)));
+  $("reg-body").innerHTML = sites.map((x) => {
+    const v = siteVerdict(x.id, t);
+    const find = evs.find((e) => e.type === "find" && e.site_id === x.id);
+    const chk = evs.find((e) => e.type === "check" && e.site_id === x.id);
+    const sv = v === "ice" ? `<span class="res Positive">ice</span>` : v === "dry" ? `<span class="res Negative">dry</span>` : `<span class="hint">pending</span>`;
+    const pv = chk ? `<span class="res ${chk.agrees ? "Positive" : "Negative"}">${chk.agrees ? "confirmed" : "disputed"}</span>` : find ? `<span class="hint">queued</span>` : "–";
+    return `<tr><td><b>${esc(x.id)}</b></td><td>${find ? `find #${find.find_id}` : "–"}</td><td>${sv}</td><td>${pv}</td></tr>`;
+  }).join("") || `<tr><td colspan="4" class="hint">No sites.</td></tr>`;
+  const finds = run.findsAt ? run.findsAt(k) : [];
+  $("finds").innerHTML = finds.length ? finds.map((f) => `<div class="find"><b>Find #${f.find_id}</b> at ${esc(f.site_id || "")} · ${ROLE[f.agency] || f.agency} ${f.agency} · ±${f.sigma.toFixed(2)} m · ${f.reading.toFixed(2)}${esc(run.unit || "")}` +
+    ` · <span class="res ${f.status === "confirmed" ? "Positive" : f.status === "disputed" ? "Negative" : "Inconclusive"}">${esc(f.status)}</span></div>`).join("")
+    : `<p class="hint">No finds yet.</p>`;
 }
 
 async function openSite(sid) {

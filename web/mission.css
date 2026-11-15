@@ -269,3 +269,69 @@ kbd { font: 500 12px var(--mono); background: rgba(255,255,255,.08); border: 1px
   .sci-ck .lg { display: none; } .sci-ck .sh { display: inline; }
   #speed { padding: 5px 8px; font-size: 12px; }
 }
+
+/* ---- camera | lidar switch: in the camera box and over the full-screen view */
+.sensor-seg { padding: 2px; }
+.sensor-seg button { padding: 3px 9px; gap: 5px; font-size: 12px; }
+.sensor-seg svg { width: 14px; height: 14px; }
+.sensor-seg button[data-sensor="lidar"][aria-selected="true"] { background: rgba(255, 42, 110, .22); color: #ffd1df; }
+.sensor-seg button:disabled { opacity: .35; cursor: default; }
+.inset figcaption .sensor-seg { margin-left: auto; margin-right: 4px; }
+#sensor-main { position: fixed; top: 108px; left: 50%; transform: translateX(-50%); z-index: 3; }
+#sensor-main button { padding: 6px 14px; font-size: 13px; }
+#sensor-main svg { width: 16px; height: 16px; }
+@media (max-width: 700px) {
+  .inset figcaption .sensor-seg button { padding: 3px 6px; font-size: 0; gap: 0; }
+  #sensor-main { top: 150px; }
+}
+/* Lidar mode: Calvin's top-down scan is 800 x 280, letterboxed in the 4:3 box. */
+.lidar-on img { object-fit: contain; background: #000; }
+
+/* Camera box tabs and Kellen's checkpoint card (ui merge) */
+.view-seg { align-self: flex-end; }
+.view-seg button { padding: 5px 12px; font-size: 13px; }
+.cp-float { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bar-h) + 78px); z-index: 11;
+  width: min(640px, calc(100vw - 32px)); margin: 0; background: rgba(14,14,16,.92); border-radius: 0 var(--r) var(--r) 0; backdrop-filter: blur(8px); color: var(--fg); }
+.tl-marks i.cp { background: #d9b44a; height: 12px; width: 2px; }
+.rail button.live { box-shadow: inset 2px 0 0 #4fd18b; }
+@media (max-width: 760px) { .cp-float { bottom: auto; top: 160px; } .view-seg { align-self: stretch; } }
+.navt { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0 6px; }
+.navt th { text-align: left; font-weight: 500; color: var(--dim); padding: 3px 4px; font-size: 11px; }
+.navt td { padding: 3px 4px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.standin { margin-top: 12px; font-size: 12px; color: var(--dim); border-left: 3px solid #d9b44a; padding: 6px 10px; background: rgba(217,180,74,.07); }
+.standin summary { cursor: pointer; margin-top: 4px; } .standin ul { margin: 4px 0 0 16px; padding: 0; }
+#finds .find { font-size: 13px; padding: 6px 0; border-top: 1px solid var(--line); }
+
+/* Right column: First person, Satellite, Lidar stacked, all showing. The
+   column narrows on short screens so all three clear the play bar:
+   height ~ 0.75w + 0.75w + 0.35w + 3 captions + gaps. */
+.insets { width: clamp(200px, calc((100vh - var(--bar-h) - 200px) / 1.86), 320px); gap: 8px; }
+.inset figcaption { padding-top: 2px; padding-bottom: 2px; }
+@media (max-width: 760px) { .insets { width: auto; } }
+.vnote { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 9; font-size: 12px; color: var(--dim);
+  background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; white-space: nowrap; pointer-events: none; }
+.vnote[hidden] { display: none; }
+@media (max-width: 760px) { .vnote { top: auto; bottom: calc(var(--bar-h) + 8px); font-size: 11px; white-space: normal; text-align: center; width: calc(100vw - 32px); } }
+/* Story line, top centre under the rover picker; the fill note under it */
+.story { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 9; max-width: min(620px, calc(100vw - 2 * var(--gut) - 360px * 2));
+  text-align: center; font-size: 14px; line-height: 1.35; color: var(--fg); background: var(--glass-2, rgba(14,14,16,.82)); border: 1px solid var(--line);
+  border-radius: 10px; padding: 6px 14px; backdrop-filter: blur(8px); pointer-events: none; }
+.story:empty { display: none; }
+.vnote { top: auto; bottom: calc(var(--bar-h) + 24px); left: calc(var(--gut) + 8px); transform: none; }
+.ib.step { font-size: 22px; line-height: 1; }
+.hud-src { font-size: 11px; color: var(--dim); margin-top: 3px; }
+.credit { margin-top: 12px; font-size: 12px; } .credit a { color: var(--dim); }
+@media (max-width: 1100px) { .story { max-width: calc(100vw - 2 * var(--gut) - 40px); top: 64px; font-size: 13px; } }
+@media (max-width: 760px) { .story { top: 100px; } }
+/* Story and fill note share one centred block under the rover picker */
+.topline { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 9; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  max-width: min(620px, calc(100vw - 2 * var(--gut) - 720px)); pointer-events: none; }
+.topline .story, .topline .vnote { position: static; transform: none; max-width: none; }
+.topline .vnote { white-space: normal; text-align: center; font-size: 11px; padding: 2px 10px; }
+@media (max-width: 1100px) { .topline { max-width: calc(100vw - 2 * var(--gut) - 40px); top: 64px; } }
+@media (max-width: 760px) { .topline { top: 100px; } .topline .vnote { display: none; } }
+/* Keep the story between the left panel (ends ~378 px) and the right column (~340 px wide) */
+.topline { left: 392px; right: 344px; transform: none; max-width: none; }
+.topline .story { max-width: 620px; }
+.panel.closed ~ .topline { left: 80px; }
+@media (max-width: 760px) { .topline { left: var(--gut); right: var(--gut); } }

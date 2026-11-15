@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern</title>
+<meta name="description" content="Two rovers from two agencies drive a dark lunar crater, find their way by lamp-lit crater rims, and write ice finds to a shared record on Monad.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand">
+    <div class="wordmark">Lantern</div>
+    <p class="pitch">Two rovers from two agencies hunt for ice in a crater that never sees the sun. They find their way by the crater rims their lamps light, post each find with how sure they are, and check each other&rsquo;s finds on a shared ledger.</p>
+  </div>
+
+  <nav class="sb-nav">
+    <div class="sb-section">Runs</div>
+    <div id="run-list"></div>
+
+    <div class="sb-section">Camera</div>
+    <button class="nav" data-view="A">Follow rover A</button>
+    <button class="nav" data-view="B">Follow rover B</button>
+    <button class="nav" data-view="site">Whole site</button>
+
+    <div class="sb-section">Show</div>
+    <label class="ck"><input type="checkbox" id="opt-fill" checked> Fill light</label>
+    <label class="ck"><input type="checkbox" id="opt-tracks" checked> Tracks</label>
+    <div class="keys">
+      <div class="lg"><i class="ln true"></i>True path</div>
+      <div class="lg"><i class="ln est"></i>Estimate, ring &plusmn;&sigma;</div>
+      <div class="lg"><i class="ln odom"></i>Odometry alone</div>
+    </div>
+    <label class="ck" title="The navigation filter's particles, in each agency's colour. Dot size is the particle's weight."><input type="checkbox" id="opt-particles" checked> Particles<i class="key dots"></i></label>
+    <label class="ck" title="Crater-rim points the rover matched, drawn on its camera frame."><input type="checkbox" id="opt-rims" checked> Rim points<i class="key sq"></i></label>
+    <label class="ck" title="Ground the planner will not drive: steeper than 15&deg; across 2 m, widened by the rover's half width (sim/rover.py)."><input type="checkbox" id="opt-nogo" checked> Too steep, over 15&deg;<i class="key nogo"></i></label>
+    <label class="ck" title="The hidden ice map. The rovers never see it."><input type="checkbox" id="opt-truth"> Hidden truth: real ice<i class="key dm"></i></label>
+  </nav>
+
+  <div class="sb-foot">
+    <div class="agencies"><span><i class="sw ag-A"></i>Agency A</span><span><i class="sw ag-B"></i>Agency B</span></div>
+    <a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">Navigation after ShadowNav, JPL 2023</a>
+  </div>
+</aside>
+
+<main class="page">
+  <header class="head">
+    <div class="titles">
+      <div class="ptitle" id="run-title">Loading</div>
+      <div class="psub" id="story">&nbsp;</div>
+    </div>
+    <div class="standin" id="standin" hidden>
+      <span class="tag">Stand-ins in this run</span>
+      <span id="standin-text"></span>
+    </div>
+  </header>
+
+  <section class="stage">
+    <div class="viewport" id="viewport">
+      <div class="hud" id="hud"></div>
+      <div class="vnote" id="vnote">Fill light added so you can see the ground. The rovers see only their lamps.</div>
+      <div class="loading" id="loading">Loading terrain</div>
+    </div>
+
+    <div class="transport">
+      <button class="btn" id="play" title="Play or pause (space)">Play</button>
+      <button class="btn ghost" id="back" title="Back one step (left arrow)">&#8592;</button>
+      <button class="btn ghost" id="fwd" title="Forward one step (right arrow)">&#8594;</button>
+      <select id="speed" title="Playback speed, simulated seconds per second">
+        <option value="1">1×</option>
+        <option value="10">10×</option>
+        <option value="50">50×</option>
+        <option value="100">100×</option>
+        <option value="200" selected>200×</option>
+        <option value="500">500×</option>
+      </select>
+      <div class="speednote" id="speed-note"></div>
+      <div class="scrub">
+        <input type="range" id="time" min="0" max="1" step="any" value="0">
+        <div class="ticks" id="ticks"></div>
+      </div>
+      <div class="clock" id="clock">T+00:00:00</div>
+    </div>
+
+    <div class="record">
+      <div class="col">
+        <div class="overline">Finds</div>
+        <div id="finds" class="finds"></div>
+      </div>
+      <div class="col">
+        <div class="overline">Chain feed <span class="hint" id="chain-hint"></span></div>
+        <div id="feed" class="feed"></div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="side">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="overline">Rover camera</div>
+        <div class="seg" id="cam-seg">
+          <button data-ag="A" aria-pressed="true">A</button>
+          <button data-ag="B">B</button>
+        </div>
+      </div>
+      <div class="fp" title="Click to enlarge">
+        <img id="fp-img" alt="First-person lamp view">
+        <canvas id="fp-rims"></canvas>
+        <div class="fp-empty" id="fp-empty" hidden>No frame at this step</div>
+      </div>
+      <div class="cap" id="fp-cap">Recorded lamp-only view. 60° field of view, camera 2.5 m up.</div>
+      <div class="panel-head lidar-head" id="lidar-head">
+        <div class="overline">Lidar</div>
+        <div class="seg" id="lidar-seg" hidden>
+          <button data-lk="top" aria-pressed="true">Top-down</button>
+          <button data-lk="fp">First person</button>
+        </div>
+      </div>
+      <div class="lidar"><img id="lidar-img" alt="Lidar scan"></div>
+      <div class="cap" id="lidar-cap"></div>
+    </div>
+
+    <div class="panel grow">
+      <div class="panel-head">
+        <div class="overline">Map</div>
+        <div class="seg" id="map-seg">
+          <button data-map="site" aria-pressed="true">Site</button>
+          <button data-map="A">A</button>
+          <button data-map="B">B</button>
+        </div>
+      </div>
+      <div class="map"><canvas id="map"></canvas></div>
+      <div class="cap" id="map-cap">North up. Scroll to zoom.</div>
+    </div>
+  </aside>
+</main>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

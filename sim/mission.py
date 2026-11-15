@@ -682,6 +682,8 @@ def publish_run(store, runs_dir):
     shutil.copyfile(store.dir / "run_log.json", out / "log.json")
     if (store.dir / "fp").exists():   # first-person frames, if rendered
         shutil.copytree(store.dir / "fp", out / "fp", dirs_exist_ok=True)
+    if (store.dir / "lidar").exists():   # lidar frames (sim/mission_render.py)
+        shutil.copytree(store.dir / "lidar", out / "lidar", dirs_exist_ok=True)
     # The mission's evidence objects, so a static host serves them and a
     # browser can re-hash them against the chain.
     (out / "evidence").mkdir(exist_ok=True)

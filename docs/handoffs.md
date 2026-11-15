@@ -155,8 +155,9 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
   recall_shadow, mean_dist_m and the paper's Gaussian score (sigma 0.25
   m), at a 0.5 m tolerance (assumed).
 - About a third of the rim shadow in `display="full"` frames comes from the
-  invented rim lips (terrain, 4 poses: 502 shadow-casting front-arc points
-  in full against 327 in `display="detail"`).
+  invented rim lips (terrain, 4 poses, 15/32 deg lamp cone: 430
+  shadow-casting front-arc points in full against 270 in `display="detail"`;
+  dark rim pixels 1156 against 816).
 
 ## Step 3, navigation, gives each step
 

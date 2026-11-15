@@ -131,3 +131,6 @@ Read mail, then `mv` it to `leader/archive/`.
   0 no-go steps); unconfirmed until the official rerun lands. Its shots show
   "TEST run*-ptest" entries from its scratchpad; those must not reach
   integration. Viewer mailed designer the dots legend and #opt-particles hooks.
+- 12:37 terrain fyi: answer key follows scene's 15/32 cone (7763856, merged
+  up to integration f13b9ef). Lips give 29-37% of rim shadow; recommends
+  detail frames for vision still. Handoffs numbers updated.

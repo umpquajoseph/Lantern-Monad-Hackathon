@@ -12,12 +12,9 @@ const short = (h) => (h ? h.slice(0, 10) + "…" + h.slice(-6) : "");
 const FP = { w: 640, h: 480, hfov: 60, pitch: 15, camH: 2.5 };
 FP.fx = FP.w / 2 / Math.tan((FP.hfov / 2) * Math.PI / 180);
 
-// Plain names for the log's stand-in keys; others print with "_" as a space.
-const PART_NAMES = { nav: "navigation", rims: "rim detection", planner: "route planner", chain: "chain", ice_sensor: "ice sensor" };
-
 const state = {
   runs: [], run: null, t: 0, playing: false, speed: 200, cam: "A",
-  opts: { fill: true, tracks: true, particles: true, rims: true, nogo: false, truth: false },
+  opts: { fill: true, tracks: true, particles: true, rims: true, nogo: true, truth: false },
   lastEventsKey: "",
 };
 
@@ -46,8 +43,7 @@ async function main() {
     b.className = "nav";
     b.dataset.run = r.run_id;
     const [head, ...rest] = r.label.split(":");
-    const st = r.status ? ` <span class="st ${r.status}">${r.status}</span>` : "";
-    b.innerHTML = `${head}<span class="sub">${rest.join(":").trim() || "&nbsp;"}${st}</span>`;
+    b.innerHTML = `${head}<span class="sub">${rest.join(":").trim() || "&nbsp;"}</span>`;
     b.onclick = () => openRun(r.run_id, 0);
     list.appendChild(b);
   });
@@ -137,7 +133,6 @@ function bindControls() {
   }));
   for (const k of Object.keys(state.opts)) {
     if (!$("opt-" + k)) continue;   // a toggle the page does not offer keeps its default
-    state.opts[k] = $("opt-" + k).checked;   // the markup's checked state is the default
     $("opt-" + k).onchange = (e) => {
       state.opts[k] = e.target.checked;
       world.setVisibility(state.opts);
@@ -243,37 +238,30 @@ function render(force = false) {
 }
 
 function hud(run, k) {
-  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   const rows = run.agencies.map((a) => {
     const r = run.rover(a, k);
     const [tx, ty] = r.true_pose;
     const err = Math.hypot(r.estimate[0] - tx, r.estimate[1] - ty);
     const odo = r.odom_pose ? Math.hypot(r.odom_pose[0] - tx, r.odom_pose[1] - ty) : NaN;
-    const by = r.nav_on ? "crater rims" : `<span class="off">odometry only</span>`;
-    // "same" only when the two printed numbers are the same, not by assumption.
-    const odoCell = !isFinite(odo) ? `<td class="k">n/a</td>`
-      : odo.toFixed(1) === err.toFixed(1) ? `<td class="k">same</td>` : `<td>${odo.toFixed(1)} m</td>`;
-    return `<tr><td class="ag" style="color:${hex(COLORS[a])}">${a}</td><td>${by}</td>` +
-      `<td>±${r.sigma.toFixed(1)} m</td><td>${err.toFixed(1)} m</td>${odoCell}</tr>`;
+    const nav = r.nav_on ? "crater fixes on " : `<span class="off">crater fixes off</span>`;
+    return `<div class="row"><span class="ag" style="color:${hex(COLORS[a])}">${a}</span><span>${nav}</span>` +
+      `<span><span class="k">σ</span> ${r.sigma.toFixed(1)} m</span>` +
+      `<span><span class="k">true error</span> ${err.toFixed(1)} m</span>` +
+      `<span><span class="k">odometry error</span> ${odo.toFixed(1)} m</span></div>`;
   });
-  const out = [`<table class="hudt"><thead><tr><th></th><th>Steering by</th>` +
-    `<th title="The rover's own 1-sigma estimate of its position error">Thinks it is within</th>` +
-    `<th title="Distance from the estimate to the hidden true position">Actually off by</th>` +
-    `<th title="Where odometry alone would put it, distance from the true position">Odometry alone</th></tr></thead>` +
-    `<tbody>${rows.join("")}</tbody></table>`];
   if (run.nav) {
     // "ShadowNav particle filter (Cauligi et al. 2023, Algs. 1-3), 100 particles, ..."
     // -> "ShadowNav particle filter, 100 particles"; the full line on hover.
     const short = run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim();
     const dots = run.hasParticles && state.opts.tracks && state.opts.particles ? "; dots are its particles, larger for more weight" : "";
-    out.push(`<div class="hud-src" title="${esc(run.nav)}">${short}${dots}</div>`);
+    rows.push(`<div class="row src" title="${run.nav.replace(/"/g, "&quot;")}"><span class="k">estimate and σ:</span><span>${short}${dots}</span></div>`);
   }
   if (run.planner) {
-    // "A* on a 2 m grid; a cell is blocked if ..." -> "Route: A* on a 2 m grid"; the full line on hover.
+    // "A* on a 2 m grid; a cell is blocked if ..." -> "A* on a 2 m grid"; the full line on hover.
     const short = run.planner.split(/[;(]/)[0].replace(/[.,\s]+$/, "");
-    out.push(`<div class="hud-src" title="${esc(run.planner)}">Route: ${short}</div>`);
+    rows.push(`<div class="row src" title="${run.planner.replace(/"/g, "&quot;")}"><span class="k">route:</span><span>${short}</span></div>`);
   }
-  $("hud").innerHTML = out.join("");
+  $("hud").innerHTML = rows.join("");
 }
 
 function camera(run, fr, k) {
@@ -303,6 +291,46 @@ function camera(run, fr, k) {
   $("lidar-cap").textContent = lidarCapText(run, a, fr ? fr.k : k);
   // Rim points are logged per step, in that step's pose: draw them only on a step's own frame.
   drawRims(run, a, fr ? fr.k : k, !!(fr && fr.sub));
+  drawPlan(run, a, fr, k);
+}
+
+// The rover's planned route (logged per step as "plan", world xy, out to
+// ~60 m) as amber dots on the camera image, projected from the pose of the
+// frame shown, so the line moves with every frame (every 0.5 m with
+// sub-frames) and bends as soon as the rover re-plans around a crater.
+function drawPlan(run, a, fr, k) {
+  const kk = fr ? fr.k : k;
+  const r = run.rover(a, kk);
+  if (!r.plan || r.plan.length < 2) return;
+  const c = $("fp-rims").getContext("2d");
+  // The pose the shown image was taken from: its step, plus the sub-frame's
+  // fraction toward the next step.
+  const k1 = Math.min(kk + 1, run.steps.length - 1);
+  const tf = run.times[kk] + (fr ? fr.f || 0 : 0) * (run.times[k1] - run.times[kk]);
+  const [x, y, h] = run.poseAt(a, tf);
+  const camZ = terrain.heightAt(x, y) + FP.camH;
+  const p = (FP.pitch * Math.PI) / 180, cp = Math.cos(p), sp = Math.sin(p);
+  const ch = Math.cos(h), sh = Math.sin(h);
+  c.fillStyle = "rgba(255, 200, 60, 0.95)";
+  const step = 0.75;   // metres between dots
+  let carry = 0;
+  for (let i = 0; i + 1 < r.plan.length; i++) {
+    const [ax, ay] = r.plan[i], [bx, by] = r.plan[i + 1];
+    const seg = Math.hypot(bx - ax, by - ay);
+    for (let s = carry; s < seg; s += step) {
+      const wx = ax + (bx - ax) * s / seg, wy = ay + (by - ay) * s / seg;
+      const dx = wx - x, dy = wy - y;
+      const f = dx * ch + dy * sh, l = -dx * sh + dy * ch;   // rover frame
+      const z = terrain.heightAt(wx, wy) + 0.05 - camZ;
+      const Xc = -l, Yc = f * sp + z * cp, Zc = f * cp - z * sp;
+      if (Zc <= 0.5) continue;
+      const u = FP.w / 2 + (FP.fx * Xc) / Zc, v = FP.h / 2 - (FP.fx * Yc) / Zc;
+      if (u < 0 || v < 0 || u > FP.w || v > FP.h) continue;
+      const rad = Math.max(1.2, Math.min(5, 18 / Math.hypot(f, l)));
+      c.beginPath(); c.arc(u, v, rad, 0, 2 * Math.PI); c.fill();
+    }
+    carry = ((carry - seg) % step + step) % step;
+  }
 }
 
 function captionHtml(run, a, k, sub) {
@@ -313,7 +341,8 @@ function captionHtml(run, a, k, sub) {
   return `Recorded lamp-only view from rover ${a}${every}. 60° view, camera 2.5 m up. Click to enlarge.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
     (state.opts.rims && r.rims && r.rims.length && !sub ? ` ${r.rims.length} rim points${run.standin && run.standin.rims ? " (stand-in, from the crater map)" : " from the camera"}.` : "") +
-    (r.lidar_frame && !sub ? " Amber dots: planned path. Red marks: lidar hazards." : "");
+    (r.plan && !sub ? " Amber dots: the route it plans to drive, re-planned every 2 m." : "") +
+    (r.lidar_frame && !sub ? " Red marks: lidar hazards." : "");
 }
 
 // Lidar panel caption: the scan taken with this step's live frame (run_demo.py --vision).

@@ -142,6 +142,8 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                 "fp_frame": cam.last.get(r.agency) if cam is not None and cam.run_dir is not None else None,
                 "lidar_frame": cam.last_lidar.get(r.agency) if cam is not None else None,
                 "lidar_hazards": cam.haz_count.get(r.agency, {}) if cam is not None else {},
+                "plan": ([[round(float(px), 2), round(float(py), 2)] for px, py in r.planned_route()]
+                         if r.sensing and mode[r.agency] in ("survey", "goto") else None),
                 "particles": _particles_log(r.nav)}
 
     for k in range(MAX_STEPS):
@@ -334,8 +336,9 @@ class LiveCamera:
                 r.add_hazards(hz_world)
                 self.haz_count[ag] = {kk: kinds.count(kk) for kk in ("crater", "slope")}
                 if self.run_dir is not None:
-                    plan = list(getattr(r, "local_plan", [])[1:])
-                    shown = draw_plan(img, [tuple(r.true[:2])] + plan, r.true, self.scene, hz_world)
+                    # Lidar hazards are marked on the saved frame; the planned
+                    # route is drawn live by the viewer from the logged "plan".
+                    shown = draw_plan(img, [], r.true, self.scene, hz_world)
                     lname = f"lidar/{ag}_{k:04d}.jpg"
                     _write_jpg(self.run_dir / lname, self.lid[ag].view(rng_img))
                     self.last_lidar[ag] = lname

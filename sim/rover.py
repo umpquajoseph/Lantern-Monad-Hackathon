@@ -37,6 +37,10 @@ LOCAL_PLAN_MAX_CELLS = 3000     # assumed: local A* search budget (2 m cells)
 # the planner routes around the whole cell.
 HAZARD_CELL_FRAC = 0.01   # any hazard cell blocks its 2 m planning cell (lidar hazards are craters, not lone rocks)
 
+# Assumed: how much of the planned route is logged for display (the camera
+# view's dotted line), metres ahead of the rover.
+PLAN_DISPLAY_M = 60.0
+
 # Assumed: how far the rover turns in place when no way forward is clear.
 STUCK_TURN_DEG = 60.0
 
@@ -235,6 +239,30 @@ class Rover:
             self.stuck_turns += 1
             return 0.0, turn
         return moved, dh
+
+    def planned_route(self, max_m=None):
+        """Where the rover intends to drive, true frame, starting at the rover:
+        the local plan around sensed hazards, then the rest of the global
+        route (held in the believed frame, shifted by the rover's own offset
+        between belief and where its sensors place it), cut at max_m metres."""
+        max_m = PLAN_DISPLAY_M if max_m is None else max_m
+        pts = [tuple(self.true[:2])] + [tuple(p) for p in getattr(self, "local_plan", [])[1:]]
+        if self.path:
+            off = self.true[:2] - self.estimate
+            last = np.asarray(pts[-1])
+            # Continue from the global waypoint nearest the end of the local plan.
+            k = int(np.argmin([math.hypot(p[0] + off[0] - last[0], p[1] + off[1] - last[1]) for p in self.path]))
+            pts += [(p[0] + off[0], p[1] + off[1]) for p in self.path[k + 1:]]
+        out, total = [pts[0]], 0.0
+        for a, b in zip(pts[:-1], pts[1:]):
+            seg = math.hypot(b[0] - a[0], b[1] - a[1])
+            if total + seg >= max_m:
+                t = (max_m - total) / seg if seg > 0 else 0.0
+                out.append((a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])))
+                break
+            out.append(b)
+            total += seg
+        return out
 
     def goal_blocked(self):
         """True if the goal (taken where the rover believes it is) is on ground

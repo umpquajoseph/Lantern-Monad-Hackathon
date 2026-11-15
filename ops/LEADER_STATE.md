@@ -370,3 +370,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:36 viewer a0fbffe: Ritvik c6575e5 merged (his structure, plain Surveyor camera kept; frost, lidar inset, A/B intact); Surveyor on ground at T+0; integrator asked. Viewer back on lidar toggle.
 - 14:37 integrator: freeze candidate 2cf100e (all workers + main, viewer a0fbffe). Told: merge joseph (keep joseph's TODO.md, vision-sync.md); after freeze allow viewer lidar toggle and scene 9a590ca render copy.
 - 14:37 integrator freeze candidate 2cf100e checked (Mission Control rover on ground, no errors). Corrected: merge joseph keeping integration's vision-sync.md (Calvin's answers) + joseph's TODO.md. Viewer lidar toggle 2bd2e1c pushed (shot read back: first-person view, caption names colours); integrator to merge.
+- 14:39 FREEZE HEAD integration 4f51c54 (joseph merged, viewer lidar toggle 2bd2e1c). main fast-forwards to it cleanly; waiting on Joseph's word. joseph synced to it.

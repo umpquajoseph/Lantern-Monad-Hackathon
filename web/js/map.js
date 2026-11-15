@@ -12,6 +12,12 @@ export class MapView {
     this.img = new Image();
     this.img.onload = () => this.draw();
     this.img.src = terrain.base + terrain.meta.map.file;
+    // The planner's no-go ground, red on clear (build_assets.py, from sim/rover.py).
+    if (terrain.meta.nogo) {
+      this.nogo = new Image();
+      this.nogo.onload = () => this.draw();
+      this.nogo.src = terrain.base + terrain.meta.nogo.file;
+    }
     this.mode = "site";
     this.zoom = 1;
     this.pan = [0, 0];
@@ -88,6 +94,13 @@ export class MapView {
       c.imageSmoothingEnabled = s < 2;
       c.globalAlpha = 0.85;
       c.drawImage(this.img, X(x0), Y(y1), g.cols * g.cell * s, g.rows * g.cell * s);
+      if (this.opts.nogo && this.nogo && this.nogo.complete && this.nogo.naturalWidth) {
+        c.globalAlpha = 0.42;
+        // One pixel per 0.25 m sim cell, centred on the grid points.
+        const nx0 = m.x0 - m.cell / 2, ny1 = m.y0 + (m.rows - 0.5) * m.cell;
+        c.drawImage(this.nogo, X(nx0), Y(ny1), m.cols * m.cell * s, m.rows * m.cell * s);
+        c.globalAlpha = 1;
+      }
       c.globalAlpha = 1;
     }
 

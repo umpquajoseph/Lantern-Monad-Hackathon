@@ -9,6 +9,7 @@ This writes, under web/assets/terrain/:
                        uint16, gzip; the viewer loads the ones near the rovers
     backdrop.bin       the 20 km LOLA backdrop at 20 m, uint16, gzip (if built)
     map.png            hillshade of the drive area for the 2D map, north up
+    nogo.png           the planner's no-go ground (sim/rover.py SlopeMap), red on clear, north up
     craters.json       the crater list [[x, y, diameter], ...], world metres
     albedo.jpg         display albedo, 2048 px, north up (if built)
     detail_normal.png, detail_albedo.png   tileable close-up detail (if built)
@@ -72,6 +73,24 @@ def add_lips(height, craters, lips, x0, y0, cell, s):
     return h
 
 
+def nogo_png(height, x0, y0, cell, path):
+    """The planner's own no-go ground: SlopeMap(height).fine_deg > SLOPE_LIMIT_DEG
+    (sim/rover.py), i.e. steeper than the limit across 2 m, widened by the
+    rover's half width. Written as red on clear, north up, one pixel per sim
+    cell. Returns the meta entry, or None when sim/rover.py has no SlopeMap."""
+    try:
+        from sim.rover import SlopeMap, SLOPE_LIMIT_DEG
+    except ImportError as e:
+        print(f"no-go layer skipped: {e}")
+        return None
+    bad = SlopeMap(height, x0, y0, cell).fine_deg > SLOPE_LIMIT_DEG
+    rgba = np.zeros(bad.shape + (4,), np.uint8)
+    rgba[bad] = (79, 87, 229, 255)          # BGRA for cv2: #e5574f, the page's "disputed" red
+    cv2.imwrite(str(path), rgba[::-1])
+    return {"file": path.name, "limit_deg": SLOPE_LIMIT_DEG, "fraction": round(float(bad.mean()), 4),
+            "source": "sim/rover.py SlopeMap(height, x0, y0, cell).fine_deg > SLOPE_LIMIT_DEG, on the sim grid without display lips"}
+
+
 def far_normal(z, cell):
     """Tileable tangent-space normal map (x east, y north, z up) of a periodic height tile."""
     gx = (np.roll(z, -1, 1) - np.roll(z, 1, 1)) / (2 * cell)
@@ -85,6 +104,8 @@ def far_normal(z, cell):
 def main():
     height, craters, x0, y0, cell = load_terrain(DATA / "shoemaker.npz")
     H, W = height.shape
+    # The planner works on the sim grid as is, so the no-go layer does too.
+    nogo = nogo_png(height, x0, y0, cell, OUT / "nogo.png")
     disp = DATA / "display"
     dj = disp / "display.json"
     d = json.loads(dj.read_text()) if dj.exists() else None
@@ -119,6 +140,7 @@ def main():
         "coarse": {"file": "coarse.bin", "step": COARSE, "rows": coarse.shape[0], "cols": coarse.shape[1]},
         "tile": TILE, "tiles": tiles,
         "map": {"file": "map.png", "note": "hillshade, north up, light from the north-west (display only)"},
+        **({"nogo": nogo} if nogo else {}),
         "craters": "craters.json",
     }
 

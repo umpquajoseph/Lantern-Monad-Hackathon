@@ -269,3 +269,20 @@ kbd { font: 500 12px var(--mono); background: rgba(255,255,255,.08); border: 1px
   .sci-ck .lg { display: none; } .sci-ck .sh { display: inline; }
   #speed { padding: 5px 8px; font-size: 12px; }
 }
+
+/* ---- camera | lidar switch: in the camera box and over the full-screen view */
+.sensor-seg { padding: 2px; }
+.sensor-seg button { padding: 3px 9px; gap: 5px; font-size: 12px; }
+.sensor-seg svg { width: 14px; height: 14px; }
+.sensor-seg button[data-sensor="lidar"][aria-selected="true"] { background: rgba(255, 42, 110, .22); color: #ffd1df; }
+.sensor-seg button:disabled { opacity: .35; cursor: default; }
+.inset figcaption .sensor-seg { margin-left: auto; margin-right: 4px; }
+#sensor-main { position: fixed; top: 108px; left: 50%; transform: translateX(-50%); z-index: 3; }
+#sensor-main button { padding: 6px 14px; font-size: 13px; }
+#sensor-main svg { width: 16px; height: 16px; }
+@media (max-width: 700px) {
+  .inset figcaption .sensor-seg button { padding: 3px 6px; font-size: 0; gap: 0; }
+  #sensor-main { top: 150px; }
+}
+/* Lidar mode: Calvin's top-down scan is 800 x 280, letterboxed in the 4:3 box. */
+.lidar-on img { object-fit: contain; background: #000; }

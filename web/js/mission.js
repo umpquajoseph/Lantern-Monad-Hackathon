@@ -52,7 +52,7 @@ const NARROW = matchMedia("(max-width: 760px)");
 const S = {
   lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
-  opts: { routes: true, hazards: true, nogo: true, truth: false }, focus: true, focusEv: null, prev: null, lastPanel: "",
+  opts: { routes: true, hazards: true, nogo: true, truth: false }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
 };
 let terrain, world, map, rigs = {}, ov, sci = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
 let satObjs = [], tagEls = {}, extras = {}, dressed = {}, odo = {}, susp = {};
@@ -101,6 +101,18 @@ async function openRun(entry) {
   S.run = run;
   world.currentT = 0;
   world.setRun(run);
+  run.hasLidar = run.agencies.some((ag) => run.steps.some((st) => st.rovers[ag] && st.rovers[ag].lidar_frame));
+  for (const b of document.querySelectorAll("[data-sensor]")) {
+    b.onclick = () => setSensor(b.dataset.sensor);
+    if (b.dataset.sensor === "lidar") {
+      b.disabled = !run.hasLidar;
+      b.title = run.hasLidar ? "Lidar (L)" : "No lidar in this run";
+    }
+  }
+  let saved = "camera";
+  try { saved = localStorage.getItem("lantern.sensor") || "camera"; } catch (e) { /* private window */ }
+  S.sensor = run.hasLidar && saved === "lidar" ? "lidar" : "camera";
+  for (const b of document.querySelectorAll("[data-sensor]")) b.setAttribute("aria-selected", String(b.dataset.sensor === S.sensor));
   world.setVisibility({ fill: true, tracks: S.opts.routes, truth: S.opts.truth });
   map.setRun(run);
   map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
@@ -553,11 +565,14 @@ function bind() {
   $("full-btn").onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
   $("dr-close").onclick = () => ($("drawer").hidden = true);
   addEventListener("keydown", (e) => {
-    if (e.target.closest("input, select")) return;
+    // Typing in a field: leave its keys alone. The timeline and the checkboxes
+    // keep focus after a click, so they still let the shortcuts through.
+    if (e.target.closest?.("input:not([type=range]):not([type=checkbox]), select, textarea")) return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
     if (e.key === "Escape") $("drawer").hidden = true;
     if (e.key === "+" || e.key === "=") zoom(1 / 1.35);
     if (e.key === "-") zoom(1.35);
+    if (e.key === "l" || e.key === "L") setSensor(S.sensor === "lidar" ? "camera" : "lidar");
   });
 }
 
@@ -735,6 +750,8 @@ function render(panels) {
   else showFrame($("fp-img"), $("fp-ov"), $("fp-none"), false);
   if (S.cam !== "first") showFrame($("fpi-img"), $("fpi-ov"), $("fpi-none"), true);
   showLidar(t);
+  const cap = sensorCaption(t);
+  if ($("fpi-cap").textContent !== cap) $("fpi-cap").textContent = cap;
   if (S.cam !== "overhead") map.update(t);
   $("clock").textContent = fmtClock(t);
   $("tl-fill").style.width = `${(100 * t) / run.tEnd}%`;
@@ -798,11 +815,39 @@ function showLidar(t) {
 }
 
 function showFrame(img, cv, none, small) {
-  const fr = S.run.frameNear(S.rover, S.t);
+  let fr = S.run.frameNear(S.rover, S.t);
+  // Lidar view: Calvin's Lidar.view of the scan taken with that camera frame
+  // (sim/mission_render.py): from above, forward up, rover at the bottom
+  // centre. It is not a camera view, so the route overlay is left off.
+  const lidar = S.sensor === "lidar";
+  img.parentElement.classList.toggle("lidar-on", lidar);
+  if (fr && lidar) {
+    const lf = S.run.steps[fr.k].rovers[S.rover].lidar_frame;
+    fr = lf ? { ...fr, src: S.run.dir + lf, sub: false } : null;
+  }
   none.hidden = !!fr;
   img.hidden = !fr;
   if (fr && img.dataset.src !== fr.src) { img.src = fr.src; img.dataset.src = fr.src; }
+  if (lidar) { cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); return; }
   drawFpOverlay(fr, cv, small);
+}
+
+// Camera | Lidar: one setting for the camera box and the full-screen view.
+function setSensor(v) {
+  if (v === "lidar" && !S.run.hasLidar) v = "camera";
+  S.sensor = v;
+  try { localStorage.setItem("lantern.sensor", v); } catch (e) { /* private window */ }
+  for (const b of document.querySelectorAll("[data-sensor]")) b.setAttribute("aria-selected", String(b.dataset.sensor === v));
+  $("fpi-img").alt = $("fp-img").alt = v === "lidar" ? "Lidar view" : "Rover camera";
+  render(true);
+}
+
+function sensorCaption(t) {
+  if (S.sensor !== "lidar") return "Rover camera";
+  const fr = S.run.frameNear(S.rover, t);
+  const hz = fr ? S.run.steps[fr.k].rovers[S.rover].lidar_hazards || {} : {};
+  const n = (hz.crater || 0) + (hz.slope || 0);
+  return n ? `Lidar · ${n} hazard cells` : "Lidar · clear";
 }
 
 // Project a world point into the recorded camera frame (pinhole, sim/scene.py camera_model()).
@@ -892,18 +937,48 @@ function drawFpOverlay(fr, cv, small) {
 
 // ------------------------------------------------------- crater rings
 // Joseph's crater map (terrain.craters: [x, y, diameter]) drawn as red rim
-// rings on the ground near the rover being followed: 11,000 craters is too
-// many to draw at once, so the rings within CRATER_RING_R_M are rebuilt as
-// one line object whenever the rover has moved CRATER_RING_STEP_M.
+// rings on the ground near the rover being followed, rebuilt as one line
+// object whenever the rover has moved CRATER_RING_STEP_M.
+// Only craters the route planner treats as no-go are ringed: those with at
+// least one cell steeper than 15 deg across 2 m inside the rim (Joseph's
+// nogo.png from sim/rover.py SlopeMap, the same test the planner uses).
+// About 6,700 of the 11,082; the rest are shallow enough to drive through.
 const CRATER_RING_R_M = 150, CRATER_RING_STEP_M = 40, CRATER_RING_SEG = 28;
-let craterRings = null, craterAt = null;
+let craterRings = null, craterAt = null, steepCraters = null;
+function findSteepCraters() {
+  const nm = terrain.meta.nogo;
+  if (!nm) { steepCraters = terrain.craters; return; }
+  const img = new Image();
+  img.onload = () => {
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const c = cv.getContext("2d", { willReadFrequently: true });
+    c.drawImage(img, 0, 0);
+    const a = c.getImageData(0, 0, W, H).data;    // alpha > 0: no-go
+    const { x0, y0, cell } = terrain.meta;          // pixel (j, i) is the sim cell at x0 + j cell, y0 + i cell; north up
+    steepCraters = terrain.craters.filter(([x, y, d]) => {
+      const r = d / 2, j0 = Math.max(0, Math.floor((x - r - x0) / cell)), j1 = Math.min(W - 1, Math.ceil((x + r - x0) / cell));
+      const i0 = Math.max(0, Math.floor((y - r - y0) / cell)), i1 = Math.min(H - 1, Math.ceil((y + r - y0) / cell));
+      for (let i = i0; i <= i1; i++) for (let jj = j0; jj <= j1; jj++) {
+        if ((x0 + jj * cell - x) ** 2 + (y0 + i * cell - y) ** 2 > r * r) continue;
+        if (a[((H - 1 - i) * W + jj) * 4 + 3] > 0) return true;
+      }
+      return false;
+    });
+    craterAt = null;   // rebuild the rings with the filtered list
+    cv.width = cv.height = 0;
+  };
+  img.src = terrain.base + nm.file;
+}
 function updateCraterRings(t) {
   const [x, y] = S.run.poseAt(S.rover, t);
   if (craterRings) craterRings.visible = S.opts.nogo;
+  if (!steepCraters) { if (steepCraters === null) { steepCraters = false; findSteepCraters(); } return; }
   if (!S.opts.nogo || (craterAt && Math.hypot(x - craterAt[0], y - craterAt[1]) < CRATER_RING_STEP_M)) return;
   craterAt = [x, y];
   const pos = [];
-  for (const [cx, cy, d] of terrain.craters) {
+  for (const [cx, cy, d] of steepCraters) {
     if (Math.abs(cx - x) > CRATER_RING_R_M || Math.abs(cy - y) > CRATER_RING_R_M) continue;
     const r = d / 2;
     let prev = null;

@@ -46,6 +46,10 @@ from sim.ice import (DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit,
 from sim.rover import PLANNER_STANDIN, SLOPE_LIMIT_DEG, SPEED_M_S, STEP_M, Rover, SlopeMap
 from sim.nav import ParticleNav
 from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
+try:
+    from sim import chain as lantern   # step 1: the real contract on Monad testnet
+except Exception:                    # no web3, or no deployment file: stay on the stand-in
+    lantern = None
 from sim.terrain import DATA, default_path, load_terrain
 
 RUNS_DIR = DATA / "runs"           # LANTERN_DATA/runs, or the default in sim/terrain.py
@@ -104,7 +108,11 @@ def simulate(scn, terrain, slope, field=None, cam=None):
         cam.start((A, B))
     goal_a = (x0 + scn["a_goal"][0], y0 + scn["a_goal"][1])
     A.set_goal(goal_a)
-    chain = ChainStandin(salt=f"{scn['key']}-{seed}")
+    # Real chain when the step 1 client can sign for both agencies (.env keys), else the stand-in.
+    if lantern is not None and all(lantern.client().can_sign(a) for a in "AB"):
+        chain = lantern.run_scope()
+    else:
+        chain = ChainStandin(salt=f"{scn['key']}-{seed}")
     sensor = IceSensor(field, rng(7)) if field is not None else None
 
     mode = {"A": "survey", "B": "wait" if field is not None else "off"}
@@ -461,13 +469,15 @@ def main():
             "run_id": run_id,
             "label": scn["label"],
             "terrain": {"file": Path(tpath).name, "x0": x0, "y0": y0, "cell": cell},
-            "chain": {"chain_id": 0, "contract": "stand-in (no chain yet)", "explorer": None},
+            "chain": (chain.run_log_chain() if hasattr(chain, "run_log_chain")
+                      else {"chain_id": 0, "contract": "stand-in (no chain yet)", "explorer": None}),
             "truth": {"ice": field.to_log(),
                       "ice_units": "wt% water-equivalent hydrogen; radius is the 1 wt% contour",
                       "find_threshold_wt": FIND_THRESHOLD_WT},
             "nav": ParticleNav.NAME,
             "planner": PLANNER_STANDIN,  # a real part (sim/rover.py A*); the constant keeps its old name
-            "standins": {"rims": RIMS_STANDIN, "chain": ChainStandin.STANDIN, "ice_sensor": IceSensor.STANDIN},
+            "standins": {k: v for k, v in {"rims": RIMS_STANDIN, "chain": chain.STANDIN,
+                         "ice_sensor": IceSensor.STANDIN}.items() if v},
             "dt_s": round(DT_S, 2),
             "display": display,
             "frames": FRAMES_NOTE,

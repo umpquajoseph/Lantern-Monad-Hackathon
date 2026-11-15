@@ -36,9 +36,9 @@ another part calls.
 
 ## Not claimed yet
 
-Claim one by adding a row above. The part numbers are from `4 specs.md`.
+Claim one by adding a row above. The part numbers are from `docs/moon-ledger-spec.md`.
 
-| Work | Spec step | Part in `4 specs.md` |
+| Work | Spec step | Part in `docs/moon-ledger-spec.md` |
 |---|---|---|
 | Contract with Foundry tests, and `sim/chain.py` (not Joseph) | 1 | 4, Contracts and Chain Bridge |
 | Particle filter, `sim/nav.py` (Calvin is building it; it comes in after the realism work) | 3 | 3, Navigation and Autonomy |

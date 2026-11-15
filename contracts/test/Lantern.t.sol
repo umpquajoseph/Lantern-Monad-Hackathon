@@ -18,7 +18,7 @@ contract LanternTest is Test {
     // docs/spec.html, the demo: run 1, A's find is ±3 m; run 2, A is about 20 m unsure.
     uint64 constant SIGMA_3M = 300;
     uint64 constant SIGMA_20M = 2000;
-    // 5.60 wt%: LCROSS at Cabeus, as cited in the PROSPECT team brief (via 4 specs.md).
+    // 5.60 wt%: LCROSS at Cabeus, as cited in the PROSPECT team brief (via docs/moon-ledger-spec.md).
     uint32 constant READING = 560;
     bytes32 constant HASH = keccak256("canonical raw readings json");
 

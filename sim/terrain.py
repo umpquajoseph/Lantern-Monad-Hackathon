@@ -40,7 +40,13 @@ from scipy.ndimage import gaussian_filter
 from scipy.spatial import cKDTree
 
 # Data lives in the main checkout so every worktree shares it (git-ignored).
-DATA = Path(os.environ.get("LANTERN_DATA", r"C:\Monad-Hackathon-Project\data"))
+# Where the built data lives: LANTERN_DATA if set; else the main Windows checkout;
+# else data/ next to this repo (git-ignored). lantern_data/ is the committed copy:
+# point LANTERN_DATA at it to run without building anything.
+_MAIN_CHECKOUT = Path(r"C:\Monad-Hackathon-Project\data")
+DATA = (Path(os.environ["LANTERN_DATA"]) if os.environ.get("LANTERN_DATA")
+        else _MAIN_CHECKOUT if _MAIN_CHECKOUT.exists()
+        else Path(__file__).resolve().parents[1] / "data")
 TERRAIN_DIR = DATA / "terrain"
 LOLA_SHOEMAKER = DATA / "lola" / "Shoemaker" / "Shoemaker_final_adj_5mpp_{}.tif"
 

@@ -23,3 +23,6 @@ ops/mailboxes/
 survey/out/
 survey/cache/
 survey/broadcast/
+
+# vercel cli project link
+.vercel/

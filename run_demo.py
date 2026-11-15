@@ -46,9 +46,9 @@ from sim.ice import (DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit,
 from sim.rover import PLANNER_STANDIN, SLOPE_LIMIT_DEG, SPEED_M_S, STEP_M, Rover, SlopeMap
 from sim.nav import ParticleNav
 from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
-from sim.terrain import default_path, load_terrain
+from sim.terrain import DATA, default_path, load_terrain
 
-RUNS_DIR = Path(r"C:\Monad-Hackathon-Project\data\runs")
+RUNS_DIR = DATA / "runs"           # LANTERN_DATA/runs, or the default in sim/terrain.py
 DT_S = STEP_M / SPEED_M_S          # simulated seconds per step (PROSPECT p.3 speed)
 ARRIVE_M = 0.3                     # assumed: B stops when its estimate is this close to the find
 CHECK_READS = 3                    # assumed: B averages this many readings at the find

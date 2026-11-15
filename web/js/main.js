@@ -87,8 +87,9 @@ async function openRun(id, t) {
     // Say what is not real yet, in the log's own words.
     const lines = Object.entries(si).map(([k, v]) => (String(v).startsWith(k) ? v : `${k}: ${v}`));
     const parts = Object.keys(si).map((k) => PART_NAMES[k] || k.replace(/_/g, " ")).join(", ");
-    const fake = run.fakeTx ? " Nothing is posted to Monad yet; the transaction hashes are fake." : "";
-    $("standin-text").innerHTML = `Stand-ins: ${parts}.${fake} Camera frames are real renders. ` +
+    // Say the chain is fake only when it is (run.fakeTx: a chain stand-in, or no explorer in the log).
+    const chainLine = run.fakeTx ? " Nothing is posted to Monad yet; the transaction hashes are fake." : " The chain is real: every hash links to Monad testnet.";
+    $("standin-text").innerHTML = `Stand-ins: ${parts}.${chainLine} Camera frames are real renders. ` +
       `<details><summary>Details</summary><ul>${lines.map((l) => `<li>${l}</li>`).join("")}</ul></details>`;
   }
 

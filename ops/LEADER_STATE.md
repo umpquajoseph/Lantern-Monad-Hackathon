@@ -178,3 +178,11 @@ Read mail, then `mv` it to `leader/archive/`.
   urgent (Joseph). Joseph wants a big merge soon: Ritvik, Kellen, Calvin into
   joseph, then main, as a checkpoint foundation for the final 2 hours. He
   interrupted my dry merge-tree check; waiting on his word.
+- 12:57 Joseph: chain BACK IN SCOPE. Keep Kellen's host (lantern-teal.vercel.app).
+  Merge plan (proposed, Mission Control placement still open): integrator
+  merges Calvin, step-1-chain, step-5-chain-feed, step-5-hosting,
+  step-7-results, ritvik and main onto `checkpoint` from integration after
+  1250 lands; conflicts only run_demo.py (keep integration's), main.js
+  banner (hosting, by hand), WORKING.md. Then joseph and main on his word.
+  Skip data-shoemaker. Calvin is 45 commits behind integration (scene.py
+  about 300 lines); request docs/requests/vision-sync.md for his agent.

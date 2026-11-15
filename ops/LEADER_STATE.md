@@ -65,6 +65,7 @@ git at 73e77ab. Read this first after a compaction, then `ops/PROTOCOL.md`,
 | integrator | `uds:\\.\pipe\LOCAL\cc-msg-e4aa78077ba4f6511766cd4cc20730b8` | local_e783098d-945c-48ad-9f91-90350cb94056 | `C:\Monad-Hackathon-integration`, `integration` | owns `app.py`. Judge pass 1 done (7 items). Second pass after run 2 lands |
 | designer | `uds:\\.\pipe\LOCAL\cc-msg-42257a837952d8f3cb6dda87cb29e0fb` | local_ba34eb33-eb0d-45e1-8f58-6d1df15566b9 | own worktree, `step-5-design` | owns `web/app.css` and `index.html` layout. Judge items 1, 4, 5, 6, 7. Brief `docs/briefs/design.md` |
 | perf | `uds:\\.\pipe\LOCAL\cc-msg-b5fa754137f62a9b8f31896194e2668b` | local_e264d133-dfe3-4b08-a7be-8c66b5b4e005 | `C:\Monad-Hackathon-perf`, `step-6-perf` | rerun and asset build speed, identical output. Brief `docs/briefs/performance.md`. Profiles after 1250 lands |
+| merger | `Inbox triage and monitoring [37f8c1]` | opened by Joseph 13:07 | `C:\Monad-Hackathon-checkpoint`, `checkpoint` | checkpoint merge + clean-up, brief `docs/briefs/merge.md` |
 
 My watcher (run_in_background, re-arm after every mail):
 
@@ -217,3 +218,9 @@ Read mail, then `mv` it to `leader/archive/`.
   integration b21837c; designer held; forge not installed). Told merger to
   start from it (fyi 130752). Joseph opened merger; address comes in its
   first mail.
+- 13:09 merger live (doorbell `Inbox triage and monitoring [37f8c1]`),
+  keeping the integrator's local merges, auditing conflict picks. Calvin
+  followed vision-sync: merged integration (e6b7428, 1ca566e) and pushed WIP
+  sim/vision.py (camera rims for the filter), lidar crater hazards, planned
+  path on camera, and a lidar panel touching web/js, app.css, index.html
+  (overlaps viewer/designer; merger takes it in).

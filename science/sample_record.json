@@ -1,0 +1,272 @@
+{
+ "schema": "lantern.science/1",
+ "record_id": "A-T07-t000280",
+ "agency": "A",
+ "t": 280.0,
+ "target": {
+  "id": "T07",
+  "kind": "water_ice",
+  "purpose": "survey",
+  "find_id": null,
+  "source": "orbital candidate (simulated)"
+ },
+ "position": {
+  "x": 73373.0,
+  "y": 36176.1,
+  "sigma": 0.8,
+  "lat": -87.302692,
+  "lon": 63.754683,
+  "frame": "world metres (south polar stereographic on LOLA)",
+  "source": "rover estimate"
+ },
+ "route": {
+  "length_m": 30.3,
+  "points": [
+   [
+    73370.12,
+    36150.12
+   ],
+   [
+    73372.2,
+    36150.88
+   ],
+   [
+    73373.68,
+    36152.27
+   ],
+   [
+    73373.16,
+    36154.2
+   ],
+   [
+    73372.11,
+    36155.95
+   ],
+   [
+    73371.8,
+    36157.86
+   ],
+   [
+    73371.58,
+    36159.82
+   ],
+   [
+    73371.64,
+    36161.89
+   ],
+   [
+    73371.53,
+    36164.29
+   ],
+   [
+    73372.07,
+    36166.39
+   ],
+   [
+    73372.76,
+    36168.93
+   ],
+   [
+    73373.21,
+    36170.93
+   ],
+   [
+    73373.03,
+    36172.91
+   ],
+   [
+    73373.16,
+    36174.96
+   ],
+   [
+    73373.0,
+    36176.1
+   ]
+  ],
+  "source": "rover estimate"
+ },
+ "sample": {
+  "instrument": "1 m drill + mass spectrometer (simulated)",
+  "drill_depth_m": 1.0,
+  "profile": [
+   {
+    "depth_m": 0.1,
+    "water_wt_pct": 0.076
+   },
+   {
+    "depth_m": 0.2,
+    "water_wt_pct": 0.039
+   },
+   {
+    "depth_m": 0.3,
+    "water_wt_pct": 0.107
+   },
+   {
+    "depth_m": 0.4,
+    "water_wt_pct": 0.0
+   },
+   {
+    "depth_m": 0.5,
+    "water_wt_pct": 0.068
+   },
+   {
+    "depth_m": 0.6,
+    "water_wt_pct": 3.301
+   },
+   {
+    "depth_m": 0.7,
+    "water_wt_pct": 4.584
+   },
+   {
+    "depth_m": 0.8,
+    "water_wt_pct": 4.443
+   },
+   {
+    "depth_m": 0.9,
+    "water_wt_pct": 4.698
+   },
+   {
+    "depth_m": 1.0,
+    "water_wt_pct": 4.433
+   }
+  ],
+  "water_wt_pct": 4.698,
+  "ilmenite_wt_pct": 1.06,
+  "regolith_class": "ilmenite-poor: typical highland regolith"
+ },
+ "result": {
+  "verdict": "ice",
+  "reading": 4.292,
+  "ice_top_m": 0.5,
+  "summary": "Water ice: 4.29 wt% in the core, starting 50 cm down"
+ },
+ "phases": [
+  {
+   "name": "park",
+   "t0": 280.0,
+   "dur": 2.0
+  },
+  {
+   "name": "arm_deploy",
+   "t0": 282.0,
+   "dur": 4.0
+  },
+  {
+   "name": "drill",
+   "t0": 286.0,
+   "dur": 10.0
+  },
+  {
+   "name": "sample_lift",
+   "t0": 296.0,
+   "dur": 3.0
+  },
+  {
+   "name": "analyze",
+   "t0": 299.0,
+   "dur": 5.0
+  },
+  {
+   "name": "arm_stow",
+   "t0": 304.0,
+   "dur": 4.0
+  }
+ ],
+ "attempts": 1,
+ "data_hash": "0x8618f0b0a52f13e399ddf6c7a25a98d85cacfeb3aa6f11d97acb294fce8608ef",
+ "hash_alg": "keccak256 of canonical JSON (sorted keys) of `sample`",
+ "chain": {
+  "call": "post_find",
+  "args": {
+   "agency": "A",
+   "x": 73373.0,
+   "y": 36176.1,
+   "sigma": 0.8,
+   "reading": 4.292,
+   "data_hash": "0x8618f0b0a52f13e399ddf6c7a25a98d85cacfeb3aa6f11d97acb294fce8608ef"
+  },
+  "status": "pending",
+  "tx": null,
+  "find_id": null,
+  "safety_zone": {
+   "call": "post_safety_zone",
+   "args": {
+    "agency": "A",
+    "x": 73373.0,
+    "y": 36176.1,
+    "radius": 10.0,
+    "hold_s": 600.0,
+    "purpose": "drilling at target T07"
+   },
+   "until_sim_t": 908.0,
+   "status": "pending",
+   "tx": null
+  }
+ },
+ "HIDDEN_TRUTH": {
+  "true_pose": [
+   73372.475,
+   36176.1,
+   1.482
+  ],
+  "position_error_m": 0.52,
+  "true_route": [
+   [
+    73370.12,
+    36150.12
+   ],
+   [
+    73371.96,
+    36150.85
+   ],
+   [
+    73373.18,
+    36152.97
+   ],
+   [
+    73372.87,
+    36154.92
+   ],
+   [
+    73371.99,
+    36156.71
+   ],
+   [
+    73371.53,
+    36158.65
+   ],
+   [
+    73371.38,
+    36161.14
+   ],
+   [
+    73371.43,
+    36163.14
+   ],
+   [
+    73371.54,
+    36165.14
+   ],
+   [
+    73371.73,
+    36167.63
+   ],
+   [
+    73371.9,
+    36169.63
+   ],
+   [
+    73372.08,
+    36171.62
+   ],
+   [
+    73372.3,
+    36174.11
+   ],
+   [
+    73372.48,
+    36176.1
+   ]
+  ]
+ }
+}

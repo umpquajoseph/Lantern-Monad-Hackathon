@@ -371,3 +371,15 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:37 integrator: freeze candidate 2cf100e (all workers + main, viewer a0fbffe). Told: merge joseph (keep joseph's TODO.md, vision-sync.md); after freeze allow viewer lidar toggle and scene 9a590ca render copy.
 - 14:37 integrator freeze candidate 2cf100e checked (Mission Control rover on ground, no errors). Corrected: merge joseph keeping integration's vision-sync.md (Calvin's answers) + joseph's TODO.md. Viewer lidar toggle 2bd2e1c pushed (shot read back: first-person view, caption names colours); integrator to merge.
 - 14:39 FREEZE HEAD integration 4f51c54 (joseph merged, viewer lidar toggle 2bd2e1c). main fast-forwards to it cleanly; waiting on Joseph's word. joseph synced to it.
+
+## Snapshot 14:41 (for the next context)
+- Demo = Kellen's 2-site run_mission.py (S1 dry, S2 ice, Lantern contract). run1/run2 = backup. Kellen's chain setup is authoritative: hosted page posts live via web/api/chain.js with keys in Vercel env, gated by ?key=DEMO_KEY. Laptop has no .env, so local renders use --no-chain (fake hashes).
+- Freeze head: integration 4f51c54 = every worker branch + main + joseph + Ritvik c6575e5. joseph synced to it. main fast-forwards to it (Joseph approved at 14:39 as the "old UI" checkpoint).
+- Site: localhost:8000 serves integration web/ + data/runs (mission-demo first, then run1/run2-1250). Scene's 9a590ca mission render (first-person lidar images, poses identical to 2fad40b) lands about 14:42; integrator copies it in.
+- Final mission numbers (2fad40b): find sigma 0.56, B agrees 4.73 wt%, confirmed; A 223 m, B 252 m, 0.0 m no-go; max turn 20 deg/step; camera rims P 0.75 R 0.24 mean 0.58 m (stand-ins 0.99/0.57/0.07), estimate error no worse.
+- Perf final: frame 0.70 to 0.30 s detail, 0.89 to 0.27 s full; lidar 95 to 26 ms; pass-2 replay. Perf done (told to shut down).
+- Nav done except on call: fixes 78a531b/755bb92/9025960 (sensing rovers), top-down lidar 40304d4 (approved by Joseph as is), --vision default ba9b549, first-person lidar 6846caf.
+- Viewer: frost ice (calmed), planned route from log, caption flash fixed, A/B sets 3D follow, lidar Top-down/First person toggle 2bd2e1c, merged Ritvik c6575e5 (his structure kept).
+- Archived: terrain + 27 idle sessions. Designer, perf, merger: Joseph archives from sidebar when idle.
+- Joseph prefs today: particles fine; full runs only at the end; workers needn't stress the merge; ask in plain text, no buttons.
+- NEXT: scope the Ritvik UI merge. Joseph: "in general the ui layout from ritviks is better", but some of his changes are worse (e.g. lidar). Ask Joseph where unsure.

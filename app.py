@@ -18,9 +18,11 @@ Pieces, in order (owners in docs/WORKING.md):
     5. viewer runs   (this file)                   -> web/runs/  (copies, viewer index format)
     6. viewer        web/serve.py                  -> http://localhost:<port>
 
-Data lives in the main checkout (C:\\Monad-Hackathon-Project\\data), or in
-LANTERN_DATA if set, as sim/terrain.py reads it. The chain is a stand-in
-until sim/chain.py has a deployed contract; the viewer labels it so.
+Data lives where sim/terrain.py says: LANTERN_DATA if set, else the main
+checkout (C:\\Monad-Hackathon-Project\\data), else ./data. Set
+LANTERN_DATA=lantern_data to use the committed terrain. The demo runs post to
+the Lantern contract on Monad testnet when both agency keys are in .env, and
+to a labelled stand-in otherwise.
 """
 from __future__ import annotations
 
@@ -36,7 +38,8 @@ import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-DATA = Path(os.environ.get("LANTERN_DATA", r"C:\Monad-Hackathon-Project\data"))
+sys.path.insert(0, str(ROOT))
+from sim.terrain import DATA, LOLA_SHOEMAKER  # noqa: E402  LANTERN_DATA, else the main checkout, else ./data
 TERRAIN = DATA / "terrain" / "shoemaker.npz"
 DISPLAY = DATA / "terrain" / "display" / "display.json"
 RUNS = DATA / "runs"
@@ -71,7 +74,12 @@ def build(fresh: bool):
     else:
         say(f"terrain: {TERRAIN} (kept)")
 
-    if stale(DISPLAY, TERRAIN):
+    # A git checkout stamps files in checkout order, so a committed display layer can look
+    # older than the terrain. It cannot be rebuilt without the LOLA tile; keep it then.
+    lola = Path(str(LOLA_SHOEMAKER).format("surf"))
+    if DISPLAY.exists() and stale(DISPLAY, TERRAIN) and not lola.exists():
+        say(f"display layer: {DISPLAY.parent} (kept; no LOLA tile to rebuild it from)")
+    elif stale(DISPLAY, TERRAIN):
         run(["sim/terrain_display.py", "build"], "display layer")
     else:
         say(f"display layer: {DISPLAY.parent} (kept)")
@@ -87,6 +95,15 @@ def build(fresh: bool):
         say(f"demo runs: {RUNS / 'index.json'} (kept; --fresh reruns them)")
 
 
+def rewriting(run_dir: Path) -> bool:
+    """True if any frame in run_dir is newer than its log.json (a rerun in progress)."""
+    log = mtime(run_dir / "log.json")
+    fp = run_dir / "fp"
+    if not fp.exists():
+        return False
+    return any(e.stat().st_mtime > log for e in os.scandir(fp))
+
+
 def sync_runs():
     """Copy the latest run of each kind into web/runs/ and write the viewer's index.
 
@@ -100,7 +117,14 @@ def sync_runs():
     for r in index:
         src = RUNS / r["dir"]
         dst = WEB_RUNS / r["dir"]
-        if stale(dst / "log.json", src / "log.json"):
+        if rewriting(src):
+            # run_demo.py writes log.json after the frames, so frames newer than the log
+            # mean a rerun is writing this folder now. Keep the last whole copy, or skip.
+            if not (dst / "log.json").exists():
+                say(f"viewer runs: {r['dir']} is being rewritten and has no earlier copy; skipped")
+                continue
+            say(f"viewer runs: {r['dir']} is being rewritten; showing the last whole copy")
+        elif stale(dst / "log.json", src / "log.json"):
             if dst.exists():
                 shutil.rmtree(dst)  # one literal run folder, a copy this file made
             shutil.copytree(src, dst)

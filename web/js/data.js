@@ -172,6 +172,13 @@ export class Run {
     this.fakeTx = !!chainLine || !(log.chain && log.chain.explorer);
     this.unit = log.truth && /wt%/.test(log.truth.ice_units || "") ? " wt%" : "";
     this.truth = log.truth || null;
+    // What made the estimate and sigma, when the run says (run_demo.py "nav").
+    this.nav = typeof log.nav === "string" ? log.nav.replace(/^nav:\s*/, "") : null;
+    // Real parts get a top-level line like nav (docs/handoffs.md): the planner.
+    this.planner = typeof log.planner === "string" ? log.planner.replace(/^planner:\s*/, "") : null;
+    // The navigation filter's particles after each step, when logged
+    // (docs/handoffs.md: per rover `particles`, [[x, y, w], ...]).
+    this.hasParticles = this.steps.some((s) => this.agencies.some((a) => (s.rovers[a].particles || []).length));
     this.chain = log.chain || {};
     // The rover's real driving speed, from the log: median distance per
     // logged step over dt_s, counting only steps where it moved.
@@ -227,15 +234,36 @@ export class Run {
   // The recorded frame nearest time t, so the camera panel and the 3D rover
   // (at its interpolated pose for t) show the same moment: they differ by at
   // most half a stop. Returns {src, k}, k being the step the frame belongs to.
+  // With fp_sub (docs/handoffs.md: frames between step k and k+1 at fraction
+  // f of the way, about every 0.5 m), the candidates are step k's frame at
+  // f = 0, its sub-frames, and step k+1's frame at f = 1; the nearest to the
+  // 3D view's fraction wins. `sub` is false for a step's own frame, the only
+  // kind the logged rim points belong to.
   frameNear(a, t) {
     const k0 = this.stepAt(t);
     const k1 = Math.min(k0 + 1, this.steps.length - 1);
-    const near = t - this.times[k0] <= this.times[k1] - t ? [k0, k1] : [k1, k0];
-    for (const k of near) {
-      const f = this.steps[k].rovers[a].fp_frame;
-      if (f) return { src: this.dir + f, k };
-    }
+    const span = this.times[k1] - this.times[k0];
+    const frac = span > 0 ? Math.min(1, Math.max(0, (t - this.times[k0]) / span)) : 0;
+    const r0 = this.steps[k0].rovers[a], r1 = this.steps[k1].rovers[a];
+    const cand = [];
+    if (r0.fp_frame) cand.push({ f: 0, src: r0.fp_frame, k: k0, sub: false });
+    for (const [f, src] of r0.fp_sub || []) cand.push({ f, src, k: k0, sub: true });
+    if (k1 !== k0 && r1.fp_frame) cand.push({ f: 1, src: r1.fp_frame, k: k1, sub: false });
+    let best = null;
+    for (const c of cand) if (!best || Math.abs(c.f - frac) < Math.abs(best.f - frac)) best = c;
+    if (best) return { ...best, src: this.dir + best.src };
     return this.frameAt(a, k0);
+  }
+
+  // Metres driven between recorded frames, from the log: the rover's speed
+  // times dt_s, split by the sub-frames per step when there are any.
+  frameSpacing(a) {
+    const stepM = this.speed[a] && this.log.dt_s ? this.speed[a] * this.log.dt_s : null;
+    if (!stepM) return null;
+    const subs = this.steps.map((s) => (s.rovers[a].fp_sub || []).length).filter((n) => n > 0);
+    if (!subs.length) return stepM;
+    subs.sort((x, y) => x - y);
+    return stepM / (subs[subs.length >> 1] + 1);
   }
 
   eventsUpTo(k) { return this.events.filter((e) => e.k <= k); }

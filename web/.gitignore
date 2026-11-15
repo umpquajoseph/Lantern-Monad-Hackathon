@@ -2,3 +2,6 @@
 # the deploy step uploads web/ as it is on disk.
 assets/
 runs/
+.vercel/
+# written by `vercel link`: holds a token, never commit
+.env*

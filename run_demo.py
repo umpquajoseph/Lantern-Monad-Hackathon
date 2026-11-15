@@ -568,6 +568,45 @@ def _jpeg_complete(path):
         return False
 
 
+def fill_sub_frames(out, stamp, keys, terrain, sub_m, workers=None):
+    """Stage 2 of a run: the 0.5 m display frames from a written log's poses,
+    without simulating again (a --vision run cannot be re-simulated without
+    rendering its live frames again). Renders the missing ones, then rewrites
+    each log with fp_sub. The live frames and everything else stay as logged."""
+    height, craters, x0, y0, cell = terrain
+    runs, jobs = [], []
+    for key in keys:
+        run_dir = Path(out) / f"{key}-{stamp}"
+        log = json.loads((run_dir / "log.json").read_text(encoding="utf8"))
+        for s in log["steps"]:
+            for r in s["rovers"].values():
+                r.pop("fp_sub", None)
+        want = sub_frame_jobs(log["steps"], run_dir, sub_m)
+        missing = [j for j in want if not _jpeg_complete(j[0])]
+        print(f"{key}: {len(want)} display frames, {len(missing)} to render")
+        jobs += missing
+        runs.append((run_dir, log))
+    if jobs:
+        from sim.scene import Scene
+        display = runs[0][1].get("display") or "full"
+        sc = Scene(height, craters, x0, y0, cell, display=display, display_dir=TERRAIN_DIR / "display")
+        shared = sc.share(Path(out) / "_shared")
+        np.save(shared / "craters.npy", np.asarray(craters))
+        sc = None
+        gc.collect()
+        t = time.perf_counter()
+        rt, n, _ = render_sub_frames(jobs, shared, terrain, display, workers)
+        dt = time.perf_counter() - t
+        print(f"display frames: {len(rt)} in {dt:.0f}s on {n} workers ({len(rt) / max(dt, 1e-9):.1f} frames/s)")
+        shutil.rmtree(shared, ignore_errors=True)
+    for run_dir, log in runs:
+        tmp = run_dir / "log.json.tmp"
+        with open(tmp, "w", encoding="utf8") as f:
+            json.dump(log, f, separators=(",", ":"))
+        os.replace(tmp, run_dir / "log.json")   # the site never reads a half-written log
+        print(f"wrote {run_dir / 'log.json'} with fp_sub")
+
+
 def _merge_index(path, entries):
     """index.json with these runs replacing any earlier run of the same
     scenario; other scenarios' entries stay. Order follows SCENARIOS."""
@@ -600,10 +639,15 @@ def main():
                     help="also render first-person frames every this many metres between steps (0: one per step)")
     ap.add_argument("--workers", type=int, default=None,
                     help="processes for the in-between display frames (default: from free memory, at most 8)")
+    ap.add_argument("--fill-sub", action="store_true",
+                    help="stage 2 (needs --stamp): render the in-between display frames of a run already "
+                         "written (e.g. with --sub-frame-m 0) from its logged poses, without simulating again")
     ap.add_argument("--resume", action="store_true",
                     help="finish an earlier run (needs --stamp): simulate again, render only frames that are "
                          "missing or cut short, then write the logs and index.json")
     args = ap.parse_args()
+    if args.fill_sub and not args.stamp:
+        ap.error("--fill-sub needs the --stamp of the run to fill")
     if args.resume and not args.stamp:
         ap.error("--resume needs the --stamp of the run to finish")
     if args.resume and (args.vision or args.no_render):
@@ -617,6 +661,10 @@ def main():
     print(f"terrain {Path(tpath).name} loaded in {time.perf_counter() - t:.1f}s")
     out = Path(args.out)
     stamp = args.stamp or datetime.now().strftime("%Y%m%d-%H%M")
+    if args.fill_sub:
+        keys = [s["key"] for s in SCENARIOS if not args.only or s["key"] == args.only]
+        fill_sub_frames(out, stamp, keys, terrain, args.sub_frame_m if args.sub_frame_m > 0 else 0.5, args.workers)
+        return
     scene = display = shared = cam = None
     if args.resume:
         # Built later, and only if a frame is missing.

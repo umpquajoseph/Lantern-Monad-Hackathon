@@ -354,3 +354,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:20 integrator: a775a0f merged, head 97dd89c. Scene told to keep its running 46d42d0 render (same frames).
 - 14:21 viewer: Mission Control lidar panel de9d1e2, captions follow image kind; integrator asked to merge. Told to check the top-down panel on the 14:32 mission.
 - 14:21 nav fix 3 9025960: any steep point closes its 2 m cell; mission no-go 0.0/0.0, 20 deg max, 0 reversals; run_demo run1 vision confirmed (find 457,418); run2 running. Changes mission poses. Integrator: merge 9025960 + viewer de9d1e2; scene: final mission render from that head after the 46d42d0 interim. Nav: mission poses frozen at 9025960.
+- 14:22 SIM FREEZE: integration 2fad40b (nav 9025960 + viewer de9d1e2 on 97dd89c). Scene told to stop 46d42d0 render and render the final mission from 2fad40b.

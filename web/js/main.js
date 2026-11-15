@@ -348,7 +348,9 @@ function drawPlan(run, a, fr, k) {
   // The pose the shown image was taken from: its step, plus the sub-frame's
   // fraction toward the next step.
   const k1 = Math.min(kk + 1, run.steps.length - 1);
-  const tf = run.times[kk] + (fr ? fr.f || 0 : 0) * (run.times[k1] - run.times[kk]);
+  // Only a sub-frame's f is a fraction past its step; a step's own frame is
+  // at its step (frameNear gives step k+1's frame f = 1 with k = k+1).
+  const tf = run.times[kk] + (fr && fr.sub ? fr.f : 0) * (run.times[k1] - run.times[kk]);
   const [x, y, h] = run.poseAt(a, tf);
   const camZ = terrain.heightAt(x, y) + FP.camH;
   const p = (FP.pitch * Math.PI) / 180, cp = Math.cos(p), sp = Math.sin(p);

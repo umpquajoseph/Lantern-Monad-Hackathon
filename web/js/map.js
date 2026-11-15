@@ -2,6 +2,8 @@
 // uncertainty circle, finds with status, and the real ice when the log has it.
 import { COLORS } from "./world.js";
 
+const PLAN_CSS = "rgba(255, 200, 60, 0.95)";   // the camera view's plan colour (main.js drawPlan)
+
 const hex = (c) => "#" + c.toString(16).padStart(6, "0");
 
 const FINE_SHADE_PX_PER_M = 2;   // viewer only, assumed: above this zoom, draw 0.25 m hillshade
@@ -284,6 +286,24 @@ export class MapView {
         c.lineWidth = 2;
         path(T.est, k);
       }
+    }
+
+    // Planned route (logged per step as "plan", world xy from the rover
+    // forward): amber dashes, as on the camera image (main.js drawPlan).
+    for (const a of run.agencies) {
+      const plan = run.rover(a, k).plan;
+      if (!plan || plan.length < 2) continue;
+      c.lineJoin = c.lineCap = "round";
+      c.setLineDash([]);
+      c.strokeStyle = "rgba(13, 14, 16, 0.7)";
+      c.lineWidth = 4;
+      path(plan, plan.length);
+      c.setLineDash([6, 4]);
+      c.strokeStyle = PLAN_CSS;
+      c.lineWidth = 2;
+      path(plan, plan.length);
+      c.setLineDash([]);
+      c.lineCap = "butt";
     }
 
     // Real ice, hidden from the rovers.

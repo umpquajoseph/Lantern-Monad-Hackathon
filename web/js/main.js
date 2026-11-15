@@ -237,7 +237,10 @@ function camera(run, k) {
     }
   } else img.removeAttribute("src");
   const r = run.rover(a, k);
-  $("fp-cap").innerHTML = `Rover ${a}. Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.` +
+  // The camera records one frame per logged stop; say how far apart they are.
+  const stepM = run.speed[a] && run.log.dt_s ? run.speed[a] * run.log.dt_s : null;
+  const every = stepM ? `, one frame per ${stepM < 10 ? stepM.toFixed(1).replace(/\.0$/, "") : Math.round(stepM)} m stop` : "";
+  $("fp-cap").innerHTML = `Rover ${a} camera${every}, as recorded. Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
     (state.opts.rims && r.rims && r.rims.length ? ` ${r.rims.length} rim points${run.standin ? " (stand-in, from the crater map)" : ""}.` : "");
   drawRims(run, a, fr ? fr.k : k);

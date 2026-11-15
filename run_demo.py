@@ -415,7 +415,9 @@ def render_sub_frames(jobs, shared, terrain, display, workers=None):
     import psutil
     if workers is None:
         free_gb = psutil.virtual_memory().available / 2 ** 30
-        workers = int(max(1, min(MAX_WORKERS, os.cpu_count() or 1, (free_gb - HEADROOM_GB) // WORKER_GB_ASSUMED)))
+        # Round before the floor: in floats (3.4 - 2.0) // 0.7 is 1.0, not 2.
+        fit = math.floor(round((free_gb - HEADROOM_GB) / WORKER_GB_ASSUMED, 6))
+        workers = int(max(1, min(MAX_WORKERS, os.cpu_count() or 1, fit)))
         print(f"  pool: {free_gb:.1f} GB free, {workers} workers")
     _, _, x0, y0, cell = terrain
     size = math.ceil(len(jobs) / (workers * 4))

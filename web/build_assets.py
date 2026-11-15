@@ -161,6 +161,15 @@ def main():
             meta["rocks"] = {"file": "rocks.bin", "count": len(rk), "cols": 7,
                              "layout": "[x - x0, y - y0, long_m, short_m, height_m, yaw_rad, seed] float32",
                              "rock_albedo": P["rock_albedo"], "sink_frac": P["rock_sink_frac"]}
+        # Rim lips, for the viewer's fine patch near each rover: lips are a few
+        # cm wide, finer than the 0.25 m tiles they are also baked into.
+        lp = np.load(disp / "lips.npy")
+        lt = np.column_stack([craters[:, 0] - x0, craters[:, 1] - y0, craters[:, 2],
+                              P["strength"] * lp[:, 0], lp[:, 1]]).astype(np.float32)
+        (OUT / "lips.bin").write_bytes(gzip.compress(np.ascontiguousarray(lt).tobytes(), 9))
+        meta["lips"] = {"file": "lips.bin", "count": len(lt), "cols": 5,
+                        "layout": "[x - x0, y - y0, diameter_m, lip_height_m * strength, lip_width_m] float32",
+                        "formula": "h += lip_height * exp(-((r - D/2) / lip_width)^2), already in the tiles"}
         alb = cv2.imread(str(disp / "albedo.png"), cv2.IMREAD_UNCHANGED)[::-1]
         cv2.imwrite(str(OUT / "albedo.png"), alb)
         meta["albedo"] = {"file": "albedo.png", "factor": "value / 128", "north_up": True}

@@ -224,6 +224,20 @@ export class Run {
     return null;
   }
 
+  // The recorded frame nearest time t, so the camera panel and the 3D rover
+  // (at its interpolated pose for t) show the same moment: they differ by at
+  // most half a stop. Returns {src, k}, k being the step the frame belongs to.
+  frameNear(a, t) {
+    const k0 = this.stepAt(t);
+    const k1 = Math.min(k0 + 1, this.steps.length - 1);
+    const near = t - this.times[k0] <= this.times[k1] - t ? [k0, k1] : [k1, k0];
+    for (const k of near) {
+      const f = this.steps[k].rovers[a].fp_frame;
+      if (f) return { src: this.dir + f, k };
+    }
+    return this.frameAt(a, k0);
+  }
+
   eventsUpTo(k) { return this.events.filter((e) => e.k <= k); }
 
   // Finds and their status after the events up to step k, using the

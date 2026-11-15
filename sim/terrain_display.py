@@ -32,7 +32,10 @@ Sources:
   [C23] Cauligi et al. 2023, ShadowNav, section 4A (Hapke with "old
         highland" parameters from [26]; surface texture added to the DEM)
   [X20] Xu et al. 2020, Remote Sensing 12(22) 3676, = [C23] ref [26].
-        Hapke model Eqs. (5)-(12), old-highland bounds in Table 1.
+        Hapke model Eqs. (5)-(6) p. 6, (7)-(12) p. 7, simplifications
+        in Table 3 p. 7; old-highland bounds in Table 1 p. 3, which Xu
+        takes from Sato et al. 2014 LROC WAC fits (p. 2). PDF in
+        docs/sources/Xu-2020-Hapke-CE1-IIM.pdf.
   [A24] Atha et al. 2024, ShadowNav, sections IV and V (camera, lamp)
 """
 from __future__ import annotations
@@ -101,9 +104,10 @@ class DisplayParams:
     far_tile_px: int = 1024         # backdrop texture tile, ASSUMED size
     far_tile_cell_m: float = 0.5    # 512 m period
 
-    # --- reflectance [X20] Table 1, "old highland" row: w > 0.48, b < 0.232,
-    # Bs0 < 1.5867, hs > 0.0626. Table 1 gives bounds only, so these are the
-    # bound values. K = 1, CBOE off, roughness off, as in [X20] Table 3.
+    # --- reflectance [X20] Table 1 p. 3, "old highland" row: w > 0.48,
+    # b < 0.232, Bs0 < 1.5867, hs > 0.0626. Table 1 gives bounds only, so
+    # these are the bound values (ASSUMED choice of point in the range).
+    # K = 1, CBOE off, roughness off, as in [X20] Table 3 p. 7.
     hapke_w: float = 0.48
     hapke_b: float = 0.232
     hapke_bs0: float = 1.5867
@@ -365,8 +369,9 @@ def build(terrain_path=None, p: DisplayParams | None = None, out=OUT):
         drive_area=drive, files=files, png_scale=scale, png_offset=lo,
         real=["backdrop.npz (LOLA Shoemaker 5 m, averaged to 20 m)", "sim grid base (LOLA)"],
         made_up=["detail tile", "albedo map", "rocks", "rim lips"],
-        sources={"hapke": "Xu et al. 2020, Remote Sensing 12(22) 3676, Eqs. 5-12, Table 1 "
-                          "old highland bounds; cited by Cauligi et al. 2023 sec. 4A as [26]"},
+        sources={"hapke": "Xu et al. 2020, Remote Sensing 12(22) 3676: Eqs. 5-6 p. 6, Eqs. 7-12 "
+                          "and Table 3 p. 7, Table 1 p. 3 old highland bounds (from Sato et al. "
+                          "2014); cited by Cauligi et al. 2023 sec. 4A as [26]"},
         moon_radius_m=1737400.0,  # ASSUMED: IAU mean radius, for horizon drop r^2/2R
     )
     (out / "display.json").write_text(json.dumps(doc, indent=1))

@@ -41,7 +41,8 @@ import numpy as np
 from sim.ice import (DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit, IceField, IceSensor,
                      FOOTPRINT_RADIUS_M)
 from sim.rover import PLANNER_STANDIN, SPEED_M_S, STEP_M, Rover, SlopeMap
-from sim.standins import RIMS_STANDIN, ChainStandin, NavStandin, rims_standin
+from sim.nav import ParticleNav
+from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
 from sim.terrain import default_path, load_terrain
 
 RUNS_DIR = Path(r"C:\Monad-Hackathon-Project\data\runs")
@@ -74,8 +75,8 @@ def simulate(scn, terrain, slope, field=None):
 
     ax, ay, ah = scn["a_start"]
     bx, by, bh = scn["b_start"]
-    A = Rover("A", (x0 + ax, y0 + ay, ah), NavStandin(scn["a_fixes"], rng(2)), slope, rng(1))
-    B = Rover("B", (x0 + bx, y0 + by, bh), NavStandin(True, rng(12)), slope, rng(11))
+    A = Rover("A", (x0 + ax, y0 + ay, ah), ParticleNav(scn["a_fixes"], rng(2), craters), slope, rng(1))
+    B = Rover("B", (x0 + bx, y0 + by, bh), ParticleNav(True, rng(12), craters), slope, rng(11))
     rims_rng = {"A": rng(3), "B": rng(13)}
     goal_a = (x0 + scn["a_goal"][0], y0 + scn["a_goal"][1])
     A.set_goal(goal_a)
@@ -110,9 +111,9 @@ def simulate(scn, terrain, slope, field=None):
             reading = None
             if k > 0 and mode[ag] in ("survey", "goto"):
                 d, dh = r.follow()
-                _, err = r.odometry(d, dh)
+                odo, err = r.odometry(d, dh)
                 rims = rims_standin(r.true, craters, rims_rng[ag])
-                r.localize(err, d, len(rims))
+                r.localize(err, d, len(rims), odom=odo, rims=rims)
                 moved = d > 0
                 if sensor is not None:
                     reading = sensor.read(r.true[0], r.true[1])
@@ -332,7 +333,8 @@ def main():
             "truth": {"ice": field.to_log(),
                       "ice_units": "wt% water-equivalent hydrogen; radius is the 1 wt% contour",
                       "find_threshold_wt": FIND_THRESHOLD_WT},
-            "standins": {"nav": NavStandin.STANDIN, "rims": RIMS_STANDIN, "planner": PLANNER_STANDIN,
+            "nav": ParticleNav.NAME,
+            "standins": {"rims": RIMS_STANDIN, "planner": PLANNER_STANDIN,
                          "chain": ChainStandin.STANDIN, "ice_sensor": IceSensor.STANDIN},
             "dt_s": round(DT_S, 2),
             "display": None if args.no_render else render.display,

@@ -339,3 +339,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:06 integrator: integration fa02aa7 (scene 40a9cdd index merge + demo-mission c5a591e); index keeps run1/run2-1250 after mission. Scene renders from it.
 - 14:06 Joseph: Kellen's chain setup is authoritative. Hosted uplink with keys in Vercel env stays; the earlier no-keys-on-hosted-site rule is replaced. This laptop has no .env, so the scene render's recorded hashes are stand-ins; live ?key play-throughs post real ones.
 - 14:07 viewer: frost ice patch (web/js/frost.js) on demo S2 and Mission Control sites, fdaf71c; branch merged origin/ritvik and demo-mission first, clean. Integrator asked to merge. Next: planned route from log.
+- 14:08 integrator: viewer fdaf71c (frost + ritvik d6d3700) merged as f8c67f7. Open: Mission Control Surveyor model drawn above its disc at T+0 (sent to viewer).

@@ -278,3 +278,11 @@ Read mail, then `mv` it to `leader/archive/`.
   (66 ms). Order approved: pool sizing, pass reuse, threads, horizon. Mail
   after each fix.
 - 13:28 perf fix 4 (716b088): pool rounds before floor, 3.4 GB free -> 2 workers. Scene owns main()/--resume, perf keeps LiveCamera/pool/scene.py. Next: pass-1 replay.
+- 13:31 scene step-6-resume 58f74a3 (from main): --resume; index.json merged
+  per scenario; per-run chain/sensing fix. run1-20261115-1250 published to
+  data/runs (1098 frames, 0 m no-go, confirmed). Scene starts run 2 resume at
+  13:40 sharp. Integrator: merge main + step-6-resume + step-6-perf into
+  integration, restart :8000. Proposed to Joseph: new workers `demo`
+  (script, pitch, backup video) and `chainqa` (Foundry, forge suites, anvil
+  end-to-end); asked who owns the main UI (Ritvik vs designer) and the
+  mission sim (Kellen).

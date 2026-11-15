@@ -17,13 +17,13 @@ const CAMERA_HEIGHT_M = 2.5;
 const LAMP_BELOW_CAMERA_M = 0.2;
 // The rest match sim/scene.py's assumed values so both views agree.
 const CAMERA_PITCH_DEG = 15;   // scene.py, assumed
-const LAMP_INNER_DEG = 30;     // scene.py, assumed
-const LAMP_OUTER_DEG = 45;     // scene.py, assumed
+const LAMP_INNER_DEG = 15;     // scene.py:76 (step-6-scene 2c8af7e), assumed
+const LAMP_OUTER_DEG = 32;     // scene.py:77 (2c8af7e), assumed; was 30/45
 const LAMP_FADE_END_M = 80;    // scene.py, assumed
 const CHASE_BACK_M = 14, CHASE_UP_M = 8;  // scene.py, assumed
-// Exposure as sim/scene.py (step-6-scene 2c0fbba), assumed there: flat ground
-// 5 m ahead of the rover shows at 0.6 on screen through the tone curve.
-const EXPOSURE_REF_RANGE_M = 5, EXPOSURE_REF_LEVEL = 0.6;
+// Exposure as sim/scene.py (step-6-scene 2c8af7e), assumed there: flat ground
+// 5 m ahead of the rover shows at 0.55 on screen through the tone curve.
+const EXPOSURE_REF_RANGE_M = 5, EXPOSURE_REF_LEVEL = 0.55;  // scene.py:80-81 (2c8af7e)
 const LAMP_RGB = [1.0, 0.93, 0.8];   // sim/terrain_look.py, assumed (linear)
 const FILL_RGB = [0.62, 0.68, 0.82]; // sim/terrain_look.py, assumed (linear)
 const FILL_LEVEL = 0.22, FILL_EL_DEG = 35;  // sim/terrain_look.py, assumed
@@ -34,12 +34,22 @@ const FILL_FROM_VIEW_DEG = 110;
 
 // Viewer only, assumed. "low" is for weak GPUs (?quality=low).
 const QUALITY = {
-  high: { fineStride: 1, shadow: 4096, nearStride: 1, farStride: 2, rocks: true },
-  low: { fineStride: 2, shadow: 2048, nearStride: 2, farStride: 4, rocks: true },
+  // patch: the fine height patch ahead of each rover, `res` m spacing over a
+  // square `half` m each way about a point PATCH_AHEAD_M ahead.
+  high: { fineStride: 1, shadow: 4096, nearStride: 1, farStride: 2, rocks: true, patch: { res: 0.05, half: 16 } },
+  low: { fineStride: 2, shadow: 2048, nearStride: 2, farStride: 4, rocks: true, patch: null },
 };
+const PATCH_AHEAD_M = 9;       // patch centre ahead of the rover, where the lamp pool is
+const PATCH_MOVE_M = 4;        // patches along the track this far apart (a patch covers the pool within ~6 m)
+const PATCH_PREFETCH = 4;      // build this many patches ahead along the logged track
+const PATCH_WORKERS = 2;
+const PATCH_TAPER_M = 0.75;    // blend to the tile surface over the patch's outer edge
 const COARSE_STRIDE = 2;       // coarse map drawn at 2 m
 const FINE_PAD_M = 70;         // load 0.25 m tiles within this of each rover
 const DRAPE_M = 0.18;          // lines float this far above the ground
+const PARTICLE_SIZE = 0.3;    // viewer only, assumed: point size for an average-weight particle
+const PARTICLE_MIN = 0.5, PARTICLE_MAX = 3;   // size limits, as multiples of PARTICLE_SIZE
+const PARTICLE_LIFT_M = 0.08; // above the ground, so the 5 cm patch's lips do not hide them
 
 export const COLORS = {
   A: 0x5aa7ff, B: 0xf2994a,
@@ -144,7 +154,29 @@ export class World {
       THREE.RedFormat, THREE.UnsignedByteType);
     this.mask.needsUpdate = true;
     const drive = { hapke: this.hapke, albedo, normalMap: detailN, detailAlb: detailA, strength };
+    // The fine patch draws with fineMat; the 0.25 m tiles are not drawn,
+    // nor cast shadows, inside a patch.
     this.fineMat = regolith(drive);
+    const far = () => new THREE.Vector4(1e9, 1e9, -1e9, -1e9);
+    this.patchRects = [far(), far()];
+    const rectU = { uP0: { value: this.patchRects[0] }, uP1: { value: this.patchRects[1] } };
+    const inRect = `(vXY.x > uP0.x && vXY.y > uP0.y && vXY.x < uP0.z && vXY.y < uP0.w) ||
+                    (vXY.x > uP1.x && vXY.y > uP1.y && vXY.x < uP1.z && vXY.y < uP1.w)`;
+    this.tileMat = regolith({ ...drive, uniforms: rectU, discard: `if (${inRect}) discard;` });
+    this.tileDepthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    this.tileDepthMat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, rectU);
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>
+varying vec2 vXY;`)
+        .replace("#include <begin_vertex>", `#include <begin_vertex>
+vXY = (modelMatrix * vec4(position, 1.0)).xy;`);
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>
+varying vec2 vXY;
+uniform vec4 uP0;
+uniform vec4 uP1;`)
+        .replace("void main() {", `void main() {
+ if (${inRect}) discard;`);
+    };
     // The coarse map is not drawn where a fine tile is loaded.
     this.coarseMat = regolith({ ...drive,
       uniforms: {
@@ -300,7 +332,8 @@ export class World {
       this.fineMeshes.set(key, null);
       this.terrain.loadTile(key).then((g) => {
         if (!this.fineMeshes.has(key)) return;
-        const mesh = new THREE.Mesh(this.gridGeometry(g, this.q.fineStride), this.fineMat);
+        const mesh = new THREE.Mesh(this.gridGeometry(g, this.q.fineStride), this.tileMat);
+        mesh.customDepthMaterial = this.tileDepthMat;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         this.scene.add(mesh);
@@ -319,6 +352,167 @@ export class World {
       this.fineMeshes.delete(key);
       this.setMask(key, 0);
     }
+  }
+
+  // ------------------------------------------------------- fine patch
+  // Patches are built ahead along the logged track, so at fast playback the
+  // lamp pool is already on a fine patch when the rover gets there.
+  async initPatches() {
+    const P = this.q.patch, lm = this.terrain.meta.lips;
+    if (!P || !lm) return;
+    const lips = await fetchF32(this.terrain.base + lm.file);
+    this.patchWorkers = [];
+    for (let i = 0; i < PATCH_WORKERS; i++) {
+      const w = new Worker(new URL("./patch_worker.js", import.meta.url), { type: "module" });
+      w.postMessage({ init: { lips, x0: this.terrain.meta.x0, y0: this.terrain.meta.y0 } });
+      w.onmessage = (e) => { w.busy = false; this.patchReady(e.data); this.pumpPatches(); };
+      this.patchWorkers.push(w);
+    }
+    this.patches = {};      // agency -> Map(key -> {mesh, center, rect})
+    this.patchActive = {};  // agency -> key
+    this.patchQueue = [];
+    this.patchInFlight = new Set();
+    const n = Math.round((2 * P.half) / P.res) + 1;
+    const idx = new Uint32Array((n - 1) * (n - 1) * 6);
+    let t = 0;
+    for (let a = 0; a < n - 1; a++) for (let b = 0; b < n - 1; b++) {
+      const v = a * n + b;
+      idx[t++] = v; idx[t++] = v + 1; idx[t++] = v + n;
+      idx[t++] = v + 1; idx[t++] = v + n + 1; idx[t++] = v + n;
+    }
+    this.patchIndex = new THREE.BufferAttribute(idx, 1);
+    this.patchN = n;
+  }
+
+  // Where the lamp pool is: PATCH_AHEAD_M ahead of the rover.
+  poolCenter([x, y, h]) { return [x + PATCH_AHEAD_M * Math.cos(h), y + PATCH_AHEAD_M * Math.sin(h)]; }
+
+  // The pool centres from t onward, PATCH_MOVE_M apart along the logged track.
+  poolCentersAhead(run, a, t) {
+    const out = [this.poolCenter(run.poseAt(a, t))];
+    for (let k = run.stepAt(t) + 1; k < run.steps.length && out.length < PATCH_PREFETCH + 1; k++) {
+      const c = this.poolCenter(run.steps[k].rovers[a].true_pose), last = out[out.length - 1];
+      if (Math.hypot(c[0] - last[0], c[1] - last[1]) >= PATCH_MOVE_M) out.push(c);
+    }
+    return out;
+  }
+
+  nearestPatch(a, c) {
+    let best = null, bd = Infinity;
+    for (const [key, p] of this.patches[a]) {
+      const d = Math.hypot(c[0] - p.center[0], c[1] - p.center[1]);
+      if (d < bd) { bd = d; best = key; }
+    }
+    return { key: best, d: bd };
+  }
+
+  updatePatches(run, t) {
+    if (!this.patches) return;
+    for (const a of run.agencies) {
+      if (!this.patches[a]) this.patches[a] = new Map();
+      const want = this.poolCentersAhead(run, a, t);
+      // Show the built patch nearest the pool now; hold the old one until a nearer one is ready.
+      const { key } = this.nearestPatch(a, want[0]);
+      if (key && key !== this.patchActive[a]) this.showPatch(a, key);
+      // Queue what is missing, nearest in time first.
+      want.forEach((c, i) => {
+        const near = this.nearestPatch(a, c);
+        if (near.d < PATCH_MOVE_M * 0.75) return;
+        const id = `${a}:${Math.round(c[0] / PATCH_MOVE_M)}:${Math.round(c[1] / PATCH_MOVE_M)}`;
+        if (this.patchInFlight.has(id) || this.patchQueue.some((q) => q.id === id)) return;
+        this.patchQueue.push({ id, a, c, pri: i });
+      });
+      // Forget patches the rover has passed.
+      const keep = new Set(want.map((c) => this.nearestPatch(a, c).key));
+      keep.add(this.patchActive[a]);
+      if (this.patches[a].size > PATCH_PREFETCH + 3) {
+        for (const [k2, p] of this.patches[a]) {
+          if (keep.has(k2)) continue;
+          p.mesh.geometry.dispose(); this.scene.remove(p.mesh); this.patches[a].delete(k2);
+        }
+      }
+    }
+    // Drop queued jobs that are no longer wanted (scrubbing), keep order by priority.
+    this.patchQueue = this.patchQueue.filter((q) => {
+      const want = this.poolCentersAhead(run, q.a, t);
+      return want.some((c) => Math.hypot(c[0] - q.c[0], c[1] - q.c[1]) < PATCH_MOVE_M * 0.5);
+    }).sort((p, q) => p.pri - q.pri);
+    this.pumpPatches();
+  }
+
+  pumpPatches() {
+    for (const w of this.patchWorkers) {
+      if (w.busy) continue;
+      let job = null;
+      while (this.patchQueue.length && !job) {
+        const q = this.patchQueue.shift();
+        job = this.patchJob(q);
+      }
+      if (!job) return;
+      w.busy = true;
+      this.patchInFlight.add(job.id);
+      w.postMessage(job, [job.base.buffer]);
+    }
+  }
+
+  // The worker's input for a patch centred near c, or null if its tiles are not loaded yet.
+  patchJob({ id, a, c }) {
+    const P = this.q.patch, T = this.terrain, m = T.meta;
+    // Snap to the patch spacing so vertices land on the same world points.
+    const px0 = m.x0 + Math.round((c[0] - P.half - m.x0) / P.res) * P.res;
+    const py0 = m.y0 + Math.round((c[1] - P.half - m.y0) / P.res) * P.res;
+    const span = (this.patchN - 1) * P.res;
+    // Every 0.25 m tile under it must be loaded, or the base would be the 1 m map.
+    const corners = [[px0, py0], [px0 + span, py0], [px0, py0 + span], [px0 + span, py0 + span]];
+    if (corners.some(([u, v]) => { const k = T.tileKey(u, v); return !k || !T.tiles.has(k); })) {
+      corners.forEach(([u, v]) => { const k = T.tileKey(u, v); if (k) T.loadTile(k); });
+      return null;
+    }
+    const cell = m.cell;
+    const bx0 = m.x0 + (Math.floor((px0 - m.x0) / cell) - 2) * cell, by0 = m.y0 + (Math.floor((py0 - m.y0) / cell) - 2) * cell;
+    const bnx = Math.ceil(span / cell) + 6, bny = bnx;
+    const base = new Float32Array(bnx * bny);
+    for (let i = 0; i < bny; i++) for (let j = 0; j < bnx; j++) base[i * bnx + j] = T.heightAt(bx0 + j * cell, by0 + i * cell);
+    const ax0 = m.x0 - m.cell / 2, ay0 = m.y0 - m.cell / 2;
+    return { id, a, center: c, base, bx0, by0, bnx, bny, cell, px0, py0, res: P.res, n: this.patchN,
+      taper: PATCH_TAPER_M, o: [this.o.x, this.o.y, this.o.z], alb: [ax0, ay0, m.cols * m.cell, m.rows * m.cell],
+      per: m.detail ? m.detail.period_m : 8 };
+  }
+
+  patchReady({ id, a, center, pos, nrm, uv0, uv1, px0, py0, span }) {
+    this.patchInFlight.delete(id);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
+    g.setAttribute("uv", new THREE.BufferAttribute(uv0, 2));
+    g.setAttribute("uv1", new THREE.BufferAttribute(uv1, 2));
+    g.setIndex(this.patchIndex);
+    g.computeBoundingSphere();
+    const mesh = new THREE.Mesh(g, this.fineMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.visible = false;
+    this.scene.add(mesh);
+    const key = `${px0.toFixed(2)}_${py0.toFixed(2)}`;
+    const old = this.patches[a].get(key);
+    if (old) { this.scene.remove(old.mesh); old.mesh.geometry.dispose(); }
+    this.patches[a].set(key, { mesh, center, rect: [px0, py0, span] });
+    if (old && this.patchActive[a] === key) this.showPatch(a, key);
+    // Show it now if it is nearer the pool than the one showing.
+    if (this.run && this.run.agencies.includes(a)) {
+      const c = this.poolCenter(this.run.poseAt(a, this.currentT || 0));
+      if (this.nearestPatch(a, c).key === key) this.showPatch(a, key);
+    }
+  }
+
+  showPatch(a, key) {
+    const prev = this.patchActive[a] && this.patches[a].get(this.patchActive[a]);
+    if (prev) prev.mesh.visible = false;
+    const p = this.patches[a].get(key);
+    p.mesh.visible = true;
+    this.patchActive[a] = key;
+    const [px0, py0, span] = p.rect;
+    this.patchRects[a === "A" ? 0 : 1].set(px0 - this.o.x, py0 - this.o.y, px0 + span - this.o.x, py0 + span - this.o.y);
   }
 
   setMask(key, v) {
@@ -467,6 +661,15 @@ export class World {
       this.overlay.add(dot);
       this.estDots[a] = dot;
     }
+    // The navigation filter's particles, when the run logs them.
+    this.particles = {};
+    if (run.hasParticles) for (const a of run.agencies) {
+      const P = new THREE.Points(new THREE.BufferGeometry(), this.particleMat(COLORS[a]));
+      P.frustumCulled = false;
+      P.userData.k = null;
+      this.overlay.add(P);
+      this.particles[a] = P;
+    }
     // Real ice, hidden from the rovers (stand-in runs carry it).
     this.truthObjs = [];
     for (const ice of (run.truth && run.truth.ice) || []) {
@@ -506,6 +709,45 @@ export class World {
     g.userData = { lbl, key: `${f.status}:${f.checks.length}` };
     this.overlay.add(g);
     return g;
+  }
+
+  // Particles as round dots on the ground, one draw per rover. Dot diameter
+  // grows with sqrt(w * n), so dot area follows the particle's weight and an
+  // evenly weighted cloud has equal dots.
+  particleMat(color) {
+    const m = new THREE.PointsMaterial({ color, size: PARTICLE_SIZE, sizeAttenuation: true });
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = "attribute float pSize;\n" + sh.vertexShader.replace("gl_PointSize = size;", "gl_PointSize = size * pSize;");
+      sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", `#include <color_fragment>
+        vec2 pc = gl_PointCoord - 0.5;
+        float rr = dot(pc, pc);
+        if (rr > 0.25) discard;
+        if (rr > 0.13) diffuseColor.rgb *= 0.2;`);
+    };
+    return m;
+  }
+
+  fillParticles(P, list) {
+    const n = list.length;
+    let g = P.geometry;
+    if (!g.attributes.position || g.attributes.position.count < n) {
+      g.dispose();
+      g = new THREE.BufferGeometry();
+      const cap = Math.max(n, 128);
+      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(cap * 3), 3));
+      g.setAttribute("pSize", new THREE.BufferAttribute(new Float32Array(cap), 1));
+      P.geometry = g;
+    }
+    const pos = g.attributes.position.array, sz = g.attributes.pSize.array;
+    for (let i = 0; i < n; i++) {
+      const [x, y, w] = list[i];
+      const v = this.groundL(x, y, PARTICLE_LIFT_M);
+      pos[3 * i] = v.x; pos[3 * i + 1] = v.y; pos[3 * i + 2] = v.z;
+      sz[i] = Math.min(PARTICLE_MAX, Math.max(PARTICLE_MIN, Math.sqrt(Math.max(w, 0) * n)));
+    }
+    g.attributes.position.needsUpdate = true;
+    g.attributes.pSize.needsUpdate = true;
+    g.setDrawRange(0, n);
   }
 
   setVisibility({ fill, tracks, truth }) {
@@ -550,8 +792,15 @@ export class World {
         this.sigmaRings[a] = ring;
         this.sigmaKey[a] = sk;
       }
+      // The cloud the filter held after step k, until step k + 1.
+      const P = this.particles[a];
+      if (P) {
+        if (P.userData.k !== k) { this.fillParticles(P, r.particles || []); P.userData.k = k; }
+        P.visible = !!(opts.tracks && opts.particles) && P.geometry.drawRange.count > 0;
+      }
     }
     this.updateFine(pts);
+    this.updatePatches(run, t);
 
     // Finds, keyed by status so a marker is rebuilt when its status changes.
     const finds = run.findsAt(k);

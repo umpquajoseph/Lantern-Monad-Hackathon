@@ -14,7 +14,7 @@ FP.fx = FP.w / 2 / Math.tan((FP.hfov / 2) * Math.PI / 180);
 
 const state = {
   runs: [], run: null, t: 0, playing: false, speed: 200, cam: "A",
-  opts: { fill: true, tracks: true, rims: true, truth: false },
+  opts: { fill: true, tracks: true, particles: true, rims: true, nogo: true, truth: false },
   lastEventsKey: "",
 };
 
@@ -33,6 +33,7 @@ async function main() {
   world.buildTerrain();
   world.buildBackdrop();
   world.loadRocks();
+  world.initPatches();
   map = new MapView($("map"), terrain);
 
   state.runs = await loadIndex("runs/");
@@ -128,6 +129,7 @@ function bindControls() {
     render(true);
   }));
   for (const k of Object.keys(state.opts)) {
+    if (!$("opt-" + k)) continue;   // a toggle the page does not offer keeps its default
     $("opt-" + k).onchange = (e) => {
       state.opts[k] = e.target.checked;
       world.setVisibility(state.opts);
@@ -205,7 +207,9 @@ function render(force = false) {
   $("time").value = t;
   $("clock").textContent = `${fmtClock(t)} · step ${k + 1}/${run.steps.length}`;
   hud(run, k);
-  if (force || k !== lastK || lastCamKey !== state.cam) { camera(run, k); lastCamKey = state.cam; }
+  const fr = run.frameNear(state.cam, t);
+  const camKey = `${state.cam}:${fr ? fr.src : "-"}`;
+  if (force || camKey !== lastCamKey) { camera(run, fr, k); lastCamKey = camKey; }
   if (force || k !== lastK) record(run, k);
   lastK = k;
 }
@@ -222,12 +226,23 @@ function hud(run, k) {
       `<span><span class="k">true error</span> ${err.toFixed(1)} m</span>` +
       `<span><span class="k">odometry error</span> ${odo.toFixed(1)} m</span></div>`;
   });
+  if (run.nav) {
+    // "ShadowNav particle filter (Cauligi et al. 2023, Algs. 1-3), 100 particles, ..."
+    // -> "ShadowNav particle filter, 100 particles"; the full line on hover.
+    const short = run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim();
+    const dots = run.hasParticles && state.opts.tracks && state.opts.particles ? "; dots are its particles, larger for more weight" : "";
+    rows.push(`<div class="row src" title="${run.nav.replace(/"/g, "&quot;")}"><span class="k">estimate and σ:</span><span>${short}${dots}</span></div>`);
+  }
+  if (run.planner) {
+    // "A* on a 2 m grid; a cell is blocked if ..." -> "A* on a 2 m grid"; the full line on hover.
+    const short = run.planner.split(/[;(]/)[0].replace(/[.,\s]+$/, "");
+    rows.push(`<div class="row src" title="${run.planner.replace(/"/g, "&quot;")}"><span class="k">route:</span><span>${short}</span></div>`);
+  }
   $("hud").innerHTML = rows.join("");
 }
 
-function camera(run, k) {
+function camera(run, fr, k) {
   const a = state.cam;
-  const fr = run.frameAt(a, k);
   const img = $("fp-img");
   $("fp-empty").hidden = !!fr;
   if (fr) {
@@ -236,16 +251,20 @@ function camera(run, k) {
       img.src = fr.src;
     }
   } else img.removeAttribute("src");
-  const r = run.rover(a, k);
-  $("fp-cap").innerHTML = `Rover ${a}. Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.` +
+  const r = run.rover(a, fr ? fr.k : k);
+  // Say how far apart the recorded frames are, from the log.
+  const gapM = run.frameSpacing(a);
+  const every = gapM ? `, one frame per ${gapM < 10 ? gapM.toFixed(1).replace(/\.0$/, "") : Math.round(gapM)} m driven` : "";
+  $("fp-cap").innerHTML = `Rover ${a} camera${every}, as recorded. Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
-    (state.opts.rims && r.rims && r.rims.length ? ` ${r.rims.length} rim points${run.standin ? " (stand-in, from the crater map)" : ""}.` : "");
-  drawRims(run, a, fr ? fr.k : k);
+    (state.opts.rims && r.rims && r.rims.length && !(fr && fr.sub) ? ` ${r.rims.length} rim points${run.standin ? " (stand-in, from the crater map)" : ""}.` : "");
+  // Rim points are logged per step, in that step's pose: draw them only on a step's own frame.
+  drawRims(run, a, fr ? fr.k : k, !!(fr && fr.sub));
 }
 
 // Rim points [x_fwd, y_left] in the rover frame, projected into the image
 // with the scene's pinhole model and the ground height under each point.
-function drawRims(run, a, k) {
+function drawRims(run, a, k, none = false) {
   const cv = $("fp-rims");
   const W = cv.clientWidth, H = cv.clientHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -253,7 +272,7 @@ function drawRims(run, a, k) {
   cv.height = Math.round(H * dpr);
   const c = cv.getContext("2d");
   c.setTransform((W * dpr) / FP.w, 0, 0, (H * dpr) / FP.h, 0, 0);
-  if (!state.opts.rims) return;
+  if (!state.opts.rims || none) return;
   const r = run.rover(a, k);
   if (!r.rims) return;
   const [x, y, h] = r.true_pose;

@@ -34,6 +34,7 @@
     <label class="ck"><input type="checkbox" id="opt-fill" checked> Fill light</label>
     <label class="ck"><input type="checkbox" id="opt-tracks" checked> Tracks</label>
     <label class="ck"><input type="checkbox" id="opt-rims" checked> Rim points</label>
+    <label class="ck" title="Ground the planner will not drive: steeper than 15° across 2 m, widened by the rover's half width (sim/rover.py)."><input type="checkbox" id="opt-nogo" checked> No-go: over 15°</label>
     <label class="ck" title="The hidden ice map. The rovers never see it."><input type="checkbox" id="opt-truth"> Hidden truth: real ice</label>
   </nav>
 
@@ -43,6 +44,7 @@
     <div class="lg"><i class="ln true"></i>True track</div>
     <div class="lg"><i class="ln odom"></i>Odometry only</div>
     <div class="lg"><i class="ln est"></i>Estimate, with ±σ circle</div>
+    <div class="lg"><i class="sw nogo"></i>No-go: over 15° (planner)</div>
     <div class="lg"><i class="dm"></i>Hidden truth: real ice</div>
   </div>
   <div class="sb-foot">

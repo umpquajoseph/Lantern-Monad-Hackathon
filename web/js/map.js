@@ -4,6 +4,9 @@ import { COLORS } from "./world.js";
 
 const hex = (c) => "#" + c.toString(16).padStart(6, "0");
 
+const FINE_SHADE_PX_PER_M = 2;   // viewer only, assumed: above this zoom, draw 0.25 m hillshade
+const FINE_SHADE_CACHE = 9;       // tile hillshades kept (513 px square each, ~1 MB)
+
 export class MapView {
   constructor(canvas, terrain) {
     this.cv = canvas;
@@ -12,6 +15,12 @@ export class MapView {
     this.img = new Image();
     this.img.onload = () => this.draw();
     this.img.src = terrain.base + terrain.meta.map.file;
+    // The planner's no-go ground, red on clear (build_assets.py, from sim/rover.py).
+    if (terrain.meta.nogo) {
+      this.nogo = new Image();
+      this.nogo.onload = () => this.draw();
+      this.nogo.src = terrain.base + terrain.meta.nogo.file;
+    }
     this.mode = "site";
     this.zoom = 1;
     this.pan = [0, 0];
@@ -57,6 +66,69 @@ export class MapView {
     return { cx: x, cy: y, span: 90 };
   }
 
+  // Hillshade of one 0.25 m tile, as build_assets.py hillshade(): light from
+  // azimuth 315, elevation 25 deg; grey = 40 + 170 * shade^0.8. Cached, few.
+  fineShade(key) {
+    if (!this.shades) this.shades = new Map();
+    if (this.shades.has(key)) {
+      const v = this.shades.get(key);
+      this.shades.delete(key); this.shades.set(key, v);   // most recent last
+      return v;
+    }
+    const g = this.terrain.tiles.get(key);
+    if (!g) {
+      if (!this.shadeWait) this.shadeWait = new Set();
+      if (!this.shadeWait.has(key)) {
+        this.shadeWait.add(key);
+        this.terrain.loadTile(key).then(() => { this.shadeWait.delete(key); this.draw(); });
+      }
+      return null;
+    }
+    const { rows, cols, cell, z } = g;
+    const cv = document.createElement("canvas");
+    cv.width = cols; cv.height = rows;
+    const ctx = cv.getContext("2d");
+    const im = ctx.createImageData(cols, rows);
+    const az = (315 * Math.PI) / 180, el = (25 * Math.PI) / 180;
+    const lx = Math.cos(el) * Math.sin(az), ly = Math.cos(el) * Math.cos(az), lz = Math.sin(el);
+    for (let i = 0; i < rows; i++) {
+      const i0 = Math.max(i - 1, 0), i1 = Math.min(i + 1, rows - 1);
+      for (let j = 0; j < cols; j++) {
+        const j0 = Math.max(j - 1, 0), j1 = Math.min(j + 1, cols - 1);
+        const gx = (z[i * cols + j1] - z[i * cols + j0]) / ((j1 - j0) * cell);
+        const gy = (z[i1 * cols + j] - z[i0 * cols + j]) / ((i1 - i0) * cell);
+        const sh = Math.max(0, (-gx * lx - gy * ly + lz) / Math.sqrt(gx * gx + gy * gy + 1));
+        const v = 40 + 170 * Math.pow(Math.min(sh, 1), 0.8);
+        const o = ((rows - 1 - i) * cols + j) * 4;   // north up
+        im.data[o] = im.data[o + 1] = im.data[o + 2] = v;
+        im.data[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(im, 0, 0);
+    const out = { cv, g };
+    this.shades.set(key, out);
+    while (this.shades.size > FINE_SHADE_CACHE) this.shades.delete(this.shades.keys().next().value);
+    return out;
+  }
+
+  drawFineShade(c, X, Y, cx, cy, vw, vh) {
+    const T = this.terrain;
+    const keys = new Set();
+    for (const fx of [-0.5, 0, 0.5]) for (const fy of [-0.5, 0, 0.5]) {
+      const k = T.tileKey(cx + fx * vw, cy + fy * vh);
+      if (k) keys.add(k);
+    }
+    if (keys.size > FINE_SHADE_CACHE) return;
+    c.imageSmoothingEnabled = true;
+    for (const k of keys) {
+      const sh = this.fineShade(k);
+      if (!sh) continue;
+      const { g } = sh;
+      const sx = this.view.s;
+      c.drawImage(sh.cv, X(g.x0 - g.cell / 2), Y(g.y0 + (g.rows - 0.5) * g.cell), g.cols * g.cell * sx, g.rows * g.cell * sx);
+    }
+  }
+
   update(t) { this.t = t; this.draw(); }
 
   draw() {
@@ -88,6 +160,15 @@ export class MapView {
       c.imageSmoothingEnabled = s < 2;
       c.globalAlpha = 0.85;
       c.drawImage(this.img, X(x0), Y(y1), g.cols * g.cell * s, g.rows * g.cell * s);
+      // Zoomed in, the 1 m image goes blocky: draw the 0.25 m tiles in view instead.
+      if (s > FINE_SHADE_PX_PER_M) this.drawFineShade(c, X, Y, cx, cy, W / s, H / s);
+      if (this.opts.nogo && this.nogo && this.nogo.complete && this.nogo.naturalWidth) {
+        c.globalAlpha = 0.42;
+        // One pixel per 0.25 m sim cell, centred on the grid points.
+        const nx0 = m.x0 - m.cell / 2, ny1 = m.y0 + (m.rows - 0.5) * m.cell;
+        c.drawImage(this.nogo, X(nx0), Y(ny1), m.cols * m.cell * s, m.rows * m.cell * s);
+        c.globalAlpha = 1;
+      }
       c.globalAlpha = 1;
     }
 
@@ -175,6 +256,18 @@ export class MapView {
     for (const a of run.agencies) {
       const r = run.rover(a, k);
       const col = hex(COLORS[a]);
+      // The filter's particles after step k: dot area follows weight.
+      const ps = r.particles;
+      if (this.opts.tracks && this.opts.particles && ps && ps.length) {
+        c.fillStyle = col;
+        c.strokeStyle = "#0d0e10";
+        c.lineWidth = 1;
+        const n = ps.length;
+        for (const [px, py, w] of ps) {
+          const rad = Math.min(5, Math.max(1.5, 2.2 * Math.sqrt(Math.max(w, 0) * n)));
+          c.beginPath(); c.arc(X(px), Y(py), rad, 0, Math.PI * 2); c.fill(); c.stroke();
+        }
+      }
       if (this.opts.tracks) {
         const [ex, ey] = r.estimate;
         c.strokeStyle = col;

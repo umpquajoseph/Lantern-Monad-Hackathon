@@ -87,6 +87,15 @@ def build(fresh: bool):
         say(f"demo runs: {RUNS / 'index.json'} (kept; --fresh reruns them)")
 
 
+def rewriting(run_dir: Path) -> bool:
+    """True if any frame in run_dir is newer than its log.json (a rerun in progress)."""
+    log = mtime(run_dir / "log.json")
+    fp = run_dir / "fp"
+    if not fp.exists():
+        return False
+    return any(e.stat().st_mtime > log for e in os.scandir(fp))
+
+
 def sync_runs():
     """Copy the latest run of each kind into web/runs/ and write the viewer's index.
 
@@ -100,7 +109,14 @@ def sync_runs():
     for r in index:
         src = RUNS / r["dir"]
         dst = WEB_RUNS / r["dir"]
-        if stale(dst / "log.json", src / "log.json"):
+        if rewriting(src):
+            # run_demo.py writes log.json after the frames, so frames newer than the log
+            # mean a rerun is writing this folder now. Keep the last whole copy, or skip.
+            if not (dst / "log.json").exists():
+                say(f"viewer runs: {r['dir']} is being rewritten and has no earlier copy; skipped")
+                continue
+            say(f"viewer runs: {r['dir']} is being rewritten; showing the last whole copy")
+        elif stale(dst / "log.json", src / "log.json"):
             if dst.exists():
                 shutil.rmtree(dst)  # one literal run folder, a copy this file made
             shutil.copytree(src, dst)

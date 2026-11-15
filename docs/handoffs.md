@@ -58,7 +58,8 @@ img = scene.third_person(agency, overlays)    # (h, w, 3) uint8
 ## Run log (`run_demo.py` writes it, the web viewer replays it)
 
 The hosted demo replays real runs, so everything the viewer shows comes from
-this log. One folder per run, `runs/<run_id>/`:
+this log. One folder per run, `data/runs/<run_id>/` in the main checkout
+(`C:\Monad-Hackathon-Project\data\runs\`, git-ignored):
 
 - `log.json`:
 
@@ -68,6 +69,7 @@ this log. One folder per run, `runs/<run_id>/`:
   "label": "Run 1: crater fixes on",
   "terrain": {"file": "shoemaker.npz", "x0": 73250.125, "y0": 36000.125, "cell": 0.25},
   "chain": {"chain_id": 0, "contract": "0x...", "explorer": "https://..."},
+  "truth": {"ice": [{"x": 0, "y": 0, "radius": 5.0, "peak": 0.0}]},
   "steps": [
     {
       "t": 0.0,
@@ -89,6 +91,10 @@ this log. One folder per run, `runs/<run_id>/`:
 ```
 
 - `fp/<agency>_<step>.jpg`: the first-person frame from `scene.first_person`.
+- `truth` is what the rovers cannot know: the hidden ice map. The viewer may
+  show it only as a labelled reveal ("hidden truth"), never as something a
+  rover saw. Ice is under the surface, so it is never drawn as visible
+  ground.
 - Units and frames as above: world metres, heading radians, `t` in simulated
   seconds. `events` lists what happened at that step, with the transaction
   hash once step 1 exists.

@@ -24,7 +24,7 @@ pip install numpy scipy tifffile opencv-python matplotlib web3 python-dotenv vtk
 |---|---|---|
 | The whole demo site | `python app.py` | builds what is missing, runs both demo runs if there are none, opens http://localhost:8000 |
 | Rerun the two demo runs | `python app.py --fresh` or `python run_demo.py` | runs land in `data/runs/` |
-| The 8-site Surveyor/Prospector mission | `python sim/roles.py run --render --publish-run data/runs` | copy the mission into `web/runs/`, open `/mission.html` |
+| The 8-site Surveyor/Prospector mission | `python sim/roles.py run --render --publish-run data/runs` | adds the mission to `data/runs/index.json`; `python app.py`, then open `/mission.html` |
 | Read the chain record | `python sim/chain.py finds` | needs no keys |
 | Publish the site | `python web/publish.py vercel` | see `docs/hosting.md` |
 

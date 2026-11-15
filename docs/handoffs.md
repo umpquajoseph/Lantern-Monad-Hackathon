@@ -255,3 +255,24 @@ After a run, one master file per run and its results on Monad, next to Lantern:
 
 - The per-step state above for both rovers, `get_finds()`, and from step 6 the
   camera image `np.ndarray (h, w)` or `(h, w, 3)` with `rims` to overlay.
+
+## Mission (`sim/roles.py`, `sim/mission.py`), gives
+
+The Surveyor and Prospector mission behind Mission Control (`web/mission.html`).
+Its parts and storage rules are in `docs/ARCHITECTURE.md` and `docs/storage.md`;
+this is only what crosses into other steps.
+
+- `python sim/roles.py run [--render] --publish-run data/runs` writes the
+  mission's store (`mission.json`, `run_log.json`, `evidence/<cid>.json`) and
+  publishes it as a run: `data/runs/<id>/log.json` plus an entry in
+  `data/runs/index.json`, beside `run_demo.py`'s entries. `app.py` then copies
+  it into `web/runs/` like any other run.
+- The run log follows "Run log" above, with the mission's additions read only
+  by `web/js/mission.js`: per-step `science`, and `report_cid`, `route_cid`,
+  `record_id` on its events.
+- Navigation is `sim/nav.py` (ParticleNav) on the rim-point stand-in, the same
+  as `run_demo.py`. First-person frames come from `sim/scene.py` through
+  `sim/mission_render.py`.
+- Chain: the demo's chain is Lantern (step 1 above). The mission's own
+  registry, `registry/` and `sim/registry_client.py`, runs on a local anvil or
+  an offline mock and is not used by the demo.

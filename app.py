@@ -39,7 +39,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
-from sim.terrain import DATA  # noqa: E402  LANTERN_DATA, else the main checkout, else ./data
+from sim.terrain import DATA, LOLA_SHOEMAKER  # noqa: E402  LANTERN_DATA, else the main checkout, else ./data
 TERRAIN = DATA / "terrain" / "shoemaker.npz"
 DISPLAY = DATA / "terrain" / "display" / "display.json"
 RUNS = DATA / "runs"
@@ -74,7 +74,12 @@ def build(fresh: bool):
     else:
         say(f"terrain: {TERRAIN} (kept)")
 
-    if stale(DISPLAY, TERRAIN):
+    # A git checkout stamps files in checkout order, so a committed display layer can look
+    # older than the terrain. It cannot be rebuilt without the LOLA tile; keep it then.
+    lola = Path(str(LOLA_SHOEMAKER).format("surf"))
+    if DISPLAY.exists() and stale(DISPLAY, TERRAIN) and not lola.exists():
+        say(f"display layer: {DISPLAY.parent} (kept; no LOLA tile to rebuild it from)")
+    elif stale(DISPLAY, TERRAIN):
         run(["sim/terrain_display.py", "build"], "display layer")
     else:
         say(f"display layer: {DISPLAY.parent} (kept)")

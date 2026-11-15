@@ -1,14 +1,14 @@
 # Who is working on what
 
-**Last updated: 2026-11-15 12:31 PST.** Stable checkpoint: tag `checkpoint-1105`.
+**Last updated: 2026-11-15 13:30 PST.** The base is branch `checkpoint`: every
+branch below merged onto `integration`, with the clean-up in `README.md`.
+Switch to it, then push your branch and tell the integrator, who merges it
+into `integration`. `main` takes the checkpoint on Joseph's word. What is
+left for the demo is in `docs/TODO.md`.
 
-**The base is the localhost site.** `python app.py` (branch `integration`) serves the site the
-sim runs on, and the same site gets hosted. All work plugs into it. A part is done when it shows
-there. Push your branch and tell the integrator, who merges it into `integration`.
- Before you start something, add a
-row here and push. When you finish, change its status. Formats passed
-between parts are in `docs/handoffs.md`: read it before writing a function
-another part calls.
+Before you start something, add a row here and push. When you finish, change
+its status. Formats passed between parts are in `docs/handoffs.md`: read it
+before writing a function another part calls.
 
 ## In progress
 
@@ -25,22 +25,18 @@ another part calls.
 | Realism, third person: Hapke shading, rocks and the near backdrop in the site's 3D view | Joseph, agent `viewer` | `step-5-viewer` | `web/` | 11:36 | starting |
 | Realism check: Hapke values against Xu 2020, reference stills, comparisons with ShadowNav images | Joseph, agent `terrain` | `step-2-terrain-realism` | `sim/terrain*.py`, `docs/sources/` | 11:36 | starting |
 | Navigation: particle filter `sim/nav.py` and planner fix `sim/rover.py` | Calvin | `Calvin` -> `integration` | `sim/nav.py`, `sim/rover.py` | 11:55 | in `integration`, run 1 live on the site |
-| Vision: crater rims from first-person frames (step 6) | Calvin | `Calvin` | `sim/vision.py` | 12:20 | building |
+| Vision: crater rims from first-person frames (step 6) | Calvin | `Calvin` | `sim/vision.py` | 12:20 | WIP at `c84f4e1`, not in `checkpoint`: run 1 does not pass end to end yet, and it conflicts in `web/js/main.js` |
 | Rim answer key for scoring vision | Joseph, agent `terrain` | `step-6-rim-truth` | `sim/rim_truth.py` | 12:18 | done 12:25 |
-| Site look: clean, uncluttered layout | Joseph, agent `designer` | `step-5-design` | `web/app.css`, `web/index.html` layout | 12:29 | starting |
+| Site look: clean, uncluttered layout | Joseph, agent `designer` | `step-5-design` | `web/app.css`, `web/index.html` layout | 12:29 | in `checkpoint` (`861bb11`) |
 | Contract on Monad testnet with Foundry tests, and the Python client `sim/chain.py` (step 1) | Kellen, agent `chain` | `step-1-chain` | `contracts/`, `sim/chain.py`, `sim/lantern_abi.json`, `sim/lantern_deployment.json` | 10:50 | done 11:25, deployed on Monad testnet (address in `sim/lantern_deployment.json`), demo run on chain; ready to merge |
 | Live chain feed for the viewer: read-only browser reader of the contract, standalone page, wiring note for the viewer owner (brief `docs/briefs/chain-feed.md`) | Kellen, agent `chain-feed` | `step-5-chain-feed` | `web/js/chain.js`, `web/chain.html`, `web/collect_chain.py`, `web/chain/` | 12:00 | done 12:20, pushed; `web/chain.html` reads the live contract; wiring note for the viewer owner at the top of `chain.js` |
 | Results ledger: master results file per run (paths, find locations, ice quantity, volatiles) and posting it to Monad, `LanternSurvey` contract next to Lantern | Kellen, agent `results` | `step-7-results` | `sim/results.py`, `sim/survey.py`, `sim/survey_abi.json`, `sim/survey_deployment.json`, `survey/` | 11:05 | done on anvil 11:25; testnet deploy next (Lantern is live) |
 | Hosting: Vercel config, site check, one-command publish (CLI upload, or the `deploy` branch for the GitHub integration and GitHub Pages), portable data path | Kellen, hosting session | `step-5-hosting` | `web/vercel.json`, `web/.vercelignore`, `web/check_site.py`, `web/publish.py`, `docs/hosting.md`; one-line data-path fixes in `sim/terrain.py`, `run_demo.py`, `web/build_assets.py`, `web/collect_runs.py`, `web/make_standin_run.py` | 12:10 | LIVE 12:20 at https://lantern-teal.vercel.app (stand-in runs from Kellen's Mac, no camera frames yet); final publish is `python web/publish.py vercel` on the machine with the final runs, see docs/hosting.md. 12:30: `chain.html`, the live contract record (from `step-5-chain-feed`, new files only), on the site. 12:39: real-chain runs with camera frames live (run1-real confirmed, run2-real disputed; frames untextured until Joseph re-renders). 12:45: one-line viewer fix in `web/js/main.js` (the stand-in banner said "nothing was posted to Monad; hashes are fake" on real-chain runs; now follows `run.fakeTx`), Joseph please take or redo. 12:49: textured re-render live (run1-real2 confirmed find 17, run2-real2 disputed find 18; display layer on, ParticleNav, live contract). 12:50: paused for Joseph's merge; merge notes at the top of docs/hosting.md |
+| Surveyor and Prospector 8-site mission, discovery registry, Mission Control with NASA rover models | Ritvik | `ritvik` | `sim/roles.py`, `sim/mission*.py`, `registry/`, `web/mission.*`, `web/js/mission.js`, `web/js/science_rig.js`, `web/models/` | 11:32 | in `checkpoint`; notes in `docs/CHANGES-ritvik.md` |
+| Checkpoint merge and clean-up | Joseph, agent `merger` | `checkpoint` | merges; `README.md`, root layout, `.gitignore`, `.env.example`, `docs/WORKING.md`, `docs/handoffs.md` | 13:06 | pushed; report to the lead |
 | Briefs, review, merging into `joseph` | Joseph, lead session | `joseph` | `docs/`, `ops/PROTOCOL.md` | 10:00 | ongoing |
 
 ## Not claimed yet
 
-Claim one by adding a row above. The part numbers are from `docs/moon-ledger-spec.md`.
-
-| Work | Spec step | Part in `docs/moon-ledger-spec.md` |
-|---|---|---|
-| Contract with Foundry tests, and `sim/chain.py` (not Joseph) | 1 | 4, Contracts and Chain Bridge |
-| Particle filter, `sim/nav.py` (Calvin is building it; it comes in after the realism work) | 3 | 3, Navigation and Autonomy |
-| Crater rims from the camera image, `sim/vision.py` | 6 | 2, Perception |
-| Pitch: who pays (investability), slides, script | | |
+The open items are the to-do table in `docs/TODO.md`. The first
+spec's part numbers are in `docs/moon-ledger-spec.md`.

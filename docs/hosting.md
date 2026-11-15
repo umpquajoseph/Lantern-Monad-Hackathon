@@ -15,6 +15,15 @@ Two folders in `web/` are generated and git-ignored, so the hosted copy is
 | `web/assets/terrain/` | `python web/build_assets.py` | the terrain, 37 MB, same for every run |
 | `web/runs/` | `python web/collect_runs.py` (or `app.py`) | `index.json`, one `log.json` and `fp/*.jpg` per run |
 
+`web/chain.html` is a second page: it reads the Lantern contract live in the
+judge's browser (finds, checks, safety zones, explorer links) from
+`chain/lantern_deployment.json` and `chain/lantern_abi.json`. Those two are
+copies made by `python web/collect_chain.py` on a branch that has the chain
+step's `sim/lantern_deployment.json` (`step-1-chain` and its children); after
+any fresh contract deploy, refresh them before publishing. `check_site.py`
+warns when a real-chain run was posted to a different contract than the
+page reads. The replay page `index.html` does not depend on it.
+
 `web/publish.py` does the rest. Every command below first runs
 `web/check_site.py`, which follows every file the page fetches and refuses to
 deploy a site with a hole in it.

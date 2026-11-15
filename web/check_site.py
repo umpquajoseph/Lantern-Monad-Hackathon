@@ -108,21 +108,26 @@ def check(site: Path) -> Report:
             return False
         return True
 
-    # The page, and what it links.
-    if not need("index.html", "the page itself"):
-        rep.print(); return rep
-    html = (site / "index.html").read_text(encoding="utf8")
-    refs = re.findall(r'(?:href|src)="([^"]+)"', html)
-    js_todo = []
-    for r in refs:
-        if r.startswith(EXTERNAL):
-            continue
-        if no_absolute(r, "index.html") and need(r, "linked from index.html") and r.endswith(".js"):
-            js_todo.append(posixpath.normpath(r))
-    for u in sorted(set(re.findall(r'https?://[^"\s<>]+', html))):
-        rep.note(f"external (needs internet at demo time): {u}")
+    # Every page at the root, and what each links; then the js imports they pull in.
+    if "index.html" not in have:
+        rep.err("missing index.html  (the page itself)")
+        return rep
+    pages = sorted(f for f in have if "/" not in f and f.endswith(".html"))
+    js_todo, externals = [], set()
+    for page in pages:
+        html = (site / page).read_text(encoding="utf8")
+        for r in re.findall(r'(?:href|src)="([^"]+)"', html):
+            if r.startswith(EXTERNAL) or "${" in r:   # template placeholders in inline scripts
+                continue
+            if no_absolute(r, page) and need(r, f"linked from {page}") and r.endswith(".js"):
+                js_todo.append(posixpath.normpath(r))
+        for imp in re.findall(r"""(?:from|import)\s+["'](\.[^"']+)["']""", html):   # inline module scripts
+            rel = posixpath.normpath(imp)
+            if need(rel, f"imported by {page}"):
+                js_todo.append(rel)
+        externals.update(re.findall(r'https?://[^"\s<>]+', html))
+    rep.note(f"pages: {', '.join(pages)}")
 
-    # Module imports, followed from the page's scripts.
     seen = set()
     while js_todo:
         js = js_todo.pop()
@@ -130,15 +135,32 @@ def check(site: Path) -> Report:
             continue
         seen.add(js)
         src = (site / js).read_text(encoding="utf8")
-        for imp in re.findall(r'''(?:from|import)\s+["']([^"']+)["']''', src):
+        for imp in re.findall(r"""(?:from|import)\s+["']([^"']+)["']""", src):
             if imp.startswith("."):
                 rel = posixpath.normpath(posixpath.join(posixpath.dirname(js), imp))
                 if need(rel, f"imported by {js}"):
                     js_todo.append(rel)
-            elif not no_absolute(imp, js):
-                pass
-        for lit in re.findall(r'''["'](/(?:assets|runs|js)/[^"']*)["']''', src):
+            elif imp.startswith(("http://", "https://")):
+                externals.add(imp)
+            else:
+                no_absolute(imp, js)
+        for lit in re.findall(r"""["'](/(?:assets|runs|js|chain)/[^"']*)["']""", src):
             no_absolute(lit, js)
+    for u in sorted(externals):
+        rep.note(f"external (needs internet at demo time): {u}")
+
+    # The live chain page, if present, and the contract it reads.
+    chain_contract = None
+    if "chain.html" in have:
+        files_ok = [need("chain/" + f, "LanternReader.load('chain/') in chain.html")
+                    for f in ("lantern_deployment.json", "lantern_abi.json")]
+        if all(files_ok):
+            dep = json.loads((site / "chain/lantern_deployment.json").read_text(encoding="utf8"))
+            chain_contract = dep.get("address")
+            rep.note(f"chain page: contract {chain_contract} on chain {dep.get('chainId')}, "
+                     f"rpc {dep.get('rpcUrl')}, verified {dep.get('verified') or 'no'}")
+            if not dep.get("rpcUrl", "").startswith("https://"):
+                rep.err("chain/lantern_deployment.json: rpcUrl must be https for a hosted page")
 
     # Terrain assets, as js/data.js Terrain.load reads them.
     base = "assets/terrain/"
@@ -191,6 +213,8 @@ def check(site: Path) -> Report:
             chain = log.get("chain") or {}
             si = log.get("standins") or log.get("standin") or {}
             real = bool(chain.get("explorer")) and not (si.get("chain") or si.get("tx"))
+            if real and chain_contract and str(chain.get("contract", "")).lower() != chain_contract.lower():
+                rep.warn(f"{rid}: posted to {chain.get('contract')}, but chain.html reads {chain_contract}")
             mb = sum(files.get(posixpath.join(rdir, f), 0) for f in frames) / 1e6 + files[path] / 1e6
             rep.note(f"{rid}: {len(steps)} steps, {events} chain events, {len(frames)} frames, {mb:.1f} MB; "
                      f"chain {'real, tx links to ' + chain['explorer'] if real else 'stand-in, hashes shown as fake'}")

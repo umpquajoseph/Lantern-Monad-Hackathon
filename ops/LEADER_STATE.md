@@ -253,3 +253,12 @@ Read mail, then `mv` it to `leader/archive/`.
   full render on checkpoint, real-chain path untested here, /mission.html
   404 on Vercel until Kellen publishes. Check: merger says "run 1's A ends
   22.38 m" -- likely run 2's numbers mislabeled; verify later.
+- 13:26 main fast-forwarded to e3b205e (TODO intro only). Vision run of run 1
+  started 13:24 from C:\Monad-Hackathon-checkpoint into LANTERN_DATA=
+  C:\Monad-Hackathon-vision-data (junction to data/terrain), stamp
+  20261115-vision, --vision --sub-frame-m 0 --display detail; serve it with
+  app.py on its own port when done. Perf had done nothing (waiting on RAM);
+  told it to start now on a short slice, rebased on main. Scene 1250: sims
+  and 850 live frames done, display frames 1396/2540 on ONE worker (float
+  rounding in (3.4-2)//0.7), ends about 13:40; run 1 0.8 m confirmed, run 2
+  22.2 m disputed. Finding passed to perf.

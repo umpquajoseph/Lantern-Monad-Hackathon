@@ -163,7 +163,7 @@ export class MapView {
       // Zoomed in, the 1 m image goes blocky: draw the 0.25 m tiles in view instead.
       if (s > FINE_SHADE_PX_PER_M) this.drawFineShade(c, X, Y, cx, cy, W / s, H / s);
       if (this.opts.nogo && this.nogo && this.nogo.complete && this.nogo.naturalWidth) {
-        c.globalAlpha = 0.42;
+        c.globalAlpha = 0.3;
         // One pixel per 0.25 m sim cell, centred on the grid points.
         const nx0 = m.x0 - m.cell / 2, ny1 = m.y0 + (m.rows - 0.5) * m.cell;
         c.drawImage(this.nogo, X(nx0), Y(ny1), m.cols * m.cell * s, m.rows * m.cell * s);

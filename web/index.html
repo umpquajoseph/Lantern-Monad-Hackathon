@@ -18,8 +18,10 @@
 </head>
 <body>
 <aside class="sidebar">
-  <div class="wordmark">Lantern</div>
-  <div class="sb-badge">Shared map of lunar ice</div>
+  <div class="brand">
+    <div class="wordmark">Lantern</div>
+    <p class="pitch">Two rovers from two agencies hunt for ice in a crater that never sees the sun. They find their way by the crater rims their lamps light, post each find with how sure they are, and check each other&rsquo;s finds on a shared ledger.</p>
+  </div>
 
   <nav class="sb-nav">
     <div class="sb-section">Runs</div>
@@ -33,22 +35,20 @@
     <div class="sb-section">Show</div>
     <label class="ck"><input type="checkbox" id="opt-fill" checked> Fill light</label>
     <label class="ck"><input type="checkbox" id="opt-tracks" checked> Tracks</label>
-    <label class="ck"><input type="checkbox" id="opt-rims" checked> Rim points</label>
-    <label class="ck" title="Ground the planner will not drive: steeper than 15° across 2 m, widened by the rover's half width (sim/rover.py)."><input type="checkbox" id="opt-nogo" checked> No-go: over 15°</label>
-    <label class="ck" title="The hidden ice map. The rovers never see it."><input type="checkbox" id="opt-truth"> Hidden truth: real ice</label>
+    <div class="keys">
+      <div class="lg"><i class="ln true"></i>True path</div>
+      <div class="lg"><i class="ln est"></i>Estimate, ring &plusmn;&sigma;</div>
+      <div class="lg"><i class="ln odom"></i>Odometry alone</div>
+    </div>
+    <label class="ck" title="The navigation filter's particles, in each agency's colour. Dot size is the particle's weight."><input type="checkbox" id="opt-particles" checked> Particles<i class="key dots"></i></label>
+    <label class="ck" title="Crater-rim points the rover matched, drawn on its camera frame."><input type="checkbox" id="opt-rims" checked> Rim points<i class="key sq"></i></label>
+    <label class="ck" title="Ground the planner will not drive: steeper than 15&deg; across 2 m, widened by the rover's half width (sim/rover.py)."><input type="checkbox" id="opt-nogo"> Too steep, over 15&deg;<i class="key nogo"></i></label>
+    <label class="ck" title="The hidden ice map. The rovers never see it."><input type="checkbox" id="opt-truth"> Hidden truth: real ice<i class="key dm"></i></label>
   </nav>
 
-  <div class="sb-legend">
-    <div class="lg"><i class="sw ag-A"></i>Agency A</div>
-    <div class="lg"><i class="sw ag-B"></i>Agency B</div>
-    <div class="lg"><i class="ln true"></i>True track</div>
-    <div class="lg"><i class="ln odom"></i>Odometry only</div>
-    <div class="lg"><i class="ln est"></i>Estimate, with ±σ circle</div>
-    <div class="lg"><i class="sw nogo"></i>No-go: over 15° (planner)</div>
-    <div class="lg"><i class="dm"></i>Hidden truth: real ice</div>
-  </div>
   <div class="sb-foot">
-    <a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">ShadowNav, JPL 2023</a>
+    <div class="agencies"><span><i class="sw ag-A"></i>Agency A</span><span><i class="sw ag-B"></i>Agency B</span></div>
+    <a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">Navigation after ShadowNav, JPL 2023</a>
   </div>
 </aside>
 
@@ -112,12 +112,12 @@
           <button data-ag="B">B</button>
         </div>
       </div>
-      <div class="fp">
+      <div class="fp" title="Click to enlarge">
         <img id="fp-img" alt="First-person lamp view">
         <canvas id="fp-rims"></canvas>
         <div class="fp-empty" id="fp-empty" hidden>No frame at this step</div>
       </div>
-      <div class="cap" id="fp-cap">Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.</div>
+      <div class="cap" id="fp-cap">Recorded lamp-only view. 60° field of view, camera 2.5 m up.</div>
     </div>
 
     <div class="panel grow">

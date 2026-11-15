@@ -308,3 +308,7 @@ kbd { font: 500 12px var(--mono); background: rgba(255,255,255,.08); border: 1px
 .insets { width: clamp(200px, calc((100vh - var(--bar-h) - 200px) / 1.86), 320px); gap: 8px; }
 .inset figcaption { padding-top: 2px; padding-bottom: 2px; }
 @media (max-width: 760px) { .insets { width: auto; } }
+.vnote { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 9; font-size: 12px; color: var(--dim);
+  background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; white-space: nowrap; pointer-events: none; }
+.vnote[hidden] { display: none; }
+@media (max-width: 760px) { .vnote { top: auto; bottom: calc(var(--bar-h) + 8px); font-size: 11px; white-space: normal; text-align: center; width: calc(100vw - 32px); } }

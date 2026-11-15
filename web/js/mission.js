@@ -58,7 +58,7 @@ const NARROW = matchMedia("(max-width: 760px)");
 const S = {
   lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
-  opts: { routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
+  opts: { fill: true, routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
   player: null,        // MissionPlayer: checkpoints and live chain
   autoB: { armed: true, at: 0 },   // switch to the Prospector once after the Surveyor's find
 };
@@ -118,7 +118,8 @@ async function openRun(entry) {
   try { saved = localStorage.getItem("lantern.sensor") || "camera"; } catch (e) { /* private window */ }
   S.sensor = run.hasLidar && saved === "lidar" ? "lidar" : "camera";
   for (const b of document.querySelectorAll("[data-sensor]")) b.setAttribute("aria-selected", String(b.dataset.sensor === S.sensor));
-  world.setVisibility({ fill: true, tracks: S.opts.routes, truth: S.opts.truth });
+  world.setVisibility({ fill: S.opts.fill, tracks: S.opts.routes, truth: S.opts.truth });
+  $("vnote").hidden = !S.opts.fill;
   map.setRun(run);
   map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
   document.title = `Lantern Mission Control · ${log.label || entry.label}`;
@@ -596,10 +597,11 @@ function bind() {
     setTab(b.dataset.tab);
   }));
   $("collapse").onclick = () => $("panel").classList.toggle("closed");
-  for (const k of ["routes", "hazards", "nogo", "truth", "particles", "rims"]) {
+  for (const k of ["fill", "routes", "hazards", "nogo", "truth", "particles", "rims"]) {
     $("opt-" + k).onchange = (e) => {
       S.opts[k] = e.target.checked;
-      world.setVisibility({ fill: true, tracks: S.opts.routes, truth: S.opts.truth });
+      world.setVisibility({ fill: S.opts.fill, tracks: S.opts.routes, truth: S.opts.truth });
+  $("vnote").hidden = !S.opts.fill;
       map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
       render(true);
     };
@@ -627,6 +629,7 @@ function bind() {
     // 1 / 2 blow the rover camera or the satellite map up to the full window (again: back); L flips the lidar view.
     if (e.key === "1") { exitFocus(true); setCam(S.cam === "first" ? "third" : "first"); }
     if (e.key === "2") { exitFocus(true); setCam(S.cam === "overhead" ? "third" : "overhead"); }
+    if (e.key === "f" || e.key === "F") $("opt-fill").click();   // fill light on / off
     if (e.key === "l" || e.key === "L") $(`lid-seg`).querySelector(`[data-lk="${S.lidarKind === "top" ? "fp" : "top"}"]`)?.click();
   });
 }

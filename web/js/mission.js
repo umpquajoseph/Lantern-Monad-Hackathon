@@ -72,7 +72,7 @@ const S = {
   pauseAtT: 0,         // a checkpoint met during the drill pauses here, when the drill ends; 0 = none
 };
 let terrain, world, map, rigs = {}, ov, sci = [], drill = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
-let satObjs = [], tagEls = {}, extras = {}, dressed = {}, odo = {}, susp = {};
+let satObjs = [], extras = {}, dressed = {}, odo = {}, susp = {};
 // Rover camera, as sim/scene.py: 640x480, 60 deg wide, 15 deg down, 2.5 m up.
 const FP = { w: 640, h: 480, pitch: (15 * Math.PI) / 180, camH: 2.5, fx: 320 / Math.tan((30 * Math.PI) / 180) };
 const evidenceCache = new Map();
@@ -224,16 +224,15 @@ function missionScience(run) {
   return out;
 }
 
-// Each rover gets its own look and a name tag that also says what its
-// instrument is doing.
+// Each rover gets its own look. world.js pins a name tag 3.6 m above each
+// rover; in this close 3D view it floats loose from the rover, so it is taken
+// off here. The rover picker, the key and the status chip name the rovers.
 function dressRover(a) {
   const g = world.rovers[a].g;
-  g.traverse((o) => {
-    if (o.element && o.element.classList.contains("lbl3d")) {
-      o.element.innerHTML = `<span>${ROLE[a]} ${a}</span><em></em>`;
-      tagEls[a] = o.element.querySelector("em");
-    }
-  });
+  const tags = [];
+  g.traverse((o) => { if (o.element && o.element.classList.contains("lbl3d")) tags.push(o); });
+  for (const o of tags) { o.removeFromParent(); o.element.remove(); }
+  world.rovers[a].tag = null;
   const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.35 });
   const box = (m, cx, cy, cz, dx, dy, dz) => {
     const b = new THREE.Mesh(new THREE.BoxGeometry(dx, dy, dz), m);
@@ -976,9 +975,8 @@ function render(panels) {
       const busy = ev && !["idle", "done", "park"].includes(rig.phaseAt(t).name);
       rig.mount.visible = !!busy || (ev && rig.phaseAt(t).name === "done" && t < ev.t1 + 1);
     }
-    // Name tag: what the instrument is doing right now.
+    // What the instrument is doing right now lights its sensors.
     const txt = instrumentNow(a, t, ev);
-    if (tagEls[a] && tagEls[a].textContent !== txt) tagEls[a].textContent = txt;
     const ph = ev ? (phaseOf(ev, t) || {}).name : "idle";
     const on = txt === "neutron survey" || txt === "NEUTRON DWELL" || ph === "nir_scan";
     for (const m of (extras[a] || {}).sensors || []) m.material.emissive.setHex(on ? (a === "A" ? 0x33aa66 : 0x7744ff) : 0);

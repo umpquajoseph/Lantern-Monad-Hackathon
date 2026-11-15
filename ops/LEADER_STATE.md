@@ -211,3 +211,9 @@ Read mail, then `mv` it to `leader/archive/`.
   pushed). Brief docs/briefs/merge.md; handoff
   ops/mailboxes/merger/inbox/20261115-130601_leader_handoff.md. Joseph
   opens the `merger` session. Integrator keeps integrating into integration.
+- 13:08 Integrator had already merged locally: worktree
+  C:\Monad-Hackathon-checkpoint, branch checkpoint e4b2e83 (unpushed;
+  main, ritvik, step-1-chain, chain-feed, step-7-results, hosting, Calvin on
+  integration b21837c; designer held; forge not installed). Told merger to
+  start from it (fyi 130752). Joseph opened merger; address comes in its
+  first mail.

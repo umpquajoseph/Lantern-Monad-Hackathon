@@ -148,3 +148,7 @@ Read mail, then `mv` it to `leader/archive/`.
   tint instead of off. Open: phone scroll unproven on a real phone; faint
   dashed rectangle near A's find (viewer to trace). Run 1's banner still
   lists "route planner" as stand-in: old 1203 log, fixed at next rerun.
+- 12:49 Joseph: map header jitters during playback. Reproduced in browser:
+  camera panel 311/294 px because #fp-cap (main.js:281) adds the rim-count
+  sentence only on full frames with rims. Task to viewer (124835): per-step
+  text must never move layout; check by sampling header top each frame.

@@ -234,3 +234,8 @@ Read mail, then `mv` it to `leader/archive/`.
 - 13:11 Joseph: "just let me know when the merge is done and all open items
   from the md". Until then: handle worker mail quietly; next message to him
   = merge done + docs/TODO.md open items.
+- 13:15 Calvin 2e28d61: vision+lidar opt-in (--vision); default identical to
+  integration. Run 1 with --vision --sub-frame-m 0 --display detail passes,
+  confirmed: A err 1.18 m sigma 0.75; B 0.41 m sigma 0.72. Lidar hazards:
+  B drives 638 m vs 280 m, in-crater track B 38 m -> 4 m. Run 2 with vision
+  still running. Told merger to take it (conflicts run_demo.py, main.js).

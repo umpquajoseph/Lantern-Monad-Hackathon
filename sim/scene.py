@@ -120,6 +120,12 @@ NEAR_HALF_M = 42.0            # assumed: square half-width; past ~40 m a rim arc
 NEAR_RECENTER_M = 8.0         # assumed: rebuild when the rover is this far from the square's centre
 HORIZON_NEAR_M = 34.0         # assumed: horizon rays sample at HORIZON_DR_NEAR_M out to here (inside the square)
 HORIZON_DR_NEAR_M = 0.05      # assumed
+# Horizon spans either side of the heading. Ground in the camera's view lies
+# within +-28 deg of it (60 deg HFOV, 15 deg pitch, corners); the lamp's
+# 45 deg cone reaches ground a little wider. Outside a span a point counts as
+# unlit (lamp) or unseen (camera), which only happens out of view.
+CAMERA_HORIZON_HALF_DEG = 32.0
+LAMP_HORIZON_HALF_DEG = 55.0
 SHADOW_SELF_MARGIN_CAM_M = 0.03  # assumed: self-margin when the camera horizon also votes (no acne then)
 # Edge width when the camera votes. It must be well under the gap between the
 # lamp's and the camera's sight lines (0.2 m / range per metre behind a rim,
@@ -380,11 +386,13 @@ class _Horizon:
     Samples are HORIZON_DR_NEAR_M apart out to HORIZON_NEAR_M (where the
     5 cm near surface is), HORIZON_DR_M beyond."""
 
-    def __init__(self, surface, pos, heading):
+    def __init__(self, surface, pos, heading, half_deg=90.0):
         self.pos = np.asarray(pos, dtype=np.float64)
         self.heading = heading
-        self.daz = math.pi / (HORIZON_AZIMUTHS - 1)
-        az = heading - math.pi / 2 + self.daz * np.arange(HORIZON_AZIMUTHS)
+        self.daz = math.pi / (HORIZON_AZIMUTHS - 1)  # same angular spacing whatever the span
+        self.half = math.radians(half_deg)
+        n_az = int(math.ceil(2 * self.half / self.daz)) + 1
+        az = heading - self.half + self.daz * np.arange(n_az)
         self.n1 = int(round(HORIZON_NEAR_M / HORIZON_DR_NEAR_M))
         r1 = HORIZON_DR_NEAR_M * np.arange(1, self.n1 + 1)
         n2 = int(math.ceil((LAMP_FADE_END_M - HORIZON_NEAR_M) / HORIZON_DR_M)) + 2
@@ -406,7 +414,7 @@ class _Horizon:
         rho = np.hypot(d[..., 0], d[..., 1])
         a = np.arctan2(d[..., 1], d[..., 0]) - self.heading
         a = (a + math.pi) % (2 * math.pi) - math.pi
-        fa = (a + math.pi / 2) / self.daz
+        fa = (a + self.half) / self.daz
         # float64: in float32, R - 1.000001 rounds to R - 1 and the + 1 below overruns.
         fr = self._index(rho.astype(np.float64) - (SHADOW_SELF_MARGIN_M if margin is None else margin))
         fa = fa.astype(np.float64)
@@ -434,7 +442,7 @@ class _Lamp:
         p = math.radians(LAMP_PITCH_DEG)
         self.axis = np.array([math.cos(heading) * math.cos(p), math.sin(heading) * math.cos(p), -math.sin(p)])
         # Everything behind the lamp is outside the cone (pitch + outer angle < 90 deg).
-        self.hz = _Horizon(surface, pos, heading)
+        self.hz = _Horizon(surface, pos, heading, LAMP_HORIZON_HALF_DEG)
 
     def visibility(self, P):
         return self.hz.visibility(P)
@@ -821,7 +829,15 @@ class Scene:
             foot = z_eye[reach] * ray_len[reach] / fx / np.maximum(mu, 0.15)
             T = self._tile.sample(Pr[:, 0] + self.origin[0], Pr[:, 1] + self.origin[1], foot)
             alb = alb * T[:, 0]
-            N = _slope_normal(S[:, 1] + T[:, 1], S[:, 2] + T[:, 2]).astype(np.float32)
+            # Inside a near square built with the tile's relief, the slopes
+            # already hold it (to 5 cm); do not add it twice.
+            tx, ty = T[:, 1].copy(), T[:, 2].copy()
+            for ng in self.near.values():
+                if getattr(ng, "has_detail", False):
+                    m = ng.contains(Pr[:, 0], Pr[:, 1])
+                    tx[m] = 0.0
+                    ty[m] = 0.0
+            N = _slope_normal(S[:, 1] + tx, S[:, 2] + ty).astype(np.float32)
         else:
             N = _slope_normal(S[:, 1], S[:, 2]).astype(np.float32)
         # Normals come from the 5 cm surface and the detail tile, finer than the
@@ -982,7 +998,7 @@ class Scene:
         hz = self.cams.get(agency)
         if hz is None:
             C, *_ = self._camera_frame(agency)
-            hz = _Horizon(self.surface, C, self.poses[agency][2])
+            hz = _Horizon(self.surface, C, self.poses[agency][2], CAMERA_HORIZON_HALF_DEG)
             self.cams[agency] = hz
         return hz
 
@@ -999,9 +1015,18 @@ class Scene:
         n = int(round(2 * NEAR_HALF_M / NEAR_RES_M)) + 1
         x0 = lx - NEAR_HALF_M
         y0 = ly - NEAR_HALF_M
-        ph, pa = self.disp.patch(x0 + self.origin[0], y0 + self.origin[1], n, n, NEAR_RES_M, layers=self._mesh_layers)
+        # "full" also puts the detail tile's relief into the shadow surface: its
+        # bumps along a ridge cast the dashed lip lines terrain_look's 2 cm
+        # geometry shows. Its albedo stays per pixel, so it is divided out here.
+        detail = self.display == "full"
+        layers = self._mesh_layers + (("detail",) if detail else ())
+        ph, pa = self.disp.patch(x0 + self.origin[0], y0 + self.origin[1], n, n, NEAR_RES_M, layers=layers)
+        if detail:
+            X, Y = np.meshgrid(x0 + self.origin[0] + NEAR_RES_M * np.arange(n), y0 + self.origin[1] + NEAR_RES_M * np.arange(n))
+            pa = pa / (1.0 + self.disp.s * (self.disp._tile(self.disp.tile_a, X, Y) - 1.0))
         ng = _Grid(ph - np.float32(self.origin[2]), x0, y0, NEAR_RES_M)
         ng.alb = pa.astype(np.float32)
+        ng.has_detail = detail
         ng.cx, ng.cy = lx, ly
         self.near[agency] = ng
         self._set_surface()

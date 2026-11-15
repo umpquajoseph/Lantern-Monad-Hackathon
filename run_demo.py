@@ -199,7 +199,18 @@ def place_ice(scn, a_steps, x0, y0, rng):
     return IceField(deps)
 
 
-def render(scn, steps, terrain, run_dir, frame_every, display="full"):
+def _lerp_pose(p0, p1, f):
+    """Pose a fraction f of the way from p0 to p1, as the viewer interpolates (web/js/data.js poseAt)."""
+    dh = math.atan2(math.sin(p1[2] - p0[2]), math.cos(p1[2] - p0[2]))
+    return [p0[0] + (p1[0] - p0[0]) * f, p0[1] + (p1[1] - p0[1]) * f, p0[2] + dh * f]
+
+
+def render(scn, steps, terrain, run_dir, frame_every, display="full", sub_m=0.0):
+    """First-person frames: one per step (fp_frame), plus, with sub_m > 0 and
+    frame_every 1, extra frames every ~sub_m metres between a step and the
+    next (fp_sub: [[fraction, frame], ...], poses interpolated as the viewer
+    does). For a sub-frame only the camera's own rover moves; the other
+    rover stays at its step pose."""
     from sim.scene import Scene
     height, craters, x0, y0, cell = terrain
     scene = Scene(height, craters, x0, y0, cell, display=display)
@@ -228,6 +239,26 @@ def render(scn, steps, terrain, run_dir, frame_every, display="full"):
                 cv2.imwrite(str(run_dir / name), img[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
                 last[ag] = name
             r["fp_frame"] = last[ag]
+        if sub_m > 0 and frame_every == 1 and k + 1 < len(steps):
+            for ag, r in s["rovers"].items():
+                p0, p1 = r["true_pose"], steps[k + 1]["rovers"][ag]["true_pose"]
+                n = int(round(math.hypot(p1[0] - p0[0], p1[1] - p0[1]) / sub_m)) - 1
+                subs = []
+                for j in range(1, n + 1):
+                    f = j / (n + 1)
+                    pose = _lerp_pose(p0, p1, f)
+                    t0 = time.perf_counter()
+                    scene.set_rover(ag, pose)
+                    posed[ag] = pose
+                    img, _ = scene.first_person(ag)
+                    times.append(time.perf_counter() - t0)
+                    name = f"fp/{ag}_{k:04d}_{j}.jpg"
+                    cv2.imwrite(str(run_dir / name), img[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+                    subs.append([round(f, 4), name])
+                if subs:
+                    r["fp_sub"] = subs
+                    scene.set_rover(ag, p0)  # back to the step pose for the other rover's frames
+                    posed[ag] = p0
     return times
 
 
@@ -241,6 +272,8 @@ def main():
     ap.add_argument("--display", choices=("full", "detail", "off"), default="full",
                     help="first-person terrain display layer (sim/scene.py): full = rim lips and rocks, "
                          "detail = texture only (no made-up geometry), off = sim grid only")
+    ap.add_argument("--sub-frame-m", type=float, default=0.5,
+                    help="also render first-person frames every this many metres between steps (0: one per step)")
     args = ap.parse_args()
 
     t = time.perf_counter()
@@ -290,7 +323,7 @@ def main():
                     r["fp_frame"] = None
             rt = []
         else:
-            rt = render(scn, steps, terrain, run_dir, args.frame_every, args.display)
+            rt = render(scn, steps, terrain, run_dir, args.frame_every, args.display, args.sub_frame_m)
         log = {
             "run_id": run_id,
             "label": scn["label"],

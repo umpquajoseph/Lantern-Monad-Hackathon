@@ -118,6 +118,10 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
   `final_finds`, `truth.ice_units`, `truth.find_threshold_wt`; per rover
   `mode`, `ice_reading`, `est_error`, `distance`. `index.json` in
   `data/runs/` lists the runs.
+- `standins` lists only parts that are stand-ins for something still to be
+  built. A real part gets its own top-level string naming what it is: `nav`
+  (the particle filter) and `planner` (A* under the 15 deg slope limit, 2 m
+  baseline, 0.25 m grid). The viewer shows those as real.
 - `truth` is what the rovers cannot know: the hidden ice map. The viewer may
   show it only as a labelled reveal ("hidden truth"), never as something a
   rover saw. Ice is under the surface, so it is never drawn as visible

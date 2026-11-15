@@ -368,3 +368,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:34 integrator: nav 6846caf merged, head 9a590ca (viewer 94e4623 also in). Scene told to re-render mission from 9a590ca (poses must match 2fad40b).
 - 14:35 Ritvik: 1 unmerged commit (14:06, Mission Control: rovers on ground, crater rings, plain Surveyor camera); conflicts in web/js/mission.js with viewer's frost/lidar/A-B. Viewer told to merge it, Ritvik's structure + viewer features on top. Scene re-rendering mission from 9a590ca, ETA 14:42.
 - 14:36 viewer a0fbffe: Ritvik c6575e5 merged (his structure, plain Surveyor camera kept; frost, lidar inset, A/B intact); Surveyor on ground at T+0; integrator asked. Viewer back on lidar toggle.
+- 14:37 integrator: freeze candidate 2cf100e (all workers + main, viewer a0fbffe). Told: merge joseph (keep joseph's TODO.md, vision-sync.md); after freeze allow viewer lidar toggle and scene 9a590ca render copy.

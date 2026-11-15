@@ -50,7 +50,7 @@ const MODE_SHORT = { local: "Local chain", monad: "Monad testnet", offline: "Off
 const STAGE_N = { None: 0, Candidate: 1, SurveyorInspected: 2, ProspectorAnalyzed: 3 };
 const SITE_COLOR = { Candidate: 0x9aa7b8, Positive: ICE_HEX, Negative: 0x8d939b, Inconclusive: 0xd9b44a, Analyzed: 0x58b4ff };
 const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop (Ritvik's short stops)
-const FOCUS_WALL_S = 12;   // assumed: a mission stop (160-270 s of sim time) plays in about this many real seconds
+const FOCUS_WALL_S = 3;    // asked for: every stop about 3 s in all; a mission stop (135-270 s of sim time) plays in this many real seconds
 const FOCUS_LEAD_S = 3;    // the close-up starts this many sim seconds before the stop
 const FOCUS_TAIL_S = 3;    // and holds this long after it
 const NARROW = matchMedia("(max-width: 760px)");
@@ -144,7 +144,14 @@ async function openRun(entry) {
     pause: (tt) => { S.holdUntil = 0; S.playing = false; S.t = tt; setPlayIcon(); },
     resume: () => { S.holdUntil = 0; S.playing = true; setPlayIcon(); },
     // A checkpoint: stop the clock here for `sec` of wall time, still "playing", then go on.
-    hold: (tt, sec) => { S.t = tt; S.holdUntil = performance.now() + sec * 1000; S.holdSec = sec; },
+    hold: (tt, sec) => {
+      S.t = tt;
+      // A checkpoint inside a science stop: the stop's own short playback is the
+      // hold, so no freeze on top. The card shows until the stop ends.
+      const ev = sci.find((e) => tt >= e.t0 - FOCUS_LEAD_S && tt <= e.t1 + FOCUS_TAIL_S);
+      if (ev && S.focus) { S.holdUntil = 0; S.cardUntilT = ev.t1 + FOCUS_TAIL_S; return; }
+      S.cardUntilT = 0; S.holdUntil = performance.now() + sec * 1000; S.holdSec = sec;
+    },
     note: (html) => {
       const b = $("checkpoint");
       b.hidden = !html;
@@ -826,6 +833,7 @@ function loop(now) {
   last = now;
   const prevT = S.t;
   if (S.holdUntil && now >= S.holdUntil) { S.holdUntil = 0; $("checkpoint").hidden = true; }
+  if (S.cardUntilT && S.t > S.cardUntilT) { S.cardUntilT = 0; $("checkpoint").hidden = true; }
   if (S.playing && S.run && !S.holdUntil) {
     let adv = dt * (S.focusEv ? focusSpeed(S.focusEv) : S.speed);
     if (S.focus && !S.focusEv) {

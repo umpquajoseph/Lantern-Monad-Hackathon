@@ -228,3 +228,6 @@ Read mail, then `mv` it to `leader/archive/`.
   default, fails run 1, main.js conflict) out of checkpoint; agreed.
   vision-sync.md updated: merge checkpoint, keep stand-in default until run
   1 passes. Designer 861bb11 merged into checkpoint clean.
+- 13:11 designer: No-go on by default; faint graded tint at Site zoom,
+  hatch zoomed in (f0e16a2, viewer fd8d9ff, ac82ce2); step-5-design
+  f2fdda3. Looked at the run 2 shot: hillshade reads, no flood. Accepted.

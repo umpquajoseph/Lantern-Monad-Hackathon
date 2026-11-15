@@ -134,3 +134,9 @@ Read mail, then `mv` it to `leader/archive/`.
 - 12:37 terrain fyi: answer key follows scene's 15/32 cone (7763856, merged
   up to integration f13b9ef). Lips give 29-37% of rim shadow; recommends
   detail frames for vision still. Handoffs numbers updated.
+- 12:41 Branch check. Calvin: nothing since abb65cc (vision not pushed).
+  Ritvik efbb4b4 (12:35): second contract LunarDiscoveryRegistry (registry/,
+  20 forge tests), Surveyor/Prospector roles, sim/mission.py uses ParticleNav,
+  separate web/mission.html "Mission Control". No keys; touches no shared
+  file (app.js, index.html, rover, nav, scene, run_demo, app.py). Parked:
+  chain is off, and it is a second contract and a second dashboard.

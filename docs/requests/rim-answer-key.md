@@ -44,7 +44,7 @@ the rim of every mapped crater near the rover.
 | `near` | (N,) bool | on the front half arc (nearest the camera) |
 | `in_view` | (N,) bool | 3-15 m from the rover and within the 60 deg view: the same limits as `rims_standin` |
 | `visible` | (N,) bool | in view and not hidden by nearer ground, by the frame's depth buffer |
-| `shadow` | (N,) bool | visible, and the scene's own lamp-shadow test finds ground 5-50 cm beyond the crest in shadow: the dark line itself |
+| `shadow` | (N,) bool | visible, inside the lamp cone (cone factor >= 0.10, scene's 15/32 deg), and the scene's own lamp-shadow test finds ground 5-50 cm beyond the crest in shadow: the dark line itself |
 | `rims` | (M, 2) | visible front-arc points: a perfect detector's output, in the handoff format |
 | `rims_crater_id` | (M,) | crater per row of `rims` |
 

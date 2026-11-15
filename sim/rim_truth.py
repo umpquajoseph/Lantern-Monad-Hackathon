@@ -39,7 +39,7 @@ VIS_TOL_M = 0.15             # assumed: a rim point is visible if the depth buff
 VIS_TOL_FRAC = 0.02          #   its range minus (VIS_TOL_M + VIS_TOL_FRAC * range)
 VIS_WIN_PX = 1               # assumed: visibility uses the farthest depth in a (2k+1)^2 window, so a
                              #   crest on a silhouette edge is not lost to the pixel just in front of it
-MIN_CONE = 0.25             # assumed: lamp cone factor at the crest below which no shadow line shows
+MIN_CONE = 0.10             # assumed: lamp cone factor at the crest below which no shadow line shows
 SHADOW_PROBE_M = (0.05, 0.10, 0.20, 0.35, 0.50)  # assumed: ground this far beyond the crest is
                              #   tested for lamp shadow; a hit marks the rim point shadow-casting
 

@@ -335,3 +335,9 @@ kbd { font: 500 12px var(--mono); background: rgba(255,255,255,.08); border: 1px
 .topline .story { max-width: 620px; }
 .panel.closed ~ .topline { left: 80px; }
 @media (max-width: 760px) { .topline { left: var(--gut); right: var(--gut); } }
+/* Checkpoint hold: a bar that empties over the hold, then the replay goes on */
+.cp-float { position: fixed; overflow: hidden; }
+.cp-float.holding { cursor: pointer; }
+.cp-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: #d9b44a; transform-origin: left; animation: cpbar linear forwards; }
+.cp-float:not(.holding) .cp-bar { display: none; }
+@keyframes cpbar { from { transform: scaleX(1); } to { transform: scaleX(0); } }

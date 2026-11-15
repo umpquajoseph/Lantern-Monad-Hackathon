@@ -16,6 +16,11 @@
 // loop, player.rewound(t) on any backward jump, player.restart() at t = 0.
 import { LiveChain } from "./live_chain.js";
 
+// Wall-clock seconds a checkpoint holds the replay before it plays on by itself
+// (asked for: "shorten down the checkpoint stops to 3 seconds and make it not
+// require me to unpause it"). Live chain posts still wait for their transaction.
+export const CHECKPOINT_HOLD_S = 3;
+
 export class MissionPlayer {
   constructor(run, hooks) {
     this.run = run;
@@ -51,6 +56,7 @@ export class MissionPlayer {
 
   /** Arm the checkpoints after t again (a backward jump); live posts only re-arm from the start. */
   rewound(t) {
+    this.holdToken = null;   // a pending auto-resume belongs to the old position
     const k = this.run.stepAt(t);
     for (const c of this.checkpoints) if (c.step > k) this.armed.add(c.id);
     if (t <= 0.5) this.restart();
@@ -77,8 +83,18 @@ export class MissionPlayer {
       if (this.armed.has(c.id) && c.step > k0 && c.step <= k1) {
         this.armed.delete(c.id);
         this.active = c;
-        this.hooks.pause(this.run.times[c.step]);
-        this.hooks.note(`<span class="cp-tag">Checkpoint</span> <b>${esc(c.label)}</b> · ${esc(c.say)} <span class="cp-hint">Play to go on.</span>`);
+        const at = this.run.times[c.step];
+        if (this.hooks.hold) {
+          // The page holds the clock CHECKPOINT_HOLD_S of wall time, then plays on by itself.
+          this.hooks.hold(at, CHECKPOINT_HOLD_S);
+        } else {
+          // Pages without a hold hook (classic main.js): pause, then resume after the hold
+          // unless the viewer moved the clock or a newer hold replaced this one.
+          this.hooks.pause(at);
+          const token = (this.holdToken = {});
+          setTimeout(() => { if (this.holdToken === token && !this.busy) { this.holdToken = null; this.hooks.resume(); } }, CHECKPOINT_HOLD_S * 1000);
+        }
+        this.hooks.note(`<span class="cp-tag">Checkpoint</span> <b>${esc(c.label)}</b> · ${esc(c.say)}`);
         return true;
       }
     }

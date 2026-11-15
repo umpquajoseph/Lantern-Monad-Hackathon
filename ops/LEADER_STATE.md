@@ -358,3 +358,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:22 scene: final mission render on 2fad40b started 14:22:30, ETA 14:30.
 - 14:25 nav ba9b549: --vision default for run_demo (--standin-rims). Harness: mission no-go 0.0/0.0; run1 confirmed; run2 disputed. Integrator to merge. Nav last task: score final mission rims with rim_truth, then stop.
 - 14:26 integrator: ba9b549 merged as 004146c; no-render unchanged. Side effect: app.py --fresh now reruns with vision (slower).
+- 14:30 Merged integration 004146c into joseph (d059edd), kept joseph TODO.md and vision-sync.md. Key grep hits: data hashes, deploy tx, anvil public dev keys (safe). Scene: final mission render 2fad40b done 14:29 (sigma 0.56, confirmed, lidar frames right). Joseph: caption under rover camera flashes (main.js:398-401 !sub gating) -> viewer; lidar toggle top-down / first person -> nav writes lidar_fp_frame, viewer builds toggle, scene re-renders.

@@ -1,0 +1,1195 @@
+arXiv:2405.01673v3 [cs.RO] 14 Sep 2024            Received XX Month, XXXX; revised XX Month, XXXX; accepted XX Month, XXXX; Date of publication XX Month, XXXX; date of
+                                                                                                                 current version XX Month, XXXX.
+
+                                                                                                                    Digital Object Identifier 10.1109/XXXX.2022.1234567
+
+                                                     ShadowNav: Autonomous Global
+                                                   Localization for Lunar Navigation in
+
+                                                                      Darkness
+
+                                                            Deegan Atha1, R. Michael Swan1, Abhishek Cauligi1, Anne Bettens1,2,
+                                                                   Edwin Goh1, Dima Kogan1, Larry Matthies1, Masahiro Ono1
+
+                                                             1Jet Propulsion Laboratory (JPL), California Institute of Technology (Caltech), Pasadena, CA, United States of America
+                                                                                                      2University of Sydney, Camperdown NSW 2050, Australia
+
+                                                                                           Corresponding author: Deegan Atha (email: deegan.j.atha@jpl.nasa.gov).
+                                                     The research was carried out at the Jet Propulsion Laboratory, California Institute of Technology, under a contract with the National
+
+                                                                                                     Aeronautics and Space Administration (80NM0018D0004).
+
+                                                  ABSTRACT The ability to determine the position of a rover in an inertial frame autonomously is a
+                                                  crucial capability necessary for the next generation of surface rover missions on other planetary bodies.
+                                                  Currently, most on-going rover missions utilize ground-in-the-loop interventions to manually correct for
+                                                  drift in the position estimate and this human supervision bottlenecks the distance over which rovers can
+                                                  operate autonomously and carry out scientific measurements. In this paper, we present ShadowNav, an
+                                                  autonomous approach for global 2D localization on the Moon with an emphasis on driving in darkness
+                                                  and at nighttime. Our approach uses the leading edge of Lunar craters as landmarks and a particle filtering
+                                                  approach to associate detected craters with known ones on an offboard map. We discuss the key design
+                                                  decisions in developing the ShadowNav framework for use with a Lunar rover concept equipped with a
+                                                  stereo camera and an external illumination source. Finally, we demonstrate the efficacy of our proposed
+                                                  approach in both a Lunar simulation environment and on data collected during a field test at Cinder Lakes,
+                                                  Arizona.
+
+                                                  INDEX TERMS computer vision, extreme environments, GPS-denied operation, localization, perception
+
+                                        I. INTRODUCTION                                                      2) The mission will require onboard autonomy for the ma-
+                                                                                                                 jority of its operations, while the ground only handles
+                                        S PACE missions that require long-range autonomous                       contingencies.
+                                             driving on the surface of planetary bodies have gained
+                                        significant interest lately especially for the Lunar surface. For    3) Global localization is necessary to maintain an error of
+                                        example, in the latest Decadal Survey [1], the Endurance-                <10 m relative to orbital maps.
+                                        A Lunar rover was recommended to be implemented as a
+                                        strategic class mission as the highest priority of the Lunar          This level of autonomy and drive distance would be an
+                                        Discovery and Exploration Program. This mission proposal           order of magnitude larger than any previous surface mission
+                                        calls for a 2000 km traverse in the South Pole-Aitken (SPA)        on a planetary body. For example, as the current state-of-
+                                        Basin to collect 100 kg of samples for delivery to Artemis         the-art in beyond Earth surface autonomy, Mars 2020 has
+                                        astronauts. This mission concept study [2] identifies several      driven 11.6 km autonomously over the course of a year
+                                        key capabilities required to complete this mission:                and a half and the longest individual autonomous drive was
+                                                                                                           approximately 700 m [3]. A key bottleneck that limits longer
+                                          1) Endurance will need to drive 70% of its total distance        autonomous drives is the problem of absolute localization
+                                              during the night to enable daytime hours dedicated to        which is determining the position and orientation of the
+                                              science and sampling.                                        vehicle in an inertial frame. Without a reliable means of
+                                                                                                           accomplishing localization autonomously, the vehicle must
+                                                                                                           stop and wait for ground-in-the-loop operators to manually
+
+                                                  This work is licensed under a Creative Commons Attribution 4.0 License. For more information, see https://creativecommons.org/licenses/by/4.0/
+
+                                        VOLUME ,                                                                                                                                                  1
+Atha et al.:
+
+   Planned                                                        night limits what can be used as a landmark and the range
+   path                                                           at which the landmarks can be observed.
+
+              (a)  (b)                                               To address this challenge of degraded perception condi-
+                                                                  tions, recent mission concepts have proposed equipping rover
+FIGURE 1: The ShadowNav concept relies on using crater            systems with a stereo camera and an illumination source
+rims as landmarks. As the rover begins driving (a), its uncer-    for driving at night and PSRs [2, 11, 12]. In this work we
+tainty in the global frame increases and must be corrected.       propose an autonomous global 2D localization technique
+By equipping the Lunar rover with a stereo camera and an          that uses a stereo camera with an external illumination
+external illumination source, the leading edges of detected       source to detect crater rims in darkness for use in such
+craters (shown in green) are used to associate the crater         mission architectures. Global localization is accomplished
+with known ones from an offline map and decrease the              by matching and scoring the detected crater rims against
+pose uncertainty. As the rover continues to drive, (b) this       known craters from an orbital image using our novel Q-
+process repeats intermittently to be able to continue mission     Score metric. A particle filter is used to estimate the absolute
+operations.                                                       position amongst the uncertainty and nonlinearity of crater
+                                                                  rim matches and corresponding Q-Scores.
+perform absolute localization. In the case of surface rovers
+used on planetary bodies, existing relatively localization           Summary of Contributions: A preliminary version of
+methods experience approximately 2% drift and this lim-           our proposed approach was presented in [13]. In this revised
+its autonomous driving to approximately 500 m before a            and extended version, we provide the following additional
+manual absolute localization is triggered once the error          contributions:
+exceeds 10 m [4, 5].
+                                                                    1) Refinement of detection algorithm to utilize contour
+   Currently however, the entirety of the Lunar surface does            detection to remove false positives.
+not have continuous communication with Earth. Planning for
+a rover to wait until communications with the ground station        2) Use of intermittent localization wherein only specific
+is possible will severely slow down the traverse rate. The              landmark craters are used and other craters that may
+lack of frequent absolute localization for the rover would              appear along a trajectory are ignored.
+lead to errors greater than the maximum 10 m localization
+error of Endurance-A, which could present significant risks         3) Expanded evaluation of perception within simulation
+to the mission. For proposed missions such as Endurance-                including evaluating (a) impact of Gaussian noise and
+A, the requirement to drive longer distances on the order               (b) hardware impacts such as camera height above
+of several kilometers a day necessitates the development                ground.
+of an autonomous and performant technique for absolute
+localization onboard the vehicle without ground-in-the-loop         4) Evaluation of optimal trajectories to view a landmark
+intervention.                                                           for absolution localization within a simulated Lunar
+                                                                        environment.
+   In this work, we draw inspiration from recent techniques
+that have made use of craters as landmarks for performing           5) Collection of data and evaluation of both perception and
+absolute localization on the Moon during daytime driving [6,            absolute localization performance on analogue Lunar
+7]. For Lunar rover missions, craters have the potential to             data collected at Cinder Lakes Apollo Training Area
+serve as landmarks as the average distance between craters              over the course of three New Moon nights. A sample
+of 10 m in diameter is 100 m on terrain with relatively                 of this setup is in Figure 3.
+fresh craters and 10 m on terrain with old craters [8].
+Further, the Lunar Reconnaissance Orbiter Camera (LROC)              Organization: We begin in Section II by reviewing prior
+provides digital elevation models (DEMs) with a resolution        work on global localization for surface rover missions and
+between 0.5 m-5 m per pixel [9] and there are some DEMs           the underlying techniques necessary for detecting craters as
+within Permanently Shadowed Regions (PSRs) [10]. How-             landmarks. In Section III, we present our proposed architec-
+ever, unlike the daytime driving case, the lack of natural light  ture on using stereo cameras to detect the leading edges of
+available when driving within a PSR or during the Lunar           craters and the particle filter in which these craters are used
+                                                                  as landmarks for global localization. Section IV presents the
+                                                                  datasets used in our work, including (1) a photorealistic
+                                                                  simulation environment used to generate synthetic stereo
+                                                                  camera data and (2) nighttime datasets collected during
+                                                                  field tests conducted in Cinder Lakes, Arizona. Next, Sec-
+                                                                  tion V provides numerical results using these aforementioned
+                                                                  datasets to validate the efficacy of our proposed approach.
+                                                                  Finally, we conclude in Section VI and present directions of
+                                                                  future work.
+
+                                                                  II. RELATED WORK
+
+                                                                  Existing Mars rover missions provide the benchmark for
+                                                                  state-of-the-art in autonomous surface rover capabilities.
+
+2                                                                 VOLUME ,
+Visual odometry used on-board these Mars rovers for rel-           demonstrated promise in using deep learning for crater
+ative localization accrues approximately 2-3% error [14].          detection using stereo.
+Although the state-of-practice for Mars rover global local-
+ization entailed manual ground-in-the-loop interventions to           Crater detection is a crucial aspect of Lunar navigation
+correct this error, recent work has proposed an autonomous         and for using craters as landmarks for accurate absolute
+global localization framework for the Mars Perserverance           localization. Various methodologies have been explored to
+rover [15, 16]. However, this framework does not account for       achieve accurate crater detection in challenging Lunar envi-
+the statistical uncertainty associated with on-board camera        ronments. Studies such as Lunarnet [26] have used convolu-
+measurements and is used only for daytime operations. For          tional neural networks (CNNs) to detect craters from orbital
+the proposed Endurance-A mission [2], the mission concept-         images captured by instruments on-board, e.g., the LROC[9]
+of-operations (ConOps) requires that the rover maintain            spacecraft. Lunarnet aimed to determine spacecraft pose by
+position knowledge in the inertial frame with less than 10 m       analyzing crater patterns, although challenges such as false
+error and be capable of performing during daytime and              positives and sensitivity to sunlight were encountered. Other
+nightime driving cases. Under the assumption of 2% relative        algorithmic approaches have also been investigated. In a
+localization error, the Endurance-A mission then expects           comparison of crater-detection algorithms, [27] evaluated
+to perform an absolute localization update approximately           six different methods based on criteria such as detection
+every 300 m.                                                       rates, false detection, accuracy, robustness, and run-time.
+                                                                   These methods include edge detection, identifying bright or
+   In this work, we develop a framework that relies on craters     shaded portions of a crater, template matching, and super-
+as landmarks to determine absolute position. We assume that        vised learning-based techniques. Despite their merits, these
+absolute orientation is obtained through the use of a star         algorithms often struggle with complex scenes, overlapping
+tracker, which is part of the Endurance sensor suite [2], and      craters, and lighting conditions. Additionally, works such
+prior work [17] has demonstrated that heading can be deter-        as DeepMoon [28] employ elevation maps generated from
+mined within 0.02° accuracy using a star tracker. However,         radar or lidar data for crater detection. Template matching,
+a star tracker alone does not suffice for estimating absolute      as seen in PyCDA [29], offers an open-source solution
+position as past work has reported up to 800 m of error [17].      for automated crater detection using CNNs and per-pixel
+Prior work by [8] has estimated the frequency of craters of        likelihood estimation. While these methods have contributed
+size 10 m to be every 100 m, which allows for craters to           to advancements in crater detection, challenges remain in
+be encountered frequently enough for a global localization         extending capabilities to nighttime or shadowed operations
+update to be performed at the required intervals of 300 m          and improving accuracy in diverse Lunar terrains.
+for Endurance-A. Moreover, we build upon prior work that
+has demonstrated the efficacy of using craters as landmarks           There have been several proposed methods to perform an
+for use in daytime Lunar driving [6]. Other features for           absolute localization update. In [30], the authors propose a
+landmarks have been proposed for use on planetary surfaces.        localization procedure that matches an observed rover image
+These include skyline features such as mountains and the           with an orbital map. However, this results in a deterministic
+use of topographic maps [18, 19, 20] and matching surface          estimate of the robot belief since it neglects the rover
+maps created from lidar with orbital elevation maps [21].          motion model. Prior works have also proposed the use of
+However, while skyline features are promising for use with         Lunar satellites to provide inertial position updates for Lunar
+daylight, detecting accurate skyline features in darkness is       rovers [31, 32, 33], but current orbiters do not provide this
+challenging. Although matching surface maps to 3D orbital          capability and a crater-based localization approach would
+maps is a promising approach, prior works have relied on           still fill in temporal gaps between such orbiter updates. [34]
+the use of lidar which is not used within this work.               presents a purely data driven model using a CNN trained on
+                                                                   synthetic data to match the rover observations with orbital
+   To detect craters as landmarks in this work, we utilize         imagery. Similar to our approach, [35] presents a particle
+stereo cameras as the primary sensor. Stereo cameras have          filtering technique which uses a Siamese neural network
+been one of the primary perception technologies for rover          to compare rover monocular camera imagery with orbital
+navigation on planetary bodies, most notably the Mars rover        imagery to assign each particle a likelihood weight. The
+missions, and are included as one of the primary perception        authors in [7] propose a similar approach for Lunar abso-
+sensors in proposed Lunar missions [2, 11]. Although lidar         lute localization known as LunarNav. However, LunarNav
+has been extensively studied and proposed for upcoming             focuses on the daytime localization problem and therefore
+mission concepts [22, 23], this technology has not flown on a      considers different methods of crater matching that rely on
+prior NASA mission and we limit our attention to the use of        greater knowledge of the surface geometry than available in
+stereo cameras due to their flight heritage. In addition to clas-  the nighttime case.
+sical methods for crater detection, recent approaches such
+as Semi-Global Block Matching (SGBM) [24] and Domain-                 A crucial component of localization in a Lunar envi-
+Invariant Stereo Matching Networks (DSMNets) [25] have             ronment is the problem of crater matching. For instance,
+                                                                   LunarNav [7] introduces a novel approach that leverages
+                                                                   crater matching for absolute localization for daytime Lunar
+
+VOLUME ,                                                           3
+Atha et al.:
+
+                                                                                                                  Orbital Map with Position
+                                                                                                                   Known Craters Estimate
+
+                                       Stereo                       Crater Rim Detection                          Particle Filter             Position
+                                                                                                                                             Estimate
+   Image      Enhancements  Stereo             Stereo  Disparities  Discontinuity  Contour Detection  Crater Rim  Transform Rim to
+   Pairs          (CLAHE)   Filtering          (SGBM)  & Ranges       Detection         + Filtering   Detections         Orbital               Position
+                                                                                                                                             Uncertainty
+                                                                                                                   Q-Score Crater
+                                                                                                                       Matching
+
+                                                                                                                  Estimate Position
+
+FIGURE 2: The four key components of the ShadowNav algorithmic pipeline are illustrated here. The system entails
+enhancing the image and then performing stereo and then a crater rim detection. This crater rim detection is then used as
+an input sample to a particle filter to perform absolute localization.
+
+driving using particle filtering and parametric matching using      based upon the NAVCAM cameras from the Perseverance
+an on-board lidar. Notably, the authors in [28] and [36] use        rover [37]. Lidar could potentially replace or augment the
+neural networks to match craters, however these require a           stereo cameras, but is not the focus of this work as lidar
+well labelled library to be known in advance for template           is not a part of the mission concepts for which we are
+matching.                                                           focused on and further lacks flight heritage. With regards to
+                                                                    available computational capabilities, we baseline the use of a
+III. APPROACH                                                       Snapdragon processor due to its inclusion on missions such
+                                                                    as the Ingenuity helicopter [38] and the upcoming CADRE
+ In this section, we present our technical approach for             Lunar rover mission [39].
+performing absolute localization on the Lunar surface with
+the use of onboard illumination sources. As shown in Fig-           B. Image Enhancement
+ure 2, the four key components of the ShadowNav global
+localization pipeline include: (1) image enhancement, (2)           The first step in our system is to utilize Contrast Limited
+stereo, (3) crater rim detection and refinement, and (4) the        Adaptive Histogram Equalization (CLAHE) [40] to enhance
+use of crater matching within a particle filter.                    the raw images. In this work, we consider a single light
+                                                                    source with consistent illumination provided across the field
+A. Assumptions                                                      of light. Therefore, there is a significant decrease in pixel
+                                                                    intensity values captured by a camera as the range of the
+The methodology proposed in this work contains a few                physical region being imaged increases. Since CLAHE is
+important assumptions primarily based on the Endurance              adaptive, it equalizes the image within sub-regions, produc-
+concept [2] and some consideration for other mission con-           ing a more consistent image brightness to use as input to
+cepts for with driving in Lunar darkness [11, 12]. As the           stereo algorithms. A potential downside of CLAHE is that it
+Endurance concept baselines the use of a star tracker and           can magnify noise within the image which is explored within
+past work [17] has shown that star trackers provide a               this work.
+highly accurate estimate of orientation for planetary surface
+rovers, we focus our approach on 2D position localization           C. Stereo
+within an orbital map. We also assume that stereo cameras
+are the primary perception sensor and camera heights are            The second step within our system is to compute stereo.
+assumed to fall in the range of proposed mast heights among         This is accomplished using mrcal [41] and SGBM [24].
+the mission concepts 1.5 -2.5 m. As each mission concept            The disparity and range maps produced provide the input
+focused on the nighttime driving case has called for, we            for crater detection algorithms. An additional cleanup step
+baseline the use of an external illumination source provided        is used after stereo is computed to handle noisy disparity
+by assuming the use of a headlight placed near the stereo           measurements in the far range.
+cameras. Lighting power is not specifically detailed, but the
+Endurance concept proposes the use of a "high-intensity                Stereo Refinement: It is assumed that the as the range
+LED". Therefore, a high-intensity LED was used for exper-           of terrain increases, the corresponding pixels will be closer
+imental data collection. The stereo camera specifications are       to the top of an image. Therefore, to filter the far range
+                                                                    noisy stereo measurements, the average range for all image
+
+4                                                                                                                                            VOLUME ,
+Algorithm 1 Q-Score Computation                                                        Algorithm 2 ShadowNav Particle Filtering Algorithm
+
+Require: Belief bit, set of crater observations {z0t,rover, ..., zm t ,rover}, set of  Require: Initial belief distribution (µ0, 0), number of particles Ns,
+      ground truth craters {c0t ,world, ..., ct,world}, positive value 
+                                                                                             number of effective particles threshold Neff,thresh
+  1: Qinc                                                                                1: {b10, ..., b0Ns }  sample beliefs(µ0, 0)
+                                                                                         2: {w10, ..., wN0 s }  {1, ..., 1}
+2: for i = 1, . . . , m do                                                               3: t  1
+
+3: z0t,world  rover to world(z0t,rover)                                                  4: while particle filter running do
+4: dcr  min cj,world - z0t,world
+                                                                                         5: {z0t , ..., zm t }  get observations()
+5: Qinc  Qinc + dcr                                                                      6: {q1t , ..., qNt s }  {0, ..., 0}
+                                                                                         7: for i = 1, ..., Ns do
+6: end for                                                                               8: bit  propagate sample(bti-1)
+                                                                                         9: qit  log Q score(bti, {z0t , ..., zm t })
+7: Qscore  min    1,  (  1  Qinc )-1                                                   10: end for
+                         m
+                                                                                       11: qmt in  min(q1t , ..., qNt s )
+8: return Qscore                                                                       12: for i = 1, ..., Ns do
+                                                                                       13: wit  wit-1 + qit - qmt in
+rows are first computed. Next, these average row values                                14: end for
+are searched starting at ranges beyond a parameter (20 m
+in this work). During this search, if the range decreases                              15: Neff  compute Neff(w1t , ..., wNt s )
+for a parameterized number of rows consistently, then all                              16: if Neff  Neff,thresh then
+computed stereo values after this peak are removed.                                    17: {bt1, ..., bNt s }  resample beliefs({bit}Ni=s1, {wit}Ni=s1)
+                                                                                       18: {w1t , ..., wNt s }  {1, ..., 1}
+D. Crater Leading Edge Detection                                                       19: end if
+
+After stereo is computed, this output is used to perform crater                        20: t  t + 1
+
+leading edge detection in two steps. The first is to detect                            21: end while
+
+discontinuities within the disparity and range images and
+
+the second is to connect these discontinuity locations into a
+
+single rim via a contour detection.
+
+Discontinuity Detection: To perform the discontinuity
+
+detection, vertical columns within the disparity image are                             Algorithm 3 Systematic Resampling
+
+searched from bottom to top with holes removed from the                                Require: Particles {bt1, ..., bNt s } and associated weights {w1t , ..., wNt s }
+
+search. Along the search if both a disparity discontinuity                             1: nt = log        Ns     exp(bti )
+                                                                                                          i=1
+and range discontinuity are larger than set thresholds, then
+                                                                                       2: {w~0t , ..., w~Nt s }  {0, ..., 0}
+the pixel at the start of the discontinuity is marked within a
+
+mask.                                                                                  3: for i = 1, ..., Ns do
+
+Contour Detection and Refinement: Once the discontinu-                                 4: w~it  exp(wit - nt)
+
+ity detection is complete, the detected mask image is dilated                          5: end for
+
+and then eroded to connect potentially noisy detections.                               6: {q0, ..., qNs }  cum sum({w~0t , ..., w~Nt s })
+                                                                                       7: n  0
+Next, a contour detection algorithm is run over the mask to
+
+connect marked pixels. These contours are then filtered by                             8: m  0
+
+both number of pixels and estimated length. The length of the                          9:   u0     U(0,    1  )
+                                                                                                          Ns
+
+contour is estimated by taking the average range value of all                          10: while n  Ns do
+
+pixels in a contour and computing the width via Equation (1):                          11:  u   =  u0  +   n
+                                                                                                          Ns
+
+                                Wpx  Rm ,                                              12: while qm  u do
+                                   lfocal
+                         Wm  =             (1)                                         13: m  m + 1
+
+where Wm is the width of the crater rim in meters, Rm the                              14: end while
+
+average range to each pixel in meters, and lfocal if the focal                         15: n  n + 1
+
+length of the camera.                                                                  16: btn  bm t
+                                                                                       17: end while
+
+                                                                                       18: return {bt0, ..., btNs }
+
+E. Absolute Localization via Particle Filter                                           step. Finally, we present our approach for a filtering system
+                                                                                       using a particle filter.
+   Here, we provide an overview of the proposed ShadowNav
+particle filtering approach used to handle measurement un-
+certainties stemming from stereo and disparity computation
+errors. First, we provide details on the motion model used
+for our system and the use orbital data as landmarks. Next,
+we describe our Q-Score metric used in the belief update
+
+VOLUME ,                                                                                                                                                                 5
+Atha et al.:
+
+1) Motion Model                                                     used as ground truth as our detection algorithm only attempts
+                                                                    to detect the front half.
+We estimate the belief b associated with the 2D position of
+                                                                    3) Q-Score
+the rover,
+                                                                    In each iteration of the particle filter, we compute what
+                         b = (x, y),           (2)                  is known as the Q-Score, the probabilistic weight that
+                                                                    some position belief corresponds to the true rover position.
+where x and y are the two-dimensional position coordinates          Algorithm 1 outlines the procedure for computing the Q-
+of the rover. To simulate the estimated position of a Lunar         Score and the inputs necessary for the Q-Score computation
+rover, we assume a simplified motion model,                         are the belief bti, a set of m observed edges in rover frame,
+                                                                    and a set of  ground truth crater observations to associate
+              bk+1 =  xk + sk+1,x + wk,x    ,  (3)                  these measurements with (Line 1). The initial value Qinc is
+                      yk + sk+1,y + wk,y                            set to some negligibly small, positive value  to later avoid
+                                                                    divide-by-zero issues (Line 1) and is updated based on the
+where sk+1 is the translation step computed from relative           distance between the observed edge and its associated ground
+localization and wk is an additive noise term. In this work         truth observation (Line 4-5). The Q-Score is computed as
+we simulate the translation step estimate using                     the reciprocal of Qinc and a min operation is applied to
+                                                                    normalize the value between 0 and 1 (Line 7). We note
+                 sk+1 =  sk +1,x + rk,x  ,     (4)                  that the min operation is applied based on the orbital DEM
+                         sk+1,y + rk,x                              resolution in order to have the same Q-Score assigned for
+                                                                    any observations and belief pairs that are less than or equal
+where sk +1 is the ground truth translation step and rk is          1 m away from ground truth.
+a bias term. The rk term is used with sk +1 to produce an
+estimate with error to simulate relative localization drift. rk is  4) Filtering System
+a random vector sampled from a Gaussian distribution based
+                                                                    In this work, we use a particle filter as our localization back
+on an error rate p of sk+1. The mean of this distribution is,       end to update the 2D position estimate. The use of a particle
+                                                                    filter was motivated by the need to be resilient to crater mea-
+                 µk =    dxp|sk+1|    ,        (5)                  surement errors. [42] demonstrated that particle filters can be
+                         dy p|sk+1 |                                useful for a wide range of challenging localization scenarios
+                                                                    and compared against a Kalman filter, can approximate a
+where d^ = (dx, dy) is a unit direction vector that is              large range of probability distributions. The ability for the
+randomly sampled from a uniform distribution of all possible        localization to recover from poor solutions was a salient con-
+directions. The covariance k of the distribution is                 cern for the nighttime driving case for which the likelihood
+                                                                    of e.g. missed crater observations or incorrect associations
+                 k = diag  |µk,x|     .        (6)                  between detected craters and craters in the landmark database
+                           |µk,y |                                  is assumed to be higher. Moreover, the particle filter can
+                                                                    accommodate the nonlinear motion model and process noise
+The d^ unit direction vector is selected at the start of a          from (3). Algorithm 2 provides the full outline for the
+                                                                    ShadowNav particle filtering algorithm. The algorithm takes
+replay of a trajectory. Therefore, over the course of many          as input a Gaussian belief distribution (µ0, 0) assumed for
+                                                                    the initial robot position, the number of particles Ns to use
+Monte Carlo runs, the bias will be added in many different          in the particle filter, and a threshold for the effective number
+                                                                    of beliefs Neff,thresh used to trigger resampling (Line 2). The
+directions to test against drift in all directions. The wk noise    filter is initialized with Ns particles drawn from the initial
+term models position uncertainty and should be based on the         belief distribution and each assigned equal weight (Lines 1-
+                                                                    2). Given a new set of crater observations (Line 5), a set
+actual uncertainty of a relative localization approach. In this     of Q-Score measurements is initialized for computing for
+                                                                    each individual particle (Line 6). After applying the motion
+work, wk is a randomly sampled vector about a Gaussian              model update to each particle (Line 8), the Q-Score for each
+distribution with zero mean and a standard deviation based          updated particle is computed using the procedure from Alg. 1
+                                                                    by comparing against the current measurements (Line 9). As
+p.                                                                  is standard in many particle filtering implementations [43],
+                                                                    we note that the particle weights are updated in the in log-
+2) Orbital Crater Ground Truth
+
+In this work, we consider only specific ground truth craters
+which require a planned trajectory to drive towards. To this
+end, only the specific landmark craters to be used for global
+localization are labeled. When the estimated particle filter
+position was not within 20 m of the ground truth rim, the
+particle filter was not run and the position was propagated
+by a simulated noisy relative localization estimate update
+specified in Section 1. Further, only the front half of a
+crater is used as ground truth. However, since the landmark
+crater can be approached from any angle, the entire crater
+rim is labeled and the front half of the rim is determined
+dynamically based on the heading of camera at a specific
+time. Because using the entire crater rim for matching could
+lead to false positives, only the front edge of the crater is
+
+6                                                                   VOLUME ,
+domain (Line 13) with a normalization step to ensure non-
+
+negative weights (Line 11). Next, the number of effective
+
+samples Neff at the current iteration is calculated (Line 15).
+If Neff is below the threshold Neff,thresh, then this is seen
+
+as an indication of particle filter "degeneracy", wherein the
+weights {wit} collapse around a handful of particles. In
+such a case, a new set of particles are resampled using the
+
+systematic resampling scheme (Line 17).
+
+Algorithm 3 provides an outline of the systematic resam-
+
+pling scheme used in this work. Given a set of particles and
+
+their associated weights, the weights are first normalized
+
+to (0, 1] from log-domain (Lines 1-4) and the cumulative         FIGURE 3: Image of the data collection rig capturing an
+sum of these normalized weights w~it computed (Line 6).          image of a crater at Cinder Lakes Apollo Training Area.
+The systematic resampling procedure then samples a random
+                                                                 This texture is a natural noise and simulates surface texture
+value u0 from a uniform distribution inversely proportional      features for stereo algorithms to utilize.
+
+to Ns (Line 9) and this ensures that at least one particle
+
+is retained from  each   1  interval  from the previous  belief
+                        Ns
+
+distribution.
+
+IV. DATA COLLECTION                                              1) Simulated Dataset
+
+ In this section, we present details on the datasets gener-      For simulation, we developed two datasets - one with the aim
+ated to validate the efficacy of the proposed ShadowNav          of testing the efficacy of our crater matching algorithm and
+approach. We first review the simulation environment used        a second dataset for testing the overall global localization
+to generated photorealistic stereo data and then review the      pipeline. The crater matching dataset was created by select-
+configuration used to collect nighttime field testing data from  ing four craters of diameters between 5 m and 20 m from
+Cinder Lakes, Arizona.                                           the orbital data. The simulator was run to generate stereo
+                                                                 pairs every 1 m at four angles around the crater (0, 90,
+A. Simulation                                                    180, and 270) and at ranges between 5 m-25 m. Additional
+                                                                 datasets were created to test sensitivity to the parameters of
+We developed a simulation environment using the Blender          the hardware configuration:
+software, which has become a popular software frame-
+work for generating photorealistic images in a Lunar                · Camera heights of 1.5 m, 2.5 m, and 3 m off the ground
+environment[13, 44]. Within this simulation, the Hapke              · Light offsets of 0.2 m below the camera, inline with the
+lighting model [45, 46, 47] was implemented to approximate
+the Lunar surface reflectance. This model will simulate the            camera and 0.2 m above the camera
+"opposition effect" which leads to a focused point of extreme       · Light power ranging from low, medium and high 1
+saturation at a location within an image where the camera
+ray and light source are at zero phase angle. We implemented        The second dataset generated was for localization across
+the Hapke lighting model using "old highland" parameters         three different locations in the South Pole region of the
+of the Moon provided in [48]. For our use case, the coherent     Moon. Additionally at each location, three different types
+backscattering opposition effect (CBOE) was left out of our      of trajectories were generated:
+implementation and only the shadow hiding opposition effect
+(SHOE) was implemented as it dominates most or all lighting         · A straight line trajectory
+calculations.                                                       · A half survey where 180 degrees of the ground truth
+
+   To obtain a realistic 3D model of the surface geome-                crater is observed
+try, DEMs produced from LROC are utilized. LROC resolu-             · A full survey where 360 degrees of the ground truth
+tion is typically between 2 m-5 m which allows for resolving
+craters of approximately 10 m. However, the LROC resolu-               crater is observed
+tion is insufficient for generating smooth surface imagery
+within simulation. Therefore, the DEMs from LROC are                These trajectories ranged in length from 536 m to 840 m
+scaled down to be 0.25 m resolution before being loaded          and contained two ground truth crater landmarks. An ad-
+into Blender. Crater measurements for simulated data in          ditional trajectory was created in a different region where
+future discussions are based on this scaled resolution. This     the trajectory path in one direction was 1058 m and its
+scaled DEM is imported into Blender and a surface texture        reverse 1211 m. The trajectory contained three ground truth
+comprised of two scales of fractal Brownian motion is added.     crater landmarks and a top down view of this ground truth
+                                                                 trajectory is in Figure 4.
+
+                                                                    1As Blender does not accurately model exposure times, the set of "light
+
+                                                                 power" Blender parameters is used to change the brightness of rendered
+
+                                                                 images.
+
+VOLUME ,                                                         7
+Atha et al.:
+
+                                                                     the stereo cameras. There was an inertial navigation system
+                                                                     (INS) attached to the stereo cameras to provide ground truth
+                                                                     position and orientation.
+
+                                                                        For the data collection, we performed two types of collec-
+                                                                     tions. The first type was geared toward perception tests. This
+                                                                     involved moving the data collection rig from approximately
+                                                                     20 m away to 5 m from the leading crater edge with stops
+                                                                     for long exposures roughly every 1 m. The second type
+                                                                     was geared toward localization tests. This entailed moving
+                                                                     the data collection rig through the crater field with stops
+                                                                     for long exposure approximately every 5 m-10 m. During
+                                                                     these stops the rig was directed toward large craters if any
+                                                                     were present. In total, in this work, 12 craters ranging from
+                                                                     5 m-25 m in diameter and three trajectories were collected.
+                                                                     The three different trajectories are displayed in Figure 5
+                                                                     which shows the GPS path within Google Earth satellite
+                                                                     imagery. Of these, two trajectories were captured in the
+                                                                     south site and one in the north site. In order to evaluate
+                                                                     longer distances between craters, some experiments added
+                                                                     drift error as if more distance had been traveled by artificially
+                                                                     adding trajectory locations outside of the crater field at the
+                                                                     start of a trajectory.
+
+FIGURE 4: A 1000 m+ simulated trajectory overlaid onto               V. RESULTS
+a simulated orbital map of the Lunar South Pole Region.
+The map contains ground truth landmark craters marked with           In this section we detail the results of stereo, crater detection
+white circles.                                                       and matching, and absolute localization performance of our
+                                                                     system.
+B. Cinder Lakes Apollo Training Area
+                                                                     A. Stereo
+We collected datasets from Cinder Lakes near Flagstaff,
+Arizona. This field test site was chosen as a Lunar analogue         Accurate stereo is required to be able to effectively detect
+site as a realistic crater distribution of appropriate crater sizes  and match crater rims within our approach. For detection,
+was constructed during the Apollo era at two different sites:        outliers in range values or stereo holes could lead to crater
+                                                                     rim false positives. Furthermore, inaccurate stereo ranges
+  1) The south site is 500 ft-by-500 ft in area and is well          could lead to poor projections into the orbital map which
+      preserved as it is protected from motorized vehicles,          could cause correctly identified crater rims in image-space to
+      but it does have areas of vegetation growth.                   match poorly to orbital landmark craters. To evaluate stereo
+                                                                     performance, we created a simulated dataset of craters with
+  2) The north site is 1200'-by-1200' and has almost no              ground truth ranges which was detailed in Section A.
+      vegetation, but it is more heavily eroded due to being
+      within an off-highway vehicle area.                               To evaluate stereo performance, three metrics based
+                                                                     on [49] binned across ground truth range values are used.
+   Our datasets were collected during a New Moon, and                These metrics are:
+given that Cinder Lakes is located outside of the dark sky
+town of Flagstaff, Arizona, the conditions allowed for an              1) The percent of pixels with a stereo hole where the
+environment with minimal ambient light similar to what                     corresponding ground truth pixel has a value within a
+would be encountered in dark Lunar environments. We used                   specified range.
+a data collection rig consisting of a stereo camera with a
+0.26 m baseline, 5,120-by-3,840 pixel resolution, and 60               2) The percent detected pixels where a corresponding
+horizontal field-of-view as shown in Figure 3. Additionally                ground truth pixel has a value within a specified range
+a 50 W, 5000 lm LED flood light was placed below the                       that is not a hole but has a detected range whose error
+camera, with the light area ranging from 0.1 m-0.2 m below                 relative to ground truth value is greater than a threshold.
+
+                                                                       3) The "root-mean-squared"s (RMSs) range error for all
+                                                                           detected pixels that are not a hole and have a corre-
+                                                                           sponding ground truth pixel within a specified range.
+
+                                                                     We note that a crucial difference between the metrics used
+                                                                     in [49] is that range is used rather than disparity as range is
+                                                                     what ultimately has the impact on crater matching.
+
+8                                                                    VOLUME ,
+          (a)  (b)                                                                                (c)
+
+FIGURE 5: Three trajectories collected in the Cinder Lakes Apollo training area. (a) and (b) were collected in the better
+preserved South site and (c) was collected in the North site which is part of an off-highway vehicle (OHV) area.
+
+   To validate the impact of hardware system parameters          Additional simulated data was collected to evaluate stereo
+such as light location, camera height, and light power, these
+parameters were swept and stereo performance evaluated.          and positional errors as detailed in Section A. We use the
+Light power is used as a proxy for exposure time and light
+brightness as these are not modelled well in Blender. High       percent of the ground truth front rim detected as a metric to
+light power corresponds to the near range of the image being
+fully exposed (pixel value of 255). A zero-mean 1.2 pixel        evaluate detection performance:
+intensity sigma Gaussian noise was added to all images to
+provide additional realism for nighttime imagery. The results    %rimdet  =  pxgtmatched                100  (7)
+of this analysis are in Table 1. In these results, we observe                  pxgt
+that the optimal configuration for stereo is with a 2.5 m
+camera off ground, light offset 0.2 m below the camera, and      ,where pxgtmatched is the number of ground truth crater points
+high light power. Medium light power at a camera height of       in world frame that have a detection that is closest to that
+2.5 m, wherein the near range is bright but few pixels are
+fully exposed, demonstrates improved performance within          ground truth point and pxgt is the total number of all ground
+30 m but at the slight cost of performance beyond 30 m.          truth points. This detection does not consider false positives.
+Moreover, although this configuration has robustness to cam-
+era height ranges, we observe that a camera height of 1.5 m      To evaluate crater matching performance, we use the Q-
+performs slightly worse than at 2.5 m and this is attributed to
+cameras closer to the ground losing vertical resolution with     Score metric detailed in Section 3 to evaluate how closely a
+range. Finally, a key takeaway is that placing the camera
+inline with the camera significantly degrades performance        perception sample aligns to orbital ground truth considering
+and placing the light above the camera renders extremely
+poor performance . We found that placing the light below         both true detections and false positives.
+the camera minimizes the worst impacts of the opposition
+effect and provides some shadowing on the surface for more       SGBM stereo and discontinuity detection were run across
+visible features.
+                                                                 the Cinder Lakes crater dataset to evaluate crater detection
+B. Crater Detection and Matching
+                                                                 and matching performance. Figure 6 shows the results with
+To evaluate crater detection and matching, we used the
+real data collected at Cinder Lakes detailed in Section B.       respect to percent of front rim detected and Q-Scores versus
+
+                                                                 range and crater diameter. From these results, we observe
+
+                                                                 that nearly all craters have some level of detection between
+
+                                                                 5 m-15 m. However, at 15 m the 7 m-crater is no longer
+
+                                                                 detected. Furthermore, the 25 m has worse results across
+
+                                                                 most of the set of camera distances from the crater rim. The
+
+                                                                 reduction in performance for smaller and larger craters is
+
+                                                                 expected with our current approach. A larger crater diameter
+
+                                                                 requires stereo to obtain matches at farther ranges to observe
+
+                                                                 the leading and trailing edge of a discontinuity. A smaller
+
+                                                                 crater diameter limits the size of a discontinuity, which in
+
+                                                                 turns limits the ability to detect it with few false positives.
+
+                                                                 Overall, we observe robust filter performance, with most
+
+                                                                 samples containing a Q-Score of 0.4 or better which means
+
+VOLUME ,                                                                                                     9
+Atha et al.:
+
+TABLE 1: Stereo performance evaluation using 4 different simulated crater samples across different parameters. "Height"
+is camera height above ground and "Offset" is the light offset relative to cameras. All metrics utilize range output from
+stereo. %hole is percentage of pixels that are holes where there is ground truth. %err is the percentage that have a range
+estimate greater than a threshold. RMS is the root-mean-square error in meters of reported range values. Using high or
+medium power light with a 1.5 m-2.5 m camera height from ground is capable of computing stereo at ranges to 40 m as
+long as the light source is offset below the camera.
+
+Algo.           Height  Offset            Light                                        0-10m Range                                   10-20m Range                     20-30m Range                                                      30-40m Range
+SGBM             (m)     (m)              Power                                              %err RMS                                      %err RMS                         %err RMS                                                          %err RMS
+SGBM              2.5    -0.2              high
+SGBM              2.5    -0.2              med                                   %hole >0.5m (m)                                %hole >1m (m)                    %hole >2m (m)                                                     %hole >3m (m)
+SGBM              2.5    -0.2                                                     6.82 1.27 0.28                                11.94 18.06 1.02                 34.67 20.85 1.47                                                  82.84 8.90 1.47
+SGBM              2.5    0.0               low                                    3.68 1.07 0.28                                11.76 15.34 0.77                 38.64 20.30 1.37                                                  85.22 14.93 1.74
+SGBM              2.5    0.2               med                                    4.04 0.96 0.28                                23.99 16.79 0.64                 73.98 25.77 1.57                                                  98.05 45.26 3.75
+                  1.5    -0.2              med                                   11.38 2.54 0.36                                31.60 18.60 0.98                 55.52 18.08 1.29                                                  89.84 11.48 1.51
+                                           med                                   74.13 16.50 1.34                               60.97 25.64 1.45                 69.53 17.81 1.28                                                  93.26 11.96 1.53
+                                                                                  6.71 1.58 0.22                                27.53 24.94 1.15                 50.30 21.78 1.48                                                  88.38 21.51 2.34
+
+                 Q Score vs. Dist to Rim  25.0                               Percent  GT Rim  Detected vs.  Dist  to Rim  25.0                       1.0 Q Score vs. Dist to Rim                                               1P0e0rcent GT Rim Detected vs. Dist to Rim 20
+
+         1.0                              22.5                               100                                          22.5                                                        20
+
+         0.8                              20.0 Crater Diam [m]               80                                           20.0                       0.8                              18    Crater Diam [m]                    80                            18
+                                                    Percent GT Rim Detected                                                                                                                           Percent GT Rim Detected
+Q Score  0.6                              17.5                               60                                           17.5 Crater Diam [m]       0.6                              16                                       60                            16    Crater Diam [m]
+                                                                                                                                            Q Score                                   14                                                                     14
+         0.4                              15.0                               40                                           15.0
+                                                                                                                          12.5
+                                          12.5                                                                                                       0.4                              12                                       40                            12
+
+         0.2                              10.0                               20                                           10.0                       0.2                              10                                       20                            10
+                                                                                                                                                                                      8                                                                      8
+         0.0                              7.5                                0                                            7.5
+             5                                                                                                                                       0.0 5                            25 6                                     05                            25 6
+                1D0istance t1o5Rim (m)20                                         5    1D0istance t1o5Rim (m)20                                              1D0istance1t5o Rim (m2)0                                               1D0istance1t5o Rim (m2)0
+
+                (a)                                                                           (b)                                                           (a)                                                                    (b)
+
+FIGURE 6: Cinder Lakes crater detection and matching                                                                                                 1.0 Q Score vs. Dist to Rim      20                                       1P0e0rcent GT Rim Detected vs. Dist to Rim 20
+results using SGBM and discontinuity detection. (a) Q-
+Scores. (b) Percent front arc of ground truth crater detected.                                                                                       0.8                              18    Crater Diam [m]                    80                            18
+The majority of Q-Scores for all but the smallest of <7.5 m                                                                                                                                           Percent GT Rim Detected
+(purple) and the largest >20 m (yellow) have Q-Scores above                                                                     Q Score              0.6                              16                                       60                            16    Crater Diam [m]
+a target of 0.4 within 20 meters. Nearly all of the crater                                                                                                                            14                                                                     14
+rims are detected at some percentage within 15 m and to
+20 m for craters that are larger than 7.5 m and smaller than                                                                                         0.4                              12                                       40                            12
+20 m in diameter. Overall craters of diameters between 7.5 m
+and 20 m can be detected reliably with potential for lower                                                                                           0.2                              10                                       20                            10
+accuracy at increased range.                                                                                                                                                          8                                                                      8
+
+                                                                                                                                                     0.0 5  1D0istance1t5o Rim (m2)0  25 6                                     05  1D0istance1t5o Rim (m2)0  25 6
+
+                                                                                                                                                            (c)                                                                    (d)
+
+that the average pixel detection is within 2 m of the crater                                                                    FIGURE 7: Crater detection and matching results with an
+rim and indicates low false positives and high accuracy.                                                                        without Gaussian noise added to simulated images on data
+                                                                                                                                with a camera height of 2.5m a light offset of 20cm below
+   To further evaluate crater detection, simulated data is eval-                                                                camera and high exposure. For images with noise added, 0
+uated first by comparing crater rim detection and matching                                                                      mean and 1.2 pixel intensity sigma were used. (a) Q-Score
+with and without Gaussian noise added. Figure 7 contains                                                                        no noise (b) Percent detected no noise (c) Q-Score 1.2 sigma
+the results of comparing noise free versus images with zero                                                                     noise (d) Percent detected 1.2 sigma noise. The Q-Score
+mean, 1.2 sigma pixel intensity Gaussian noise added. From                                                                      and percentages of crater rim detected results share similar
+these results, it is observed that the addition of noise has                                                                    patterns with and without noise added to the simulated
+minimal impact on the performance of crater detection.                                                                          images highlighting the robustness of the detection approach
+Compared with the Cinder Lakes results, however, detection                                                                      to potential noise present in real imagery.
+performance was a bit worse at both close to 5 m to the crater
+and beyond 15 m from crater rim though overall similar.                                                                         simulated craters with diameters between 7.5 -20 m Q-Score
+The larger difference in performance is observed in the Q-                                                                      results are near or above 0.4 within 15 m. Potential sources of
+Score results where there is a more significant decrease                                                                        the performance difference between real and simulated data
+in performance beyond 15 m. However, for both real and                                                                          include the simulation containing images with a wider field-
+                                                                                                                                of-view, a 2.5 m camera height compared to 1.5 m camera
+                                                                                                                                height for Cinder Lakes data, and the inherent simulation
+
+10                                                                                                                                                                                                                                                           VOLUME ,
+          (a)  (b)  (c)  (d)
+
+          (e)  (f)  (g)  (h)
+
+          (i)  (j)  (k)  (l)
+
+          (m)  (n)  (o)  (p)
+
+          (q)  (r)  (s)  (t)
+
+          (u)  (v)  (w)  (x)
+
+FIGURE 8: Samples of three main perception components. In the left column is the raw image. The left-middle column is
+the enhanced image with a green line to mark rim detections. The right-middle column is a colorized stereo range image.
+The right column is the crater rim detection mask. The top three samples are from Cinder Lakes and the bottom three
+samples are from the Lunar simulator. In samples that include noisy stereo at range (o & w), washed out near-range pixels
+(e), cluttered rims (b), and varying sizes and surface textures the approach is able to find the crater rim.
+
+VOLUME ,                      11
+Atha et al.:
+
+         1.0 Q Score vs. Dist to Rim      20                                       1P0e0rcent GT Rim Detected vs. Dist to Rim 20        approaching a crater, there is an expected error in absolute
+                                                                                                                                        position due to the drift of relative localization. To evaluate
+         0.8                              18    Crater Diam [m]                    80                            18                     how these positional errors affect detection performance,
+                                                          Percent GT Rim Detected                                                       data was rendered with a positional offset from the position
+Q Score  0.6                              16                                       60                            16    Crater Diam [m]  from which the ideal heading was computed. This data is
+                                          14                                                                     14                     described in more detail in Section A. Using this data, Figure
+                                                                                                                                        9 shows the results of computing the Q-Scores and percents
+         0.4                              12                                       40                            12                     of crater rims detected with a 5 m and 10 m horizontal shift.
+                                                                                                                                        Only horizontal errors are plotted because forward/backward
+         0.2                              10                                       20                            10                     errors are captured as a shift along the x-axis in Figure
+                                          8                                                                      8                      7. From Figure 9, we observe that a 5 m horizontal offset
+                                                                                                                                        contains some reduction in crater matching performance but
+         0.0 5  1D0istance1to5 Rim (m2)0  25 6                                     05  1D0istance1to5 Rim (m2)0  25 6                   percent of crater rim detected maintains similar performance
+                                                                                                                                        without a position offset. However, the performance of
+                (a)                                                                    (b)                                              crater matching and detection degrades at less than 10 m
+                                                                                                                                        range due to the crater not being captured within the field-
+         1.0 Q Score vs. Dist to Rim      20                                       1P0e0rcent GT Rim Detected vs. Dist to Rim 20        of-view of the camera. Crater matching performance still
+                                                                                                                                        degrades around 15 m, but the degradation is similar to the
+         0.8                              18    Crater Diam [m]                    80                            18                     results without a positional offset. Overall crater detection
+                                                          Percent GT Rim Detected                                                       and matching demonstrates strong performance within the
+Q Score  0.6                              16                                       60                            16    Crater Diam [m]  5 m-15 m range with potential for performance out to 20 m
+                                          14                                                                     14                     detection range.
+
+         0.4                              12                                       40                            12                        Through these experiments, reliable crater rim detection
+                                                                                                                                        can be performed across a varying set of hardware speci-
+         0.2                              10                                       20                            10                     fications and positional uncertainty. Using a camera 1.5 m
+                                          8                                                                      8                      above the ground camera versus a camera 2.5 m above
+                                                                                                                                        ground has some impacts at the extremes of the range to
+         0.0 5  1D0istance1t5o Rim (m2)0  25 6                                     05  1D0istance1t5o Rim (m2)0  25 6                   craters 5 m and 20 m, but are both feasible especially while
+                                                                                                                                        focusing on ranges to crater rims within the extremes. Within
+                (c)                                                                    (d)                                              simulation, stereo and crater rim detection were robust to a
+                                                                                                                                        couple of different lighting conditions and this is supported
+FIGURE 9: Crater detection and matching results with posi-                                                                              by additional experimentation on two different real locations,
+tional error on simulated data with a camera height of 2.5m a                                                                           each containing different surface reflectance properties and
+light offset of 20cm below camera, high brightness, and 1.2                                                                             therefore different pixel exposure values. Existing stereo
+pixel intensity sigma Gaussian noise to image (a) Q-Score                                                                               baselines used by Mars 2020 and proposed by the Endurance
+5m error (b) Percent detected 5m error (c) Q-Score 10m                                                                                  concept are shown to be feasible. This baseline is not shown
+error (d) Percent detected 10m error. Crater performance                                                                                to be a requirement though. Multiple camera field-of-views
+with 5 m offset is similar to that demonstrated previously                                                                              are used between simulation and real. While there is some
+in Figure 6 and 7. With 10 m offset though, the approach                                                                                risk for increased false positives with a wider field-of-view,
+begins to degrade in the near-range. Fortunately, performance                                                                           it was not shown to be a limiting factor. We determine a
+is maintained at ranges greater than 10 m from the crater rim.                                                                          critical specification to place lighting source offset below a
+                                                                                                                                        camera to minimize the impacts of the opposition effect.
+versus real differences in lighting, camera exposure han-
+dling, and surface textures. Using the higher camera height                                                                             C. Absolute Localization
+within simulation could reduce the discontinuity distance and
+explain the performance difference within 7 m to the front                                                                              Instantaneous perception measurements demonstrated strong
+of the crater rim. The larger field-of-view camera within                                                                               performance in the previous section, but also presented
+simulation would allow for more potential false positives                                                                               some issues. Through the use of a particle filter approach
+to be captured as evidenced by strong crater rim percent                                                                                outlined in Section E, multiple perception measurements can
+detection but degraded Q-Scores at 15 m-20 m ranges to                                                                                  be fused overtime to correct absolute position after it has
+crater rims.                                                                                                                            drifted. Both simulation and Cinder Lakes data is used to
+                                                                                                                                        evaluate the performance of the absolute 2D localization.
+   Figure 8 shows qualitative samples of both Cinder Lakes                                                                              For these experiments a star tracker is not available and we
+and simulated data images, stereo, and detections at 12 m                                                                               use an analogue means to find orientation. For simulation,
+from crater rims. We see from these samples that the simu-                                                                              the ground truth orientation is used. For the data collected
+lated images have noisier stereo. Further, there are holes in
+the stereo images and especially at ranges greater than 15 m.
+Such stereo holes could lead to false positives and Such
+stereo holes could lead to false positives and noisy stereo
+could potentially yield noisier edge detections. Finally, both
+Cinder Lakes and simulated imagery results in high-quality
+rim detections.
+
+   One of the limitations of the above analysis is that
+all of the craters were mostly centered within the image
+frame. This centering will only be possible with both an
+accurate orientation and position knowledge, However, upon
+
+12                                                                                                                                      VOLUME ,
+TABLE 2: Localization results for all simulated trajectories with 2% added error using SGBM and discontinuity detection
+for perception. Localization accuracy is optimal when a half survey around the landmark crater occurs. A full survey can
+be performed but is likely unnecessary. Driving with a straight trajectory past the crater has significantly higher risk of
+failing to localize with 5 m than a half or full survey.
+
+      Trajectory                                  Distance (m)                              Num Landmarks                                 Avg error (m)  Stdev error (m)          Max error (m)                                                                                     > 5m error
+  straight crater15                                    558                                           2                                          6.36           2.16                    11.63                                                                                            0.77
+half survey crater15                                   617                                           2                                          3.75           1.28                     5.40                                                                                            0.13
+full survey crater15                                   759                                           2                                          5.18           0.84                     6.78                                                                                            0.67
+                                                       665                                           2                                          4.81           2.56                     9.01                                                                                            0.50
+    straight NtoS                                      714                                           2                                          2.12           1.16                     5.95                                                                                            0.07
+ half survey NtoS                                      840                                           2                                          2.08           0.97                     4.22                                                                                            0.00
+  full survey NtoS                                     536                                           2                                          7.65           2.63                    11.29                                                                                            0.70
+                                                       591                                           2                                          4.16           2.06                     9.07                                                                                            0.30
+    straight StoN                                      726                                           2                                          3.10           2.58                    10.39                                                                                            0.13
+ half survey StoN                                     1058                                           3                                          2.84           1.28                     5.59                                                                                            0.10
+  full survey StoN                                    1211                                           3                                          4.34           2.02                     8.84                                                                                            0.33
+
+       traj 1km
+    traj 1km rev
+
+25 Final Error Histogram with 2% Added Error  25 Final Error Histogram with 2% Added Error  25 Final Error Histogram with 2% Added Error  25 Final Error Histogram with 1% Added Error 25 Final Error Histogram with 2% Added Error  25 Final Error Histogram with 3% Added Error
+
+20                                            20                                            20                                            20                                  20                                                                                               20
+
+15                                            15                                            15                                            15                                  15                                                     15
+
+Count
+                                                   Count
+                                                                                                       Count
+                                                                                                                                                                    Count
+                                                                                                                                                                                                                      Count
+                                                                                                                                                                                                                                                                          Count
+10                                            10                                            10                                            10                                  10                                                                                               10
+
+5                                             5                                             5                                             5                                   5                                                                                                  5
+
+00  2 F4inal GT6Error [m8] 10 12              00 2 4Final 6GT Err8or [m]10 12 14            00  2 F4inal GT6Error [m8] 10 12              00 2 4Final 6GT Err8or [m]10 12 14  00 2 4Final 6GT Err8or [m]10 12 14                                                                 00 2 4Final 6GT Err8or [m]10 12 14
+
+          (a)                                     (b)                                           (c)                                           (a)                                 (b)                                                                                               (c)
+
+FIGURE 10: Simulation absolute localization histogram                                                                                     FIGURE 11: Simulation absolute localization histogram re-
+results with 2% error added for different trajectories near                                                                               sults for the half survey trajectories. (a) 1% error added (b)
+landmarks. (a) Straight trajectory (b) Survey half of crater                                                                              2% error added (c) 3% error added. With error rates of 2% or
+rim (c) Survey full crater rim. Performing a half survey leads                                                                            less added to position along a trajectory, the approach is able
+to final errors of less than 5 m in most cases and is centered                                                                            to localize in nearly all samples to less than 5 m. However,
+around 2 -3 m error. Driving a straight trajectory past the                                                                               with more than 2% error, the approach has risk to diverge.
+crater demonstrates significant risk to fail to localize to less
+than 5 m error.
+
+at Cinder Lakes, the orientation is obtained from the INS                                                                                 with a 2% error growth and Figure 10 is a histogram of
+system mounted to the camera.                                                                                                             final absolute errors of three different trajectories. For each
+                                                                                                                                          trajectory, we performed Monte Carlo runs of 30 different
+1) Simulation                                                                                                                             tests and each test having a 2% relative localization error.
+                                                                                                                                          From these results, we observe that the half survey and
+First, evaluation is performed using data from simulation                                                                                 the full survey approaches perform better than the straight
+to determine the best trajectory to observe a landmark                                                                                    trajectory, which is expected. However, performing a full
+crater. This was accomplished by designing three types of                                                                                 survey versus half survey does not provide additional benefit.
+trajectories around the same landmarks. The first trajectory                                                                              The full survey does have some trajectories that perform
+type was a straight trajectory which stops every 10 m and                                                                                 better but in other trajectories it actually performs worse.
+travels directly past the crater with the nearest approach                                                                                Therefore, we believe that performing a half survey provides
+approximately 10 m from the rim. The second trajectory type                                                                               enough positional variance to constrain the localization.
+was a half survey, which was designed so that observation
+positions occur 180 degrees around the crater with each                                                                                      Next, varying error rates were observed within the simu-
+observation point approximately 7 m-13 m from the crater                                                                                  lated half survey trajectories. Figure 11 shows the results of
+rim. The third trajectory type was similar to half survey                                                                                 experiments for 1%, 2%, and 3% added error. We observed
+but had observation points a full 360 degrees around the                                                                                  that for 1% and 2% added error the localization is strong.
+crater. Table 2 contains the results for all trajectory types                                                                             However, with 3% added error, there are seven samples
+                                                                                                                                          that violate the requirement of remaining below 10 m error.
+                                                                                                                                          This reduction in performance is expected though as the
+                                                                                                                                          performance is designed to recover from up to 10 m error.
+
+VOLUME ,                                                                                                                                                                                                                                                                                                             13
+Atha et al.:
+
+TABLE 3: Localization results for all Cinder Lakes trajectories with 2% added error using SGBM and discontinuity detection
+for perception. Error metrics are the absolute error at the final position of the trajectory. In all but one trajectory the rate
+of the final positional error averages less than 5 m and a max error less than 9 m. The longest trajectory does diverge in
+some cases which degrades the average error performance. However, the approach still localizes within 5 m in 60% of the
+samples of this trajectory.
+
+            Trajectory        Distance (m)  Num Landmarks          Avg error (m)  Stdev error (m)                            Max error (m)                                      > 5m error
+           south NtoS              280               1                   2.62           0.99                                       4.86                                             0.00
+            south vA               568               2                   1.89           0.90                                       3.82                                             0.00
+          south vA rev             568               2                   3.86           1.66                                       7.57                                             0.27
+        south vA 5loop            4419              10                  12.97           14.95                                     57.01                                             0.40
+      north NA12 NM12              424               2                   2.71           1.23                                       5.41                                             0.03
+  north ND1 NA12 NM12              424               3                   3.02           1.63                                       6.43                                             0.10
+north ND1 NA12 NM12 rev            491               3                   3.44           1.81                                       6.25                                             0.33
+       north ND1 NM12              424               2                   4.81           2.36                                       8.11                                             0.53
+    north ND1 NA12 rev             491               2                   3.26           1.84                                       6.45                                             0.23
+    north ND1 NM12 rev             491               2                   4.50           2.24                                       8.48                                             0.53
+
+                                                                   80 Final Error Histogram with 1% Added Error         80 Final Error Histogram with 2% Added Error          80 Final Error Histogram with 3% Added Error
+                                                                   70                                                   70                                                    70
+                                                                   60                                                   60                                                    60
+                                                                   50                                                   50                                                    50
+                                                                   40                                                   40                                                    40
+                                                                   30                                                   30                                                    30
+                                                                   20                                                   20                                                    20
+                                                                   10                                                   10                                                    10
+                                                                    00.0 2.5 5.0Fina7l.G5T E1r0ro.0r [m12].5 15.0 17.5   00.0 2.5 5.0Fina7l.G5T E1r0ro.0r [m12].5 15.0 17.5    00.0 2.5 5.0Fina7l.G5T E1r0ro.0r [m12].5 15.0 17.5
+                                                                   Count
+                                                                                                                       Count
+                                                                                                                                                                         Count
+
+              (a)        (b)                (c)
+
+FIGURE 12: Cinder Lakes crater absolute localization results       (a)                                                  (b)                                                     (c)
+for a single trajectory, south vA. (a) 1 time through trajec-
+tory with 2% error added (b) 5 loops through trajectory with       FIGURE 13: Cinder Lakes crater absolute localization his-
+2% error added (c) 5 loops through trajectory with 1% error        togram results for single loop trajectories. (a) 1% error added
+added. (a) highlights the ability of the approach to localize      (b) 2% error added (c) 3% error added. With 2% or less
+to less than 2 m from 10 m, which is the max error target.         of positional error along a trajectory, the approach is able
+(b) and (c) show multiple loops of the same trajectory with        to localize within 5 m most of the time and never diverges
+different error rates with the approach never diverging with       beyond 10 m. With 3% or more positional error, there is
+1% error but some test cases diverging with 2% error growth.       increased risk for divergence.
+
+At 3% error over a 300 m traverse, there will be about 9 m         One of the south site trajectories, south vA was connected
+of error added within our Monte Carlo runs. The filter is          via artificial points to make it a loop. There is no image
+only able to localize reliably within 5 m and this potentially     data at the locations but the error grows with the distance.
+allows for the absolute error to increase beyond 10 m at the       This loop utilizes the same image data repeatedly, but allows
+second landmark.                                                   for a simulation of stability. For the north site trajectory,
+                                                                   different combinations of landmarks were utilized with two
+   Finally, a trajectory 1 km trajectory was tested with           to three landmarks per trajectory. The full results of these
+three landmarks and involved running the trajectory forwards       trajectories with 2% added error are in Table 3. We observe
+and backwards with half surveys of each landmark. The              that performance is under 5 m average error and less than
+results for this trajectory are also in Table 2. Overall, results  10 m max error with the exception of the looping trajectory.
+from the 1 km trajectory demonstrate that the particle filter      Additionally, we observe that the filter experienced issues
+can maintain stability across more landmarks and longer            in attaining absolute errors less than 5 m along the north
+trajectories.                                                      site trajectories containing the ND1 and NM12 landmarks.
+                                                                   More than 50% of the final errors from these trajectories
+2) Cinder Lakes                                                    were greater than 5 m. Figure 12 presents a comparison of
+                                                                   the actual trajectory with 2% added error compared with the
+Next, we used the trajectories collected at Cinder Lakes to        looped trajectory at 1% and 2% added error. It is shown that
+validate absolute localization in an analogue Lunar environ-       there is roughly 400 m between craters. With one traverse,
+ment. For evaluation, we used a total of three trajectories        the localization can recover from a 10 m error. However, we
+with two from the South site and one from the North site.
+
+14                                                                                                                                                                                   VOLUME ,
+observed that the max error grows while running multiple         TABLE 5: Localization step computation results on a single
+loops with 2% error and the filter diverges. However, with       core of a Snapdragon 8155.
+multiple loops and 1% error, the max error does not grow
+and the filter maintains stability. Given these results, we can     Dataset    Num. Particles  PF step avg. [seconds]  Pf step max [seconds]
+determine that error growth between landmarks should be no       Cinder Lakes         50                  1.49                    2.17
+more than 5 m-6 m error and the length of traverses between      Cinder Lakes        100                  2.96                    4.29
+landmarks can be subsequently developed by assuming 2%           Cinder Lakes        200                  6.00                    8.71
+relative localization error.                                                          50                  1.71                    2.78
+                                                                  Simulation         100                  3.41                    5.56
+   Furthermore, the other non-looped trajectories were run        Simulation         200                  6.96                   11.16
+for 1%, 2%, and 3% added error rates. The results are             Simulation
+shown in Figure 13 and, consistent with our findings in
+simulation, we observed filter divergence with increased         of benchmarking these localization algorithms across a range
+relative error. However, with 1% and 2% error rates, the         of several different parameters. In the worst case using high
+absolute localization is able to consistently localize within    resolution stereo and 200 particles could run in 16.47 s for
+5 m final error and contain no samples greater than 10 m         stereo, rim detection, and localization. This satisfies the 20 s
+final error.                                                     per iteration requirement for both the time between long
+                                                                 exposure stops and the batching all iterations for the 10 min
+D. Benchmark on Flight-Like Computer                             absolute localization stop. All of the results were computed
+                                                                 using a single CPU core of the Snapdragon in this work.
+In this section, we demonstrate that the proposed ShadowNav      Therefore, there exists potential to significantly increase the
+approach is capable of running within the time constraints       performance through optimizations and parallelization. The
+of the Endurance-A proposed ConOps. The Endurance-A              particle filter step especially lends itself to parallelization
+proposal [2] calls for the rover to stop for approximately       since each particle computation is independent. Therefore,
+10 minutes between drives in order to perform absolute           we believe that this approach fits within the computation
+localization. Long exposure captures are proposed to be          time requirements of the mission conops and has potential
+captured every 10 m. Therefore, for a 300 m traverse, there      to operate quicker than the requirements and is suitable
+could be on the order of 30 iterations to process. To process    continued consideration for onboard use.
+30 iterations within 10 min, each iteration would need to
+occur in less than 20 s. The Endurance-A concept also            VI. CONCLUSION
+proposed 1 min stops every 10 m to capture long exposure
+images. The last time constraint for consideration based on       In this work, we presented an autonomous absolute lo-
+the proposed ConOps is the time spent driving between            calization framework for a Lunar rover mission driving at
+long exposure captures in which one or more cores could          night or in dark regions of the Moon. Our approach consists
+potentially be allocated for perception or a localization step.  of using the leading edges of craters as landmarks and
+This will be at least 20 s of driving based on the drive         matching these detected craters with known Lunar craters
+speed of the rover. To evaluate whether the method in            from an offline map. We validated our proposed approach
+this paper can be run in the context of the ConOps, a            in a simulation environment created using Blender and data
+Snapdragon 8155 processor, which is an analogue of the           collected from a field test conducted at Cinder Lakes. Future
+computer specification (CPU cores, memory, power, etc.) for      contributions will focus on how the proposed ShadowNav
+the mission, is utilized for the benchmark. A Snapdragon 801     approach would perform within a full system that is running
+processor was successfully flown on the Mars Ingenuity heli-     relative localization on-board. A further area of exploration
+copter [38], providing a successful technology demonstration     is the problem of recovering from errors errors greater than
+of the Snapdragon architecture for future missions. First, the   10 m or to contain an understanding of faults to know if
+perception algorithms of SGBMs stereo and discontinuity          the system was unable to localize. We also plan to study
+detection were evaluated and the results are in Table 4. For a   the introduction of additional measurement models such as
+                                                                 Lunar orbiter-based position updates and incorporate this
+TABLE 4: Perception computation results on a single core         into a sensor fusion framework that extends current crater
+of a Snapdragon 8155                                             detection and visual odometry measurements. Inspired by the
+                                                                 use of pose graph optimization techniques for tackling the
+Dataset Resolution SGBM max (sec) Detect max (sec)               localization problem for the upcoming CADRE Lunar rover
+                                                                 mission [39], we plan to investigate the use of factor graph-
+Cinder Lakes 1295x602  0.48  0.25                                techniques for handling the back end localization in lieu of
+                                                                 the particle filter. Finally, the system should be evaluated
+Simulation 2039x1425   4.40  0.91                                with absolute localization in the loop over long distances to
+                                                                 ensure stability.
+high-resolution image, the worst case stereo time using a sin-
+gle CPU core is 4.4 s and meets the performance constraint
+of being run during the long-exposure capture stop or while
+driving between exposure captures. Table 5 shows the results
+
+VOLUME ,                                                                                                               15
+Atha et al.:
+
+ACKNOWLEDGEMENTS                                                     2032. Technical report, 2022.
+                                                               [13] A. Cauligi, R. M. Swan, H. Ono, S. Daftry, J. Elliott,
+The authors would like to thank John Elliott, Jeffery Hall,
+Satish Khanna, Hari Nayar, Issa Nesnas, Curtis Padgett, and          L. Matthies, and D. Atha. ShadowNav: Crater-based
+Chris Yahnker for their discussions during the development           localization for nighttime and Permanently Shadowed
+of this work.                                                        Region Lunar navigation. 2023.
+                                                               [14] A. E. Johnson, S. B. Goldberg, Y. Cheng, and L. H.
+REFERENCES                                                           Matthies. Robust and efficient stereo feature tracking
+                                                                     for visual odometry. 2008.
+ [1] Origins, worlds, and life: A decadal strategy for plan-   [15] J. Nash, Q. Dwight, L. Saldyt, H. Wang, S. Myint,
+      etary science and astrobiology 2023­2032. Technical            A. Ansar, and V. Verma. Censible: A robust and
+      report, 2022.                                                  practical global localization framework for planetary
+                                                                     surface missions. 2024.
+ [2] J. T. Keane, S. M. Tikoo, and J. Elliott. Endurance:      [16] V. Verma, J. Nash, L. Saldyt, Q. Dwight, H. Wang,
+      Lunar South Pole-Atken Basin traverse and sample               S. Myint, J. Biesiadecki, M. Maimone, A. Tumbar,
+      return rover. Technical report, 2022.                          A. Ansar, G. Kubiak, and R. Hogg. Enabling long
+                                                                     & precise drives for the Perseverance Mars rover via
+ [3] V. Verma, M. Maimone, E. Graser, A. Rankin, K. Ka-              onboard global localization. 2024.
+      plan, S. Myint, J. Huang, A. Chung, K. Davis, A. Tum-    [17] J. Enright, T. Barfoot, and M. Soto. Star tracking for
+      bar, I. Tirona, and M. Lashore. Results from the first         planetary rovers. 2012.
+      year and a half of Mars 2020 robotic operations. 2023.   [18] F. Cozman and E. Krotkov. Automatic mountain
+                                                                     detection and pose estimation for teleoperation of Lunar
+ [4] M. Maimone, Y. Cheng, and L. Matthies. Two years of             rovers. 1997.
+      visual odometry on the Mars Exploration Rovers. 24       [19] K. Ebadi, K. Coble, D. Atha, R. Schwartz, C. Padgett,
+      (3):169­186, 2007.                                             and J. V. Hook. Semantic mapping in unstructured envi-
+                                                                     ronments: Toward autonomous localization of planetary
+ [5] M. Maimone, N. Patel, A. Sabel, A. Holloway, and                robotic explorers. 2022.
+      A. Rankin. Visual odometry thinking while driving for    [20] F. Cozman, E. Krotkov, and C. Guestrin. Outdoor visual
+      the Curiosity Mars rover's three-year test campaign:           position estimation for planetary rovers. 9:135­150,
+      Impact of evolving constraints on verification and val-        2000.
+      idation. 2022.                                           [21] P. J. F. Carle and T. D. Barfoot. Global rover localiza-
+                                                                     tion by matching lidar and orbital 3D maps. 2010.
+ [6] L. Matthies, S. Daftry, S. Tepsuporn, Y. Cheng,           [22] X. Sun, J. B. Abshire, J. F. McGarry, G. A. Neumann,
+      D. Atha, R. M. Swan, S. Ravichandar, and M. Ono.               J. C. Smith, J. F. Cavanaugh, D. J. Harding, H. J.
+      Lunar rover localization using craters as landmarks.           Zwally, D. E. Smith, and M. T. Zuber. Space Lidar
+      2022.                                                          Developed at the NASA Goddard Space Flight Center­
+                                                                     The First 20 Years. IEEE Journal on Selected Topics
+ [7] S. Daftry, Z. Chen, Y. Cheng, S. Tepsuporn, S. Khattak,         in Applied Earth Observations and Remote Sensing, 6
+      L. Matthies, B. Coltin, U. Naam, L. M. Ma, and                 (3):1660­1675, 2013.
+      M. Deans. LunarNav: Crater-based localization for        [23] R. D. Lorenz, E. P. Turtle, J. W. Barnes, M. G.
+      long-range autonomous rover navigation. 2023.                  Trainer, D. S. Adams, K. E. Hibbard, C. Z. Sheldon,
+                                                                     K. Zacny, P. N. Peplowski, D. J. Lawrence, M. A.
+ [8] H. Hiesinger, C. H. van der Bogert, J. H. Pasckert,             Ravine, T. G. McGee, K. S. Sotzen, S. M. MacKenzie,
+      L. Funcke, L. Giacomini, L. R. Ostrach, and M. S.              J. W. Langelaan, S. Schmitz, L. S. Wolfarth, and P. D.
+      Robinson. How old are young lunar craters? 117(12):            Bedini. Dragonfly: A rotorcraft lander concept for
+      1­15, 2012.                                                    scientific exploration at Titan. Johns Hopkins APL
+                                                                     Technical Digest, 34(3):374­387, 2018.
+ [9] M. S. Robinson, S. M. Brylow, M. Tschimmel,               [24] H. Hirschmuller. Stereo processing by semiglobal
+      D. Humm, S. J. Lawrence, P. C. Thomas, B. W. Denevi,           matching and mutual information. 30(2):328­341,
+      E. Bowman-Cisneros, J. Zerr, M. A. Ravine, M. A.               2007.
+      Caplinger, F. T. Ghaemi, J. A. Schaffner, M. C. Malin,   [25] F. Zhang, X. Qi, R. Yang, V. Prisacariu, B. Wah, and
+      P. Mahanti, A. Bartels, J. Anderson, T. N. Tran, E. M.         P. Torr. Domain-invariant stereo matching networks.
+      Eliason, A. S. McEwen, E. Turtle, B. L. Jolliff, and           2020.
+      H. Hiesinger. Lunar Reconnaissance Orbiter (LROC)        [26] A. Liounis, J. Swenson, J. Small, J. Lyzhoft, B. Ash-
+      camera instrument overview. 150, 2010.                         man, K. Getzandanner, D. Highsmith, M. Moreau,
+                                                                     C. Adam, P. Antreasian, and D. S. Lauretta. Inde-
+[10] E. Cisneros, A. Awumah, H. M. Brown, A. C. Martin,
+      K. N. Paris, R. Z. Povilaitis, A. K. Boyd, M. S.
+      Robinson, and LROC Team. Lunar Reconnaissance
+      Orbiter camera permanently shadowed region imaging
+      ­ atlas and controlled mosaics. 2017.
+
+[11] M. Robinson and J. Elliott. Intrepid planetary mission
+      concept study report. Technical report, 2022.
+
+[12] INSPIRE (IN situ Solar system Polar Ice Roving Ex-
+      plorer): A mission concept study from the Decadal
+      Survey for Planetary Science and Astrobiology 2022­
+
+16                                                             VOLUME ,
+      pendent optical navigation processing for the OSIRIS-      [40] G. Yadav, S. Maheshwari, and A. Agarwal. Contrast
+      REx mission using the Goddard Image Analysis and                 limited adaptive histogram equalization based enhance-
+      Navigation Tool. In RPI Space Imaging Workshop,                  ment for real time video system. In Proc. IEEE Int.
+      2019.                                                            Conf. on Advances in Computing, Communications and
+[27] S. Woicke, A. S. Moreno Gonzalez, I. El-Hajj, J. W. F.            Informatics , 2014.
+      Mes, M. Henkel, R. S. D. Autar, and R. A. Klavers.
+      Comparison of crater-detection algorithms for terrain-     [41] D. Kogan. mrcal. http://mrcal.secretsauce.net, 2024.
+      relative navigation. 2018.                                 [42] D. Fox, S. Thrun, W. Burgard, and F. Dellaert. Sequen-
+[28] A. Silburt, M. Ali-Dib, C. Zhu, A. Jackson, D. Valencia,
+      Y. Kissin, D. Tamayo, and K. Menou. Lunar crater                 tial Monte Carlo Methods in Practice, chapter Particle
+      identification via deep learning. 317:27­38, 2019.               Filters for Mobile Robot Localization, pages 401­428.
+[29] M. R. Klear. PyCDA: An open-source library for                    2001.
+      automated crater detection. In Planetary Crater Con-       [43] M. S. Arulampalam, S. Maskell, N. Gordon, and
+      sortium, 2018.                                                   T. Clapp. A tutorial on particle filters for online
+[30] J. W. Hwangbo, K. Di, and R. Li. Integration of orbital           nonlinear/non-Gaussian Bayesian tracking. 50(2):174­
+      and ground image networks for the automation of rover            188, 2002.
+      localization. In American Society for Photogrammetry       [44] E. Z. Crues, P. Bielski, E. Paddock, C. Foreman,
+      and Remote Sensing Annual Conference, 2009.                      B. Bell, C. Raymond, T. Hunt, and D. Bulikhov.
+[31] S. Bhamidipati, T. Mina, A. Sanchez, and G. Gao.                  Approaches for validation of lighting environments in
+      Satellite constellation design for a lunar navigation and        realtime Lunar South Pole simulations. 2023.
+      communication system. NAVIGATION, 70(4), 2023.             [45] B. Hapke. Bidirectional reflectance spectroscopy: 5. the
+[32] M. Cortinovis, T. Mina, and G. Gao. Assessment of                 coherent backscatter opposition effect and anisotropic
+      single satellite-based lunar positioning for the NASA            scattering. Icarus, 157(2):523­534, 2002.
+      Endurance Mission. 2024.                                   [46] B. Hapke. Theory of reflectance and emittance spec-
+[33] Y. Audet, F. T. Melman, S. Molli, A. Sesta,                       troscopy. 2012.
+      M. Plumaris, D. Psychas, R. Swinden, P. Giordano, and      [47] F. Schmidt and S. Bourguignon. Efficiency of BRDF
+      J. Ventura-Traveset. Positioning of a lunar surface rover        sampling and bias on the average photometric behavior.
+      on the south pole using LCNS and DEMs. 74(6), 2024.              317:10­26, 2019.
+[34] B. Wu, R. W. K. Potter, P. Ludivig, A. S. Chung,            [48] X. Xu, J. Liu, D. Liu, B. Liu, and R. Shu. Photometric
+      and T. Seabrook. Absolute localization through orbital           correction of Chang'E-1 interference imaging spec-
+      maps and surface perspective imagery: A synthetic                trometer's (IIM) limited observing geometries data with
+      lunar dataset and neural network approach. 2019.                 Hapke model. Remote Sensing, 12(22):3676, 2020.
+[35] V. Franchi and E. Ntagiou. Planetary rover localisation     [49] D. Scharstein, R. Szeliski, and R. Zabih. A taxonomy
+      via surface and orbital image matching. 2022.                    and evaluation of dense two-frame stereo correspon-
+[36] S. Silvestrini, M. Piccinin, G. Zanotti, A. Brandonisio,          dence algorithms. 2001.
+      I. Bloise, L. Feruglio, P. Lunghi, M. Lavagna, and
+      M. Varile. Optical navigation for lunar landing based on                                  Deegan Atha is a Robotics Technologist within
+      convolutional neural network crater detector. Aerospace                                   the Perception Systems Group of the Mobility and
+      Science and Technology, 123:107503, 2022.                                                 Robotic Systems Section at NASA's Jet Propulsion
+[37] J. N. Maki, D. Gruel, C. McKinney, M. A. Ravine,                                           Laboratory. He received his B.S. degree from
+      M. Morales, D. Lee, R. Willson, D. Copley-Woods,                                          Purdue University in electrical engineering and
+      M. Valvo, T. Goodsall, J. McGuire, R. G. Sellar, and                                      his M.S. in computer science from the Georgia
+      others. The Mars 2020 Engineering Cameras and mi-                                         Institute of Technology. His research focuses on
+      crophone on the Perseverance Rover: A next-generation                                     the infusion of robotic perception and learning
+      imaging system for Mars exploration. 216(137):1­48,                                       into autonomous systems operating in unstructured
+      2020.                                                                                     environments. He is the Principal Investigator for
+[38] B. Balaram, T. Canham, C. Duncan, H. F. Grip,                                              the ShadowNav task and the Perception Lead for
+      W. Johnson, J. Maki, A. Quon, R. Stern, and D. Zhu.        JPL's team in the DARPA RACER program to develop high-speed, resilient
+      Mars Helicopter technology demonstrator. 2018.             off-road autonomy.
+[39] J.-P. de la Croix, F. Rossi, R. Brockers, D. Aguilar,
+      K. Albee, E. Boroson, A. Cauligi, J. Delaune, and                                         R. Michael Swan is a Robotics Systems Engi-
+      others. Multi-agent autonomy for space exploration on                                     neer in the Robotic Surface Mobility Group at
+      the CADRE Lunar technology demonstration mission.                                         NASA Jet Propulsion Laboratory. He received his
+      2024.                                                                                     B.S in Computer Engineering from Walla Walla
+                                                                                                University and his M.S. in Computer Science from
+                                                                                                the University of Southern California. His work
+                                                                                                is focused on building reliable robotic software
+                                                                                                systems. He is the integration lead for multiple
+                                                                                                projects at JPL, recently architecting the NEO
+                                                                                                robotics stack for snake robots with the Extant
+                                                                                                Exobiology Life Surveyor (EELS) project team.
+                                                                 He has broad research interests in robotics and supporting technologies such
+
+VOLUME ,                                                         17
+Atha et al.:
+
+as machine vision, global localization, simulation, extended reality, human                                          Masahiro Ono is the Group Supervisor of the
+robot interaction, and more.                                                                                         Robotic Surface Mobility Group. Since he joined
+                                                                                                                     JPL in 2013, he has led a number of robotic
+                               Abhishek Cauligi is a Robotics Technologist                                           autonomy research. Recently, he was the PI of the
+                               in the Robotic Surface Mobility Group at NASA                                         EELS (Exobiology Extant Life Surveyor) project
+                               Jet Propulsion Laboratory, California Institute of                                    where he led the development of an intelligent
+                               Technology. Abhishek received his PhD. in Aero-                                       snake robot that demonstrated vertical mobility in
+                               nautics and Astronautics from Stanford University                                     a glacial shaft. Hiro is a rover operator of the
+                               and has served as the Cognizant Engineer for                                          Perseverance rover, and previously he was a flight
+                               the motion planner on the CADRE Lunar rover                                           software developer of the rover's autonomous driv-
+                               mission. His research interests lie in leveraging re-                                 ing capability. He also led the development of a
+                               cent advances in nonlinear optimization, machine       machine learning-based Martian terrain classifier, SPOC (Soil Property and
+                               learning, and control theory towards planning and      Object Classification), which won JPL's Software of the Year Award in
+                               control for complex spacecraft robotic systems.        2020.
+
+              Anne Bettens is an Associate Lecturer in the
+              School of Aerospace, Mechanical, and Mecha-
+              tronic Engineering at the University of Sydney.
+              She earned her PhD in Aerospace Engineering
+              from the same institution. During her doctoral
+              studies, Anne interned at NASA's Jet Propulsion
+              Laboratory, where she contributed to the Shad-
+              owNav project. Her present research focus is on
+              Vision-based Autonomous Navigation of Robotic
+              Craft for Space Exploration.
+
+              Edwin Goh is a data scientist at the Jet Propulsion
+              Laboratory, California Institute of Technology. He
+              received his B.S., M.S., and Ph.D. degrees in
+              Aerospace Engineering from the Georgia Institute
+              of Technology. His research focuses on the appli-
+              cation of machine learning to enable data-driven
+              design, optimization and operation of aerospace
+              systems. His work includes DSN scheduling using
+              reinforcement learning, automated machine learn-
+              ing systems, and self-supervised computer vision
+              for planetary and earth science.
+
+              Dima Kogan is a Robotics Technologist at
+              NASA/JPL. Dima received his BS in Engineering
+              and Mathematics at Harvey Mudd College and an
+              MS in Control and Dynamical Systems at Caltech.
+              He is a long time programmer, GNU/Linux user
+              and a Debian Developer. He's interested in estima-
+              tion and optimization algorithms, particularly as
+              applied to principled sensor calibration.
+
+                               Larry Matthies received B.S., M. Math, and PhD
+                               degrees in Computer Science from the University
+                               of Regina (1979), University of Waterloo (1981),
+                               and Carnegie Mellon University (1989). He has
+                               been with JPL for more than 34 years. He has
+                               conducted technology development in perception
+                               systems for autonomous navigation of robotic ve-
+                               hicles for land, sea, air, and space. He supervised
+                               the JPL Computer Vision group for 21 years. He
+                               led development of computer vision algorithms
+                               for Mars rovers, landers, and helicopters. He is
+a Fellow of the IEEE and a member of the editorial boards of Autonomous
+Robots and the Transactions on Field Robotics.
+
+18                                                                                    VOLUME ,
+

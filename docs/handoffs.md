@@ -15,9 +15,34 @@ one only by telling the others and editing this file in the same commit.
 ## Step 2, terrain, gives
 
 - `height`: `np.ndarray (H, W)`, float32, metres, cell size 0.25 m, cell `[0, 0]`
-  at world `(x0, y0)`.
+  at world `(x0, y0)`. Cell `[i, j]` is at `x = x0 + j * cell`,
+  `y = y0 + i * cell`: rows run north. A GeoTIFF's rows run south, so flip it.
 - `craters`: `np.ndarray (N, 3)`, rows `[x, y, diameter]` in metres. This is the
   rover's orbital map.
+- On disk: `sim/terrain.py` has `load_terrain(path) -> (height, craters, x0, y0,
+  cell)`. The built file is `data/terrain/*.npz` in the main checkout
+  (`C:\Monad-Hackathon-Project\data\terrain\`), git-ignored and rebuilt by the
+  script.
+
+## Scene (`sim/scene.py`), gives
+
+One 3D scene draws both views, so the camera image the vision step reads is
+the one the judges see.
+
+```python
+scene = Scene(height, craters, x0, y0, cell)
+scene.set_rover(agency, true_pose)            # (x, y, heading)
+img, depth = scene.first_person(agency)       # img (h, w, 3) uint8,
+                                              # depth (h, w) float32 metres
+                                              # from the camera, NaN for sky
+img = scene.third_person(agency, overlays)    # (h, w, 3) uint8
+```
+
+- `overlays`: optional dict with `true_track (K, 2)`, `odom_track (K, 2)`,
+  `estimate (x, y)`, `sigma` (metres), `finds` (list of `get_finds()` dicts).
+- The first-person camera and lamp follow ShadowNav: camera 2.5 m above the
+  ground, lamp 0.2 m below it, 60° horizontal field of view (Atha et al. 2024,
+  sections IV and V).
 
 ## Step 4, rover loop, gives each step, per rover
 

@@ -30,7 +30,8 @@ Monad contract, and check each other's finds.
 | 3 | `sim/nav.py` | Particle filter |
 | 4 | `sim/rover.py` | Two rovers, planner, ice sensor |
 | 5 | `sim/dashboard.py` | Judges' window, backup video |
-| 6 | `sim/vision.py` | Raycast render, lamp shadows, Canny rims |
+| 6 | `sim/scene.py` | 3D scene: first-person lamp view with depth, third-person chase view |
+| 6 | `sim/vision.py` | Canny rims from the first-person image and depth |
 | | `run_demo.py` | Runs both demo runs end to end |
 
 ## Hard rules

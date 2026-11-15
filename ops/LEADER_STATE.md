@@ -335,3 +335,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:04 scene: run_mission --stamp demo --no-chain estimate 6-7 min (259 steps, ~234 live frames, 696 display frames). Starts on integrator's confirm.
 - 14:05 scene: run_mission.py:575 replaced index.json with mission-demo only. Told scene to merge it instead (mission first, run1/run2 backups kept), 2 lines in Kellen's file, via step-6-resume.
 - 14:05 integrator: integration d94fe83 has demo-mission and perf; run_mission --no-render: S1 dry, S2 ice, confirmed; :8000 clean. Scene cleared to start final render.
+- 14:05 Scene told to start the final mission render from d94fe83. Kellen made his own mission-demo on demo-mission (no nav fix) and published a preview. His uplink puts the agency keys in Vercel env (web/api/chain.js, docs/hosting.md:196), which goes against the earlier rule of no keys on the hosted site. Flagged to Joseph.

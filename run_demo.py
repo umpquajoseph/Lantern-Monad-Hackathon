@@ -63,10 +63,10 @@ FRAMES_NOTE = {
 
 # Scenario positions are metres from the terrain's (x0, y0) corner.
 SCENARIOS = [
-    dict(key="run1", label="Run 1: crater fixes on", seed=101, a_fixes=True,
+    dict(key="run1", label="Run 1: both rovers navigate by crater rims", seed=101, a_fixes=True,
          a_start=(300.0, 300.0, 0.6), a_goal=(620.0, 520.0), find_at_m=260.0,
          b_start=(700.0, 256.75, 2.4)),  # nearest spot with 3 m of ground under 15 deg around it (was 700, 250: 24.6 deg)
-    dict(key="run2", label="Run 2: A's crater fixes off", seed=202, a_fixes=False,
+    dict(key="run2", label="Run 2: rover A on wheel odometry alone", seed=202, a_fixes=False,
          a_start=(100.0, 100.0, 0.66), a_goal=(950.0, 760.0), find_at_m=990.0,
          b_start=(880.0, 560.0, 2.4)),
 ]

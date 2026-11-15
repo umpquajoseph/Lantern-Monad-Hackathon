@@ -392,3 +392,11 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:47 viewer stopped UI merge: step-5-ui b938fbc = main + ritvik a99af3c (main lidar.py/scene.py kept). Notes forwarded to ui inbox: mission.js reads registry events not find/check (chain feed empty); mission_player checkpoints not wired.
 - 14:48 Joseph: Ritvik not editing; only Kellen's mission plays in the new page; Kellen republishes after ui lands; ui deadline 15:18 (stage 1 by 15:03). Mailed ui.
 - 14:49 Joseph: no hard stop for ui (target only). New: auto-switch to rover B a few seconds after A's ice find. Mailed ui.
+
+## Snapshot 14:54 (pre-compact)
+- main = integration = 4f51c54 (old-UI checkpoint, everything merged). joseph = main + leader docs (brief docs/briefs/ui-merge.md).
+- ACTIVE worker: ui (opened by Joseph about 14:50, own agency, don't micromanage). Branch step-5-ui from viewer's start b938fbc (main + ritvik a99af3c, main's lidar.py/scene.py kept). Brief docs/briefs/ui-merge.md. Stage 1 target 15:03 (Kellen's mission plays in Ritvik's layout: checkpoints, chain feed find/check, First person / Satellite / Lidar views). Target 15:18, NO hard stop. Extra asks: auto-switch to rover B about 3 s after A's ice find (once per play-through, re-arms on rewind, don't override a manual pick). Only Kellen's mission plays in the new page; run1/run2 stay in classic.html. Ritvik not editing. Kellen knows to republish after ui lands. ui doorbell: not yet known (it mails it in its first mail).
+- On call: viewer (step-5-viewer, small fixes on current page), integrator (merges ui into integration, checks index.html + classic.html), scene (idle; renders on request). nav done (rim scores reported). perf done. designer done (Joseph archives).
+- Joseph notifies on: ui stage 1 ready (he will look). main moves only on his word.
+- Pre-cease list given to Joseph (14:5x): 1 Kellen renders mission with real chain from final main (real hashes); 2 check hosted link after republish (mission plays, ?key posts, Monadscan links, phone); 3 backup screen recording; 4 README update for the mission + hosted link + contract (leader offered to do it on joseph; awaiting yes); 5 fresh contract deploy + forge test (Kellen). Joseph does deck + pitch. About 30 min of slack after the merge.
+- Watcher: re-arm after each mail (command in the state file header).

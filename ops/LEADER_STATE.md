@@ -240,3 +240,8 @@ Read mail, then `mv` it to `leader/archive/`.
   B drives 638 m vs 280 m, in-crater track B 38 m -> 4 m. Run 2 with vision
   still running. Told merger to take it (conflicts run_demo.py, main.js).
 - 13:17 merger: Calvin 2e28d61 merged into checkpoint 70324d6 (pushed); fresh default run from a clean clone in progress.
+- 13:21 Joseph: "my teammates need the merge ... issues can be fixed in
+  post". main fast-forwarded to checkpoint 25acb62 (Calvin vision opt-in,
+  all branches). Key scan: only Anvil's public default keys in
+  survey/e2e_anvil.sh (local chain). Merger continues clean-up on
+  checkpoint; main gets fast-forwarded again after its report.

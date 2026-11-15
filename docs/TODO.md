@@ -1,6 +1,6 @@
 # Lantern: to do after the checkpoint merge
 
-Updated 13:06. The checkpoint merge goes to a new worker, `merger`, which puts
+Updated 13:21. `main` is the checkpoint (25acb62): every branch merged. Switch to it. The `merger` worker is still cleaning up on `checkpoint`, which
 every branch on `checkpoint`. It goes into `main` on Joseph's word.
 
 ## The demo (decided)

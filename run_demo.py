@@ -469,16 +469,24 @@ def render_sub_frames(jobs, shared, terrain, display, workers=None):
     from sim.scene import RENDER_THREADS
     cpus = os.cpu_count() or 1
 
-    def threads_for(w):  # the cores split between workers; each worker's Scene renders with this many threads
-        return max(1, min(RENDER_THREADS, cpus // w))
+    budget = None
+
+    def threads_for(w):
+        """Threads per worker: its share of the cores, and no more than the memory left allows."""
+        t = max(1, min(RENDER_THREADS, cpus // w))
+        if budget is not None:
+            while t > 1 and round(w * (WORKER_GB_ASSUMED + THREAD_GB_MEASURED * t), 6) > round(budget, 6):
+                t -= 1
+        return t
 
     if workers is None:
         free_gb = psutil.virtual_memory().available / 2 ** 30
         budget = free_gb - HEADROOM_GB
-        # Most workers whose memory fits, each with its share of the cores.
+        # Most workers whose memory fits at one thread each (processes scale
+        # better than threads), then as many threads each as still fit.
         # Round before comparing: in floats (3.4 - 2.0) // 0.7 is 1.0, not 2.
         workers = next((w for w in range(min(MAX_WORKERS, cpus), 0, -1)
-                        if round(w * (WORKER_GB_ASSUMED + THREAD_GB_MEASURED * threads_for(w)), 6) <= round(budget, 6)), 1)
+                        if round(w * (WORKER_GB_ASSUMED + THREAD_GB_MEASURED), 6) <= round(budget, 6)), 1)
         print(f"  pool: {free_gb:.1f} GB free, {workers} workers x {threads_for(workers)} threads")
     _, _, x0, y0, cell = terrain
     size = math.ceil(len(jobs) / (workers * 4))

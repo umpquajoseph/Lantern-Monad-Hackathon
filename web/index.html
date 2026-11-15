@@ -111,22 +111,17 @@
 </aside>
 
 <div class="insets" id="insets">
-  <div class="seg view-seg" id="view-seg" role="tablist" aria-label="Camera box">
-    <button data-view="fp" aria-selected="true" title="First person (1)">First person</button>
-    <button data-view="sat" title="Satellite map (2)">Satellite</button>
-    <button data-view="lidar" title="Lidar (3)">Lidar</button>
-  </div>
   <figure class="inset" id="in-fp">
     <div class="inset-view fp-mini"><img id="fpi-img" alt="Rover camera"><canvas id="fpi-ov" width="640" height="480"></canvas><div class="inset-none" id="fpi-none" hidden>No frame yet</div></div>
-    <figcaption><span id="fpi-cap">Rover camera</span><button class="ib sm" data-expand="first" aria-label="Rover camera full screen" title="Full screen"><svg><use href="#i-expand"/></svg></button></figcaption>
-  </figure>
-  <figure class="inset" id="in-lidar" hidden>
-    <div class="inset-view lidar-mini"><img id="lid-img" alt="Rover lidar, from above"><div class="inset-none" id="lid-none" hidden>No scan yet</div></div>
-    <figcaption><span id="lid-cap">Lidar</span><span class="lk-seg" id="lid-seg" hidden><button data-lk="top" aria-pressed="true">Top-down</button><button data-lk="fp" aria-pressed="false">First person</button></span></figcaption>
+    <figcaption><span id="fpi-cap">First person</span><button class="ib sm" data-expand="first" aria-label="Rover camera full screen" title="Full screen"><svg><use href="#i-expand"/></svg></button></figcaption>
   </figure>
   <figure class="inset" id="in-map">
     <div class="inset-view"><canvas id="map-cv"></canvas></div>
     <figcaption><span>Satellite</span><button class="ib sm" data-expand="overhead" aria-label="Overhead full screen" title="Full screen"><svg><use href="#i-expand"/></svg></button></figcaption>
+  </figure>
+  <figure class="inset" id="in-lidar" hidden>
+    <div class="inset-view lidar-mini"><img id="lid-img" alt="Rover lidar, from above"><div class="inset-none" id="lid-none" hidden>No scan yet</div></div>
+    <figcaption><span id="lid-cap">Lidar</span><span class="lk-seg" id="lid-seg" hidden><button data-lk="top" aria-pressed="true">Top-down</button><button data-lk="fp" aria-pressed="false">First person</button></span></figcaption>
   </figure>
 </div>
 <button class="back-chip" id="back-chip" hidden>Back to rover view</button>
@@ -216,6 +211,8 @@
       <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
       <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom in or out</dd>
       <dt>Drag</dt><dd>Look around</dd>
+      <dt><kbd>1</kbd> <kbd>2</kbd></dt><dd>Rover camera or satellite map full window (again to go back)</dd>
+      <dt><kbd>L</kbd></dt><dd>Lidar: top-down or first person</dd>
       <dt><svg><use href="#i-expand"/></svg></dt><dd>Make a camera box full screen</dd>
       <dt><kbd>L</kbd></dt><dd>Switch the rover view between camera and lidar</dd>
     </dl>

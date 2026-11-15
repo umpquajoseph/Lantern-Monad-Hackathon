@@ -59,7 +59,6 @@ const S = {
   lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
   opts: { routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
-  view: "fp",          // camera box tab: "fp" (first person), "sat" (overhead map), "lidar"
   player: null,        // MissionPlayer: checkpoints and live chain
   autoB: { armed: true, at: 0 },   // switch to the Prospector once after the Surveyor's find
 };
@@ -579,7 +578,6 @@ function bind() {
     else if (!S.player.busy) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
     S.t = nt; exitFocus(); S.dismissed = null; render(true);
   };
-  document.querySelectorAll("#view-seg button").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
   $("zoom-in").onclick = () => zoom(1 / 1.35);
   $("zoom-out").onclick = () => zoom(1.35);
   document.querySelectorAll("#rover-seg button").forEach((b) => (b.onclick = () => { exitFocus(true); setRover(b.dataset.rover); }));
@@ -626,26 +624,18 @@ function bind() {
     if (e.key === "Escape") $("drawer").hidden = true;
     if (e.key === "+" || e.key === "=") zoom(1 / 1.35);
     if (e.key === "-") zoom(1.35);
-    if (e.key === "l" || e.key === "L") setView(S.view === "lidar" ? "fp" : "lidar");
-    if (e.key === "1") setView("fp");
-    if (e.key === "2") setView("sat");
-    if (e.key === "3") setView("lidar");
+    // 1 / 2 blow the rover camera or the satellite map up to the full window (again: back); L flips the lidar view.
+    if (e.key === "1") { exitFocus(true); setCam(S.cam === "first" ? "third" : "first"); }
+    if (e.key === "2") { exitFocus(true); setCam(S.cam === "overhead" ? "third" : "overhead"); }
+    if (e.key === "l" || e.key === "L") $(`lid-seg`).querySelector(`[data-lk="${S.lidarKind === "top" ? "fp" : "top"}"]`)?.click();
   });
 }
 
-// The camera box: one view at a time, picked by its tabs.
-function setView(v) {
-  if (v === "lidar" && !S.run.hasLidar) v = "fp";
-  S.view = v;
-  document.querySelectorAll("#view-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === v)));
-  applyInsets();
-  render(true);
-}
-
+// The right column: rover camera, satellite map and lidar, stacked and all showing.
 function applyInsets() {
-  $("in-fp").hidden = S.view !== "fp" || S.cam === "first";
-  $("in-map").hidden = S.view !== "sat" || S.cam === "overhead";
-  $("in-lidar").hidden = S.view !== "lidar" || !S.run.hasLidar;
+  $("in-fp").hidden = S.cam === "first";
+  $("in-map").hidden = S.cam === "overhead";
+  $("in-lidar").hidden = !S.run.hasLidar;
 }
 
 // After the Surveyor posts its ice find, hold on it a moment, then follow the
@@ -890,7 +880,7 @@ function instrumentNow(a, t, ev) {
 function showLidar(t) {
   const run = S.run;
   if (run.hasLidar === undefined) run.hasLidar = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_frame));
-  if (!run.hasLidar || S.view !== "lidar") return;
+  if (!run.hasLidar) return;
   // Top-down / First person (lidar_fp_frame, step-6-nav 6846caf), only when the run logs both.
   if (run.hasLidarFp === undefined) run.hasLidarFp = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_fp_frame));
   $("lid-seg").hidden = !run.hasLidarFp;
@@ -1008,6 +998,44 @@ function drawFpOverlay(fr, cv, small) {
     c.fillStyle = col; c.font = font(14);
     const msg = st === "REPLANNING" ? "Replanning" : route.kind === "replanned" ? `To ${route.target_id}, around obstacle` : `To ${route.target_id}`;
     c.textAlign = "right"; c.fillText(msg, FP.w - 12, 12 + 14 * k); c.textAlign = "left";
+  }
+  // The mission log's planned route ("plan", world xy, out to ~20 m, re-planned
+  // every step) as amber dashes, from the pose the shown image was taken at
+  // (ported from the old page's drawPlan, main.js).
+  const plan = !route && S.opts.routes ? (run.steps[fr.k].rovers[a] || {}).plan : null;
+  if (plan && plan.length > 1) {
+    const k1 = Math.min(fr.k + 1, run.steps.length - 1);
+    const tp = run.times[fr.k] + (fr.sub ? fr.f : 0) * (run.times[k1] - run.times[fr.k]);
+    const [x0, y0, h0] = run.poseAt(a, tp);
+    const camZ0 = terrain.heightAt(x0, y0) + FP.camH;
+    const cp = Math.cos(FP.pitch), sp = Math.sin(FP.pitch), ch = Math.cos(h0), sh = Math.sin(h0);
+    const proj = (wx, wy) => {
+      const dx = wx - x0, dy = wy - y0, f = dx * ch + dy * sh, l = -dx * sh + dy * ch;
+      const z = terrain.heightAt(wx, wy) + 0.05 - camZ0;
+      const Xc = -l, Yc = f * sp + z * cp, Zc = f * cp - z * sp;
+      return Zc <= 0.5 ? null : [FP.w / 2 + (FP.fx * Xc) / Zc, FP.h / 2 - (FP.fx * Yc) / Zc, Math.hypot(f, l)];
+    };
+    c.strokeStyle = "rgba(255, 200, 60, 0.95)";
+    c.lineCap = "round";
+    const DASH = 0.6, GAP = 0.4;
+    let on = true, left = DASH, start = plan[0];
+    for (let i = 0; i + 1 < plan.length; i++) {
+      const [ax, ay] = plan[i], [bx, by] = plan[i + 1], seg = Math.hypot(bx - ax, by - ay);
+      let s0 = 0;
+      while (s0 < seg) {
+        const take = Math.min(left, seg - s0), s1 = s0 + take;
+        const p1 = [ax + ((bx - ax) * s1) / seg, ay + ((by - ay) * s1) / seg];
+        if (on) {
+          const pa = proj(start[0], start[1]), pb = proj(p1[0], p1[1]);
+          if (pa && pb) {
+            c.lineWidth = k * Math.max(1.2, Math.min(6, 20 / Math.max(pa[2], 1)));
+            c.beginPath(); c.moveTo(pa[0], pa[1]); c.lineTo(pb[0], pb[1]); c.stroke();
+          }
+        }
+        left -= take; s0 = s1;
+        if (left <= 1e-9) { on = !on; left = on ? DASH : GAP; start = p1; }
+      }
+    }
   }
   for (const h of hazards) {
     if (!S.opts.hazards || tf < h.seen_t) continue;

@@ -301,3 +301,10 @@ kbd { font: 500 12px var(--mono); background: rgba(255,255,255,.08); border: 1px
 .standin { margin-top: 12px; font-size: 12px; color: var(--dim); border-left: 3px solid #d9b44a; padding: 6px 10px; background: rgba(217,180,74,.07); }
 .standin summary { cursor: pointer; margin-top: 4px; } .standin ul { margin: 4px 0 0 16px; padding: 0; }
 #finds .find { font-size: 13px; padding: 6px 0; border-top: 1px solid var(--line); }
+
+/* Right column: First person, Satellite, Lidar stacked, all showing. The
+   column narrows on short screens so all three clear the play bar:
+   height ~ 0.75w + 0.75w + 0.35w + 3 captions + gaps. */
+.insets { width: clamp(200px, calc((100vh - var(--bar-h) - 200px) / 1.86), 320px); gap: 8px; }
+.inset figcaption { padding-top: 2px; padding-bottom: 2px; }
+@media (max-width: 760px) { .insets { width: auto; } }

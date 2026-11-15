@@ -74,10 +74,11 @@ ALBEDO_VARIATION = 0.06       # assumed: +/- regolith brightness texture, so the
 SHADOW_SOFT_TAN = 0.0015      # assumed: shadow edge antialiasing width, in tan(elevation) units (~0.09 deg).
 SHADOW_SELF_MARGIN_M = 0.15   # assumed: terrain this close in front of a point is not tested as its blocker.
 HORIZON_AZIMUTHS = 1536       # assumed: rays in the lamp's horizon map, over 180 deg (2 mrad, 8 cm apart at 40 m).
-HORIZON_DR_M = 0.1            # assumed: sample spacing along each ray.
+HORIZON_DR_M = 0.125          # assumed: sample spacing along each ray (half a grid cell).
 
-FINE_HALF_CELLS = 256         # assumed: fine mesh square is 2*256 cells = 128 m across (lamp reach 40 m + margin).
-FINE_RECENTER_M = 24.0        # assumed: rebuild a rover's fine square when it drives this far from its centre.
+FINE_HALF_CELLS = 320         # assumed: fine mesh square is 2*320 cells = 160 m across.
+FINE_RECENTER_M = 20.0        # assumed: rebuild a rover's fine square when it drives this far from its centre,
+                              # so the square always reaches LAMP_FADE_START_M past the rover.
 COARSE_STEP = 8               # assumed: coarse mesh vertex every 8 cells (2 m).
 NEAR_CLIP_M = 0.2             # assumed: GPU near and far planes.
 FAR_CLIP_M = 3000.0
@@ -197,21 +198,26 @@ class _Lamp:
         return np.where(inside, vis, np.where(fr < 0, 1.0, 0.0))
 
     def irradiance(self, P, N):
-        """Lamp irradiance on points P with normals N, in lamp units / m^2."""
+        """Lamp irradiance on points P (n, 3) with normals N (n, 3), in lamp units / m^2."""
+        out = np.zeros(len(P), dtype=np.float32)
         l = self.pos.astype(P.dtype) - P
-        r2 = np.einsum("...i,...i->...", l, l)
+        # Cheap cull first: inside the cone and the lamp's reach.
+        along = -(l @ self.axis.astype(P.dtype))
+        r2 = np.einsum("ij,ij->i", l, l)
+        c_out = math.cos(math.radians(LAMP_OUTER_DEG))
+        keep = (along > 0) & (along * along > c_out * c_out * r2) & (r2 < LAMP_FADE_END_M ** 2)
+        if not np.any(keep):
+            return out
+        l, r2, along, Pk, Nk = l[keep], r2[keep], along[keep], P[keep], N[keep]
         r = np.sqrt(r2)
-        lhat = l / r[..., None]
-        ndotl = np.clip(np.einsum("...i,...i->...", N, lhat), 0.0, None)
-        cos_off = -np.einsum("...i,i->...", lhat, self.axis.astype(P.dtype))
-        spot = _smoothstep(math.cos(math.radians(LAMP_OUTER_DEG)), math.cos(math.radians(LAMP_INNER_DEG)), cos_off)
+        ndotl = np.clip(np.einsum("ij,ij->i", Nk, l) / r, 0.0, None)
+        spot = _smoothstep(c_out, math.cos(math.radians(LAMP_INNER_DEG)), along / r)
         fade = 1.0 - _smoothstep(LAMP_FADE_START_M, LAMP_FADE_END_M, r)
-        out = spot * fade * ndotl / np.maximum(r2, 1e-6)
-        lit = out > 0
+        e = spot * fade * ndotl / np.maximum(r2, 1e-6)
+        lit = e > 0
         if np.any(lit):
-            vis = np.zeros_like(out)
-            vis[lit] = self.visibility(P[lit])
-            out = out * vis
+            e[lit] *= self.visibility(Pk[lit])
+        out[keep] = e
         return out
 
 
@@ -373,7 +379,6 @@ class Scene:
         self._coarse_xyz = np.stack([X, Y, Z], axis=-1).reshape(-1, 3).astype(np.float64)
         self._coarse_pd = _polydata(self._coarse_xyz, _grid_tris(len(ci), len(cj)))
         n = g.normal(self._coarse_xyz[:, 0], self._coarse_xyz[:, 1], e=K * g.cell / 2)
-        self._coarse_albedo = self._albedo_at(self._coarse_xyz)
         self._coarse_fill = self._fill_rgb(self._coarse_xyz, n)
         self._coarse_n = n
         _set_colors(self._coarse_pd, self._gamma(self._coarse_fill))
@@ -442,38 +447,39 @@ class Scene:
         sky = d >= 1.0
         z_ndc = 2.0 * d - 1.0
         z_eye = 2.0 * f * n / ((f + n) - z_ndc * (f - n))
-        fx, fy, cx, cy = self._intrinsics()
-        u = (np.arange(w) + 0.5 - cx) / fx
-        v = (cy - (np.arange(h) + 0.5)) / fy
-        U, V = np.meshgrid(u, v)
-        rng = z_eye * np.sqrt(1.0 + U * U + V * V)
+        U, V, ray_len = self._pixel_rays()
+        rng = z_eye * ray_len
         rng[sky] = np.nan
         depth = rng.astype(np.float32)
 
-        # Shade: back-project, lamp model, shadow test.
-        ok = ~sky
-        dirs = fwd[None, :] + U[ok][:, None] * right[None, :] + V[ok][:, None] * up[None, :]
-        P = (C[None, :] + dirs * z_eye[ok][:, None]).astype(np.float32)
-        hP, N = self.grid.height_normal(P[:, 0], P[:, 1])
-        off_ground = np.abs(P[:, 2] - hP) > 0.05
+        # Shade: back-project, lamp model, shadow test. Only pixels some lamp
+        # can reach are shaded; the rest are black (no sunlight, no fill).
+        P = (C[None, None, :] + (fwd + U[..., None] * right + V[..., None] * up) * z_eye[..., None]).astype(np.float32)
+        reach = np.zeros((h, w), dtype=bool)
+        for ag in self.poses:
+            lp = self._lamp(ag).pos
+            reach |= (np.abs(P[..., 0] - lp[0]) < LAMP_FADE_END_M) & (np.abs(P[..., 1] - lp[1]) < LAMP_FADE_END_M)
+        reach &= ~sky
+        Pr = P[reach]
+        hP, N = self.grid.height_normal(Pr[:, 0], Pr[:, 1])
+        off_ground = np.abs(Pr[:, 2] - hP) > 0.05
         if np.any(off_ground):  # another rover: normal from the depth image instead
-            Pimg = np.full((h, w, 3), np.nan)
-            Pimg[ok] = P
+            Pimg = np.where(sky[..., None], np.nan, P)
             nimg = np.cross(np.gradient(Pimg, axis=1), np.gradient(Pimg, axis=0))
             nimg /= np.linalg.norm(nimg, axis=-1, keepdims=True) + 1e-12
-            nimg *= -np.sign(np.einsum("hwi,i->hw", nimg, fwd))[..., None]
-            No = nimg[ok][off_ground]
+            nimg *= -np.sign(np.einsum("hwi,i->hw", nimg, fwd.astype(np.float32)))[..., None]
+            No = nimg[reach][off_ground]
             N[off_ground] = np.where(np.isfinite(No), No, 0.0)
-        E = np.zeros(len(P), dtype=np.float32)
+        E = np.zeros(len(Pr), dtype=np.float32)
         for ag in self.poses:
             lamp = self._lamp(ag)
-            near = np.abs(P[:, 0] - lamp.pos[0]) + np.abs(P[:, 1] - lamp.pos[1]) < 1.42 * LAMP_FADE_END_M
+            near = (np.abs(Pr[:, 0] - lamp.pos[0]) < LAMP_FADE_END_M) & (np.abs(Pr[:, 1] - lamp.pos[1]) < LAMP_FADE_END_M)
             if np.any(near):
-                E[near] += lamp.irradiance(P[near], N[near])
-        lin = self._albedo_at(P) * E / self.e_ref * EXPOSURE_REF_LEVEL ** DISPLAY_GAMMA
-        grey = np.zeros((h, w))
-        grey[ok] = np.clip(lin, 0.0, 1.0) ** (1.0 / DISPLAY_GAMMA)
-        img = np.repeat((grey * 255.0 + 0.5).astype(np.uint8)[..., None], 3, axis=2)
+                E[near] += lamp.irradiance(Pr[near], N[near])
+        lin = self._albedo_at(Pr) * E * np.float32(EXPOSURE_REF_LEVEL ** DISPLAY_GAMMA / self.e_ref)
+        grey = np.zeros((h, w), dtype=np.uint8)
+        grey[reach] = (np.clip(lin, 0.0, 1.0) ** np.float32(1.0 / DISPLAY_GAMMA) * 255.0 + 0.5).astype(np.uint8)
+        img = np.repeat(grey[..., None], 3, axis=2)
         t2 = time.perf_counter()
         self.timings["fp_render_ms"] = 1e3 * (t1 - t0)
         self.timings["fp_shade_ms"] = 1e3 * (t2 - t1)
@@ -543,6 +549,17 @@ class Scene:
         return z_eye[..., None] * (fwd + U[..., None] * right + V[..., None] * up)
 
     # -- internals ------------------------------------------------------------
+    def _pixel_rays(self):
+        """Per pixel: camera-frame ray (U right, V up, 1 forward) and its length."""
+        if getattr(self, "_rays", None) is None:
+            w, h = FP_SIZE
+            fx, fy, cx, cy = self._intrinsics()
+            u = (np.arange(w) + 0.5 - cx) / fx
+            v = (cy - (np.arange(h) + 0.5)) / fy
+            U, V = np.meshgrid(u, v)
+            self._rays = (U, V, np.sqrt(1.0 + U * U + V * V))
+        return self._rays
+
     def _intrinsics(self):
         w, h = FP_SIZE
         fx = (w / 2.0) / math.tan(math.radians(HFOV_DEG / 2))
@@ -622,14 +639,45 @@ class Scene:
                    n=g.normal(xyz[:, 0], xyz[:, 1]))
         blk["albedo"] = self._albedo_at(xyz)
         blk["fill"] = self._fill_rgb(xyz, blk["n"])
-        blk["pd"] = _polydata(xyz, np.zeros((0, 3), dtype=np.int64))
-        blk["actor"] = _color_actor(blk["pd"])
+        blk["base"] = self._to_u8(blk["fill"])
+        pd = _polydata(xyz, np.zeros((0, 3), dtype=np.int64))
+        nr, nc = i1 - i0 + 1, j1 - j0 + 1
+        # Third-person colours live in a texture with one texel per vertex,
+        # so a lamp update re-uploads the texture, not the whole mesh.
+        tu = (np.arange(nc) + 0.5) / nc
+        tv = (np.arange(nr) + 0.5) / nr
+        TU, TV = np.meshgrid(tu, tv)
+        pd.GetPointData().SetTCoords(vnp.numpy_to_vtk(np.column_stack([TU.ravel(), TV.ravel()]).astype(np.float32), deep=True))
+        img = vtk.vtkImageData()
+        img.SetDimensions(nc, nr, 1)
+        img.GetPointData().SetScalars(vnp.numpy_to_vtk(blk["base"].copy(), deep=True))
+        blk["tex_img"] = img
+        blk["tex_np"] = vnp.vtk_to_numpy(img.GetPointData().GetScalars())  # shares memory with img
+        tex = vtk.vtkTexture()
+        tex.SetInputData(img)
+        tex.InterpolateOn()
+        tex.EdgeClampOn()
+        blk["pd"] = pd
+        fp_m = vtk.vtkPolyDataMapper()
+        fp_m.SetInputData(pd)
+        fp_m.ScalarVisibilityOff()
+        blk["fp_actor"] = vtk.vtkActor()
+        blk["fp_actor"].SetMapper(fp_m)
+        tp_m = vtk.vtkPolyDataMapper()
+        tp_m.SetInputData(pd)
+        tp_m.ScalarVisibilityOff()
+        blk["tp_actor"] = vtk.vtkActor()
+        blk["tp_actor"].SetMapper(tp_m)
+        blk["tp_actor"].SetTexture(tex)
+        blk["tp_actor"].GetProperty().LightingOff()
+        blk["tp_actor"].GetProperty().SetColor(1.0, 1.0, 1.0)
+        blk["lit"] = np.zeros(0, dtype=np.int64)
         if old is not None:
-            for ren in (self._fp_ren, self._tp_ren):
-                ren.RemoveActor(old["actor"])
+            self._fp_ren.RemoveActor(old["fp_actor"])
+            self._tp_ren.RemoveActor(old["tp_actor"])
         self.blocks[agency] = blk
-        for ren in (self._fp_ren, self._tp_ren):
-            ren.AddActor(blk["actor"])
+        self._fp_ren.AddActor(blk["fp_actor"])
+        self._tp_ren.AddActor(blk["tp_actor"])
         self._rebuild_topology()
         self._lamp_colors_dirty = True
 
@@ -692,20 +740,27 @@ class Scene:
     def _update_lamp_colors(self):
         if not self._lamp_colors_dirty:
             return
+        # Lamp light only reaches the fine blocks: each block extends at least
+        # LAMP_FADE_START_M past its rover, and beyond that the lamp has faded.
         lamps = [self._lamp(a) for a in self.poses]
         for b in self.blocks.values():
-            _set_colors(b["pd"], self._gamma(b["fill"] + self._lamp_rgb(b["xyz"], b["n"], b["albedo"], lamps)))
-        _set_colors(self._coarse_pd, self._gamma(self._coarse_fill + self._lamp_rgb(self._coarse_xyz, self._coarse_n, self._coarse_albedo, lamps)))
+            tex = b["tex_np"]
+            tex[b["lit"]] = b["base"][b["lit"]]  # clear last frame's pool
+            xyz = b["xyz"]
+            E = np.zeros(len(xyz), dtype=np.float32)
+            for lamp in lamps:
+                E += lamp.irradiance(xyz, b["n"])
+            lit = np.flatnonzero(E > 0)
+            if len(lit):
+                lin = b["albedo"][lit] * E[lit] * np.float32(EXPOSURE_REF_LEVEL ** DISPLAY_GAMMA / self.e_ref)
+                tex[lit] = self._to_u8(b["fill"][lit] + lin[:, None] * LAMP_RGB[None, :])
+            b["lit"] = lit
+            b["tex_img"].GetPointData().GetScalars().Modified()
+            b["tex_img"].Modified()
         self._lamp_colors_dirty = False
 
-    def _lamp_rgb(self, xyz, n, albedo, lamps):
-        E = np.zeros(len(xyz), dtype=np.float32)
-        for lamp in lamps:
-            sel = np.hypot(xyz[:, 0] - lamp.pos[0], xyz[:, 1] - lamp.pos[1]) < LAMP_FADE_END_M
-            if np.any(sel):
-                E[sel] += lamp.irradiance(xyz[sel], n[sel])
-        lin = albedo * E / self.e_ref * EXPOSURE_REF_LEVEL ** DISPLAY_GAMMA
-        return lin[:, None] * LAMP_RGB[None, :]
+    def _to_u8(self, lin):
+        return (self._gamma(lin) * 255.0 + 0.5).astype(np.uint8)
 
     def _place_rover_actor(self, agency):
         if agency not in self._rover_actors:
@@ -811,7 +866,10 @@ class Scene:
         h, w = img.shape[:2]
 
         def text(s, org, scale=0.6, rgb=(235, 235, 235), thick=1):
-            cv2.putText(img, s, org, font, scale, (0, 0, 0), thick + 2, cv2.LINE_AA)
+            # Drop shadow at the same thickness: OpenCV's glyph spacing grows
+            # with thickness, so a thicker outline would not line up.
+            cv2.putText(img, s, (org[0] + 1, org[1] + 1), font, scale, (0, 0, 0), thick, cv2.LINE_AA)
+            cv2.putText(img, s, (org[0] + 2, org[1] + 2), font, scale, (0, 0, 0), thick, cv2.LINE_AA)
             cv2.putText(img, s, org, font, scale, rgb, thick, cv2.LINE_AA)
 
         col = tuple(int(255 * c) for c in AGENCY_RGB.get(agency, (0.8, 0.8, 0.8)))
@@ -883,70 +941,82 @@ def standin_terrain(seed=3, n=4000, cell=0.25):
 # ---------------------------------------------------------------------------
 # Scripted drive: python -m sim.scene [--terrain file.npz] [--out drive.mp4]
 # ---------------------------------------------------------------------------
-def _scripted_drive(frames):
-    """Rover A drives east past the stand-in craters; rover B idles nearby."""
+MAIN_TERRAIN = "C:/Monad-Hackathon-Project/data/terrain/shoemaker.npz"  # step 2 output, git-ignored
+
+
+def _scripted_drive(start, frames, step_m=0.5):
+    """Rover A's true poses: a gentle S-curve heading east from `start`."""
     poses = []
-    x, y, hd = 100.0, 500.0, 0.0
+    x, y = start
     for k in range(frames):
         hd = 0.12 * math.sin(k / 25.0)
-        x += 0.5 * math.cos(hd)
-        y += 0.5 * math.sin(hd)
+        x += step_m * math.cos(hd)
+        y += step_m * math.sin(hd)
         poses.append((x, y, hd))
     return poses
 
 
 def main():
     import argparse
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--terrain", default=None, help="data/terrain/*.npz from step 2 (default: stand-in)")
+    import os
+    ap = argparse.ArgumentParser(description="Render a short scripted drive to video (both views of rover A).")
+    ap.add_argument("--terrain", default=MAIN_TERRAIN if os.path.exists(MAIN_TERRAIN) else None,
+                    help="terrain .npz from step 2 (default: shoemaker.npz if present, else the stand-in)")
     ap.add_argument("--out", default="frames/scene_drive.mp4")
     ap.add_argument("--frames", type=int, default=160)
-    ap.add_argument("--start", default=None, help="x,y,heading for rover A on a real tile")
     args = ap.parse_args()
 
     t = time.perf_counter()
     height, craters, x0, y0, cell = load_any_terrain(args.terrain)
-    print(f"terrain {height.shape} in {time.perf_counter() - t:.1f}s")
+    print(f"terrain {args.terrain or 'stand-in'} {height.shape} in {time.perf_counter() - t:.1f}s")
     t = time.perf_counter()
     scene = Scene(height, craters, x0, y0, cell)
     print(f"scene built in {time.perf_counter() - t:.1f}s")
-    poses = _scripted_drive(args.frames)
-    if args.start:
-        sx, sy, sh = (float(v) for v in args.start.split(","))
-        dx, dy = sx - poses[0][0], sy - poses[0][1]
-        poses = [(px + dx, py + dy, ph + sh) for px, py, ph in poses]
-    bx, by, _ = poses[0]
-    scene.set_rover("B", (bx + 30.0, by + 25.0, -2.4))
+    start = (x0 + 500.0, y0 + 500.0) if args.terrain else (100.0, 500.0)
+    poses = _scripted_drive(start, args.frames)
+    # Rover B parked ahead and to the left, lamp facing back across A's path.
+    scene.set_rover("B", (start[0] + 55.0, start[1] + 22.0, -2.6))
 
-    import os
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     fw, fh = FP_SIZE
     tw, th = TP_SIZE
     vw = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), 10, (tw + fw, th))
-    times = []
-    track = []
+    rng = np.random.default_rng(1)
+    times, true_track, odom_track = [], [], []
+    ox, oy = start
     for k, pose in enumerate(poses):
         t0 = time.perf_counter()
         scene.set_rover("A", pose)
-        track.append(pose[:2])
         img, depth = scene.first_person("A")
         t1 = time.perf_counter()
-        tp = scene.third_person("A", {"true_track": np.array(track), "estimate": pose[:2], "sigma": 1.5})
+        # Stand-in overlays: odometry with 2% scale error (ShadowNav sec. 1 noise level),
+        # an estimate near the truth and a sigma that grows then shrinks.
+        prev = poses[k - 1] if k else (start[0], start[1], 0.0)
+        ds = math.hypot(pose[0] - prev[0], pose[1] - prev[1]) * 1.02
+        ox += ds * math.cos(pose[2] + 0.03)
+        oy += ds * math.sin(pose[2] + 0.03)
+        true_track.append(pose[:2])
+        odom_track.append((ox, oy))
+        sigma = 0.6 + 1.2 * abs(math.sin(k / 40.0))
+        est = (pose[0] + rng.normal(0, 0.3), pose[1] + rng.normal(0, 0.3))
+        tp = scene.third_person("A", {"true_track": np.array(true_track), "odom_track": np.array(odom_track),
+                                      "estimate": est, "sigma": sigma})
         t2 = time.perf_counter()
         times.append((t1 - t0, t2 - t1))
         frame = np.zeros((th, tw + fw, 3), np.uint8)
         frame[:, :tw] = tp
         frame[(th - fh) // 2:(th - fh) // 2 + fh, tw:] = img
-        cv2.putText(frame, "Rover A camera: lamp only", (tw + 10, (th - fh) // 2 + 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
-        vw.write(frame[..., ::-1])
-        if k in (0, len(poses) // 2):
+        cv2.putText(frame, "Rover A camera: lamp only", (tw + 10, (th - fh) // 2 + 24),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
+        vw.write(np.ascontiguousarray(frame[..., ::-1]))
+        if k % 40 == 0:
             cv2.imwrite(args.out.replace(".mp4", f"_f{k:03d}.png"), frame[..., ::-1])
             np.save(args.out.replace(".mp4", f"_f{k:03d}_depth.npy"), depth)
     vw.release()
     ts = np.array(times[1:]) * 1e3
     print(f"{len(times)} frames -> {args.out}")
-    print(f"first person ms: median {np.median(ts[:, 0]):.0f}, max {ts[:, 0].max():.0f}")
-    print(f"third person ms: median {np.median(ts[:, 1]):.0f}, max {ts[:, 1].max():.0f}")
+    print(f"first person ms (incl. set_rover): median {np.median(ts[:, 0]):.0f}, p95 {np.percentile(ts[:, 0], 95):.0f}, max {ts[:, 0].max():.0f}")
+    print(f"third person ms: median {np.median(ts[:, 1]):.0f}, p95 {np.percentile(ts[:, 1], 95):.0f}, max {ts[:, 1].max():.0f}")
 
 
 if __name__ == "__main__":

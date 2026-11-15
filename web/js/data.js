@@ -20,6 +20,16 @@ async function fetchU16(url) {
   return new Uint16Array(buf.buffer, buf.byteOffset, buf.byteLength >> 1);
 }
 
+// float32 table, gzip-compressed by build_assets.py.
+export async function fetchF32(url) {
+  let buf = new Uint8Array(await (await fetchOk(url)).arrayBuffer());
+  if (buf[0] === 0x1f && buf[1] === 0x8b) {
+    const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+    buf = new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  return new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength >> 2);
+}
+
 function dequant(q, hmin, hscale) {
   const z = new Float32Array(q.length);
   for (let i = 0; i < q.length; i++) z[i] = hmin + q[i] * hscale;
@@ -63,8 +73,9 @@ export class Terrain {
     return t;
   }
 
-  async loadBackdrop() {
-    const b = this.meta.backdrop;
+  // "backdrop" (20 m) or "backdrop_near" (5 m), both real LOLA.
+  async loadBackdrop(name = "backdrop") {
+    const b = this.meta[name];
     if (!b) return null;
     const z = dequant(await fetchU16(this.base + b.file), b.hmin, b.hscale);
     return new Grid(z, b.rows, b.cols, b.x0, b.y0, b.cell);
@@ -162,6 +173,20 @@ export class Run {
     this.unit = log.truth && /wt%/.test(log.truth.ice_units || "") ? " wt%" : "";
     this.truth = log.truth || null;
     this.chain = log.chain || {};
+    // The rover's real driving speed, from the log: median distance per
+    // logged step over dt_s, counting only steps where it moved.
+    this.speed = {};
+    const dt = log.dt_s || (this.times[1] - this.times[0]);
+    for (const a of this.agencies) {
+      const v = [];
+      for (let k = 1; k < this.steps.length; k++) {
+        const p = this.steps[k].rovers[a].true_pose, q = this.steps[k - 1].rovers[a].true_pose;
+        const d = Math.hypot(p[0] - q[0], p[1] - q[1]), dtk = this.times[k] - this.times[k - 1];
+        if (d > 1e-3 && dtk > 0) v.push(d / dtk);
+      }
+      v.sort((x, y) => x - y);
+      this.speed[a] = v.length ? v[v.length >> 1] : null;
+    }
   }
 
   // Index of the last step at or before t.

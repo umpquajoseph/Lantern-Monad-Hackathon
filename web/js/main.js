@@ -404,11 +404,17 @@ function captionHtml(run, a, k, sub) {
 }
 
 // Lidar panel caption: the scan taken with this step's live frame (run_demo.py --vision).
+const LIDAR_TOPDOWN_W = 800;   // sim/lidar.py Lidar.view on step-6-nav 40304d4: 800 x 280
 function lidarCapText(run, a, k) {
   const r = run.rover(a, k);
   if (!r.lidar_frame) return "No lidar in this run.";
   const hz = r.lidar_hazards || {};
-  return `Rover ${a} lidar, beside the camera: 120° x 33°, near warm, far cool. ` +
+  // Two image kinds, told apart by width (step-6-nav 40304d4): the top-down
+  // map of what the scan found is 800 px wide; the older range image is 400.
+  const topDown = $("lidar-img").naturalWidth >= LIDAR_TOPDOWN_W;
+  return (topDown
+    ? `Rover ${a} lidar, from above: what this scan found. Grey safe, amber crater floor (avoided), red too steep (no-go). `
+    : `Rover ${a} lidar, beside the camera: 120° x 33°, near warm, far cool. `) +
     `This scan: ${hz.crater || 0} crater cells, ${hz.slope || 0} steep cells.`;
 }
 

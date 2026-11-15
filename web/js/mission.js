@@ -717,6 +717,7 @@ function render(panels) {
   if (S.cam !== "first") world.render();
   else showFrame($("fp-img"), $("fp-ov"), $("fp-none"), false);
   if (S.cam !== "first") showFrame($("fpi-img"), $("fpi-ov"), $("fpi-none"), true);
+  showLidar(t);
   if (S.cam !== "overhead") map.update(t);
   $("clock").textContent = fmtClock(t);
   $("tl-fill").style.width = `${(100 * t) / run.tEnd}%`;
@@ -744,6 +745,32 @@ function instrumentNow(a, t, ev) {
   if (ph === "arm_deploy" || ph === "arm_stow" || ph === "sample_lift") return "DRILL ARM";
   if (a === "A" && stateAt(a, t).state === "EXPLORING") return "neutron survey";
   return "";
+}
+
+// The lidar scan (sim/lidar.py Lidar.view, logged per step as lidar_frame):
+// the latest one at or before the shown moment, for the selected rover.
+// Runs without lidar keep the box hidden.
+function showLidar(t) {
+  const run = S.run, box = $("in-lidar");
+  if (run.hasLidar === undefined) run.hasLidar = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_frame));
+  box.hidden = !run.hasLidar;
+  if (!run.hasLidar) return;
+  const a = S.rover, k = run.stepAt(t);
+  let src = null;
+  for (let i = k; i >= 0 && i > k - 50 && !src; i--) src = run.steps[i].rovers[a] && run.steps[i].rovers[a].lidar_frame;
+  const img = $("lid-img");
+  $("lid-none").hidden = !!src;
+  img.hidden = !src;
+  if (src && img.dataset.src !== run.dir + src) { img.src = run.dir + src; img.dataset.src = run.dir + src; }
+  // Top-down scans (step-6-nav 40304d4) are 800 px wide; older range images 400.
+  const top = img.naturalWidth >= 800;
+  const cap = `${ROLE[a] || "Rover " + a} lidar, ${top ? "from above" : "range image"}`;
+  if ($("lid-cap").textContent !== cap) {
+    $("lid-cap").textContent = cap;
+    $("lid-cap").title = top
+      ? "Top-down, forward up, rover at the bottom centre. Grey safe, amber crater floor (avoided), red steeper than 15° (no-go). Rings every 5 m."
+      : "Range image beside the camera, 120° x 33°: near warm, far cool.";
+  }
 }
 
 function showFrame(img, cv, none, small) {

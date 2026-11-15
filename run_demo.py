@@ -457,6 +457,7 @@ def _worker_run(chunk):
 
 
 WORKER_GB_ASSUMED = 0.7    # one render worker's private memory with the maps shared: 0.61 GB measured 12:19
+THREAD_GB_MEASURED = 0.06  # extra private memory per render thread in a worker (sim/scene.py RENDER_THREADS): +0.43 GB at 8 threads, measured 13:50
 HEADROOM_GB = 2.0          # leave this much RAM free
 MAX_WORKERS = 8
 
@@ -465,21 +466,37 @@ def render_sub_frames(jobs, shared, terrain, display, workers=None):
     """Render display frames across a process pool sized to free memory."""
     import multiprocessing as mp
     import psutil
+    from sim.scene import RENDER_THREADS
+    cpus = os.cpu_count() or 1
+
+    def threads_for(w):  # the cores split between workers; each worker's Scene renders with this many threads
+        return max(1, min(RENDER_THREADS, cpus // w))
+
     if workers is None:
         free_gb = psutil.virtual_memory().available / 2 ** 30
-        # Round before the floor: in floats (3.4 - 2.0) // 0.7 is 1.0, not 2.
-        fit = math.floor(round((free_gb - HEADROOM_GB) / WORKER_GB_ASSUMED, 6))
-        workers = int(max(1, min(MAX_WORKERS, os.cpu_count() or 1, fit)))
-        print(f"  pool: {free_gb:.1f} GB free, {workers} workers")
+        budget = free_gb - HEADROOM_GB
+        # Most workers whose memory fits, each with its share of the cores.
+        # Round before comparing: in floats (3.4 - 2.0) // 0.7 is 1.0, not 2.
+        workers = next((w for w in range(min(MAX_WORKERS, cpus), 0, -1)
+                        if round(w * (WORKER_GB_ASSUMED + THREAD_GB_MEASURED * threads_for(w)), 6) <= round(budget, 6)), 1)
+        print(f"  pool: {free_gb:.1f} GB free, {workers} workers x {threads_for(workers)} threads")
     _, _, x0, y0, cell = terrain
     size = math.ceil(len(jobs) / (workers * 4))
     chunks = [jobs[i:i + size] for i in range(0, len(jobs), size)]  # contiguous: squares rebuild rarely
     times, mem = [], {}
-    with mp.get_context("spawn").Pool(workers, _worker_init, (str(shared), x0, y0, cell, display)) as pool:
-        for t, pid, uss, peak in pool.imap_unordered(_worker_run, chunks):
-            times += t
-            u0, p0 = mem.get(pid, (0, 0))
-            mem[pid] = (max(uss, u0), max(peak, p0))
+    old_env = os.environ.get("LANTERN_RENDER_THREADS")
+    os.environ["LANTERN_RENDER_THREADS"] = str(threads_for(workers))  # read by sim/scene.py in each spawned worker
+    try:
+        with mp.get_context("spawn").Pool(workers, _worker_init, (str(shared), x0, y0, cell, display)) as pool:
+            for t, pid, uss, peak in pool.imap_unordered(_worker_run, chunks):
+                times += t
+                u0, p0 = mem.get(pid, (0, 0))
+                mem[pid] = (max(uss, u0), max(peak, p0))
+    finally:
+        if old_env is None:
+            os.environ.pop("LANTERN_RENDER_THREADS", None)
+        else:
+            os.environ["LANTERN_RENDER_THREADS"] = old_env
     return times, workers, mem
 
 

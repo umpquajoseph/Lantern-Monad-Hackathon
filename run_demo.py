@@ -405,7 +405,7 @@ class LiveCamera:
             if ag in self.vis:
                 rims = np.array(rims, copy=True)
                 hz_world = rover_to_world(self.lid[ag].to_camera_frame(hz), r.true)
-                r.add_hazards(hz_world)
+                r.add_hazards(hz_world, kinds)
                 self.haz_count[ag] = {kk: kinds.count(kk) for kk in ("crater", "slope")}
                 if self.run_dir is not None:
                     # Lidar hazards are marked on the saved frame; the planned

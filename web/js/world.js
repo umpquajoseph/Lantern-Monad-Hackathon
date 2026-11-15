@@ -47,6 +47,7 @@ const PATCH_TAPER_M = 0.75;    // blend to the tile surface over the patch's out
 const COARSE_STRIDE = 2;       // coarse map drawn at 2 m
 const FINE_PAD_M = 70;         // load 0.25 m tiles within this of each rover
 const DRAPE_M = 0.18;          // lines float this far above the ground
+const LABEL_GAP_PX = 6;       // viewer only, assumed: a rover tag hides when a find label is this close
 const PARTICLE_SIZE = 0.3;    // viewer only, assumed: point size for an average-weight particle
 const PARTICLE_MIN = 0.5, PARTICLE_MAX = 3;   // size limits, as multiples of PARTICLE_SIZE
 const PARTICLE_LIFT_M = 0.08; // above the ground, so the 5 cm patch's lips do not hide them
@@ -570,7 +571,7 @@ uniform vec4 uP1;`)
     lbl.center.set(1, 1);  // above-left of the rover; find labels go above-right
     g.add(lbl);
     this.scene.add(g);
-    this.rovers[a] = { g, lamp };
+    this.rovers[a] = { g, lamp, tag };
   }
 
   // ------------------------------------------------------------ overlays
@@ -863,6 +864,31 @@ uniform vec4 uP1;`)
     c.update();
   }
 
+  // After the label pass: a find label that would run off the right edge
+  // flips to above-left (as map.js does), and a rover's tag hides while a
+  // find label covers it. Takes effect from the next frame.
+  declutterLabels() {
+    const box = this.el.getBoundingClientRect();
+    const finds = [];
+    for (const obj of (this.findObjs || new Map()).values()) {
+      const lbl = obj.userData.lbl, el = lbl.element;
+      if (!obj.visible || el.style.display === "none") continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width) continue;
+      const anchorX = lbl.center.x === 0 ? r.left : r.right;
+      const wantLeft = anchorX + r.width > box.right - 4;
+      if ((lbl.center.x === 1) !== wantLeft) lbl.center.set(wantLeft ? 1 : 0, 1);
+      finds.push(r);
+    }
+    for (const { tag } of Object.values(this.rovers)) {
+      if (!tag) continue;
+      const r = tag.getBoundingClientRect();
+      const pad = LABEL_GAP_PX;
+      const hit = finds.some((f) => r.left < f.right + pad && r.right > f.left - pad && r.top < f.bottom + pad && r.bottom > f.top - pad);
+      tag.style.visibility = hit ? "hidden" : "";
+    }
+  }
+
   render() {
     this.controls.update();
     // The fill comes from the side of the view, never from behind the camera.
@@ -873,5 +899,6 @@ uniform vec4 uP1;`)
     this.fill.position.set(t.x + 100 * Math.cos(az) * Math.cos(el), t.y + 100 * Math.sin(az) * Math.cos(el), t.z + 100 * Math.sin(el));
     this.renderer.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
+    this.declutterLabels();
   }
 }

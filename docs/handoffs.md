@@ -204,7 +204,7 @@ After a run, one master file per run and its results on Monad, next to Lantern:
   ABI and address in `sim/survey_abi.json`, `sim/survey_deployment.json`.
 - Optional, asked of the spine: a per-step `"reading"` (wt%) in each rover's
   dict. With it the deposit extent is measured along the track; without it the
-  area is one sensor footprint (ASSUMED 1.5 m radius). Nothing breaks either way.
+  area is one sensor footprint (sim/ice.py FOOTPRINT_RADIUS_M). Nothing breaks either way.
 - Writers are Lantern's agencies (`isAgency`), so it needs no keys of its own.
 
 ## Step 5, dashboard, takes

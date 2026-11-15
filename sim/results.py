@@ -65,19 +65,29 @@ MOLAR = {"H2O": 18.015, "H2S": 34.08, "NH3": 17.031, "SO2": 64.06, "C2H4": 28.05
          "CO2": 44.009, "CH3OH": 32.042, "CH4": 16.043, "OH": 17.007}
 
 
+# The spine's sensor model (sim/ice.py) sets the footprint, threshold and depth, so the
+# quantity model uses the same numbers. Defaults below apply only if it is missing.
+try:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import ice as _ice  # noqa: E402
+    _FOOT, _THRESH, _DEPTH = _ice.FOOTPRINT_RADIUS_M, _ice.FIND_THRESHOLD_WT, _ice.SENSE_DEPTH_M
+except Exception:  # pragma: no cover
+    _FOOT, _THRESH, _DEPTH = 1.0, 1.0, 1.0
+
+
 @dataclass
 class Model:
     """Parameters of the ice-quantity and volatiles model. Change here, nowhere else."""
     # [PB] p. 5: the neutron spectrometer senses hydrogen to about 1 m depth.
-    sense_depth_m: float = 1.0
+    sense_depth_m: float = _DEPTH  # sim/ice.py SENSE_DEPTH_M
     # [Hu21] section 2: lunar regolith bulk density 1.66 g/cc.
     regolith_density_kg_m3: float = 1660.0
     # ASSUMED. Radius of ground one neutron reading averages over. Used as the deposit
     # radius when the log has no per-step readings to measure the extent from.
-    footprint_radius_m: float = 1.5
+    footprint_radius_m: float = _FOOT  # sim/ice.py FOOTPRINT_RADIUS_M (ASSUMED there)
     # ASSUMED. A reading at or above this is "ice" when measuring a deposit's extent
     # along the track. [PB] p. 9 asks for a source for its ~1 wt% threshold; none yet.
-    extent_threshold_wt_pct: float = 1.0
+    extent_threshold_wt_pct: float = _THRESH  # sim/ice.py FIND_THRESHOLD_WT
     # ASSUMED. The LCROSS plume's volatile mix [C10] scaled to each find's water. The
     # plume sampled one spot in Cabeus; using it everywhere is a modelling choice.
     volatile_ratios: dict = field(default_factory=lambda: dict(C10_RATIO))

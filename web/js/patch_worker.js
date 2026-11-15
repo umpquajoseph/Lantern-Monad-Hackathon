@@ -46,7 +46,7 @@ function cr(t, w) {
 self.onmessage = (e) => {
   const m = e.data;
   if (m.init) { lips = m.init.lips; gx0 = m.init.x0; gy0 = m.init.y0; return; }
-  const { id, a, base, bx0, by0, bnx, bny, cell, px0, py0, res, n, taper, o, alb, per } = m;
+  const { id, a, center, base, bx0, by0, bnx, bny, cell, px0, py0, res, n, taper, o, alb, per } = m;
   // Lip-free base: the tiles have the lips baked in at 0.25 m.
   const b = Float32Array.from(base);
   if (lips) stampLips(b, bnx, bny, bx0, by0, cell, -1);
@@ -98,5 +98,5 @@ self.onmessage = (e) => {
       uv1[2 * k] = (x - px) / per; uv1[2 * k + 1] = (y - py) / per;
     }
   }
-  self.postMessage({ id, a, pos, nrm, uv0, uv1, px0, py0, span }, [pos.buffer, nrm.buffer, uv0.buffer, uv1.buffer]);
+  self.postMessage({ id, a, center, pos, nrm, uv0, uv1, px0, py0, span }, [pos.buffer, nrm.buffer, uv0.buffer, uv1.buffer]);
 };

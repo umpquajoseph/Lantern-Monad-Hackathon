@@ -172,6 +172,8 @@ export class Run {
     this.fakeTx = !!chainLine || !(log.chain && log.chain.explorer);
     this.unit = log.truth && /wt%/.test(log.truth.ice_units || "") ? " wt%" : "";
     this.truth = log.truth || null;
+    // What made the estimate and sigma, when the run says (run_demo.py "nav").
+    this.nav = typeof log.nav === "string" ? log.nav.replace(/^nav:\s*/, "") : null;
     this.chain = log.chain || {};
     // The rover's real driving speed, from the log: median distance per
     // logged step over dt_s, counting only steps where it moved.

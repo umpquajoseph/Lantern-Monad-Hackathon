@@ -225,6 +225,12 @@ function hud(run, k) {
       `<span><span class="k">true error</span> ${err.toFixed(1)} m</span>` +
       `<span><span class="k">odometry error</span> ${odo.toFixed(1)} m</span></div>`;
   });
+  if (run.nav) {
+    // "ShadowNav particle filter (Cauligi et al. 2023, Algs. 1-3), 100 particles, ..."
+    // -> "ShadowNav particle filter, 100 particles"; the full line on hover.
+    const short = run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim();
+    rows.push(`<div class="row src" title="${run.nav.replace(/"/g, "&quot;")}"><span class="k">estimate and σ:</span><span>${short}</span></div>`);
+  }
   $("hud").innerHTML = rows.join("");
 }
 

@@ -36,11 +36,13 @@ const FILL_FROM_VIEW_DEG = 110;
 const QUALITY = {
   // patch: the fine height patch ahead of each rover, `res` m spacing over a
   // square `half` m each way about a point PATCH_AHEAD_M ahead.
-  high: { fineStride: 1, shadow: 4096, nearStride: 1, farStride: 2, rocks: true, patch: { res: 0.04, half: 13 } },
+  high: { fineStride: 1, shadow: 4096, nearStride: 1, farStride: 2, rocks: true, patch: { res: 0.05, half: 16 } },
   low: { fineStride: 2, shadow: 2048, nearStride: 2, farStride: 4, rocks: true, patch: null },
 };
 const PATCH_AHEAD_M = 9;       // patch centre ahead of the rover, where the lamp pool is
-const PATCH_MOVE_M = 3;        // rebuild once the wanted centre moves this far
+const PATCH_MOVE_M = 4;        // patches along the track this far apart (a patch covers the pool within ~6 m)
+const PATCH_PREFETCH = 4;      // build this many patches ahead along the logged track
+const PATCH_WORKERS = 2;
 const PATCH_TAPER_M = 0.75;    // blend to the tile surface over the patch's outer edge
 const COARSE_STRIDE = 2;       // coarse map drawn at 2 m
 const FINE_PAD_M = 70;         // load 0.25 m tiles within this of each rover
@@ -350,14 +352,23 @@ uniform vec4 uP1;`)
   }
 
   // ------------------------------------------------------- fine patch
+  // Patches are built ahead along the logged track, so at fast playback the
+  // lamp pool is already on a fine patch when the rover gets there.
   async initPatches() {
     const P = this.q.patch, lm = this.terrain.meta.lips;
     if (!P || !lm) return;
     const lips = await fetchF32(this.terrain.base + lm.file);
-    this.patchWorker = new Worker(new URL("./patch_worker.js", import.meta.url), { type: "module" });
-    this.patchWorker.postMessage({ init: { lips, x0: this.terrain.meta.x0, y0: this.terrain.meta.y0 } });
-    this.patchWorker.onmessage = (e) => this.patchReady(e.data);
-    this.patches = {};
+    this.patchWorkers = [];
+    for (let i = 0; i < PATCH_WORKERS; i++) {
+      const w = new Worker(new URL("./patch_worker.js", import.meta.url), { type: "module" });
+      w.postMessage({ init: { lips, x0: this.terrain.meta.x0, y0: this.terrain.meta.y0 } });
+      w.onmessage = (e) => { w.busy = false; this.patchReady(e.data); this.pumpPatches(); };
+      this.patchWorkers.push(w);
+    }
+    this.patches = {};      // agency -> Map(key -> {mesh, center, rect})
+    this.patchActive = {};  // agency -> key
+    this.patchQueue = [];
+    this.patchInFlight = new Set();
     const n = Math.round((2 * P.half) / P.res) + 1;
     const idx = new Uint32Array((n - 1) * (n - 1) * 6);
     let t = 0;
@@ -368,45 +379,105 @@ uniform vec4 uP1;`)
     }
     this.patchIndex = new THREE.BufferAttribute(idx, 1);
     this.patchN = n;
-    this.patchSeq = 0;
   }
 
-  // Ask for a new patch when a rover's lamp pool has moved on.
+  // Where the lamp pool is: PATCH_AHEAD_M ahead of the rover.
+  poolCenter([x, y, h]) { return [x + PATCH_AHEAD_M * Math.cos(h), y + PATCH_AHEAD_M * Math.sin(h)]; }
+
+  // The pool centres from t onward, PATCH_MOVE_M apart along the logged track.
+  poolCentersAhead(run, a, t) {
+    const out = [this.poolCenter(run.poseAt(a, t))];
+    for (let k = run.stepAt(t) + 1; k < run.steps.length && out.length < PATCH_PREFETCH + 1; k++) {
+      const c = this.poolCenter(run.steps[k].rovers[a].true_pose), last = out[out.length - 1];
+      if (Math.hypot(c[0] - last[0], c[1] - last[1]) >= PATCH_MOVE_M) out.push(c);
+    }
+    return out;
+  }
+
+  nearestPatch(a, c) {
+    let best = null, bd = Infinity;
+    for (const [key, p] of this.patches[a]) {
+      const d = Math.hypot(c[0] - p.center[0], c[1] - p.center[1]);
+      if (d < bd) { bd = d; best = key; }
+    }
+    return { key: best, d: bd };
+  }
+
   updatePatches(run, t) {
     if (!this.patches) return;
-    const P = this.q.patch, T = this.terrain, m = T.meta;
     for (const a of run.agencies) {
-      const st = (this.patches[a] = this.patches[a] || {});
-      if (st.pending) continue;
-      const [x, y, h] = run.poseAt(a, t);
-      // Snap to the patch spacing so vertices land on the same world points.
-      const cx = x + PATCH_AHEAD_M * Math.cos(h), cy = y + PATCH_AHEAD_M * Math.sin(h);
-      if (st.center && Math.hypot(cx - st.center[0], cy - st.center[1]) < PATCH_MOVE_M) continue;
-      const px0 = m.x0 + Math.round((cx - P.half - m.x0) / P.res) * P.res;
-      const py0 = m.y0 + Math.round((cy - P.half - m.y0) / P.res) * P.res;
-      const span = (this.patchN - 1) * P.res;
-      // Every 0.25 m tile under it must be loaded, or the base would be the 1 m map.
-      const corners = [[px0, py0], [px0 + span, py0], [px0, py0 + span], [px0 + span, py0 + span]];
-      const keys = corners.map(([u, v]) => T.tileKey(u, v));
-      if (keys.some((k) => !k || !T.tiles.has(k))) continue;
-      const cell = m.cell;
-      const bx0 = m.x0 + (Math.floor((px0 - m.x0) / cell) - 2) * cell, by0 = m.y0 + (Math.floor((py0 - m.y0) / cell) - 2) * cell;
-      const bnx = Math.ceil(span / cell) + 6, bny = bnx;
-      const base = new Float32Array(bnx * bny);
-      for (let i = 0; i < bny; i++) for (let j = 0; j < bnx; j++) base[i * bnx + j] = T.heightAt(bx0 + j * cell, by0 + i * cell);
-      st.pending = true;
-      st.want = [cx, cy];
-      const ax0 = m.x0 - m.cell / 2, ay0 = m.y0 - m.cell / 2;
-      this.patchWorker.postMessage({ id: ++this.patchSeq, a, base, bx0, by0, bnx, bny, cell, px0, py0, res: P.res, n: this.patchN,
-        taper: PATCH_TAPER_M, o: [this.o.x, this.o.y, this.o.z], alb: [ax0, ay0, m.cols * m.cell, m.rows * m.cell],
-        per: m.detail ? m.detail.period_m : 8 }, [base.buffer]);
+      if (!this.patches[a]) this.patches[a] = new Map();
+      const want = this.poolCentersAhead(run, a, t);
+      // Show the built patch nearest the pool now; hold the old one until a nearer one is ready.
+      const { key } = this.nearestPatch(a, want[0]);
+      if (key && key !== this.patchActive[a]) this.showPatch(a, key);
+      // Queue what is missing, nearest in time first.
+      want.forEach((c, i) => {
+        const near = this.nearestPatch(a, c);
+        if (near.d < PATCH_MOVE_M * 0.75) return;
+        const id = `${a}:${Math.round(c[0] / PATCH_MOVE_M)}:${Math.round(c[1] / PATCH_MOVE_M)}`;
+        if (this.patchInFlight.has(id) || this.patchQueue.some((q) => q.id === id)) return;
+        this.patchQueue.push({ id, a, c, pri: i });
+      });
+      // Forget patches the rover has passed.
+      const keep = new Set(want.map((c) => this.nearestPatch(a, c).key));
+      keep.add(this.patchActive[a]);
+      if (this.patches[a].size > PATCH_PREFETCH + 3) {
+        for (const [k2, p] of this.patches[a]) {
+          if (keep.has(k2)) continue;
+          p.mesh.geometry.dispose(); this.scene.remove(p.mesh); this.patches[a].delete(k2);
+        }
+      }
+    }
+    // Drop queued jobs that are no longer wanted (scrubbing), keep order by priority.
+    this.patchQueue = this.patchQueue.filter((q) => {
+      const want = this.poolCentersAhead(run, q.a, t);
+      return want.some((c) => Math.hypot(c[0] - q.c[0], c[1] - q.c[1]) < PATCH_MOVE_M * 0.5);
+    }).sort((p, q) => p.pri - q.pri);
+    this.pumpPatches();
+  }
+
+  pumpPatches() {
+    for (const w of this.patchWorkers) {
+      if (w.busy) continue;
+      let job = null;
+      while (this.patchQueue.length && !job) {
+        const q = this.patchQueue.shift();
+        job = this.patchJob(q);
+      }
+      if (!job) return;
+      w.busy = true;
+      this.patchInFlight.add(job.id);
+      w.postMessage(job, [job.base.buffer]);
     }
   }
 
-  patchReady({ a, pos, nrm, uv0, uv1, px0, py0, span }) {
-    const st = this.patches[a];
-    st.pending = false;
-    st.center = st.want;
+  // The worker's input for a patch centred near c, or null if its tiles are not loaded yet.
+  patchJob({ id, a, c }) {
+    const P = this.q.patch, T = this.terrain, m = T.meta;
+    // Snap to the patch spacing so vertices land on the same world points.
+    const px0 = m.x0 + Math.round((c[0] - P.half - m.x0) / P.res) * P.res;
+    const py0 = m.y0 + Math.round((c[1] - P.half - m.y0) / P.res) * P.res;
+    const span = (this.patchN - 1) * P.res;
+    // Every 0.25 m tile under it must be loaded, or the base would be the 1 m map.
+    const corners = [[px0, py0], [px0 + span, py0], [px0, py0 + span], [px0 + span, py0 + span]];
+    if (corners.some(([u, v]) => { const k = T.tileKey(u, v); return !k || !T.tiles.has(k); })) {
+      corners.forEach(([u, v]) => { const k = T.tileKey(u, v); if (k) T.loadTile(k); });
+      return null;
+    }
+    const cell = m.cell;
+    const bx0 = m.x0 + (Math.floor((px0 - m.x0) / cell) - 2) * cell, by0 = m.y0 + (Math.floor((py0 - m.y0) / cell) - 2) * cell;
+    const bnx = Math.ceil(span / cell) + 6, bny = bnx;
+    const base = new Float32Array(bnx * bny);
+    for (let i = 0; i < bny; i++) for (let j = 0; j < bnx; j++) base[i * bnx + j] = T.heightAt(bx0 + j * cell, by0 + i * cell);
+    const ax0 = m.x0 - m.cell / 2, ay0 = m.y0 - m.cell / 2;
+    return { id, a, center: c, base, bx0, by0, bnx, bny, cell, px0, py0, res: P.res, n: this.patchN,
+      taper: PATCH_TAPER_M, o: [this.o.x, this.o.y, this.o.z], alb: [ax0, ay0, m.cols * m.cell, m.rows * m.cell],
+      per: m.detail ? m.detail.period_m : 8 };
+  }
+
+  patchReady({ id, a, center, pos, nrm, uv0, uv1, px0, py0, span }) {
+    this.patchInFlight.delete(id);
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     g.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
@@ -414,13 +485,31 @@ uniform vec4 uP1;`)
     g.setAttribute("uv1", new THREE.BufferAttribute(uv1, 2));
     g.setIndex(this.patchIndex);
     g.computeBoundingSphere();
-    if (st.mesh) { this.scene.remove(st.mesh); st.mesh.geometry.dispose(); }
-    st.mesh = new THREE.Mesh(g, this.fineMat);
-    st.mesh.castShadow = true;
-    st.mesh.receiveShadow = true;
-    this.scene.add(st.mesh);
-    const r = this.patchRects[a === "A" ? 0 : 1];
-    r.set(px0 - this.o.x, py0 - this.o.y, px0 + span - this.o.x, py0 + span - this.o.y);
+    const mesh = new THREE.Mesh(g, this.fineMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.visible = false;
+    this.scene.add(mesh);
+    const key = `${px0.toFixed(2)}_${py0.toFixed(2)}`;
+    const old = this.patches[a].get(key);
+    if (old) { this.scene.remove(old.mesh); old.mesh.geometry.dispose(); }
+    this.patches[a].set(key, { mesh, center, rect: [px0, py0, span] });
+    if (old && this.patchActive[a] === key) this.showPatch(a, key);
+    // Show it now if it is nearer the pool than the one showing.
+    if (this.run && this.run.agencies.includes(a)) {
+      const c = this.poolCenter(this.run.poseAt(a, this.currentT || 0));
+      if (this.nearestPatch(a, c).key === key) this.showPatch(a, key);
+    }
+  }
+
+  showPatch(a, key) {
+    const prev = this.patchActive[a] && this.patches[a].get(this.patchActive[a]);
+    if (prev) prev.mesh.visible = false;
+    const p = this.patches[a].get(key);
+    p.mesh.visible = true;
+    this.patchActive[a] = key;
+    const [px0, py0, span] = p.rect;
+    this.patchRects[a === "A" ? 0 : 1].set(px0 - this.o.x, py0 - this.o.y, px0 + span - this.o.x, py0 + span - this.o.y);
   }
 
   setMask(key, v) {

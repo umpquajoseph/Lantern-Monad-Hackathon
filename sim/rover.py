@@ -33,32 +33,57 @@ MAP_MARGIN_M = 15.0             # assumed: stay this far inside the map edge
 LOOKAHEAD_WAYPOINTS = 4         # assumed: steer for the global waypoint ~16 m ahead
 LOCAL_PLAN_MAX_CELLS = 3000     # assumed: local A* search budget (2 m cells)
 
-PLANNER_STANDIN = ("planner: A* on a 2 m grid through ground under 15 deg across 2 m, followed by "
-                   "the rover's estimate, with a local slope check each step (sim/rover.py)")
+# Assumed: half the rover's width, from the rover model in sim/scene.py
+# (wheels at y = +-0.72 m, 0.22 m wide).
+ROVER_HALF_WIDTH_M = 0.83
+
+PLANNER_STANDIN = ("planner: A* on a 2 m grid; a cell is blocked if any point within the rover's half "
+                   "width is over 15 deg across 2 m, measured on the 0.25 m grid. Followed by the "
+                   "rover's estimate, with a local slope check each step (sim/rover.py)")
 
 
 class SlopeMap:
-    """Slope in degrees across a 2 m baseline, on a 2 m grid."""
+    """Worst slope in degrees across a 2 m baseline, per 2 m planning cell.
+
+    Slope is measured at every 0.25 m grid point as a central difference
+    across 2 m (docs/handoffs.md, step 2), widened by the rover's half width,
+    and each 2 m cell keeps the steepest value inside it. Sampling the height
+    only every 2 m instead (the earlier version) missed crater walls that lie
+    between samples, so the rover drove into craters steeper than 15 deg.
+    """
 
     def __init__(self, height, x0, y0, cell):
+        from scipy.ndimage import maximum_filter
         k = max(1, int(round(SLOPE_BASELINE_M / cell)))
-        hs = np.asarray(height[::k, ::k], dtype=np.float64)
         b = k * cell
-        gx = np.zeros_like(hs)
-        gy = np.zeros_like(hs)
-        gx[:, :-1] = (hs[:, 1:] - hs[:, :-1]) / b
-        gy[:-1, :] = (hs[1:, :] - hs[:-1, :]) / b
-        gx[:, -1] = gx[:, -2]
-        gy[-1, :] = gy[-2, :]
-        self.deg = np.degrees(np.arctan(np.hypot(gx, gy)))
+        h = np.asarray(height, dtype=np.float32)
+        half = k // 2                                   # +-1 m: a 2 m central difference
+        hp = np.pad(h, half, mode="edge")
+        gx = (hp[half:-half, 2 * half:] - hp[half:-half, :-2 * half]) / np.float32(2 * half * cell)
+        gy = (hp[2 * half:, half:-half] - hp[:-2 * half, half:-half]) / np.float32(2 * half * cell)
+        fine = np.degrees(np.arctan(np.hypot(gx, gy)))
+        del hp, gx, gy
+        # Widen by the rover's half width, so a cell is blocked if any part of
+        # the rover standing in it would be on a steep spot.
+        r = int(math.ceil(ROVER_HALF_WIDTH_M / cell))
+        fine = maximum_filter(fine, size=2 * r + 1, mode="nearest")
+        # The A* grid: 2 m cell [i, j] spans x0 + j*b .. x0 + (j+1)*b (the
+        # floor convention of plan()); it takes the widened slope at its
+        # centre, x0 + (j + 0.5)*b, where plan() puts its waypoints. Every
+        # drive step is then checked against the 0.25 m map by at().
+        c0 = k // 2
+        self.deg = fine[c0::k, c0::k].astype(np.float64)
+        self.fine_deg = fine
+        self.cell = cell
         self.x0, self.y0, self.b = x0, y0, b
         self.x1 = x0 + (height.shape[1] - 1) * cell
         self.y1 = y0 + (height.shape[0] - 1) * cell
 
     def at(self, x, y):
-        j = np.clip(((np.asarray(x) - self.x0) / self.b).astype(int), 0, self.deg.shape[1] - 1)
-        i = np.clip(((np.asarray(y) - self.y0) / self.b).astype(int), 0, self.deg.shape[0] - 1)
-        return self.deg[i, j]
+        """Widened slope (deg) at world points, from the 0.25 m map."""
+        j = np.clip(np.rint((np.asarray(x) - self.x0) / self.cell).astype(int), 0, self.fine_deg.shape[1] - 1)
+        i = np.clip(np.rint((np.asarray(y) - self.y0) / self.cell).astype(int), 0, self.fine_deg.shape[0] - 1)
+        return self.fine_deg[i, j]
 
     def inside(self, x, y):
         return (self.x0 + MAP_MARGIN_M <= x <= self.x1 - MAP_MARGIN_M) and (self.y0 + MAP_MARGIN_M <= y <= self.y1 - MAP_MARGIN_M)
@@ -123,7 +148,9 @@ class Rover:
         self.nav = nav
         self.slope = slope
         self.rng = rng
-        est0 = self.true[:2] + nav.err
+        est0 = self.true[:2] + nav.err       # the simulation's landing error, applied once
+        if hasattr(nav, "start"):            # a real filter: give it the starting belief only
+            nav.start(est0, self.true[2])    # heading assumed known at start (spec step 3)
         self.estimate = est0.copy()
         self.sigma = nav.sigma
         self.odom = np.array([est0[0], est0[1], self.true[2]])     # dead-reckoned pose, starts at the estimate
@@ -135,6 +162,9 @@ class Rover:
         """Plan from where the rover believes it is."""
         self.goal = tuple(goal_xy)
         self.path = self.slope.plan(self.estimate, goal_xy)
+        # plan() returns [goal] alone when no route exists, e.g. when the
+        # rover starts on steep ground. Plan again once it has driven off it.
+        self._replan = len(self.path) == 1 and math.dist(self.estimate, goal_xy) > 3.0
 
     def follow(self):
         """One step along the planned path. Returns (dist, dheading).
@@ -146,6 +176,8 @@ class Rover:
         this is honest even when the global estimate is 20 m off.
         """
         est = self.estimate
+        if getattr(self, "_replan", False) and self.slope.at(self.true[0], self.true[1]) <= SLOPE_LIMIT_DEG:
+            self.set_goal(self.goal)
         # Drop waypoints already passed: everything before the nearest one ahead,
         # then any within 3 m. The local plan may pass a waypoint off to the side.
         head = self.path[:12]
@@ -178,13 +210,25 @@ class Rover:
         return 0.0, 0.0
 
     def _feasible(self, x, y, h, d):
+        """True if a straight move of d metres on heading h stays under the
+        slope limit, checked at every 0.25 m cell along it.
+
+        A rover already standing on steep ground (a scenario may start one
+        inside a crater) may still move, but only onto ground no steeper than
+        where it stands and ending less steep, so it climbs out the gentlest
+        way instead of being stuck."""
         if d <= 0:
             return True
-        for f in (0.25, 0.5, 0.75, 1.0):
-            px, py = x + f * d * math.cos(h), y + f * d * math.sin(h)
-            if not self.slope.inside(px, py) or self.slope.at(px, py) > SLOPE_LIMIT_DEG:
-                return False
-        return True
+        n = max(1, int(math.ceil(d / self.slope.cell)))
+        f = np.arange(1, n + 1) / n
+        px, py = x + f * d * math.cos(h), y + f * d * math.sin(h)
+        if not (self.slope.inside(px[-1], py[-1]) and self.slope.inside(px[0], py[0])):
+            return False
+        s = self.slope.at(px, py)
+        here = float(self.slope.at(x, y))
+        if here <= SLOPE_LIMIT_DEG:
+            return bool(np.all(s <= SLOPE_LIMIT_DEG))
+        return bool(np.all(s <= here) and s[-1] < here)
 
     def drive_toward(self, goal_xy, max_step=STEP_M):
         """One step toward goal_xy, steering by the estimate. Returns (dist, dheading) driven."""
@@ -219,6 +263,12 @@ class Rover:
         self.distance += d
         return (d_o, dh_o), (self.odom[:2] - before) - true_disp
 
-    def localize(self, odom_err_xy, d, n_rims):
-        self.estimate, self.sigma = self.nav.update(odom_err_xy, d, n_rims, self.true[:2])
+    def localize(self, odom_err_xy, d, n_rims, odom=None, rims=None):
+        """Update the estimate. A real filter (sim/nav.py) gets only the
+        odometry and the rim points; the stand-in gets its tracked error."""
+        if hasattr(self.nav, "step"):
+            est, self.sigma = self.nav.step(odom, rims)
+            self.estimate = np.asarray(est, dtype=np.float64)
+        else:
+            self.estimate, self.sigma = self.nav.update(odom_err_xy, d, n_rims, self.true[:2])
         return self.estimate, self.sigma

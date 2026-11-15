@@ -28,9 +28,11 @@ async function main() {
     $("loading").textContent = "Terrain assets missing. Run python web/build_assets.py.";
     throw e;
   }
-  world = new World($("viewport"), terrain);
+  // ?quality=low: half-resolution drive-area mesh and smaller shadow maps.
+  world = new World($("viewport"), terrain, params.get("quality") || "high");
   world.buildTerrain();
   world.buildBackdrop();
+  world.loadRocks();
   map = new MapView($("map"), terrain);
 
   state.runs = await loadIndex("runs/");
@@ -100,6 +102,7 @@ async function openRun(id, t) {
   $("time").max = run.tEnd;
   world.currentT = state.t;
   world.setRun(run);
+  speedNote();
   world.setVisibility(state.opts);
   map.setRun(run);
   $("loading").hidden = true;
@@ -110,7 +113,7 @@ function bindControls() {
   $("play").onclick = togglePlay;
   $("back").onclick = () => stepBy(-1);
   $("fwd").onclick = () => stepBy(1);
-  $("speed").onchange = (e) => (state.speed = Number(e.target.value));
+  $("speed").onchange = (e) => { state.speed = Number(e.target.value); speedNote(); };
   $("time").oninput = (e) => { state.t = Number(e.target.value); render(); };
   document.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
   setView("A");
@@ -140,6 +143,14 @@ function bindControls() {
     else if (e.code === "ArrowRight") { e.preventDefault(); stepBy(1); }
     else if (e.code === "ArrowLeft") { e.preventDefault(); stepBy(-1); }
   });
+}
+
+// The rover's real speed beside the playback speed, so 200x reads as what it is.
+function speedNote() {
+  const run = state.run;
+  const v = run && Object.values(run.speed).filter((x) => x);
+  const real = v && v.length ? `rover ${(Math.max(...v) * 100).toFixed(1)} cm/s · ` : "";
+  $("speed-note").textContent = `${real}playback ${state.speed}×`;
 }
 
 function setView(v) {
@@ -194,7 +205,9 @@ function render(force = false) {
   $("time").value = t;
   $("clock").textContent = `${fmtClock(t)} · step ${k + 1}/${run.steps.length}`;
   hud(run, k);
-  if (force || k !== lastK || lastCamKey !== state.cam) { camera(run, k); lastCamKey = state.cam; }
+  const fr = run.frameNear(state.cam, t);
+  const camKey = `${state.cam}:${fr ? fr.k : -1}`;
+  if (force || camKey !== lastCamKey) { camera(run, fr, k); lastCamKey = camKey; }
   if (force || k !== lastK) record(run, k);
   lastK = k;
 }
@@ -214,9 +227,8 @@ function hud(run, k) {
   $("hud").innerHTML = rows.join("");
 }
 
-function camera(run, k) {
+function camera(run, fr, k) {
   const a = state.cam;
-  const fr = run.frameAt(a, k);
   const img = $("fp-img");
   $("fp-empty").hidden = !!fr;
   if (fr) {
@@ -225,8 +237,11 @@ function camera(run, k) {
       img.src = fr.src;
     }
   } else img.removeAttribute("src");
-  const r = run.rover(a, k);
-  $("fp-cap").innerHTML = `Rover ${a}. Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.` +
+  const r = run.rover(a, fr ? fr.k : k);
+  // The camera records one frame per logged stop; say how far apart they are.
+  const stepM = run.speed[a] && run.log.dt_s ? run.speed[a] * run.log.dt_s : null;
+  const every = stepM ? `, one frame per ${stepM < 10 ? stepM.toFixed(1).replace(/\.0$/, "") : Math.round(stepM)} m stop` : "";
+  $("fp-cap").innerHTML = `Rover ${a} camera${every}, as recorded. Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
     (state.opts.rims && r.rims && r.rims.length ? ` ${r.rims.length} rim points${run.standin ? " (stand-in, from the crater map)" : ""}.` : "");
   drawRims(run, a, fr ? fr.k : k);
@@ -281,8 +296,8 @@ function record(run, k) {
       ? `postFind #${e.find_id} · ±${e.sigma.toFixed(1)} m · reading ${e.reading.toFixed(2)}${run.unit}`
       : `checkFind #${e.find_id} · ${e.agrees ? "agrees" : "disagrees"} · reading ${e.reading.toFixed(2)}${run.unit}`;
     const tx = run.fakeTx && !ex
-      ? `${short(e.tx)}<span class="fake">fake tx</span>`
-      : ex ? `<a href="${ex.replace(/\/$/, "")}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx)}</a>` : short(e.tx);
+      ? `<span class="fake">fake tx</span><span class="h">${short(e.tx)}</span>`
+      : ex ? `<a class="h" href="${ex.replace(/\/$/, "")}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx)}</a>` : `<span class="h">${short(e.tx)}</span>`;
     return `<div class="ev${e.tx === fresh ? " new" : ""}"><span class="t">${fmtClock(e.t).slice(2)}</span>` +
       `<span class="who c-${e.agency}">${e.agency}</span><span>${what}</span><span class="tx">${tx}</span></div>`;
   }).join("") : `<div class="empty">No transactions yet.</div>`;

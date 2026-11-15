@@ -132,7 +132,7 @@ a { color: #8fb3ec; }
 .standin ul { margin: 4px 0 0; padding-left: 16px; max-height: 180px; overflow-y: auto; }
 .standin .tag { color: var(--reported); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; font-size: var(--f-overline); display: block; }
 
-.stage { display: grid; grid-template-rows: minmax(0, 1fr) auto 168px; min-width: 0; min-height: 0; }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto 168px; min-width: 0; min-height: 0; }
 .viewport { position: relative; min-height: 0; background: #050608; overflow: hidden; }
 .viewport canvas { display: block; }
 .hud {
@@ -143,11 +143,12 @@ a { color: #8fb3ec; }
   padding: 6px 9px;
   pointer-events: none;
 }
-.hud .row { display: flex; gap: 12px; white-space: nowrap; }
+.hud { max-width: calc(100% - 24px); }
+.hud .row { display: flex; flex-wrap: wrap; gap: 0 12px; white-space: nowrap; }
 .hud .ag { font-weight: 700; width: 1.2em; }
 .hud .off { color: var(--disputed); }
 .hud .k { color: var(--hint); }
-.vnote { position: absolute; bottom: 8px; left: 12px; z-index: 2; font-size: var(--f-hint); color: #7d838a; pointer-events: none; }
+.vnote { position: absolute; bottom: 8px; left: 12px; z-index: 3; font-size: var(--f-hint); color: #9aa0a6; background: rgba(10, 11, 13, 0.72); padding: 2px 8px; pointer-events: none; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--hint); z-index: 3; }
 
 .lbl3d {
@@ -162,7 +163,7 @@ a { color: #8fb3ec; }
 
 /* ---------------------------------------------------------------- transport */
 .transport {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--hairline);
   border-bottom: 1px solid var(--hairline);
@@ -174,13 +175,19 @@ a { color: #8fb3ec; }
 .btn.ghost:hover { background: var(--active); }
 select { background: var(--field); border: 1px solid var(--hairline); border-radius: 0; padding: 4px 6px; }
 select:focus { outline: none; border-color: var(--accent); }
-.scrub { position: relative; flex: 1; height: 26px; display: flex; align-items: center; }
+.scrub { position: relative; flex: 1 1 160px; min-width: 0; height: 26px; display: flex; align-items: center; }
 .scrub input { width: 100%; margin: 0; accent-color: var(--accent); position: relative; z-index: 1; background: transparent; }
 .ticks { position: absolute; left: 7px; right: 7px; top: 0; bottom: 0; pointer-events: none; }
 .tick { position: absolute; top: 1px; width: 2px; height: 7px; margin-left: -1px; }
-.clock { font: var(--f-hint) var(--mono); color: var(--hint); white-space: nowrap; min-width: 150px; text-align: right; }
+.speednote { font: var(--f-hint) var(--mono); color: var(--hint); white-space: nowrap; }
+.clock { font: var(--f-hint) var(--mono); color: var(--hint); white-space: nowrap; min-width: 150px; text-align: right; flex: none; margin-left: auto; }
 
 /* ------------------------------------------------------------------ record */
+/* Short windows: give the 3D view the height the record panel would take. */
+@media (max-height: 720px) and (min-width: 821px) {
+  .stage { grid-template-rows: minmax(0, 1fr) auto 110px; }
+  .transport { padding: 5px 12px; }
+}
 .record { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); min-height: 0; }
 .record .col { padding: 10px 14px; min-height: 0; overflow-y: auto; }
 .record .col + .col { border-left: 1px solid var(--hairline); }
@@ -211,8 +218,9 @@ select:focus { outline: none; border-color: var(--accent); }
 .ev.new { background: linear-gradient(90deg, rgba(61, 111, 196, 0.18), transparent 70%); }
 .ev .t { font: var(--f-hint) var(--mono); color: var(--hint); }
 .ev .who { font-weight: 700; }
-.ev .tx { grid-column: 3; font: var(--f-hint) var(--mono); color: var(--hint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ev .fake { color: var(--reported); font-family: var(--sans); font-size: var(--f-overline); text-transform: uppercase; letter-spacing: 0.06em; margin-left: 6px; }
+.ev .tx { grid-column: 3; display: flex; gap: 6px; align-items: baseline; min-width: 0; font: var(--f-hint) var(--mono); color: var(--hint); white-space: nowrap; }
+.ev .tx .h { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ev .fake { flex: none; color: var(--reported); font-family: var(--sans); font-size: var(--f-overline); text-transform: uppercase; letter-spacing: 0.06em; }
 .c-A { color: var(--ag-A); }
 .c-B { color: var(--ag-B); }
 

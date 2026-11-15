@@ -395,3 +395,28 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# --------------------------------------------------------------------------
+# Reference stills at poses from a demo run log, for judging other renderers.
+# --------------------------------------------------------------------------
+
+def refs(run_dir, picks, strength=None, out_dir=None):
+    """Render first person and chase at (step, agency) picks of a run log.
+    Writes <out>/<run>_s<step><agency>_{fp,chase}.png and returns the paths."""
+    import json
+    from PIL import Image
+    run_dir = Path(run_dir)
+    log = json.loads((run_dir / "log.json").read_text())
+    out = Path(out_dir) if out_dir else TD.OUT / "refs"
+    out.mkdir(parents=True, exist_ok=True)
+    L = Look(strength)
+    paths = []
+    for step, ag in picks:
+        x, y, hd = log["steps"][step]["rovers"][ag]["true_pose"]
+        stem = f"{log['run_id']}_s{step:04d}{ag}"
+        img, _, _ = L.first_person(x, y, hd)
+        Image.fromarray(img).save(out / f"{stem}_fp.png")
+        Image.fromarray(L.chase(x, y, hd)).save(out / f"{stem}_chase.png")
+        paths.append((step, ag, out / f"{stem}_fp.png", out / f"{stem}_chase.png"))
+    return paths

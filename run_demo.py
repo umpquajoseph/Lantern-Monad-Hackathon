@@ -41,7 +41,8 @@ import numpy as np
 from sim.ice import (DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit, IceField, IceSensor,
                      FOOTPRINT_RADIUS_M)
 from sim.rover import PLANNER_STANDIN, SPEED_M_S, STEP_M, Rover, SlopeMap
-from sim.standins import RIMS_STANDIN, ChainStandin, NavStandin, rims_standin
+from sim.nav import ParticleNav
+from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
 from sim.terrain import default_path, load_terrain
 
 RUNS_DIR = Path(r"C:\Monad-Hackathon-Project\data\runs")
@@ -74,8 +75,8 @@ def simulate(scn, terrain, slope, field=None):
 
     ax, ay, ah = scn["a_start"]
     bx, by, bh = scn["b_start"]
-    A = Rover("A", (x0 + ax, y0 + ay, ah), NavStandin(scn["a_fixes"], rng(2)), slope, rng(1))
-    B = Rover("B", (x0 + bx, y0 + by, bh), NavStandin(True, rng(12)), slope, rng(11))
+    A = Rover("A", (x0 + ax, y0 + ay, ah), ParticleNav(scn["a_fixes"], rng(2), craters), slope, rng(1))
+    B = Rover("B", (x0 + bx, y0 + by, bh), ParticleNav(True, rng(12), craters), slope, rng(11))
     rims_rng = {"A": rng(3), "B": rng(13)}
     goal_a = (x0 + scn["a_goal"][0], y0 + scn["a_goal"][1])
     A.set_goal(goal_a)
@@ -110,9 +111,9 @@ def simulate(scn, terrain, slope, field=None):
             reading = None
             if k > 0 and mode[ag] in ("survey", "goto"):
                 d, dh = r.follow()
-                _, err = r.odometry(d, dh)
+                odo, err = r.odometry(d, dh)
                 rims = rims_standin(r.true, craters, rims_rng[ag])
-                r.localize(err, d, len(rims))
+                r.localize(err, d, len(rims), odom=odo, rims=rims)
                 moved = d > 0
                 if sensor is not None:
                     reading = sensor.read(r.true[0], r.true[1])
@@ -199,16 +200,17 @@ def place_ice(scn, a_steps, x0, y0, rng):
     return IceField(deps)
 
 
-def render(scn, steps, terrain, run_dir, frame_every):
+def render(scn, steps, terrain, run_dir, frame_every, display="full"):
     from sim.scene import Scene
     height, craters, x0, y0, cell = terrain
-    scene = Scene(height, craters, x0, y0, cell)
+    scene = Scene(height, craters, x0, y0, cell, display=display)
     fp_dir = run_dir / "fp"
     fp_dir.mkdir(parents=True, exist_ok=True)
     last = {}
     moved_count = {"A": 0, "B": 0}
     times = []
     posed = {}
+    render.display = scene.display  # what was drawn, for the log (falls back to "off" without assets)
     for k, s in enumerate(steps):
         for ag, r in s["rovers"].items():
             if posed.get(ag) != r["true_pose"]:  # set_rover rebuilds that rover's lamp shadow map
@@ -237,6 +239,9 @@ def main():
     ap.add_argument("--frame-every", type=int, default=1, help="render a first-person frame every N steps a rover moves")
     ap.add_argument("--no-render", action="store_true", help="simulate and write logs without frames")
     ap.add_argument("--stamp", default=None, help="run_id suffix (default: now, YYYYMMDD-HHMM); reuse one to overwrite a run")
+    ap.add_argument("--display", choices=("full", "detail", "off"), default="full",
+                    help="first-person terrain display layer (sim/scene.py): full = rim lips and rocks, "
+                         "detail = texture only (no made-up geometry), off = sim grid only")
     args = ap.parse_args()
 
     t = time.perf_counter()
@@ -286,7 +291,7 @@ def main():
                     r["fp_frame"] = None
             rt = []
         else:
-            rt = render(scn, steps, terrain, run_dir, args.frame_every)
+            rt = render(scn, steps, terrain, run_dir, args.frame_every, args.display)
         log = {
             "run_id": run_id,
             "label": scn["label"],
@@ -295,9 +300,11 @@ def main():
             "truth": {"ice": field.to_log(),
                       "ice_units": "wt% water-equivalent hydrogen; radius is the 1 wt% contour",
                       "find_threshold_wt": FIND_THRESHOLD_WT},
-            "standins": {"nav": NavStandin.STANDIN, "rims": RIMS_STANDIN, "planner": PLANNER_STANDIN,
+            "nav": ParticleNav.NAME,
+            "standins": {"rims": RIMS_STANDIN, "planner": PLANNER_STANDIN,
                          "chain": ChainStandin.STANDIN, "ice_sensor": IceSensor.STANDIN},
             "dt_s": round(DT_S, 2),
+            "display": None if args.no_render else render.display,
             "steps": steps,
             "final_finds": finds,
         }

@@ -121,14 +121,18 @@ export class Terrain {
 
 // ---------------------------------------------------------------------------
 
+// web/runs/index.json: {"runs": [...]} or run_demo.py's plain list. Each
+// entry has run_id, label, and path (relative to web/) or dir (in runs/).
 export async function loadIndex(base) {
-  return (await (await fetchOk(base + "index.json")).json()).runs;
+  const j = await (await fetchOk(base + "index.json")).json();
+  return (Array.isArray(j) ? j : j.runs).map((r) => ({ ...r, path: r.path || `runs/${r.dir}/log.json` }));
 }
 
 export class Run {
   static async load(base, entry) {
-    const log = await (await fetchOk(base + entry.path.replace(/^runs\//, ""))).json();
-    const dir = base + entry.path.replace(/^runs\//, "").replace(/log\.json$/, "");
+    const rel = entry.path.replace(/^runs\//, "");
+    const log = await (await fetchOk(base + rel)).json();
+    const dir = base + rel.replace(/log\.json$/, "");
     return new Run(log, dir);
   }
 
@@ -149,7 +153,13 @@ export class Run {
         est: this.steps.map((s) => s.rovers[a].estimate),
       };
     }
-    this.standin = log.standin || null;
+    // What is not real yet. Stand-in runs from web/make_standin_run.py carry
+    // `standin`; run_demo.py carries `standins`, one line per part.
+    const si = log.standins || log.standin || null;
+    this.standin = si && Object.keys(si).length ? si : null;
+    const chainLine = si && (si.chain || si.tx);
+    this.fakeTx = !!chainLine || !(log.chain && log.chain.explorer);
+    this.unit = log.truth && /wt%/.test(log.truth.ice_units || "") ? " wt%" : "";
     this.truth = log.truth || null;
     this.chain = log.chain || {};
   }

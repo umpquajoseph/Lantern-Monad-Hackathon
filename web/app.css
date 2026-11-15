@@ -127,6 +127,9 @@ a { color: #8fb3ec; }
   border-left: 2px solid var(--reported);
   padding: 2px 0 2px 10px;
 }
+.standin details { margin-top: 2px; }
+.standin summary { cursor: pointer; color: #b9bec4; }
+.standin ul { margin: 4px 0 0; padding-left: 16px; max-height: 180px; overflow-y: auto; }
 .standin .tag { color: var(--reported); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; font-size: var(--f-overline); display: block; }
 
 .stage { display: grid; grid-template-rows: minmax(0, 1fr) auto 168px; min-width: 0; min-height: 0; }

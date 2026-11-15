@@ -30,9 +30,9 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from sim.terrain import load_terrain  # noqa: E402
+from sim.terrain import TERRAIN_DIR, load_terrain  # noqa: E402
 
-DATA = Path(r"C:\Monad-Hackathon-Project\data\terrain")
+DATA = TERRAIN_DIR  # $LANTERN_DATA/terrain, as sim/terrain.py; was a fixed C:\ path
 OUT = ROOT / "web" / "assets" / "terrain"
 TILE = 512          # cells per fine tile (128 m)
 COARSE = 4          # coarse grid keeps every 4th sample (1 m)

@@ -286,3 +286,12 @@ kbd { font: 500 12px var(--mono); background: rgba(255,255,255,.08); border: 1px
 }
 /* Lidar mode: Calvin's top-down scan is 800 x 280, letterboxed in the 4:3 box. */
 .lidar-on img { object-fit: contain; background: #000; }
+
+/* Camera box tabs and Kellen's checkpoint card (ui merge) */
+.view-seg { align-self: flex-end; }
+.view-seg button { padding: 5px 12px; font-size: 13px; }
+.cp-float { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bar-h) + 78px); z-index: 11;
+  width: min(640px, calc(100vw - 32px)); margin: 0; background: rgba(14,14,16,.92); border-radius: 0 var(--r) var(--r) 0; backdrop-filter: blur(8px); color: var(--fg); }
+.tl-marks i.cp { background: #d9b44a; height: 12px; width: 2px; }
+.rail button.live { box-shadow: inset 2px 0 0 #4fd18b; }
+@media (max-width: 760px) { .cp-float { bottom: auto; top: 160px; } .view-seg { align-self: stretch; } }

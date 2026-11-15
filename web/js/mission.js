@@ -12,6 +12,11 @@ import { World } from "./world.js";
 import { MapView } from "./map.js";
 import { ScienceRig, DRILL_DEPTH_M } from "./science_rig.js";
 import { frostPatch, ICE_HEX, ICE_CSS } from "./frost.js";
+import { MissionPlayer, ensureStyles } from "./mission_player.js";
+// The judges' page plays Kellen's mission log (run_mission.py, docs/handoffs.md
+// "Mission log"): checkpoints and live chain posts come from mission_player.js,
+// the chain feed from the log's find and check events.
+const AUTO_B_HOLD_MS = 3000;   // assumed: wall time on the Surveyor after its ice find, then follow the Prospector
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -53,6 +58,9 @@ const S = {
   lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
   opts: { routes: true, hazards: true, nogo: true, truth: false }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
+  view: "fp",          // camera box tab: "fp" (first person), "sat" (overhead map), "lidar"
+  player: null,        // MissionPlayer: checkpoints and live chain
+  autoB: { armed: true, at: 0 },   // switch to the Prospector once after the Surveyor's find
 };
 let terrain, world, map, rigs = {}, ov, sci = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
 let satObjs = [], tagEls = {}, extras = {}, dressed = {}, odo = {}, susp = {};
@@ -76,7 +84,7 @@ async function main() {
   map = new MissionMap($("map-cv"), terrain);
   const runs = await loadIndex("runs/");
   const want = params.get("run");
-  const entry = runs.find((r) => r.run_id === want) || runs.find((r) => r.status === "mission") || runs[0];
+  const entry = runs.find((r) => r.run_id === want) || runs.find((r) => r.run_id === "mission-demo") || runs[0];
   await openRun(entry);
   bind();
   if (NARROW.matches) $("panel").classList.add("closed");
@@ -89,9 +97,6 @@ async function openRun(entry) {
   $("loading").textContent = "Loading the mission";
   const run = await Run.load("runs/", entry);
   const log = run.log;
-  // This page draws registry sites itself; world.js would otherwise draw the
-  // Lantern-contract finds from the same stops under another name.
-  run.events = [];
   const pts = run.agencies.flatMap((a) => run.tracks[a].truth);
   const keys = [...terrain.keysNear(pts.filter((_, i) => i % 2 === 0), 4)];
   let done = 0;
@@ -131,11 +136,14 @@ async function openRun(entry) {
   hazards = log.hazards || [];
   planned = log.planned_routes || [];
 
-  const R = log.registry || {};
-  const badge = $("chain-badge");
-  badge.className = `chain-badge ${R.mode || "offline"}`;
-  badge.textContent = MODE_SHORT[R.mode] || "No registry";
-  badge.title = [R.label, R.contract ? `Contract ${R.contract}` : ""].filter(Boolean).join("\n");
+  ensureStyles();
+  S.player = new MissionPlayer(run, {
+    pause: (tt) => { S.playing = false; S.t = tt; setPlayIcon(); },
+    resume: () => { S.playing = true; setPlayIcon(); },
+    note: (html) => { const b = $("checkpoint"); b.hidden = !html; b.innerHTML = html || ""; },
+    rerender: () => { $("chain-now").dataset.key = ""; render(true); },
+  });
+  setChainBadge();
 
   // Only the Prospector has an arm and a drill; the Surveyor works with its mast camera.
   for (const a of run.agencies) {
@@ -517,15 +525,22 @@ function buildTimeline() {
   for (const e of sci) add(e.t0, "sci", `${ROLE[e.agency]}: ${e.observation || "science"} at ${e.target_id}`);
   for (const e of reg) if (e.result === "Positive") add(e.t, "ice", `Ice at ${e.target_id} (${ROLE[e.agency]})`);
   for (const h of hazards) add(h.seen_t, "haz", "New obstacle");
+  for (const c of (S.run.log.mission || {}).checkpoints || []) if (c.pause) add(c.t, "cp", `Checkpoint: ${c.label}`);
+  for (const e of S.run.events) add(S.run.times[e.k], "ice", e.type === "find" ? `Ice find posted (${ROLE[e.agency]})` : `Check posted (${ROLE[e.agency]})`);
 }
 
 // ---------------------------------------------------------------- controls
 function bind() {
   $("play").onclick = togglePlay;
-  $("restart").onclick = () => { S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; render(true); };
+  $("restart").onclick = () => { S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; S.player.restart(); rearmAutoB(0); render(true); };
   $("speed").onchange = (e) => (S.speed = Number(e.target.value));
   $("focus").onchange = (e) => { S.focus = e.target.checked; if (!S.focus) exitFocus(); };
-  $("scrub").oninput = (e) => { S.t = (Number(e.target.value) / 1000) * S.run.tEnd; exitFocus(); S.dismissed = null; render(true); };
+  $("scrub").oninput = (e) => {
+    const nt = (Number(e.target.value) / 1000) * S.run.tEnd;
+    if (nt < S.t) { S.player.rewound(nt); rearmAutoB(nt); }
+    S.t = nt; exitFocus(); S.dismissed = null; render(true);
+  };
+  document.querySelectorAll("#view-seg button").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
   $("zoom-in").onclick = () => zoom(1 / 1.35);
   $("zoom-out").onclick = () => zoom(1.35);
   document.querySelectorAll("#rover-seg button").forEach((b) => (b.onclick = () => { exitFocus(true); setRover(b.dataset.rover); }));
@@ -572,8 +587,55 @@ function bind() {
     if (e.key === "Escape") $("drawer").hidden = true;
     if (e.key === "+" || e.key === "=") zoom(1 / 1.35);
     if (e.key === "-") zoom(1.35);
-    if (e.key === "l" || e.key === "L") setSensor(S.sensor === "lidar" ? "camera" : "lidar");
+    if (e.key === "l" || e.key === "L") setView(S.view === "lidar" ? "fp" : "lidar");
+    if (e.key === "1") setView("fp");
+    if (e.key === "2") setView("sat");
+    if (e.key === "3") setView("lidar");
   });
+}
+
+// The camera box: one view at a time, picked by its tabs.
+function setView(v) {
+  if (v === "lidar" && !S.run.hasLidar) v = "fp";
+  S.view = v;
+  document.querySelectorAll("#view-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === v)));
+  applyInsets();
+  render(true);
+}
+
+function applyInsets() {
+  $("in-fp").hidden = S.view !== "fp" || S.cam === "first";
+  $("in-map").hidden = S.view !== "sat" || S.cam === "overhead";
+  $("in-lidar").hidden = S.view !== "lidar" || !S.run.hasLidar;
+}
+
+// After the Surveyor posts its ice find, hold on it a moment, then follow the
+// Prospector, once per play-through. A rover picked by hand in the hold wins.
+function rearmAutoB(t) {
+  const f = S.run.events.find((e) => e.type === "find");
+  if (!f || t < S.run.times[f.k]) S.autoB = { armed: true, at: 0 };
+}
+
+function autoB(prevT, t, now) {
+  const f = S.run.events.find((e) => e.type === "find");
+  if (!f) return;
+  const ft = S.run.times[f.k];
+  if (S.autoB.armed && !S.autoB.at && prevT < ft && t >= ft) S.autoB = { armed: true, at: now + AUTO_B_HOLD_MS, rover: S.rover };
+  if (S.autoB.at && now >= S.autoB.at) {
+    const untouched = S.rover === S.autoB.rover;
+    S.autoB = { armed: false, at: 0 };
+    if (untouched && S.rover !== "B") { exitFocus(true); setRover("B"); }
+  }
+}
+
+function setChainBadge() {
+  const run = S.run, badge = $("chain-badge");
+  const live = S.player && S.player.liveOn;
+  const real = run.chain && run.chain.explorer && !run.fakeTx;
+  badge.className = `chain-badge ${live || real ? "monad" : "offline"}`;
+  badge.textContent = live ? "Monad testnet · live" : real ? "Monad testnet" : "Recorded";
+  badge.title = live ? "Each find and check is signed and sent to Monad testnet as the replay crosses it."
+    : real ? `Contract ${run.chain.contract}` : "Recorded transactions from the mission log. Add ?key= to post them live.";
 }
 
 function setPlayIcon() {
@@ -582,8 +644,10 @@ function setPlayIcon() {
 }
 
 function togglePlay() {
-  if (S.t >= S.run.tEnd) S.t = 0;
+  if (S.player && S.player.busy) return;   // a live chain post is in flight
+  if (S.t >= S.run.tEnd) { S.t = 0; S.player.restart(); rearmAutoB(0); }
   S.playing = !S.playing;
+  if (S.playing && S.player && !(S.player.active && S.player.active.step === 0 && S.t === 0)) $("checkpoint").hidden = true;
   setPlayIcon();
 }
 
@@ -610,8 +674,7 @@ function setTab(tab) {
 function setCam(cam) {
   S.cam = cam;
   $("fp").hidden = cam !== "first";
-  $("in-fp").hidden = cam === "first";
-  $("in-map").hidden = cam === "overhead";
+  applyInsets();
   $("back-chip").hidden = cam === "third";
   world.labels.domElement.style.display = cam === "first" ? "none" : "";
   if (cam === "third") world.setFollow(S.rover);
@@ -699,6 +762,7 @@ let last = performance.now(), lastPanelAt = 0;
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  const prevT = S.t;
   if (S.playing && S.run) {
     let adv = dt * (S.focusEv ? FOCUS_SPEED : S.speed);
     if (S.focus && !S.focusEv) {
@@ -708,8 +772,10 @@ function loop(now) {
     }
     S.t = Math.min(S.run.tEnd, S.t + adv);
     if (S.t >= S.run.tEnd) { S.playing = false; setPlayIcon(); }
+    S.player.tick(prevT, S.t);   // a checkpoint or a live post pauses and sets S.t
   }
   if (S.run) {
+    autoB(prevT, S.t, now);
     const ev = S.focus ? activeSci(S.t) : null;
     if (ev && ev !== S.focusEv && ev !== S.dismissed) enterFocus(ev);
     if (!ev && S.focusEv) exitFocus();
@@ -785,10 +851,9 @@ function instrumentNow(a, t, ev) {
 // the latest one at or before the shown moment, for the selected rover.
 // Runs without lidar keep the box hidden.
 function showLidar(t) {
-  const run = S.run, box = $("in-lidar");
+  const run = S.run;
   if (run.hasLidar === undefined) run.hasLidar = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_frame));
-  box.hidden = !run.hasLidar;
-  if (!run.hasLidar) return;
+  if (!run.hasLidar || S.view !== "lidar") return;
   // Top-down / First person (lidar_fp_frame, step-6-nav 6846caf), only when the run logs both.
   if (run.hasLidarFp === undefined) run.hasLidarFp = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_fp_frame));
   $("lid-seg").hidden = !run.hasLidarFp;
@@ -1145,8 +1210,8 @@ function renderToast(t) {
     const where = ev.kind === "hazard" ? `crater ${ev.target_id} (not on the orbital map)` : ev.target_id;
     html = `<i class="dot ${a}"></i> <b>${ROLE[a]} ${a}</b> · ${esc(what)} at ${esc(where)}<span class="sp">${FOCUS_SPEED}× for science</span>`;
   } else if (t >= run.tEnd) {
-    const ice = [...registryAt(t).values()].filter((s) => siteStatus(s) === "Positive").length;
-    html = `<b>Mission complete</b> · ice at ${ice} site${ice === 1 ? "" : "s"}`;
+    const f = (run.log.final_finds || [])[0];
+    html = f ? `<b>Mission complete</b> · find #${f.id} ${esc(f.status)} on chain` : `<b>Mission complete</b>`;
   } else if (!S.playing && t === 0) {
     html = `Press <b>play</b> to start · drag to look around`;
   } else {
@@ -1275,16 +1340,37 @@ function writeHtml(e) {
   </div>`;
 }
 
+// The chain feed: Kellen's postFind and checkFind calls from the mission log,
+// newest first. Recorded hashes unless ?key= posted them live in this play-through.
+function txLink(e) {
+  const run = S.run, ex = run.chain && run.chain.explorer;
+  if (ex && (e.live || !run.fakeTx)) return `<a class="mono" href="${ex.replace(/\/$/, "")}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx, 6, 4)}</a>`;
+  return `<span class="mono">${short(e.tx, 6, 4)}</span> <span class="tag offline">${run.fakeTx ? "stand-in" : "recorded"}</span>`;
+}
+
+function chainHtml(e) {
+  const unit = S.run.unit || "";
+  const head = e.type === "find"
+    ? `postFind #${e.find_id} · ${esc(e.site_id || "")}`
+    : `checkFind #${e.find_id} · ${esc(e.site_id || "")} <span class="res ${e.agrees ? "Positive" : "Negative"}">${e.agrees ? "agrees" : "disagrees"}</span>`;
+  return `<div class="chain-item${e.live ? " live" : ""}">
+    <div class="what"><i class="dot ${e.agency}"></i> ${ROLE[e.agency]} ${e.agency} · ${head}${e.live ? `<span class="tag monad" style="margin-left:auto">Live</span>` : ""}</div>
+    <div class="split"><div><span class="k">Position</span>${e.x.toFixed(1)}, ${e.y.toFixed(1)} ± ${e.sigma.toFixed(2)} m</div><div><span class="k">Reading</span>${e.reading.toFixed(2)}${esc(unit)}</div></div>
+    <div class="verify-row"><span class="hint small">tx ${txLink(e)}${e.live_status ? ` · now <b>${esc(e.live_status)}</b>` : ""}</span></div>
+  </div>`;
+}
+
 function renderChain(t) {
-  const done = reg.filter((e) => e.t <= t);
-  const key = `chain|${done.length}`;
+  const k = S.run.stepAt(t);
+  const done = S.run.events.filter((e) => e.k <= k);
+  const key = `chain|${done.length}|${done.map((e) => e.tx).join()}`;
   if ($("chain-now").dataset.key === key) return;
   $("chain-now").dataset.key = key;
-  $("chain-now").innerHTML = done.length ? writeHtml(done.at(-1))
-    : `<p class="hint">Nothing yet. A record is written when a site is found, drilled, or analysed.</p>`;
-  bindVerify($("chain-now"));
-  $("txs").innerHTML = done.slice(0, -1).reverse().map((e) =>
-    `<li><span class="t">${fmtClock(e.t).replace("T+", "")}</span><span><i class="dot ${e.agency}"></i> ${esc(CALL[e.call])} · <b>${esc(e.target_id)}</b>${e.result ? ` <span class="res ${e.result}">${e.result}</span>` : ""}</span></li>`).join("");
+  $("chain-now").innerHTML = done.length ? [...done].reverse().map(chainHtml).join("")
+    : `<p class="hint">Nothing yet. The Surveyor posts a find when it measures ice; the Prospector posts its check.</p>`;
+  $("txs").innerHTML = "";
+  if (done.length > (S.lastChainN || 0) && S.playing) document.querySelector('.rail [data-tab="chain"]').classList.add("live");
+  S.lastChainN = done.length;
 }
 
 function bindVerify(root) {

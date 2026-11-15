@@ -4,9 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lantern</title>
-<meta name="description" content="Two rovers from two agencies drive a dark lunar crater, find their way by lamp-lit crater rims, and write ice finds to a shared record on Monad.">
+<meta name="description" content="Two rovers explore a dark lunar crater, drill for ice, and record each find on chain.">
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="app.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mission.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha3/0.9.3/sha3.min.js"></script>
 <script type="importmap">
 {
   "imports": {
@@ -17,133 +21,205 @@
 </script>
 </head>
 <body>
-<aside class="sidebar">
-  <div class="brand">
-    <div class="wordmark">Lantern</div>
-    <p class="pitch">Two rovers from two agencies hunt for ice in a crater that never sees the sun. They find their way by the crater rims their lamps light, post each find with how sure they are, and check each other&rsquo;s finds on a shared ledger.</p>
-  </div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.1-5M5 4.5V8h3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 5h5v5M10 19H5v-5M19 5l-6 6M5 19l6-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><path d="M4 8h3l2-2h6l2 2h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="i-lidar" viewBox="0 0 24 24"><path d="M12 20L4 8M12 20l8-12M12 20V6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="1.5 2.2"/><circle cx="12" cy="20" r="1.6" fill="currentColor"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 4l8 4-8 4-8-4zM4 12l8 4 8-4M4 16l8 4 8-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5.5M12 7.6v.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-rover" viewBox="0 0 24 24"><path d="M5 13h14v3H5zM8 13V9h8v4M11 9V6h2M7 18.5a1.5 1.5 0 1 0 0 .01M17 18.5a1.5 1.5 0 1 0 0 .01M12 18.5a1.5 1.5 0 1 0 0 .01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-drill" viewBox="0 0 24 24"><path d="M12 3v6M9 9h6l-1 4h-4zM12 13v8M10 16l2 1.5 2-1.5M10 19l2 1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10.5" r="2.2" fill="currentColor"/></symbol>
+  <symbol id="i-chain" viewBox="0 0 24 24"><path d="M10 14l4-4M8.5 11.5l-2 2a3 3 0 0 0 4.2 4.2l2-2M15.5 12.5l2-2a3 3 0 0 0-4.2-4.2l-2 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
 
-  <nav class="sb-nav">
-    <div class="sb-section">Runs</div>
-    <div id="run-list"></div>
+<!-- The 3D scene fills the window; everything else floats on top of it. -->
+<main class="viewport" id="viewport" aria-label="3D view of the mission"></main>
+<div class="fp" id="fp" hidden>
+  <div class="fp-box"><img id="fp-img" alt="Rover camera"><canvas id="fp-ov" width="640" height="480"></canvas></div>
+  <div class="fp-none" id="fp-none" hidden>No camera frame yet.</div>
+</div>
+<div class="loading" id="loading">Loading terrain</div>
 
-    <div class="sb-section">Camera</div>
-    <button class="nav" data-view="A">Follow rover A</button>
-    <button class="nav" data-view="B">Follow rover B</button>
-    <button class="nav" data-view="site">Whole site</button>
+<header class="brand">
+  <div class="wm"><span class="l1">Lantern</span><span class="l2">Mission Control</span></div>
+</header>
 
-    <div class="sb-section">Show</div>
-    <label class="ck"><input type="checkbox" id="opt-fill" checked> Fill light</label>
-    <label class="ck"><input type="checkbox" id="opt-tracks" checked> Tracks</label>
-    <div class="keys">
-      <div class="lg"><i class="ln true"></i>True path</div>
-      <div class="lg"><i class="ln est"></i>Estimate, ring &plusmn;&sigma;</div>
-      <div class="lg"><i class="ln odom"></i>Odometry alone</div>
+<div class="rover-pick seg" id="rover-seg" role="tablist" aria-label="Follow rover">
+  <button data-rover="A" aria-selected="true"><i class="dot A"></i>Surveyor A</button>
+  <button data-rover="B"><i class="dot B"></i>Prospector B</button>
+</div>
+
+<div class="top-right">
+  <span class="chain-badge" id="chain-badge">chain</span>
+  <div class="pop-wrap">
+    <button class="ib" id="layers-btn" aria-label="Layers" aria-expanded="false" title="Layers"><svg><use href="#i-layers"/></svg></button>
+    <div class="pop" id="layers" hidden>
+      <label class="ck"><input type="checkbox" id="opt-routes" checked> Routes</label>
+      <label class="ck"><input type="checkbox" id="opt-hazards" checked> Obstacles</label>
+      <label class="ck"><input type="checkbox" id="opt-nogo" checked> Craters</label>
+      <label class="ck"><input type="checkbox" id="opt-truth"> Hidden ice <span class="hint">(rovers can't see it)</span></label>
     </div>
-    <label class="ck" title="The navigation filter's particles, in each agency's colour. Dot size is the particle's weight."><input type="checkbox" id="opt-particles" checked> Particles<i class="key dots"></i></label>
-    <label class="ck" title="Crater-rim points the rover matched, drawn on its camera frame."><input type="checkbox" id="opt-rims" checked> Rim points<i class="key sq"></i></label>
-    <label class="ck" title="Ground the planner will not drive: steeper than 15&deg; across 2 m, widened by the rover's half width (sim/rover.py)."><input type="checkbox" id="opt-nogo" checked> Too steep, over 15&deg;<i class="key nogo"></i></label>
-    <label class="ck" title="The hidden ice map. The rovers never see it."><input type="checkbox" id="opt-truth"> Hidden truth: real ice<i class="key dm"></i></label>
-  </nav>
-
-  <div class="sb-foot">
-    <div class="agencies"><span><i class="sw ag-A"></i>Agency A</span><span><i class="sw ag-B"></i>Agency B</span></div>
-    <a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">Navigation after ShadowNav, JPL 2023</a>
   </div>
+  <button class="ib" id="info-btn" aria-label="About this view" title="About"><svg><use href="#i-info"/></svg></button>
+  <button class="ib" id="full-btn" aria-label="Full screen" title="Full screen"><svg><use href="#i-full"/></svg></button>
+</div>
+
+<aside class="panel" id="panel">
+  <nav class="rail" role="tablist" aria-label="Panels">
+    <button data-tab="rover" aria-selected="true" title="Rover"><svg><use href="#i-rover"/></svg></button>
+    <button data-tab="science" title="Science"><svg><use href="#i-drill"/></svg></button>
+    <button data-tab="sites" title="Sites"><svg><use href="#i-pin"/></svg></button>
+    <button data-tab="chain" title="On chain"><svg><use href="#i-chain"/></svg></button>
+  </nav>
+  <div class="pane-wrap">
+    <section class="pane" data-pane="rover"><div id="now"></div></section>
+    <section class="pane" data-pane="science" hidden>
+      <h2 id="sci-title">Science</h2>
+      <div id="sci-empty" class="hint">No drilling yet.</div>
+      <div id="sci-body" hidden>
+        <ol class="phases" id="sci-phases"></ol>
+        <div class="bins" id="sci-bins"></div>
+        <div class="sci-result" id="sci-result"></div>
+      </div>
+    </section>
+    <section class="pane" data-pane="sites" hidden>
+      <h2>Sites <span class="hint" id="reg-count"></span></h2>
+      <table class="reg">
+        <thead><tr><th>Site</th><th>Stage</th><th>Surveyor</th><th>Prospector</th></tr></thead>
+        <tbody id="reg-body"></tbody>
+      </table>
+    </section>
+    <section class="pane" data-pane="chain" hidden>
+      <h2>On chain</h2>
+      <div id="chain-now"></div>
+      <ol class="txs" id="txs"></ol>
+    </section>
+  </div>
+  <button class="collapse" id="collapse" aria-label="Hide panel" title="Hide panel"><svg><use href="#i-chev"/></svg></button>
 </aside>
 
-<main class="page">
-  <header class="head">
-    <div class="titles">
-      <div class="ptitle" id="run-title">Loading</div>
-      <div class="psub" id="story">&nbsp;</div>
-    </div>
-    <div class="standin" id="standin" hidden>
-      <span class="tag">Stand-ins in this run</span>
-      <span id="standin-text"></span>
-    </div>
-  </header>
+<div class="insets" id="insets">
+  <div class="seg view-seg" id="view-seg" role="tablist" aria-label="Camera box">
+    <button data-view="fp" aria-selected="true" title="First person (1)">First person</button>
+    <button data-view="sat" title="Satellite map (2)">Satellite</button>
+    <button data-view="lidar" title="Lidar (3)">Lidar</button>
+  </div>
+  <figure class="inset" id="in-fp">
+    <div class="inset-view fp-mini"><img id="fpi-img" alt="Rover camera"><canvas id="fpi-ov" width="640" height="480"></canvas><div class="inset-none" id="fpi-none" hidden>No frame yet</div></div>
+    <figcaption><span id="fpi-cap">Rover camera</span><button class="ib sm" data-expand="first" aria-label="Rover camera full screen" title="Full screen"><svg><use href="#i-expand"/></svg></button></figcaption>
+  </figure>
+  <figure class="inset" id="in-lidar" hidden>
+    <div class="inset-view lidar-mini"><img id="lid-img" alt="Rover lidar, from above"><div class="inset-none" id="lid-none" hidden>No scan yet</div></div>
+    <figcaption><span id="lid-cap">Lidar</span><span class="lk-seg" id="lid-seg" hidden><button data-lk="top" aria-pressed="true">Top-down</button><button data-lk="fp" aria-pressed="false">First person</button></span></figcaption>
+  </figure>
+  <figure class="inset" id="in-map">
+    <div class="inset-view"><canvas id="map-cv"></canvas></div>
+    <figcaption><span>Satellite</span><button class="ib sm" data-expand="overhead" aria-label="Overhead full screen" title="Full screen"><svg><use href="#i-expand"/></svg></button></figcaption>
+  </figure>
+</div>
+<button class="back-chip" id="back-chip" hidden>Back to rover view</button>
 
-  <section class="stage">
-    <div class="viewport" id="viewport">
-      <div class="hud" id="hud"></div>
-      <div class="vnote" id="vnote">Fill light added so you can see the ground. The rovers see only their lamps.</div>
-      <div class="loading" id="loading">Loading terrain</div>
-    </div>
+<div class="toast" id="toast" hidden></div>
+<div class="checkpoint cp-float" id="checkpoint" hidden></div>
 
-    <div class="transport">
-      <button class="btn" id="play" title="Play or pause (space)">Play</button>
-      <button class="btn ghost" id="back" title="Back one step (left arrow)">&#8592;</button>
-      <button class="btn ghost" id="fwd" title="Forward one step (right arrow)">&#8594;</button>
-      <select id="speed" title="Playback speed, simulated seconds per second">
-        <option value="1">1×</option>
-        <option value="10">10×</option>
-        <option value="50">50×</option>
-        <option value="100">100×</option>
-        <option value="200" selected>200×</option>
-        <option value="500">500×</option>
-      </select>
-      <div class="speednote" id="speed-note"></div>
-      <div class="scrub">
-        <input type="range" id="time" min="0" max="1" step="any" value="0">
-        <div class="ticks" id="ticks"></div>
+<footer class="playbar">
+  <button class="play" id="play" aria-label="Play" title="Play (Space)"><svg><use href="#i-play"/></svg></button>
+  <button class="ib" id="restart" aria-label="Reset" title="Reset"><svg><use href="#i-reset"/></svg></button>
+  <div class="clock" id="clock">T+00:00:00</div>
+  <div class="tl-track" id="tl-track">
+    <div class="tl-fill" id="tl-fill"></div>
+    <div class="tl-marks" id="tl-marks"></div>
+    <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Mission time">
+  </div>
+  <div class="pb-group">
+    <label class="ck sci-ck" title="Slow down and zoom in when a rover drills"><input type="checkbox" id="focus" checked><span class="lg">Slow for science</span><span class="sh">Slow-mo</span></label>
+    <select id="speed" aria-label="Speed" title="Speed">
+      <option value="10">10×</option>
+      <option value="60">60×</option>
+      <option value="200" selected>200×</option>
+      <option value="600">600×</option>
+    </select>
+    <div class="zoom">
+      <button class="ib" id="zoom-out" aria-label="Zoom out" title="Zoom out"><svg><use href="#i-minus"/></svg></button>
+      <button class="ib" id="zoom-in" aria-label="Zoom in" title="Zoom in"><svg><use href="#i-plus"/></svg></button>
+    </div>
+  </div>
+</footer>
+
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer-head"><h2 id="dr-title">Site</h2><button class="ib" id="dr-close" aria-label="Close">✕</button></div>
+  <div id="dr-body"></div>
+</div>
+
+<dialog class="about" id="about">
+  <div class="about-head">
+    <h2>How to read this</h2>
+    <form method="dialog"><button class="ib" aria-label="Close">✕</button></form>
+  </div>
+
+  <section>
+    <h3>The two rovers</h3>
+    <div class="rcards">
+      <div class="rcard">
+        <div class="rcard-t"><i class="dot A"></i>Surveyor A</div>
+        <p>Camera and neutron sensor, no drill. Finds sites, maps them, and flags dangerous ground.</p>
       </div>
-      <div class="clock" id="clock">T+00:00:00</div>
-    </div>
-
-    <div class="record">
-      <div class="col">
-        <div class="overline">Finds</div>
-        <div id="finds" class="finds"></div>
-      </div>
-      <div class="col">
-        <div class="overline">Chain feed <span class="hint" id="chain-hint"></span></div>
-        <div id="feed" class="feed"></div>
+      <div class="rcard">
+        <div class="rcard-t"><i class="dot B"></i>Prospector B</div>
+        <p>Arm and drill. Reads what the Surveyor found from the chain, then drills to confirm the ice.</p>
       </div>
     </div>
   </section>
 
-  <aside class="side">
-    <div class="panel">
-      <div class="panel-head">
-        <div class="overline">Rover camera</div>
-        <div class="seg" id="cam-seg">
-          <button data-ag="A" aria-pressed="true">A</button>
-          <button data-ag="B">B</button>
-        </div>
-      </div>
-      <div class="fp" title="Click to enlarge">
-        <img id="fp-img" alt="First-person lamp view">
-        <canvas id="fp-rims"></canvas>
-        <div class="fp-empty" id="fp-empty" hidden>No frame at this step</div>
-      </div>
-      <div class="cap" id="fp-cap">Recorded lamp-only view. 60° field of view, camera 2.5 m up.</div>
-      <div class="panel-head lidar-head" id="lidar-head">
-        <div class="overline">Lidar</div>
-        <div class="seg" id="lidar-seg" hidden>
-          <button data-lk="top" aria-pressed="true">Top-down</button>
-          <button data-lk="fp">First person</button>
-        </div>
-      </div>
-      <div class="lidar"><img id="lidar-img" alt="Lidar scan"></div>
-      <div class="cap" id="lidar-cap"></div>
-    </div>
+  <section>
+    <h3>On the ground</h3>
+    <ul class="legend">
+      <li><i class="sw ring" style="--c:#e0a83a"></i><b>Amber ring</b><span>A possible site, relayed by the satellite</span></li>
+      <li><i class="sw" style="--c:#ff4d4d"></i><b>Red patch</b><span>Ice found here</span></li>
+      <li><i class="sw ring dash" style="--c:#ff5d5d"></i><b>Red dashed ring</b><span>A flagged hazard; rovers plan around it</span></li>
+      <li><i class="sw line" style="--c:#5aa7ff"></i><b>Coloured line</b><span>The route a rover is following</span></li>
+      <li><i class="sw ring" style="--c:#e5574f"></i><b>Red ring</b><span>A crater with ground steeper than 15&deg; inside it, which the route planner will not cross. Shallow craters are not ringed. On the overhead map, red marks that steep ground</span></li>
+    </ul>
+  </section>
 
-    <div class="panel grow">
-      <div class="panel-head">
-        <div class="overline">Map</div>
-        <div class="seg" id="map-seg">
-          <button data-map="site" aria-pressed="true">Site</button>
-          <button data-map="A">A</button>
-          <button data-map="B">B</button>
-        </div>
-      </div>
-      <div class="map"><canvas id="map"></canvas></div>
-      <div class="cap" id="map-cap">North up. Scroll to zoom.</div>
-    </div>
-  </aside>
-</main>
+  <section>
+    <h3>Lidar view</h3>
+    <p>Each rover carries a forward lidar beside its camera: 120&deg; wide, 30 m range (Calvin&rsquo;s <code>sim/lidar.py</code>). The <b>Camera | Lidar</b> switch shows what each scan told the rover, seen from above: forward is up, the rover is the white mark at the bottom, rings every 5 m.</p>
+    <ul class="legend">
+      <li><i class="sw" style="--c:#5f6268"></i><b>Grey</b><span>Ground the lidar judged safe</span></li>
+      <li><i class="sw" style="--c:#f0a028"></i><b>Amber</b><span>Crater floor; the planner avoids it</span></li>
+      <li><i class="sw" style="--c:#e63228"></i><b>Red</b><span>Steeper than 15&deg;: no-go</span></li>
+      <li><i class="sw" style="--c:#000"></i><b>Black</b><span>No return, or too few to judge</span></li>
+    </ul>
+  </section>
 
-<script type="module" src="js/main.js"></script>
+  <section>
+    <h3>On chain</h3>
+    <p>Each record holds a result and a 32-byte fingerprint of the full report. The report itself stays off chain. <b>Verify</b> re-checks the fingerprint, which proves the report has not changed.</p>
+  </section>
+
+  <section>
+    <h3>Controls</h3>
+    <dl class="keys">
+      <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
+      <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom in or out</dd>
+      <dt>Drag</dt><dd>Look around</dd>
+      <dt><svg><use href="#i-expand"/></svg></dt><dd>Make a camera box full screen</dd>
+      <dt><kbd>L</kbd></dt><dd>Switch the rover view between camera and lidar</dd>
+    </dl>
+  </section>
+
+  <p class="about-foot" id="about-notes">Ice, readings and drill cores are simulated. <span id="model-credit"></span></p>
+</dialog>
+
+<script type="module" src="js/mission.js"></script>
 </body>
 </html>

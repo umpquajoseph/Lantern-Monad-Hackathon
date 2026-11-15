@@ -1,0 +1,24 @@
+{
+  "contract": "Lantern",
+  "chainId": 10143,
+  "address": "0x67f9Bedb42C845307cB1Fd6551D07Df64bd3CE98",
+  "deployTx": "0x393c6577dba0d6f1e6b6cfc77100befbb935eead02f1a880dea456e24fb74b4a",
+  "deployBlock": 80022710,
+  "deployer": "0x3671cA4854a7Ab5212e3Bd5991739753abC800b8",
+  "agencies": [
+    {
+      "letter": "A",
+      "name": "Agency A",
+      "address": "0x3671cA4854a7Ab5212e3Bd5991739753abC800b8"
+    },
+    {
+      "letter": "B",
+      "name": "Agency B",
+      "address": "0x9E1288856e57189A13e57Db89B12abF61D1538aE"
+    }
+  ],
+  "rpcUrl": "https://testnet-rpc.monad.xyz",
+  "explorer": "https://testnet.monadscan.com",
+  "explorerContractUrl": "https://testnet.monadscan.com/address/0x67f9Bedb42C845307cB1Fd6551D07Df64bd3CE98",
+  "deployedAt": "2026-11-15T19:22:40+00:00"
+}

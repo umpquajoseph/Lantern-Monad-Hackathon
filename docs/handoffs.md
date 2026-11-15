@@ -114,6 +114,10 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
 ```
 
 - `fp/<agency>_<step>.jpg`: the first-person frame from `scene.first_person`.
+- Also written by `run_demo.py` (additive): top level `standins`, `dt_s`,
+  `final_finds`, `truth.ice_units`, `truth.find_threshold_wt`; per rover
+  `mode`, `ice_reading`, `est_error`, `distance`. `index.json` in
+  `data/runs/` lists the runs.
 - `truth` is what the rovers cannot know: the hidden ice map. The viewer may
   show it only as a labelled reveal ("hidden truth"), never as something a
   rover saw. Ice is under the surface, so it is never drawn as visible

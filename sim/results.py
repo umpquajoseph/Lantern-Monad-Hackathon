@@ -215,7 +215,9 @@ def tracks_from_log(log: dict) -> dict[str, list[dict]]:
             tracks.setdefault(ag, []).append({
                 "t": step.get("t", 0.0), "x": float(x), "y": float(y),
                 "sigma": float(r.get("sigma") or 0.0), "source": src,
-                "nav_on": r.get("nav_on"), "reading": r.get("reading"),
+                "nav_on": r.get("nav_on"),
+                # run_demo.py logs the per-step reading as `ice_reading` (handoffs.md).
+                "reading": r.get("ice_reading", r.get("reading")),
             })
     return tracks
 

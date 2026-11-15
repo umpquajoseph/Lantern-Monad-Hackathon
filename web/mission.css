@@ -157,3 +157,4 @@ pre.json { background: #111214; padding: 8px; max-height: 260px; overflow: auto;
   .side { border-left: 0; }
   .toggles { margin-left: 0; }
 }
+.model-credit { position: absolute; left: 10px; bottom: 8px; color: var(--hint); font-size: 10.5px; pointer-events: none; z-index: 2; }

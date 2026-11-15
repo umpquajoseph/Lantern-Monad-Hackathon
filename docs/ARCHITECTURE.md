@@ -42,7 +42,11 @@ satellite site list ─┐
   then `python sim/roles.py run --chain monad`.
 - Not done: IPFS upload (CIDs are computed locally and are valid IPFS CIDs;
   the Kubo upload path is untested); camera-based obstacle detection (the
-  slope map stands in); NASA rover models (shapes here are our own boxes).
+  slope map stands in).
+- Rover models: NASA's own 3D files (github.com/nasa/NASA-3D-Resources),
+  Opportunity for the Surveyor and Perseverance for the Prospector, in
+  `web/models/`. They are Mars rovers standing in for lunar ones, credited on
+  screen; if they fail to load the simple box rovers stay.
 
 ## Run it
 

@@ -4,6 +4,8 @@
 // account of every record written on chain.
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { Terrain, Run, loadIndex, fmtClock } from "./data.js";
 import { World } from "./world.js";
 import { ScienceRig, DRILL_DEPTH_M } from "./science_rig.js";
@@ -57,6 +59,7 @@ async function main() {
   const entry = runs.find((r) => r.run_id === want) || runs.find((r) => r.status === "mission") || runs[0];
   await openRun(entry);
   bind();
+  window.lantern = { world, S, rigs };   // for poking at the scene from the browser console
   $("loading").hidden = true;
   requestAnimationFrame(loop);
 }
@@ -145,7 +148,59 @@ function dressRover(a) {
     const nir = box(mat(0x2a1c4a), 0.12, 0, 2.05, 0.22, 0.3, 0.2);
     extras.B = { sensors: [nir] };
   }
+  loadModel(a);
 }
+
+// NASA's own 3D models (github.com/nasa/NASA-3D-Resources): both are Mars
+// rovers, used here as stand-ins for the lunar rovers and credited on the
+// page. Each is measured once loaded, turned to this scene's frame (x
+// forward, y left, z up), scaled to a rover length, and set on the ground.
+// The box rover stays underneath until the model arrives, and if it fails.
+const MODELS = {
+  A: { file: "models/opportunity.glb", name: "Opportunity (MER-B)", length: 2.2, yaw: 0 },
+  B: { file: "models/perseverance.glb", name: "Perseverance (Mars 2020)", length: 2.9, yaw: 0 },
+};
+const gltf = new GLTFLoader();
+// NASA's files are Draco-compressed; the decoder comes from the same pinned three.js release.
+gltf.setDRACOLoader(new DRACOLoader().setDecoderPath("https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/gltf/"));
+
+function loadModel(a) {
+  const spec = MODELS[a];
+  const g = world.rovers[a].g;
+  gltf.load(spec.file, (res) => {
+    const model = res.scene;
+    model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    const holder = new THREE.Group();     // glTF is y-up: turn it to z-up
+    holder.rotation.x = Math.PI / 2;
+    holder.add(model);
+    const fit = new THREE.Group();
+    fit.add(holder);
+    fit.updateMatrixWorld(true);
+    let box = new THREE.Box3().setFromObject(fit);
+    let size = box.getSize(new THREE.Vector3());
+    if (size.y > size.x) {                 // put the long side along x (forward)
+      fit.rotation.z = Math.PI / 2;
+      fit.updateMatrixWorld(true);
+      box = new THREE.Box3().setFromObject(fit);
+      size = box.getSize(new THREE.Vector3());
+    }
+    fit.rotation.z += spec.yaw;
+    const k = spec.length / size.x;
+    fit.scale.setScalar(k);
+    fit.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(fit);
+    const c = box.getCenter(new THREE.Vector3());
+    fit.position.set(-0.2 - c.x, -c.y, -box.min.z);   // centred on the body, wheels on the ground
+    fit.name = "nasa-model";
+    // Hide the box body; keep the lamp, the name tag and the science arm.
+    for (const o of g.children) if (o.isMesh) o.visible = false;
+    if (extras[a]) extras[a].sensors = [];
+    g.add(fit);
+    modelNote[a] = spec.name;
+    $("model-credit").textContent = `Rover models: NASA 3D Resources, ${Object.values(modelNote).join(" and ")} (Mars rovers, standing in for lunar ones).`;
+  }, undefined, (err) => console.warn(`NASA model for ${a} not loaded; keeping the simple rover`, err));
+}
+const modelNote = {};
 
 // ------------------------------------------------------------- overlays
 function buildOverlay() {
@@ -380,6 +435,9 @@ function render(panels) {
     const ev = sci.filter((e) => e.agency === a && t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + 1).at(-1) || null;
     rigs[a].setEvent(ev);
     rigs[a].update(t);
+    // The arm shows only while an instrument is in use, so its appearance means "science now".
+    const busy = ev && !["idle", "done", "park"].includes(rigs[a].phaseAt(t).name);
+    rigs[a].mount.visible = !!busy || (ev && rigs[a].phaseAt(t).name === "done" && t < ev.t1 + 1);
     // Name tag: what the instrument is doing right now.
     const ph = ev ? rigs[a].phaseAt(t) : { name: "idle" };
     const st = stateAt(a, t).state;

@@ -8,7 +8,7 @@ import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer
 import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
-import { regolith, lampIntensity, fillIntensity, TONE_GLSL } from "./regolith.js";
+import { regolith, lampIntensity, fillIntensity, fillAmbient, TONE_GLSL } from "./regolith.js";
 import { fetchF32 } from "./data.js";
 
 // ShadowNav (Atha et al. 2024, sections IV and V), as in sim/scene.py:
@@ -26,7 +26,7 @@ const CHASE_BACK_M = 14, CHASE_UP_M = 8;  // scene.py, assumed
 const EXPOSURE_REF_RANGE_M = 5, EXPOSURE_REF_LEVEL = 0.55;  // scene.py:80-81 (2c8af7e)
 const LAMP_RGB = [1.0, 0.93, 0.8];   // sim/terrain_look.py, assumed (linear)
 const FILL_RGB = [0.62, 0.68, 0.82]; // sim/terrain_look.py, assumed (linear)
-const FILL_LEVEL = 0.22, FILL_EL_DEG = 35;  // sim/terrain_look.py, assumed
+const FILL_LEVEL = 0.22, FILL_EL_DEG = 35;  // sim/scene.py:156-157, assumed: display-linear, before gamma
 // Viewer only, assumed: the fill comes from this far round from the view
 // direction, so it never sits behind the camera, where Hapke's opposition
 // surge would make a bright blob (terrain worker, 20261115-114023).
@@ -100,12 +100,12 @@ export class World {
 
     // Fill light: the one cheat, labelled on screen and switchable. It is
     // there only so a viewer can see the ground; the rovers' cameras never
-    // get it. Level and colour as sim/terrain_look.py's chase view.
+    // get it. Level, colour and wrap as sim/scene.py's chase view.
     const fc = new THREE.Color().setRGB(...FILL_RGB, THREE.LinearSRGBColorSpace);
     this.fill = new THREE.DirectionalLight(fc, fillIntensity(this.hapke, { level: FILL_LEVEL, elDeg: FILL_EL_DEG }));
     this.scene.add(this.fill, this.fill.target);
-    // The rover bodies are not regolith: a trace of ambient keeps their dark sides readable.
-    this.ambient = new THREE.AmbientLight(fc, 0.03);
+    // scene.py's wrap term: part of the fill reaches every surface.
+    this.ambient = new THREE.AmbientLight(fc, fillAmbient(FILL_LEVEL));
     this.scene.add(this.ambient);
     this.lampI = lampIntensity(this.hapke, { camH: CAMERA_HEIGHT_M, lampBelow: LAMP_BELOW_CAMERA_M,
       pitchDeg: CAMERA_PITCH_DEG, refRange: EXPOSURE_REF_RANGE_M, refLevel: EXPOSURE_REF_LEVEL });

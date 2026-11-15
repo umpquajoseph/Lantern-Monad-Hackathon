@@ -81,8 +81,9 @@ of this is wrong, do it your way and say why in your report.
   that after review.
 - No commit message names a person.
 
-## Report
+## Mail and report
 
-When done, end with: what works, what does not, what you changed from this
-brief and why, the output file paths, and the paths of the images you
-looked at.
+Your handle is `terrain`. Talk to the lead session by mailbox, following
+`C:\Monad-Hackathon-Project\ops\PROTOCOL.md`. Questions go to `leader` as
+one mail. When done, send a `report` mail to `leader` with the headings in
+that file, plus the output paths and the images or video you looked at.

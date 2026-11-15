@@ -83,8 +83,9 @@ rest. Decide for yourself and say why.
   detail.
 - No commit message names a person.
 
-## Report
+## Mail and report
 
-When done, end with: what works, what does not, what you chose and why
-(renderer, camera and lamp settings), frame times, what you changed from
-this brief, and the paths of the images and video you looked at.
+Your handle is `scene`. Talk to the lead session by mailbox, following
+`C:\Monad-Hackathon-Project\ops\PROTOCOL.md`. Questions go to `leader` as
+one mail. When done, send a `report` mail to `leader` with the headings in
+that file, plus the output paths and the images or video you looked at.

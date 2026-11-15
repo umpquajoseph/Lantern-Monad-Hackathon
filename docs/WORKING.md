@@ -15,6 +15,7 @@ another part calls.
 | Web viewer: the hosted demo page, replaying runs with live 3D third person, first-person frames, map, finds and chain feed (step 5) | Joseph, agent `viewer` | `step-5-viewer` | `web/` | 10:55 | building |
 | Demo spine: `run_demo.py` writing both demo runs end to end, hidden ice map and sensor, stand-ins for nav, planner and chain (steps 4 and 5 glue) | Joseph, agent `scene` | `step-4-spine` | `run_demo.py`, `sim/rover.py`, `sim/ice.py`, `sim/standin_*.py` | 10:58 | building |
 | Contract on Monad testnet with Foundry tests, and the Python client `sim/chain.py` (step 1) | Kellen, agent `chain` | `step-1-chain` | `contracts/`, `sim/chain.py`, `sim/lantern_abi.json`, `sim/lantern_deployment.json` | 10:50 | building |
+| Results ledger: master results file per run (paths, find locations, ice quantity, volatiles) and posting it to Monad, `LanternSurvey` contract next to Lantern | Kellen, agent `results` | `step-7-results` | `sim/results.py`, `sim/survey.py`, `sim/survey_abi.json`, `sim/survey_deployment.json`, `survey/` | 11:05 | done on anvil 11:25, testnet deploy waits for Lantern's |
 | Briefs, review, merging into `joseph` | Joseph, lead session | `joseph` | `docs/`, `ops/PROTOCOL.md` | 10:00 | ongoing |
 
 ## Not claimed yet

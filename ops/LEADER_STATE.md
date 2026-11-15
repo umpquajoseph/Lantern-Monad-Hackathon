@@ -304,3 +304,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 13:41 nav live; merged Calvin f3fcce6 (route to 60 m on camera) into step-6-nav; starting on A abandoning its goal.
 - 13:42 perf fix 1 (pass-1 replay) passed: run 1 --vision byte-identical, 604 s -> 497 s; fixes 2+3 (threads, shared horizon) ETA 14:10.
 - 13:42 Standing order mailed to all 8 workers (134126): never wait for the leader; push each piece when it passes; mail peers directly with deadlines; ask leader only for Joseph-level decisions. perf f1a2461 pushed. Scene run 2 resume started 13:40.
+- 13:43 Calvin 706ffd7: display-only (drawn planned route smoothed and cut to 20 m, fewer lidar marks, app.py --vision); his message says navigation unchanged, so goal abandonment and jagged driving are NOT fixed. Told nav to merge it and keep going.

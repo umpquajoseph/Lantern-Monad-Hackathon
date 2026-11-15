@@ -366,3 +366,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:33 viewer 94e4623: camera caption flash fixed (b379938, 56 to 0 changes within a step), camera A/B sets 3D follow, lidar caption right from load. Integrator asked to merge. Toggle approved to land after 14:40.
 - 14:34 nav 6846caf: first-person lidar image per scan (lidar_fp_frame), top-down untouched, mission poses identical (0.0 over 263 steps). Nav mailed integrator, scene, viewer directly.
 - 14:34 integrator: nav 6846caf merged, head 9a590ca (viewer 94e4623 also in). Scene told to re-render mission from 9a590ca (poses must match 2fad40b).
+- 14:35 Ritvik: 1 unmerged commit (14:06, Mission Control: rovers on ground, crater rings, plain Surveyor camera); conflicts in web/js/mission.js with viewer's frost/lidar/A-B. Viewer told to merge it, Ritvik's structure + viewer features on top. Scene re-rendering mission from 9a590ca, ETA 14:42.

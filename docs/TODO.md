@@ -1,6 +1,6 @@
 # Lantern: to do after the checkpoint merge
 
-Updated 13:21. `main` is the checkpoint (25acb62), with every branch
+Updated 13:56. Final merge 15:00: last pushes 14:40, integration frozen 14:45, full runs 14:45-15:00. `main` is the checkpoint (25acb62), with every branch
 merged. Switch to it. The `merger` worker is still cleaning up on
 `checkpoint`, and `main` will be updated again when that is done.
 

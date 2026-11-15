@@ -318,3 +318,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 13:54 perf 8dbdcf8 + c8f3537: threads (8) + shared horizon sampling + lamp map only when visible; frame 697 -> 371 ms (detail), 887 -> 434 ms (full), 0 pixel diff on 120 frames; pool splits cores. Timing full run 1 next (~14:00).
 - 13:55 scene: run2-20261115-1250 finished (2289 frames, disputed, 0 m no-go, clears deep crater); index lists both 1250 runs. Integrator told: restart :8000, merge perf 8dbdcf8+c8f3537.
 - 13:55 Joseph: full runs only at the final merge; workers run only relevant checks. fyi sent to nav, perf, scene, viewer, integrator, designer. Integrator: :8000 shows both 1250 runs; integration a9cc2b3 has perf 8dbdcf8+c8f3537.
+- 13:56 Joseph: final merge 15:00. Deadlines sent to all six: last push 14:40, freeze 14:45, full runs 14:45-15:00, main 15:00 on his word.

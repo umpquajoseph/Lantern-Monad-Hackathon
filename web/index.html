@@ -64,7 +64,7 @@
     <div class="pop" id="layers" hidden>
       <label class="ck"><input type="checkbox" id="opt-routes" checked> Routes</label>
       <label class="ck"><input type="checkbox" id="opt-hazards" checked> Obstacles</label>
-      <label class="ck"><input type="checkbox" id="opt-nogo" checked> Craters</label>
+      <label class="ck"><input type="checkbox" id="opt-nogo" checked> Steep ground <span class="hint">(over 15&deg;, no-go)</span></label>
       <label class="ck"><input type="checkbox" id="opt-truth"> Hidden ice <span class="hint">(rovers can't see it)</span></label>
     </div>
   </div>
@@ -186,13 +186,13 @@
       <li><i class="sw" style="--c:#ff4d4d"></i><b>Red patch</b><span>Ice found here</span></li>
       <li><i class="sw ring dash" style="--c:#ff5d5d"></i><b>Red dashed ring</b><span>A flagged hazard; rovers plan around it</span></li>
       <li><i class="sw line" style="--c:#5aa7ff"></i><b>Coloured line</b><span>The route a rover is following</span></li>
-      <li><i class="sw ring" style="--c:#e5574f"></i><b>Red ring</b><span>A crater with ground steeper than 15&deg; inside it, which the route planner will not cross. Shallow craters are not ringed. On the overhead map, red marks that steep ground</span></li>
+      <li><i class="sw" style="--c:#e5574f"></i><b>Red ground</b><span>Steeper than 15&deg; across 2 m: the route planner will not cross it. The same layer as on the satellite map. Toggle it under Layers</span></li>
     </ul>
   </section>
 
   <section>
     <h3>Lidar view</h3>
-    <p>Each rover carries a forward lidar beside its camera: 120&deg; wide, 30 m range (Calvin&rsquo;s <code>sim/lidar.py</code>). The <b>Camera | Lidar</b> switch shows what each scan told the rover, seen from above: forward is up, the rover is the white mark at the bottom, rings every 5 m.</p>
+    <p>Each rover carries a forward lidar beside its camera: 120&deg; wide, 30 m range (Calvin&rsquo;s <code>sim/lidar.py</code>). The <b>Lidar</b> tab of the camera box shows what each scan told the rover. <b>Top-down</b>: forward is up, the rover is the white mark at the bottom, rings every 5 m. <b>First person</b>: the same scan, 120&deg; across, near bright, far dark.</p>
     <ul class="legend">
       <li><i class="sw" style="--c:#5f6268"></i><b>Grey</b><span>Ground the lidar judged safe</span></li>
       <li><i class="sw" style="--c:#f0a028"></i><b>Amber</b><span>Crater floor; the planner avoids it</span></li>

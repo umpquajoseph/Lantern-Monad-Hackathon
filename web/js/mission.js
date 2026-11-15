@@ -538,6 +538,7 @@ function bind() {
   $("scrub").oninput = (e) => {
     const nt = (Number(e.target.value) / 1000) * S.run.tEnd;
     if (nt < S.t) { S.player.rewound(nt); rearmAutoB(nt); }
+    else if (!S.player.busy) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
     S.t = nt; exitFocus(); S.dismissed = null; render(true);
   };
   document.querySelectorAll("#view-seg button").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
@@ -724,19 +725,13 @@ function enterFocus(ev) {
   S.focusEv = ev;
   S.rover = ev.agency;
   document.querySelectorAll("#rover-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.rover === ev.agency)));
-  $("in-map").hidden = false;
   $("back-chip").hidden = true;
   if (ev.agency === "A") {
-    // The Surveyor's stops play in its own camera: what it sees, and what it maps.
-    S.cam = "first";
-    $("fp").hidden = false;
-    $("in-fp").hidden = true;
-    $("back-chip").hidden = false;
-    world.labels.domElement.style.display = "none";
+    // The Surveyor's stops keep the view the user picked (no snap to first person).
   } else {
     S.cam = "third";
     $("fp").hidden = true;
-    $("in-fp").hidden = false;
+    applyInsets();
     world.labels.domElement.style.display = "";
     closeUp(ev);
   }
@@ -795,7 +790,7 @@ function render(panels) {
   if (!run) return;
   world.currentT = t;
   world.update(t, { tracks: S.opts.routes });
-  updateCraterRings(t);
+  updateSteepShade(t);
   for (const a of run.agencies) {
     updateSuspension(a, t);
     const ev = sci.filter((e) => e.agency === a && t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + 1).at(-1) || null;
@@ -1003,69 +998,58 @@ function drawFpOverlay(fr, cv, small) {
   }
 }
 
-// ------------------------------------------------------- crater rings
-// Joseph's crater map (terrain.craters: [x, y, diameter]) drawn as red rim
-// rings on the ground near the rover being followed, rebuilt as one line
-// object whenever the rover has moved CRATER_RING_STEP_M.
-// Only craters the route planner treats as no-go are ringed: those with at
-// least one cell steeper than 15 deg across 2 m inside the rim (Joseph's
-// nogo.png from sim/rover.py SlopeMap, the same test the planner uses).
-// About 6,700 of the 11,082; the rest are shallow enough to drive through.
-const CRATER_RING_R_M = 150, CRATER_RING_STEP_M = 40, CRATER_RING_SEG = 28;
-let craterRings = null, craterAt = null, steepCraters = null;
-function findSteepCraters() {
-  const nm = terrain.meta.nogo;
-  if (!nm) { steepCraters = terrain.craters; return; }
-  const img = new Image();
-  img.onload = () => {
-    const W = img.naturalWidth, H = img.naturalHeight;
-    const cv = document.createElement("canvas");
-    cv.width = W; cv.height = H;
-    const c = cv.getContext("2d", { willReadFrequently: true });
-    c.drawImage(img, 0, 0);
-    const a = c.getImageData(0, 0, W, H).data;    // alpha > 0: no-go
-    const { x0, y0, cell } = terrain.meta;          // pixel (j, i) is the sim cell at x0 + j cell, y0 + i cell; north up
-    steepCraters = terrain.craters.filter(([x, y, d]) => {
-      const r = d / 2, j0 = Math.max(0, Math.floor((x - r - x0) / cell)), j1 = Math.min(W - 1, Math.ceil((x + r - x0) / cell));
-      const i0 = Math.max(0, Math.floor((y - r - y0) / cell)), i1 = Math.min(H - 1, Math.ceil((y + r - y0) / cell));
-      for (let i = i0; i <= i1; i++) for (let jj = j0; jj <= j1; jj++) {
-        if ((x0 + jj * cell - x) ** 2 + (y0 + i * cell - y) ** 2 > r * r) continue;
-        if (a[((H - 1 - i) * W + jj) * 4 + 3] > 0) return true;
-      }
-      return false;
-    });
-    craterAt = null;   // rebuild the rings with the filtered list
-    cv.width = cv.height = 0;
-  };
-  img.src = terrain.base + nm.file;
-}
-function updateCraterRings(t) {
+// ------------------------------------------------------- steep ground
+// The planner's no-go ground (assets/terrain/nogo.png: sim/rover.py SlopeMap,
+// over 15 deg across 2 m, the overhead map's layer) shaded red on the 3D
+// ground near the rover being followed. One draped grid, rebuilt when the
+// rover has moved STEEP_STEP_M. Unlit, so it reads in the dark.
+const STEEP_HALF_M = 120, STEEP_CELL_M = 0.5, STEEP_STEP_M = 40, STEEP_LIFT_M = 0.06;   // assumed, display only
+const STEEP_OPACITY = 0.55;
+let steepMesh = null, steepAt = null, steepTex = null;
+function updateSteepShade(t) {
+  const m = terrain.meta;
+  if (!m.nogo) return;
+  if (steepMesh) steepMesh.visible = S.opts.nogo;
+  if (!S.opts.nogo) return;
   const [x, y] = S.run.poseAt(S.rover, t);
-  if (craterRings) craterRings.visible = S.opts.nogo;
-  if (!steepCraters) { if (steepCraters === null) { steepCraters = false; findSteepCraters(); } return; }
-  if (!S.opts.nogo || (craterAt && Math.hypot(x - craterAt[0], y - craterAt[1]) < CRATER_RING_STEP_M)) return;
-  craterAt = [x, y];
-  const pos = [];
-  for (const [cx, cy, d] of steepCraters) {
-    if (Math.abs(cx - x) > CRATER_RING_R_M || Math.abs(cy - y) > CRATER_RING_R_M) continue;
-    const r = d / 2;
-    let prev = null;
-    for (let i = 0; i <= CRATER_RING_SEG; i++) {
-      const a = (i / CRATER_RING_SEG) * Math.PI * 2;
-      const p = world.groundL(cx + r * Math.cos(a), cy + r * Math.sin(a), 0.12);
-      if (prev) pos.push(prev.x, prev.y, prev.z, p.x, p.y, p.z);
-      prev = p;
-    }
+  if (steepAt && Math.hypot(x - steepAt[0], y - steepAt[1]) < STEEP_STEP_M) return;
+  steepAt = [x, y];
+  if (!steepTex) {
+    steepTex = new THREE.TextureLoader().load(terrain.base + m.nogo.file);
+    steepTex.colorSpace = THREE.SRGBColorSpace;
+    steepTex.magFilter = THREE.NearestFilter;
+    steepTex.generateMipmaps = false;
+    steepTex.minFilter = THREE.LinearFilter;
   }
-  if (!craterRings) {
-    craterRings = new THREE.LineSegments(new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0xe5574f, transparent: true, opacity: 0.85 }));
-    craterRings.frustumCulled = false;
-    world.scene.add(craterRings);
+  const ax0 = m.x0 - m.cell / 2, ay0 = m.y0 - m.cell / 2, aw = m.cols * m.cell, ah = m.rows * m.cell;
+  const n = Math.round((2 * STEEP_HALF_M) / STEEP_CELL_M) + 1;
+  const cx = Math.round(x / STEEP_CELL_M) * STEEP_CELL_M - STEEP_HALF_M, cy = Math.round(y / STEEP_CELL_M) * STEEP_CELL_M - STEEP_HALF_M;
+  const pos = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2);
+  for (let i = 0, p = 0, q = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    const wx = cx + j * STEEP_CELL_M, wy = cy + i * STEEP_CELL_M;
+    const v = world.groundL(wx, wy, STEEP_LIFT_M);
+    pos[p++] = v.x; pos[p++] = v.y; pos[p++] = v.z;
+    uv[q++] = (wx - ax0) / aw; uv[q++] = (wy - ay0) / ah;
   }
-  craterRings.geometry.dispose();
-  craterRings.geometry = new THREE.BufferGeometry();
-  craterRings.geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  const idx = new Uint32Array((n - 1) * (n - 1) * 6);
+  for (let a = 0, k = 0; a < n - 1; a++) for (let b = 0; b < n - 1; b++) {
+    const v = a * n + b;
+    idx[k++] = v; idx[k++] = v + 1; idx[k++] = v + n; idx[k++] = v + 1; idx[k++] = v + n + 1; idx[k++] = v + n;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  if (!steepMesh) {
+    steepMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: steepTex, transparent: true, opacity: STEEP_OPACITY,
+      depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+    steepMesh.frustumCulled = false;
+    steepMesh.renderOrder = 2;
+    world.scene.add(steepMesh);
+  } else {
+    steepMesh.geometry.dispose();
+    steepMesh.geometry = g;
+  }
 }
 
 function registryAt(t) {

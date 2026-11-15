@@ -257,7 +257,20 @@ function camera(run, fr, k) {
   const every = gapM ? `, one frame per ${gapM < 10 ? gapM.toFixed(1).replace(/\.0$/, "") : Math.round(gapM)} m driven` : "";
   $("fp-cap").innerHTML = `Rover ${a} camera${every}, as recorded. Lamp only, 60° field of view, camera 2.5 m up, lamp 0.2 m below it.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
-    (state.opts.rims && r.rims && r.rims.length && !(fr && fr.sub) ? ` ${r.rims.length} rim points${run.standin ? " (stand-in, from the crater map)" : ""}.` : "");
+    (state.opts.rims && r.rims && r.rims.length && !(fr && fr.sub) ? ` ${r.rims.length} rim points${run.standin && run.standin.rims ? " (stand-in, from the crater map)" : " from the camera"}.` : "") +
+    (r.lidar_frame && !(fr && fr.sub) ? " Amber dots: planned path. Red marks: lidar hazards." : "");
+  // Lidar panel: the scan taken with this step's live frame (run_demo.py with sensors).
+  const li = $("lidar-img");
+  if (r.lidar_frame) {
+    const src = run.dir + r.lidar_frame;
+    if (li.dataset.src !== src) { li.dataset.src = src; li.src = src; }
+    const hz = r.lidar_hazards || {};
+    $("lidar-cap").textContent = `Rover ${a} lidar, beside the camera: 120° x 33°, near warm, far cool. ` +
+      `This scan: ${hz.crater || 0} crater cells, ${hz.slope || 0} steep cells.`;
+  } else {
+    li.removeAttribute("src");
+    $("lidar-cap").textContent = "No lidar in this run.";
+  }
   // Rim points are logged per step, in that step's pose: draw them only on a step's own frame.
   drawRims(run, a, fr ? fr.k : k, !!(fr && fr.sub));
 }

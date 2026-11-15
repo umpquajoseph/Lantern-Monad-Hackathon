@@ -5,3 +5,5 @@ runs/
 .vercel/
 # written by `vercel link`: holds a token, never commit
 .env*
+node_modules/
+package-lock.json

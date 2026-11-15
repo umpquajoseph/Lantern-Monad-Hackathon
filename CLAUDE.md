@@ -18,6 +18,10 @@ Monad contract, and check each other's finds.
     problem scores highest".
   - Completeness: "clean ui/ux and working features, end to end, no gaps".
   - Presentation.
+- **A demo link is required.** Projects hosted only locally are
+  disqualified. Build locally, then port to a hosted link at the end. Keep
+  the simulation's state (poses, estimates, finds, transaction hashes)
+  separate from drawing it, so a hosted viewer can replay a run.
 - So: a demo that runs end to end with a clean dashboard beats an extra
   feature. Polish step 5 before any upgrade (real terrain, vision).
 

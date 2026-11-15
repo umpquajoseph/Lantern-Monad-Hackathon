@@ -12,7 +12,8 @@ steps. Data formats between steps are in `docs/handoffs.md`.
 ## Setup
 
 1. Python 3.11 or newer, then
-   `pip install numpy opencv-python matplotlib web3 python-dotenv`.
+   `pip install numpy scipy tifffile opencv-python matplotlib web3 python-dotenv`.
+   `sim/terrain.py` needs scipy, and tifffile to read the LOLA tile.
 2. Foundry, from https://getfoundry.sh.
 3. A throwaway testnet wallet per agency, funded from the Monad testnet faucet.
 4. Copy `.env.example` to `.env` and fill it in. Never commit `.env`.

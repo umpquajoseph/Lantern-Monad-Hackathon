@@ -193,3 +193,12 @@ Read mail, then `mv` it to `leader/archive/`.
   Joseph asked what Ritvik's Mission Control adds; I proposed taking verify
   button, science stop, route on camera into the main site after the
   checkpoint merge; waiting on his answer and on Mission Control placement.
+- 13:04 JOSEPH DECISIONS (13:03): demo = Ritvik's Surveyor/Prospector roles
+  and 8-site mission, keeping all our improvements (renderer, ParticleNav,
+  planner, viewer, design); NASA rover models in; Kellen's Lantern contract
+  is the chain (not Ritvik's registry); Kellen's host kept. Checkpoint merge
+  task sent to integrator (130335): all branches onto `checkpoint` from
+  integration; joseph/main only on Joseph's word. Next: unification brief
+  (one sim emitting our log format with roles and 8 sites; viewer plays it
+  with NASA models, verify, science stops). Open: dispute story in the
+  mission; sigma formula (now posts on a real chain).

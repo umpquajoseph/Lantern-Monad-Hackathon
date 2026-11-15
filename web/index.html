@@ -75,7 +75,7 @@
   <button class="ib" id="full-btn" aria-label="Full screen" title="Full screen"><svg><use href="#i-full"/></svg></button>
 </div>
 
-<aside class="panel" id="panel">
+<aside class="panel closed" id="panel">
   <nav class="rail" role="tablist" aria-label="Panels">
     <button data-tab="rover" aria-selected="true" title="Rover"><svg><use href="#i-rover"/></svg></button>
     <button data-tab="science" title="Science"><svg><use href="#i-drill"/></svg></button>
@@ -108,8 +108,24 @@
       <ol class="txs" id="txs"></ol>
     </section>
   </div>
-  <button class="collapse" id="collapse" aria-label="Hide panel" title="Hide panel"><svg><use href="#i-chev"/></svg></button>
+  <button class="collapse" id="collapse" aria-label="Show panel" title="Show panel" aria-expanded="false"><svg><use href="#i-chev"/></svg></button>
 </aside>
+<div class="keybox" id="legend" aria-label="Key">
+  <button class="key-btn" id="key-btn" aria-expanded="false" aria-controls="lg-rows">Key</button>
+  <ul class="lg-rows" id="lg-rows">
+    <li><i class="kw dot" style="background:#5aa7ff"></i>Surveyor A <i class="kw dot" style="background:#f2994a;margin-left:8px"></i>Prospector B</li>
+    <li data-on="routes"><span class="kws"><i class="kw ln" style="background:#e9ecef"></i></span>True path, where it really drove</li>
+    <li data-on="routes"><span class="kws"><i class="kw ln est"></i><i class="kw ring"></i></span>Estimate, where it thinks it is, ±σ</li>
+    <li data-on="routes"><span class="kws"><i class="kw ln dash" style="--c:#9aa0a6"></i></span>Odometry alone</li>
+    <li data-on="routes"><span class="kws"><i class="kw ln dash" style="--c:#ffc83c"></i></span>Planned route</li>
+    <li data-on="nogo"><span class="kws"><i class="kw blk" style="background:rgba(229,87,79,.75)"></i></span>Steep ground, over 15°, no-go</li>
+    <li data-on="hazards"><span class="kws"><i class="kw ring dash" style="--c:#ff5d5d"></i></span>Obstacle the lidar found</li>
+    <li data-on="particles"><span class="kws"><i class="kw pts"></i></span>Particles, position guesses</li>
+    <li data-on="sat"><span class="kws"><i class="kw ring dash" style="--c:#e0a83a"></i></span>Candidate site from orbit</li>
+    <li data-on="find"><span class="kws"><i class="kw blk frost"></i></span>Frost: ice the Surveyor found</li>
+    <li data-on="truth"><span class="kws"><i class="kw ring dash" style="--c:#d8f3ff"></i></span>Hidden ice, rovers can't see it</li>
+  </ul>
+</div>
 
 <div class="insets" id="insets">
   <figure class="inset" id="in-fp">

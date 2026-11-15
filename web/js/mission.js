@@ -87,6 +87,7 @@ async function main() {
   const entry = runs.find((r) => r.run_id === want) || runs.find((r) => r.run_id === "mission-demo") || runs[0];
   await openRun(entry);
   bind();
+  updateLegend();
   if (NARROW.matches) $("panel").classList.add("closed");
   window.lantern = { world, S, rigs };   // for poking at the scene from the browser console
   $("loading").hidden = true;
@@ -577,6 +578,30 @@ function buildTimeline() {
   for (const e of S.run.events) add(S.run.times[e.k], "ice", e.type === "find" ? `Ice find posted (${ROLE[e.agency]})` : `Check posted (${ROLE[e.agency]})`);
 }
 
+// ------------------------------------------------------------------ legend
+// Bottom left, above the play bar. A row shows only while its layer draws.
+function updateLegend() {
+  const run = S.run, o = S.opts;
+  const on = {
+    routes: o.routes,
+    nogo: o.nogo && !!terrain.meta.nogo,
+    hazards: o.hazards && hazards.length > 0,
+    particles: o.routes && o.particles && run.hasParticles !== false,
+    sat: (run.log.satellite_sites || []).length > 0,
+    find: ((run.log.mission || {}).sites || []).some((s) => s.verdict === "ice"),
+    truth: o.truth && ((run.truth && run.truth.ice) || []).length > 0,
+  };
+  for (const li of document.querySelectorAll("#lg-rows [data-on]")) li.hidden = !on[li.dataset.on];
+}
+
+// The collapse button says what it does next.
+function syncCollapse() {
+  const closed = $("panel").classList.contains("closed"), b = $("collapse");
+  b.setAttribute("aria-label", closed ? "Show panel" : "Hide panel");
+  b.title = closed ? "Show panel" : "Hide panel";
+  b.setAttribute("aria-expanded", String(!closed));
+}
+
 // ---------------------------------------------------------------- controls
 function bind() {
   $("play").onclick = togglePlay;
@@ -610,13 +635,18 @@ function bind() {
     S.tabBeforeFocus = null;
     setTab(b.dataset.tab);
   }));
-  $("collapse").onclick = () => $("panel").classList.toggle("closed");
+  $("collapse").onclick = () => { $("panel").classList.toggle("closed"); syncCollapse(); };
+  $("key-btn").onclick = () => {
+    const open = $("legend").classList.toggle("open");
+    $("key-btn").setAttribute("aria-expanded", String(open));
+  };
   for (const k of ["fill", "routes", "hazards", "nogo", "truth", "particles", "rims"]) {
     $("opt-" + k).onchange = (e) => {
       S.opts[k] = e.target.checked;
       world.setVisibility({ fill: S.opts.fill, tracks: S.opts.routes, truth: S.opts.truth });
   $("vnote").hidden = !S.opts.fill;
       map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
+      updateLegend();
       render(true);
     };
   }

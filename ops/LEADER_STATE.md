@@ -66,7 +66,7 @@ git at 73e77ab. Read this first after a compaction, then `ops/PROTOCOL.md`,
 | designer | `uds:\\.\pipe\LOCAL\cc-msg-42257a837952d8f3cb6dda87cb29e0fb` | local_ba34eb33-eb0d-45e1-8f58-6d1df15566b9 | own worktree, `step-5-design` | owns `web/app.css` and `index.html` layout. Judge items 1, 4, 5, 6, 7. Brief `docs/briefs/design.md` |
 | perf | `uds:\\.\pipe\LOCAL\cc-msg-b5fa754137f62a9b8f31896194e2668b` | local_e264d133-dfe3-4b08-a7be-8c66b5b4e005 | `C:\Monad-Hackathon-perf`, `step-6-perf` | rerun and asset build speed, identical output. Brief `docs/briefs/performance.md`. Profiles after 1250 lands |
 | merger | `uds:\\.\pipe\LOCAL\cc-msg-28bfcc486ae1da380bb0690a0ec10c73` (session local_90314b3a-adbc-4de4-867b-6478ad3b534f) | opened by Joseph 13:07 | `C:\Monad-Hackathon-checkpoint`, `checkpoint` | checkpoint merge + clean-up, brief `docs/briefs/merge.md` |
-| nav | `Nav inbox watcher setup [c64f2a]` | opened by Joseph 13:39 | `C:\Monad-Hackathon-nav`, `step-6-nav` | vision + hazard planner + lidar integration, brief `docs/briefs/nav.md` |
+| nav | `uds:\\.\pipe\LOCAL\cc-msg-59eaf1ab18281c7b3e7ae7586c689f2a` | local_91533d2f-8d9c-446f-a6fe-cbffe8fa3144 | `C:\Monad-Hackathon-nav`, `step-6-nav` | vision + hazard planner + lidar integration, brief `docs/briefs/nav.md` |
 
 My watcher (run_in_background, re-arm after every mail):
 
@@ -302,3 +302,4 @@ Read mail, then `mv` it to `leader/archive/`.
   blocks, hazards never clear); jagged path (no turn-rate limit, unsmoothed
   A*); lidar panel = raw range image. Calvin told in vision-sync.md.
 - 13:41 nav live; merged Calvin f3fcce6 (route to 60 m on camera) into step-6-nav; starting on A abandoning its goal.
+- 13:42 perf fix 1 (pass-1 replay) passed: run 1 --vision byte-identical, 604 s -> 497 s; fixes 2+3 (threads, shared horizon) ETA 14:10.

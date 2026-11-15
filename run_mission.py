@@ -308,9 +308,10 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                             fid = chain.post_find("A", float(r.estimate[0]), float(r.estimate[1]), float(r.sigma), mean, data_hash)
                             ev["find_id"] = fid
                             ev["tx"] = chain.last_tx
+                            ev["data_hash"] = data_hash
                             events.append({"type": "find", "agency": "A", "find_id": fid, "site_id": site["id"],
                                            "x": ev["x"], "y": ev["y"], "sigma": ev["sigma"], "reading": round(mean, 3),
-                                           "tx": chain.last_tx})
+                                           "data_hash": data_hash, "tx": chain.last_tx})
                             note_state("A", k, "PUBLISHING", f"find at {site['id']} on chain")
                         else:
                             note_state("A", k, "PUBLISHING", f"{site['id']} dry: nothing to record")
@@ -509,11 +510,18 @@ def main():
 
     jobs = sub_frame_jobs(steps, run_dir, args.sub_frame_m) if shared is not None else []
     if jobs:
-        cam = scene = None
-        gc.collect()
         t = time.perf_counter()
-        rt, workers, mem = render_sub_frames(jobs, shared, terrain, display, args.workers)
-        print(f"display frames: {len(rt)} in {time.perf_counter() - t:.0f}s on {workers} workers")
+        try:
+            import psutil  # noqa: F401  (the spine's render pool sizes itself with it)
+            posed = dict(cam._posed) if cam is not None else {}
+            cam = scene = None
+            gc.collect()
+            rt, workers, mem = render_sub_frames(jobs, shared, terrain, display, args.workers)
+            print(f"display frames: {len(rt)} in {time.perf_counter() - t:.0f}s on {workers} workers")
+        except ImportError:
+            print(f"  psutil missing: rendering {len(jobs)} display frames in this process")
+            rt = spine.render_jobs(scene, dict(cam._posed) if cam is not None else {}, jobs)
+            print(f"display frames: {len(rt)} in {time.perf_counter() - t:.0f}s, median {1e3 * np.median(rt):.0f} ms")
     if shared is not None:
         shutil.rmtree(shared, ignore_errors=True)
 

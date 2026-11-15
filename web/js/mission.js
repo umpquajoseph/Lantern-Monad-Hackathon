@@ -115,6 +115,7 @@ async function openRun(entry) {
   })));
   S.run = run;
   world.currentT = 0;
+  world.hideOdom = true;   // no odometry-alone line in the 3D view
   world.setRun(run);
   for (const s of world.iceSites || []) dimFrost(s.obj);
   for (const o of world.truthObjs || []) if (o.isGroup) dimFrost(o);

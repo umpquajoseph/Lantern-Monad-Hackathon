@@ -793,7 +793,8 @@ uniform vec4 uP1;`)
   setVisibility({ fill, tracks, truth }) {
     this.fill.visible = fill;
     this.ambient.visible = fill;
-    for (const t of Object.values(this.tracks || {})) for (const l of Object.values(t)) l.line.visible = tracks;
+    // hideOdom: a page may leave the odometry-alone line out of the 3D view (Mission Control does).
+    for (const t of Object.values(this.tracks || {})) for (const [k, l] of Object.entries(t)) l.line.visible = tracks && !(k === "odom" && this.hideOdom);
     for (const o of this.truthObjs || []) o.visible = truth;
     for (const o of Object.values(this.estDots || {})) o.visible = tracks;
     for (const o of Object.values(this.sigmaRings || {})) if (o) o.visible = tracks;

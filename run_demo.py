@@ -466,8 +466,8 @@ def main():
                       "ice_units": "wt% water-equivalent hydrogen; radius is the 1 wt% contour",
                       "find_threshold_wt": FIND_THRESHOLD_WT},
             "nav": ParticleNav.NAME,
-            "standins": {"rims": RIMS_STANDIN, "planner": PLANNER_STANDIN,
-                         "chain": ChainStandin.STANDIN, "ice_sensor": IceSensor.STANDIN},
+            "planner": PLANNER_STANDIN,  # a real part (sim/rover.py A*); the constant keeps its old name
+            "standins": {"rims": RIMS_STANDIN, "chain": ChainStandin.STANDIN, "ice_sensor": IceSensor.STANDIN},
             "dt_s": round(DT_S, 2),
             "display": display,
             "frames": FRAMES_NOTE,

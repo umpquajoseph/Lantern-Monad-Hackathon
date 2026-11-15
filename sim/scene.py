@@ -73,8 +73,10 @@ FP_SIZE = (640, 480)          # assumed: first-person image (w, h) px. The rig i
 TP_SIZE = (960, 540)          # assumed: chase-view image (w, h) px.
 CAMERA_PITCH_DEG = 15.0       # assumed: camera axis this far below level. Ground in view from ~3 m out to the horizon.
 LAMP_PITCH_DEG = 15.0         # assumed: lamp aimed along the camera axis.
-LAMP_INNER_DEG = 30.0         # assumed: full lamp brightness within this angle of the lamp axis.
-LAMP_OUTER_DEG = 45.0         # assumed: no light beyond this angle (a flood light, like the field rig's LED flood).
+LAMP_INNER_DEG = 15.0         # assumed: full lamp brightness within this angle of the lamp axis.
+LAMP_OUTER_DEG = 32.0         # assumed: no light beyond this angle. Was 30/45 (a flood wider than the view, so frames
+                              # read evenly grey); 15/32 puts a visible pool inside the 60 deg view that falls off
+                              # to dark at the sides, centre brightness unchanged (exposure is set on the axis).
 EXPOSURE_REF_RANGE_M = 5.0    # assumed: flat ground this far ahead renders at EXPOSURE_REF_LEVEL.
 EXPOSURE_REF_LEVEL = 0.55     # assumed: 0..1 display level of that reference ground (sim/terrain_look.py uses the same).
 DISPLAY_GAMMA = 2.2           # assumed: sensor-to-display curve.
@@ -124,11 +126,12 @@ NEAR_SNAP_M = 8.0             # assumed: square centres sit on this lattice, so 
 HORIZON_NEAR_M = 34.0         # assumed: horizon rays sample at HORIZON_DR_NEAR_M out to here (inside the square)
 HORIZON_DR_NEAR_M = 0.05      # assumed
 # Horizon spans either side of the heading. Ground in the camera's view lies
-# within +-28 deg of it (60 deg HFOV, 15 deg pitch, corners); the lamp's
-# 45 deg cone reaches ground a little wider. Outside a span a point counts as
-# unlit (lamp) or unseen (camera), which only happens out of view.
+# within +-28 deg of it (60 deg HFOV, 15 deg pitch, corners). The lamp's
+# cone (LAMP_OUTER_DEG about an axis LAMP_PITCH_DEG down) holds no direction
+# more than asin(sin 32 / cos 15) = 33.3 deg from the heading. Outside a span
+# a point counts as unlit (lamp) or unseen (camera), which only happens out of view.
 CAMERA_HORIZON_HALF_DEG = 32.0
-LAMP_HORIZON_HALF_DEG = 55.0
+LAMP_HORIZON_HALF_DEG = 40.0
 SHADOW_SELF_MARGIN_CAM_M = 0.03  # assumed: self-margin when the camera horizon also votes (no acne then)
 # Edge width when the camera votes. It must be well under the gap between the
 # lamp's and the camera's sight lines (0.2 m / range per metre behind a rim,
@@ -404,9 +407,11 @@ class _Horizon:
         self.pos = np.asarray(pos, dtype=np.float64)
         self.heading = heading
         self.daz = math.pi / (HORIZON_AZIMUTHS - 1)  # same angular spacing whatever the span
-        self.half = math.radians(half_deg)
-        n_az = int(math.ceil(2 * self.half / self.daz)) + 1
-        az = heading - self.half + self.daz * np.arange(n_az)
+        # Rays at heading + k * daz: the same azimuths whatever the span, so a
+        # wider or narrower span changes no shadow inside both.
+        n_half = int(math.ceil(math.radians(half_deg) / self.daz))
+        self.half = n_half * self.daz
+        az = heading + self.daz * np.arange(-n_half, n_half + 1)
         self.n1 = int(round(HORIZON_NEAR_M / HORIZON_DR_NEAR_M))
         r1 = HORIZON_DR_NEAR_M * np.arange(1, self.n1 + 1)
         n2 = int(math.ceil((LAMP_FADE_END_M - HORIZON_NEAR_M) / HORIZON_DR_M)) + 2

@@ -14,7 +14,7 @@ FP.fx = FP.w / 2 / Math.tan((FP.hfov / 2) * Math.PI / 180);
 
 const state = {
   runs: [], run: null, t: 0, playing: false, speed: 200, cam: "A",
-  opts: { fill: true, tracks: true, rims: true, truth: false },
+  opts: { fill: true, tracks: true, rims: true, nogo: true, truth: false },
   lastEventsKey: "",
 };
 

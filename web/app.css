@@ -148,6 +148,7 @@ a { color: #8fb3ec; }
 .hud .ag { font-weight: 700; width: 1.2em; }
 .hud .off { color: var(--disputed); }
 .hud .k { color: var(--hint); }
+.sw.nogo { background: rgba(229, 87, 79, 0.55); }
 .hud .src { margin-top: 3px; pointer-events: auto; }
 .vnote { position: absolute; bottom: 8px; left: 12px; z-index: 3; font-size: var(--f-hint); color: #9aa0a6; background: rgba(10, 11, 13, 0.72); padding: 2px 8px; pointer-events: none; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--hint); z-index: 3; }

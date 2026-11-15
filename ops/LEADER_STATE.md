@@ -317,3 +317,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 13:52 Joseph: out of time. Nav: minimal fix (cell blocked only when mostly hazard, no permanent walls) by 14:05 on no-render proof; turn limit + aim by 14:20. Perf: short-slice pixel checks, fixes 2+3 by 14:05.
 - 13:54 perf 8dbdcf8 + c8f3537: threads (8) + shared horizon sampling + lamp map only when visible; frame 697 -> 371 ms (detail), 887 -> 434 ms (full), 0 pixel diff on 120 frames; pool splits cores. Timing full run 1 next (~14:00).
 - 13:55 scene: run2-20261115-1250 finished (2289 frames, disputed, 0 m no-go, clears deep crater); index lists both 1250 runs. Integrator told: restart :8000, merge perf 8dbdcf8+c8f3537.
+- 13:55 Joseph: full runs only at the final merge; workers run only relevant checks. fyi sent to nav, perf, scene, viewer, integrator, designer. Integrator: :8000 shows both 1250 runs; integration a9cc2b3 has perf 8dbdcf8+c8f3537.

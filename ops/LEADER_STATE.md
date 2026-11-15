@@ -326,3 +326,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 13:59 Joseph: final run has vision on; workers needn't stress the merge. Scene: fresh --vision render starting on nav's passing ref (target 14:20), timing vision+lidar now. Viewer task: white/blue ice look on ice sites (mission.js:243 red disc), merge origin/ritvik mission.js first.
 - 14:01 perf: set_rover trimmed b08a195, frame 0.30 s detail / 0.33 full (from 0.70/0.89), 0 px diff on 130 frames; integrator told to merge. Perf next: display-frame stage (RAM-bound 2 workers) by 14:15. Scene: live vision frame 576 ms; final render from 14:20 ends about 14:50 (14:45-15:05).
 - 14:01 scene: adding --fill-sub --stamp S (stage 2 fills 0.5 m frames from the stage-1 log, no re-sim), step-6-resume by 14:15. Told to coordinate with perf on the pool.
+- 14:01 integrator: perf b08a195 merged as 36e4b00, pushed.

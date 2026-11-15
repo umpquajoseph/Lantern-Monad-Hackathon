@@ -5,14 +5,16 @@ merged. Switch to it. The `merger` worker is still cleaning up on
 `checkpoint`, and `main` will be updated again when that is done.
 
 ## The demo (decided)
-Ritvik's Surveyor and Prospector run an 8-site mission. They use our
-renderer, Calvin's navigation and our site, with NASA rover models. Finds
-post to Kellen's Lantern contract on Monad testnet.
+Kellen's 2-site mission, `run_mission.py` (decided 14:04). The Surveyor finds
+S1 dry and S2 icy, then posts the find to Kellen's Lantern contract on
+Monad testnet. The Prospector reads it, drives over and confirms it. It runs
+on our renderer, ParticleNav, planner, lidar and vision, with NASA rover
+models. run1/run2 are the backup.
 
 ## To do
 | # | Item | Who |
 |---|---|---|
-| 1 | One sim: the 8-site mission writes our run log, with our renderer and ParticleNav | scene + Ritvik |
+| 1 | One sim: `run_mission.py` merged into integration, rendered with vision | Kellen + scene |
 | 2 | Site plays the mission: NASA models, science stops, verify button | viewer |
 | 3 | Smart contract: live chain feed on the site; every tx opens on Monadscan in a second window (it cannot be embedded) | viewer + Kellen |
 | 4 | Live demo: the laptop runs the mission with keys and posts on testnet; the hosted site replays as backup | Kellen |

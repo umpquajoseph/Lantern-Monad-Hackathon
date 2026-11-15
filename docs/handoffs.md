@@ -124,6 +124,9 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
   last frame with f at or below the playback fraction, else `fp_frame`.
   These are display frames, not sensor frames: they are rendered after the
   sim from the logged poses, in parallel, and no rover ever sees them.
+- Per rover `particles`: `[[x, y, w], ...]`, the navigation filter's
+  particles after the step (ParticleNav, 100), world metres to 1 cm, `w`
+  the normalised weight (sums to 1, 4 decimals). Empty list without a filter.
 - Top level `frames`: one sentence each for `fp_frame` and `fp_sub` saying
   how they were made (sensor frame vs interpolated display frame).
 - Also written by `run_demo.py` (additive): top level `standins`, `dt_s`,

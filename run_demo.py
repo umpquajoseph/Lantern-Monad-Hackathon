@@ -72,6 +72,16 @@ SCENARIOS = [
 ]
 
 
+def _particles_log(nav):
+    """ParticleNav's particles after this step: [[x, y, w], ...], world metres
+    to 1 cm, w normalised to sum 1 (4 decimals). Empty without a filter."""
+    p = getattr(nav, "p", None)
+    if p is None:
+        return []
+    w = nav._normalised()
+    return [[round(float(x), 2), round(float(y), 2), round(float(v), 4)] for (x, y), v in zip(p, w)]
+
+
 def simulate(scn, terrain, slope, field=None, cam=None):
     """One run. With field=None only rover A drives (pass 1, to learn its path).
     cam: a LiveCamera that takes each rover's step frame in the loop."""
@@ -114,7 +124,8 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                 "ice_reading": None if reading is None else round(reading, 3),
                 "est_error": round(float(np.hypot(*(r.estimate - r.true[:2]))), 3),
                 "distance": round(r.distance, 2),
-                "fp_frame": cam.last.get(r.agency) if cam is not None else None}
+                "fp_frame": cam.last.get(r.agency) if cam is not None else None,
+                "particles": _particles_log(r.nav)}
 
     for k in range(MAX_STEPS):
         events = []

@@ -1121,7 +1121,8 @@ class Scene:
         ph, pa = self.disp.patch(x0 + self.origin[0], y0 + self.origin[1], n, n, NEAR_RES_M, layers=layers)
         if detail:
             X, Y = np.meshgrid(x0 + self.origin[0] + NEAR_RES_M * np.arange(n), y0 + self.origin[1] + NEAR_RES_M * np.arange(n))
-            pa = pa / (1.0 + self.disp.s * (self.disp._tile(self.disp.tile_a, X, Y) - 1.0))
+            ta = _par(lambda x, y: self.disp._tile(self.disp.tile_a, x, y), X.ravel(), Y.ravel()).reshape(X.shape)
+            pa = pa / (1.0 + self.disp.s * (ta - 1.0))
         ng = _Grid(ph - np.float32(self.origin[2]), x0, y0, NEAR_RES_M)
         ng.alb = pa.astype(np.float32)
         ng.has_detail = detail
@@ -1170,13 +1171,13 @@ class Scene:
         t = a / a.std() + 0.7 * b / b.std()
         return (1.0 + ALBEDO_VARIATION * t / t.std()).astype(np.float32)
 
-    def _albedo_at(self, P):
+    def _albedo_at(self, P, blocks=None):
         """Ground albedo factor at local points P (..., 2+): the display layer's
         per-cell map (fine squares: their patch albedo, with rocks), or with
         the display off, the repeating stand-in tile."""
         g = self.grid
         if self.disp is not None:
-            return _by_block(g, self.surface.blocks, P[..., 0], P[..., 1],
+            return _by_block(g, self.surface.blocks if blocks is None else blocks, P[..., 0], P[..., 1],
                              lambda gr, x, y: _bilinear(gr.alb, gr.x0, gr.y0, gr.cell, x, y))
         A = self._albedo
         n = A.shape[0]
@@ -1194,11 +1195,11 @@ class Scene:
     def _gamma(self, lin):
         return np.clip(lin, 0.0, 1.0) ** (1.0 / DISPLAY_GAMMA)
 
-    def _fill_rgb(self, P, N):
+    def _fill_rgb(self, P, N, blocks=None):
         az, el = math.radians(FILL_AZ_DEG), math.radians(FILL_EL_DEG)
         s = np.array([math.cos(az) * math.cos(el), math.sin(az) * math.cos(el), math.sin(el)])
         k = FILL_LEVEL * (0.35 + 0.65 * np.clip(N @ s, 0.0, None))
-        return (self._albedo_at(P) * k)[:, None] * FILL_RGB[None, :]
+        return (self._albedo_at(P, blocks) * k)[:, None] * FILL_RGB[None, :]
 
     # Fine mesh blocks -----------------------------------------------------
     def _build_block(self, agency, lx, ly):
@@ -1231,15 +1232,11 @@ class Scene:
             self.timings["patch_ms"] = 1e3 * (time.perf_counter() - t)
         xyz = np.stack([g.x0 + J * g.cell, g.y0 + I * g.cell, hb], axis=-1).reshape(-1, 3).astype(np.float64)
         old = self.blocks.get(agency)
-        blk = dict(i0=i0, i1=i1, j0=j0, j1=j1, cx=lx, cy=ly, xyz=xyz, grid=bgrid)
-        if bgrid is not None:
-            blk["n"] = bgrid.height_normal(xyz[:, 0], xyz[:, 1])[1]
-            blk["albedo"] = bgrid.alb.ravel()
-        else:
-            blk["n"] = g.normal(xyz[:, 0], xyz[:, 1])
-            blk["albedo"] = self._albedo_at(xyz)
-        blk["fill"] = self._fill_rgb(xyz, blk["n"])
-        blk["base"] = self._to_u8(blk["fill"])
+        # Third-person colours (normals, fill, texture) are made on the first
+        # third_person() call (_tp_colors), from the surface as it is now:
+        # first-person frames never read them.
+        blk = dict(i0=i0, i1=i1, j0=j0, j1=j1, cx=lx, cy=ly, xyz=xyz, grid=bgrid, nc=nc, nr=nr,
+                   tp_blocks=self.surface.blocks)
         pd = _polydata(xyz, np.zeros((0, 3), dtype=np.int64))
         # Third-person colours live in a texture with one texel per vertex,
         # so a lamp update re-uploads the texture, not the whole mesh.
@@ -1247,15 +1244,6 @@ class Scene:
         tv = (np.arange(nr) + 0.5) / nr
         TU, TV = np.meshgrid(tu, tv)
         pd.GetPointData().SetTCoords(vnp.numpy_to_vtk(np.column_stack([TU.ravel(), TV.ravel()]).astype(np.float32), deep=True))
-        img = vtk.vtkImageData()
-        img.SetDimensions(nc, nr, 1)
-        img.GetPointData().SetScalars(vnp.numpy_to_vtk(blk["base"].copy(), deep=True))
-        blk["tex_img"] = img
-        blk["tex_np"] = vnp.vtk_to_numpy(img.GetPointData().GetScalars())  # shares memory with img
-        tex = vtk.vtkTexture()
-        tex.SetInputData(img)
-        tex.InterpolateOn()
-        tex.EdgeClampOn()
         blk["pd"] = pd
         fp_m = vtk.vtkPolyDataMapper()
         fp_m.SetInputData(pd)
@@ -1267,7 +1255,6 @@ class Scene:
         tp_m.ScalarVisibilityOff()
         blk["tp_actor"] = vtk.vtkActor()
         blk["tp_actor"].SetMapper(tp_m)
-        blk["tp_actor"].SetTexture(tex)
         blk["tp_actor"].GetProperty().LightingOff()
         blk["tp_actor"].GetProperty().SetColor(1.0, 1.0, 1.0)
         blk["lit"] = np.zeros(0, dtype=np.int64)
@@ -1338,7 +1325,34 @@ class Scene:
         keep = ~in_any(CI, CJ)
         _set_tris(self._coarse_pd, _grid_tris(len(ci), len(cj), keep))
 
+    def _tp_colors(self, blk):
+        """A fine block's third-person colours: vertex normals, albedo, fill,
+        and the texture holding them, from the surface the block was built on."""
+        if "tex_np" in blk:
+            return
+        g, xyz, bgrid = self.grid, blk["xyz"], blk["grid"]
+        if bgrid is not None:
+            blk["n"] = bgrid.height_normal(xyz[:, 0], xyz[:, 1])[1]
+            blk["albedo"] = bgrid.alb.ravel()
+        else:
+            blk["n"] = g.normal(xyz[:, 0], xyz[:, 1])
+            blk["albedo"] = self._albedo_at(xyz, blk["tp_blocks"])
+        blk["fill"] = self._fill_rgb(xyz, blk["n"], blk["tp_blocks"])
+        blk["base"] = self._to_u8(blk["fill"])
+        img = vtk.vtkImageData()
+        img.SetDimensions(blk["nc"], blk["nr"], 1)
+        img.GetPointData().SetScalars(vnp.numpy_to_vtk(blk["base"].copy(), deep=True))
+        blk["tex_img"] = img
+        blk["tex_np"] = vnp.vtk_to_numpy(img.GetPointData().GetScalars())  # shares memory with img
+        tex = vtk.vtkTexture()
+        tex.SetInputData(img)
+        tex.InterpolateOn()
+        tex.EdgeClampOn()
+        blk["tp_actor"].SetTexture(tex)
+
     def _update_lamp_colors(self):
+        for b in self.blocks.values():
+            self._tp_colors(b)
         if not self._lamp_colors_dirty:
             return
         # Lamp light only reaches the fine blocks: each block extends at least

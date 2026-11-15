@@ -405,3 +405,8 @@ Read mail, then `mv` it to `leader/archive/`.
 - ui stage 1 pushed (step-5-ui 868598d), mail archived. Plays mission in Mission Control, 3-tab camera box, auto-switch to B. Open Qs for Joseph: switch earlier (survey verdict 3216 s)? merge stage 1 now? Stage 2 in progress.
 - README rewritten around run_mission.py on joseph (a968485).
 - Archived perf, nav, designer. scene told to stop its watcher (archive refused: live work). Kept ui, viewer, integrator.
+
+## 15:09
+- integration has step-5-ui 27837fb (new UI + fill toggle), checked by integrator on :8000. main still 4f51c54 (old UI).
+- ui queue: arrow stepping, story line, nav source lines, ShadowNav credit, planned route in 3D, then full play-through.
+- Repo renamed on GitHub to umpquajoseph/Lantern-Monad-Hackathon; old URL redirects.

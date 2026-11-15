@@ -431,6 +431,64 @@ def render_sub_frames(jobs, shared, terrain, display, workers=None):
     return times, workers, mem
 
 
+class _FrameNames:
+    """Stands in for LiveCamera in --resume: names each step frame exactly as
+    LiveCamera would and records how to render it (the camera's pose and the
+    other rovers' poses at that moment in the loop), but renders nothing.
+    A frame is a function of those poses alone, so a missing one can be
+    rendered later, anywhere, with the same pixels."""
+
+    def __init__(self, run_dir, frame_every=1):
+        self.run_dir, self.frame_every = run_dir, frame_every
+        self.sensors = False
+        self.last, self.times, self.t_vision, self.scores = {}, [], [], []
+        self.last_lidar, self.haz_count = {}, {}
+        self.jobs = []                      # (path, agency, pose, {other agency: pose})
+        self._moved, self._posed = {}, {}
+
+    def start(self, rovers):
+        for r in rovers:
+            self._posed[r.agency] = _pose_log(r)
+
+    def attach(self, *_):
+        pass
+
+    def shoot(self, k, r, moved):
+        ag = r.agency
+        self._posed[ag] = _pose_log(r)
+        self._moved[ag] = self._moved.get(ag, 0) + (1 if moved else 0)
+        if k == 0 or ag not in self.last or (moved and self._moved[ag] % self.frame_every == 0):
+            name = f"fp/{ag}_{k:04d}.jpg"
+            others = {a: p for a, p in self._posed.items() if a != ag}
+            self.jobs.append((str(self.run_dir / name), ag, self._posed[ag], others))
+            self.last[ag] = name
+        return None
+
+
+def _jpeg_complete(path):
+    """True if the file ends with the JPEG end-of-image marker (a frame cut
+    short by a stopped run does not)."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(-2, os.SEEK_END)
+            return f.read(2) == b"\xff\xd9"
+    except OSError:
+        return False
+
+
+def _merge_index(path, entries):
+    """index.json with these runs replacing any earlier run of the same
+    scenario; other scenarios' entries stay. Order follows SCENARIOS."""
+    try:
+        old = json.loads(Path(path).read_text(encoding="utf8"))
+    except (OSError, ValueError):
+        old = []
+    keys = {e["run_id"].split("-")[0] for e in entries}
+    merged = [e for e in old if e["run_id"].split("-")[0] not in keys] + list(entries)
+    order = {s["key"]: i for i, s in enumerate(SCENARIOS)}
+    return sorted(merged, key=lambda e: order.get(e["run_id"].split("-")[0], len(order)))
+
+
 def main():
     ap = argparse.ArgumentParser(description="Run both Lantern demo runs and write their logs.")
     ap.add_argument("--out", default=str(RUNS_DIR))
@@ -450,7 +508,14 @@ def main():
                     help="also render first-person frames every this many metres between steps (0: one per step)")
     ap.add_argument("--workers", type=int, default=None,
                     help="processes for the in-between display frames (default: from free memory, at most 8)")
+    ap.add_argument("--resume", action="store_true",
+                    help="finish an earlier run (needs --stamp): simulate again, render only frames that are "
+                         "missing or cut short, then write the logs and index.json")
     args = ap.parse_args()
+    if args.resume and not args.stamp:
+        ap.error("--resume needs the --stamp of the run to finish")
+    if args.resume and (args.vision or args.no_render):
+        ap.error("--resume finishes a run made without --vision; it renders, so not with --no-render")
 
     t = time.perf_counter()
     tpath = default_path()
@@ -461,7 +526,10 @@ def main():
     out = Path(args.out)
     stamp = args.stamp or datetime.now().strftime("%Y%m%d-%H%M")
     scene = display = shared = cam = None
-    if not args.no_render:
+    if args.resume:
+        # Built later, and only if a frame is missing.
+        display = args.display if (TERRAIN_DIR / "display" / "display.json").exists() else "off"
+    elif not args.no_render:
         try:
             from sim.scene import Scene
         except ImportError as e:   # vtk: the camera, vision and lidar all need it
@@ -490,6 +558,8 @@ def main():
         run_dir = out / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         cam = LiveCamera(scene, run_dir, args.frame_every, sensors=args.vision) if scene is not None else None
+        if args.resume:
+            cam = _FrameNames(run_dir, args.frame_every)
         if cam is not None:
             cam.score_every = args.score_rims
         steps, chain, ft = simulate(scn, terrain, slope, field=field, cam=cam)
@@ -526,12 +596,25 @@ def main():
         if cam is not None and cam.scores:
             sc = {k: float(np.nanmean([d[k] for d in cam.scores])) for k in ("precision", "recall", "recall_shadow", "mean_dist_m", "gauss")}
             print(f"  vision vs rim_truth on {len(cam.scores)} frames: " + ", ".join(f"{k} {v:.2f}" for k, v in sc.items()))
-        if shared is not None:
+        if args.resume:
+            want = cam.jobs + (sub_frame_jobs(steps, run_dir, args.sub_frame_m)
+                               if args.sub_frame_m > 0 and args.frame_every == 1 else [])
+            missing = [j for j in want if not _jpeg_complete(j[0])]
+            print(f"  resume: {len(want) - len(missing)} of {len(want)} frames already there, {len(missing)} to render")
+            jobs += missing
+        elif shared is not None:
             jobs += sub_frame_jobs(steps, run_dir, args.sub_frame_m)
         sensing = cam is not None and cam.sensors
-        done.append((scn, run_id, run_dir, steps, field, finds))
+        done.append((scn, run_id, run_dir, steps, field, finds, chain, sensing))
     t_sim = time.perf_counter() - t_all
 
+    if jobs and args.resume:
+        from sim.scene import Scene
+        sc = Scene(height, craters, x0, y0, cell, display=args.display, display_dir=TERRAIN_DIR / "display")
+        display = sc.display
+        shared = sc.share(out / "_shared")
+        np.save(shared / "craters.npy", np.asarray(craters))
+        sc = None
     if jobs:
         cam = scene = None  # the loop's Scene is not needed by the pool
         gc.collect()
@@ -547,7 +630,7 @@ def main():
         shutil.rmtree(shared, ignore_errors=True)
 
     index = []
-    for scn, run_id, run_dir, steps, field, finds in done:
+    for scn, run_id, run_dir, steps, field, finds, chain, sensing in done:
         log = {
             "run_id": run_id,
             "label": scn["label"],
@@ -575,9 +658,10 @@ def main():
         print(f"wrote {run_dir}")
     print(f"total {time.perf_counter() - t_all:.0f}s (simulation with live step frames {t_sim:.0f}s)")
 
-    if not args.only:
-        with open(out / "index.json", "w", encoding="utf8") as f:
-            json.dump(index, f, indent=1)
+    merged = _merge_index(out / "index.json", index)
+    with open(out / "index.json", "w", encoding="utf8") as f:
+        json.dump(merged, f, indent=1)
+    print("index.json: " + ", ".join(e["run_id"] for e in merged))
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ models. run1/run2 are the backup.
 | 1 | One sim: `run_mission.py` merged into integration, rendered with vision | Kellen + scene |
 | 2 | Site plays the mission: NASA models, science stops, verify button | viewer |
 | 3 | Smart contract: live chain feed on the site; every tx opens on Monadscan in a second window (it cannot be embedded) | viewer + Kellen |
-| 4 | Live demo: the laptop runs the mission with keys and posts on testnet; the hosted site replays as backup | Kellen |
+| 4 | Live demo: Kellen's chain setup is authoritative (14:07). The hosted page posts `postFind` and `checkFind` live through `web/api/chain.js` when opened with `?key=<DEMO_KEY>`, using agency keys held in Vercel's environment settings, never git. Without the key it replays the recorded hashes | Kellen |
 | 5 | Vision: rims from camera frames, replacing the stand-in | Calvin |
 | 6 | Faster reruns | perf |
 | 7 | UI polish | designer |

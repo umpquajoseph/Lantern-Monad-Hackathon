@@ -39,6 +39,7 @@ VIS_TOL_M = 0.15             # assumed: a rim point is visible if the depth buff
 VIS_TOL_FRAC = 0.02          #   its range minus (VIS_TOL_M + VIS_TOL_FRAC * range)
 VIS_WIN_PX = 1               # assumed: visibility uses the farthest depth in a (2k+1)^2 window, so a
                              #   crest on a silhouette edge is not lost to the pixel just in front of it
+MIN_CONE = 0.25             # assumed: lamp cone factor at the crest below which no shadow line shows
 SHADOW_PROBE_M = (0.05, 0.10, 0.20, 0.35, 0.50)  # assumed: ground this far beyond the crest is
                              #   tested for lamp shadow; a hit marks the rim point shadow-casting
 
@@ -53,7 +54,8 @@ def rim_truth(scene, agency, depth, craters=None):
       uv (N, 2) pixel coordinates (u right, v down, pixel centres at +0.5);
       crater_id (N,) row in the crater map; near (N,) on the front half arc;
       in_view (N,) within RIM_RANGE_M and the 60 deg view; visible (N,) in view and not occluded;
-      shadow (N,) visible and casting lamp shadow just beyond the crest (the dark line vision sees).
+      shadow (N,) visible, lit by the lamp cone, and casting lamp shadow just beyond the crest
+      (the dark line vision sees).
     Convenience keys: rims (M, 2) and rims_crater_id (M,) = visible near-arc points, in the
     handoffs.md rims format.
     """
@@ -121,6 +123,14 @@ def rim_truth(scene, agency, depth, craters=None):
             q = Pl[j, :2] + s * away
             Q = np.stack([q[:, 0], q[:, 1], np.asarray(scene.surface.height(q[:, 0], q[:, 1]), np.float64)], 1)
             shadow[j] |= lamp.visibility(Q) < 0.5
+        # Only where the lamp reaches the crest: outside the cone there is no lit ground to
+        # contrast with, so no dark line (scene's lamp cone, smoothstep inner -> outer).
+        from sim.scene import LAMP_INNER_DEG, LAMP_OUTER_DEG
+        ray = Pl[j] - lamp.pos
+        ray /= np.linalg.norm(ray, axis=1, keepdims=True)
+        off = np.degrees(np.arccos(np.clip(ray @ lamp.axis, -1.0, 1.0)))
+        tt = np.clip((LAMP_OUTER_DEG - off) / (LAMP_OUTER_DEG - LAMP_INNER_DEG), 0.0, 1.0)
+        shadow[j] &= tt * tt * (3 - 2 * tt) >= MIN_CONE
     vn = visible & near
     return dict(xy=np.stack([xf, yl], 1), z=Pl[:, 2] - C[2], uv=np.stack([u, v], 1), crater_id=ids,
                 near=near, in_view=in_view, visible=visible, shadow=shadow,

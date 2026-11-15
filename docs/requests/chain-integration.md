@@ -67,6 +67,17 @@ than the stand-in.
 until a contract exists; that line can go once the patch is in.
 `python app.py --fresh` then reruns both runs on chain.
 
+## Seam found while rendering on a Mac (for the integrator or the scene owner)
+
+`sim/scene.py` `_load_display()` looks for the display assets only in
+`<checkout>/data/terrain/display` and the Windows path, never under
+`LANTERN_DATA`, so a checkout that reads the terrain from `LANTERN_DATA`
+(the committed `lantern_data/`, or any data dir elsewhere) renders with
+"display off" even though `lantern_data/terrain/display/display.json` is
+there. One more candidate, `Path(terrain.TERRAIN_DIR) / "display"`, fixes it.
+Workaround used here: `ln -s ../../lantern_data/terrain/display
+data/terrain/display` in the checkout.
+
 ## For the lead: which path posts science to the chain
 
 Two working paths reach the contract now:

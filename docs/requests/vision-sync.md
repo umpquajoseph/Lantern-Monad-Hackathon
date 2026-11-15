@@ -84,3 +84,12 @@ Three problems came up in a vision run of run 1:
 If you are still changing `sim/rover.py`, `sim/vision.py` or `sim/lidar.py`,
 please push soon and tell the lead, so `nav` merges your work rather than
 duplicating it.
+
+## Update 13:49, from the lead
+
+Your 706ffd7 carried a `web/js/main.js` from an older copy of the viewer. When
+it merged, it reverted the HUD table, run badges and checkbox defaults, and
+the site threw on load until the integrator restored it. Your amber route
+dots are kept. Before you change anything in `web/`, merge
+`origin/integration` first. `web/js` belongs to the `viewer` worker, so
+send it the change rather than editing it directly.

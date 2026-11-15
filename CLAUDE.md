@@ -11,7 +11,6 @@ Monad contract, and check each other's finds.
 
 ## Event rules
 
-- No code written before 9 AM, 15 Nov. Setup, docs and data downloads are fine.
 - Build window about seven hours. Demo in the evening, top six pitch.
 
 ## Layout (planned, one file per step)

@@ -17,13 +17,13 @@ const CAMERA_HEIGHT_M = 2.5;
 const LAMP_BELOW_CAMERA_M = 0.2;
 // The rest match sim/scene.py's assumed values so both views agree.
 const CAMERA_PITCH_DEG = 15;   // scene.py, assumed
-const LAMP_INNER_DEG = 30;     // scene.py, assumed
-const LAMP_OUTER_DEG = 45;     // scene.py, assumed
+const LAMP_INNER_DEG = 15;     // scene.py:76 (step-6-scene 2c8af7e), assumed
+const LAMP_OUTER_DEG = 32;     // scene.py:77 (2c8af7e), assumed; was 30/45
 const LAMP_FADE_END_M = 80;    // scene.py, assumed
 const CHASE_BACK_M = 14, CHASE_UP_M = 8;  // scene.py, assumed
-// Exposure as sim/scene.py (step-6-scene 2c0fbba), assumed there: flat ground
-// 5 m ahead of the rover shows at 0.6 on screen through the tone curve.
-const EXPOSURE_REF_RANGE_M = 5, EXPOSURE_REF_LEVEL = 0.6;
+// Exposure as sim/scene.py (step-6-scene 2c8af7e), assumed there: flat ground
+// 5 m ahead of the rover shows at 0.55 on screen through the tone curve.
+const EXPOSURE_REF_RANGE_M = 5, EXPOSURE_REF_LEVEL = 0.55;  // scene.py:80-81 (2c8af7e)
 const LAMP_RGB = [1.0, 0.93, 0.8];   // sim/terrain_look.py, assumed (linear)
 const FILL_RGB = [0.62, 0.68, 0.82]; // sim/terrain_look.py, assumed (linear)
 const FILL_LEVEL = 0.22, FILL_EL_DEG = 35;  // sim/terrain_look.py, assumed
@@ -47,6 +47,10 @@ const PATCH_TAPER_M = 0.75;    // blend to the tile surface over the patch's out
 const COARSE_STRIDE = 2;       // coarse map drawn at 2 m
 const FINE_PAD_M = 70;         // load 0.25 m tiles within this of each rover
 const DRAPE_M = 0.18;          // lines float this far above the ground
+const LABEL_GAP_PX = 6;       // viewer only, assumed: a rover tag hides when a find label is this close
+const PARTICLE_SIZE = 0.3;    // viewer only, assumed: point size for an average-weight particle
+const PARTICLE_MIN = 0.5, PARTICLE_MAX = 3;   // size limits, as multiples of PARTICLE_SIZE
+const PARTICLE_LIFT_M = 0.08; // above the ground, so the 5 cm patch's lips do not hide them
 
 export const COLORS = {
   A: 0x5aa7ff, B: 0xf2994a,
@@ -567,7 +571,7 @@ uniform vec4 uP1;`)
     lbl.center.set(1, 1);  // above-left of the rover; find labels go above-right
     g.add(lbl);
     this.scene.add(g);
-    this.rovers[a] = { g, lamp };
+    this.rovers[a] = { g, lamp, tag };
   }
 
   // ------------------------------------------------------------ overlays
@@ -658,6 +662,15 @@ uniform vec4 uP1;`)
       this.overlay.add(dot);
       this.estDots[a] = dot;
     }
+    // The navigation filter's particles, when the run logs them.
+    this.particles = {};
+    if (run.hasParticles) for (const a of run.agencies) {
+      const P = new THREE.Points(new THREE.BufferGeometry(), this.particleMat(COLORS[a]));
+      P.frustumCulled = false;
+      P.userData.k = null;
+      this.overlay.add(P);
+      this.particles[a] = P;
+    }
     // Real ice, hidden from the rovers (stand-in runs carry it).
     this.truthObjs = [];
     for (const ice of (run.truth && run.truth.ice) || []) {
@@ -697,6 +710,45 @@ uniform vec4 uP1;`)
     g.userData = { lbl, key: `${f.status}:${f.checks.length}` };
     this.overlay.add(g);
     return g;
+  }
+
+  // Particles as round dots on the ground, one draw per rover. Dot diameter
+  // grows with sqrt(w * n), so dot area follows the particle's weight and an
+  // evenly weighted cloud has equal dots.
+  particleMat(color) {
+    const m = new THREE.PointsMaterial({ color, size: PARTICLE_SIZE, sizeAttenuation: true });
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = "attribute float pSize;\n" + sh.vertexShader.replace("gl_PointSize = size;", "gl_PointSize = size * pSize;");
+      sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", `#include <color_fragment>
+        vec2 pc = gl_PointCoord - 0.5;
+        float rr = dot(pc, pc);
+        if (rr > 0.25) discard;
+        if (rr > 0.13) diffuseColor.rgb *= 0.2;`);
+    };
+    return m;
+  }
+
+  fillParticles(P, list) {
+    const n = list.length;
+    let g = P.geometry;
+    if (!g.attributes.position || g.attributes.position.count < n) {
+      g.dispose();
+      g = new THREE.BufferGeometry();
+      const cap = Math.max(n, 128);
+      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(cap * 3), 3));
+      g.setAttribute("pSize", new THREE.BufferAttribute(new Float32Array(cap), 1));
+      P.geometry = g;
+    }
+    const pos = g.attributes.position.array, sz = g.attributes.pSize.array;
+    for (let i = 0; i < n; i++) {
+      const [x, y, w] = list[i];
+      const v = this.groundL(x, y, PARTICLE_LIFT_M);
+      pos[3 * i] = v.x; pos[3 * i + 1] = v.y; pos[3 * i + 2] = v.z;
+      sz[i] = Math.min(PARTICLE_MAX, Math.max(PARTICLE_MIN, Math.sqrt(Math.max(w, 0) * n)));
+    }
+    g.attributes.position.needsUpdate = true;
+    g.attributes.pSize.needsUpdate = true;
+    g.setDrawRange(0, n);
   }
 
   setVisibility({ fill, tracks, truth }) {
@@ -740,6 +792,12 @@ uniform vec4 uP1;`)
         this.overlay.add(ring);
         this.sigmaRings[a] = ring;
         this.sigmaKey[a] = sk;
+      }
+      // The cloud the filter held after step k, until step k + 1.
+      const P = this.particles[a];
+      if (P) {
+        if (P.userData.k !== k) { this.fillParticles(P, r.particles || []); P.userData.k = k; }
+        P.visible = !!(opts.tracks && opts.particles) && P.geometry.drawRange.count > 0;
       }
     }
     this.updateFine(pts);
@@ -806,6 +864,31 @@ uniform vec4 uP1;`)
     c.update();
   }
 
+  // After the label pass: a find label that would run off the right edge
+  // flips to above-left (as map.js does), and a rover's tag hides while a
+  // find label covers it. Takes effect from the next frame.
+  declutterLabels() {
+    const box = this.el.getBoundingClientRect();
+    const finds = [];
+    for (const obj of (this.findObjs || new Map()).values()) {
+      const lbl = obj.userData.lbl, el = lbl.element;
+      if (!obj.visible || el.style.display === "none") continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width) continue;
+      const anchorX = lbl.center.x === 0 ? r.left : r.right;
+      const wantLeft = anchorX + r.width > box.right - 4;
+      if ((lbl.center.x === 1) !== wantLeft) lbl.center.set(wantLeft ? 1 : 0, 1);
+      finds.push(r);
+    }
+    for (const { tag } of Object.values(this.rovers)) {
+      if (!tag) continue;
+      const r = tag.getBoundingClientRect();
+      const pad = LABEL_GAP_PX;
+      const hit = finds.some((f) => r.left < f.right + pad && r.right > f.left - pad && r.top < f.bottom + pad && r.bottom > f.top - pad);
+      tag.style.visibility = hit ? "hidden" : "";
+    }
+  }
+
   render() {
     this.controls.update();
     // The fill comes from the side of the view, never from behind the camera.
@@ -816,5 +899,6 @@ uniform vec4 uP1;`)
     this.fill.position.set(t.x + 100 * Math.cos(az) * Math.cos(el), t.y + 100 * Math.sin(az) * Math.cos(el), t.z + 100 * Math.sin(el));
     this.renderer.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
+    this.declutterLabels();
   }
 }

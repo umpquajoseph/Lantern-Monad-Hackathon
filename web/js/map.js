@@ -163,7 +163,7 @@ export class MapView {
       // Zoomed in, the 1 m image goes blocky: draw the 0.25 m tiles in view instead.
       if (s > FINE_SHADE_PX_PER_M) this.drawFineShade(c, X, Y, cx, cy, W / s, H / s);
       if (this.opts.nogo && this.nogo && this.nogo.complete && this.nogo.naturalWidth) {
-        c.globalAlpha = 0.42;
+        c.globalAlpha = 0.3;
         // One pixel per 0.25 m sim cell, centred on the grid points.
         const nx0 = m.x0 - m.cell / 2, ny1 = m.y0 + (m.rows - 0.5) * m.cell;
         c.drawImage(this.nogo, X(nx0), Y(ny1), m.cols * m.cell * s, m.rows * m.cell * s);
@@ -256,6 +256,18 @@ export class MapView {
     for (const a of run.agencies) {
       const r = run.rover(a, k);
       const col = hex(COLORS[a]);
+      // The filter's particles after step k: dot area follows weight.
+      const ps = r.particles;
+      if (this.opts.tracks && this.opts.particles && ps && ps.length) {
+        c.fillStyle = col;
+        c.strokeStyle = "#0d0e10";
+        c.lineWidth = 1;
+        const n = ps.length;
+        for (const [px, py, w] of ps) {
+          const rad = Math.min(5, Math.max(1.5, 2.2 * Math.sqrt(Math.max(w, 0) * n)));
+          c.beginPath(); c.arc(X(px), Y(py), rad, 0, Math.PI * 2); c.fill(); c.stroke();
+        }
+      }
       if (this.opts.tracks) {
         const [ex, ey] = r.estimate;
         c.strokeStyle = col;

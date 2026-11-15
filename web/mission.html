@@ -62,6 +62,7 @@
     <div class="pop" id="layers" hidden>
       <label class="ck"><input type="checkbox" id="opt-routes" checked> Routes</label>
       <label class="ck"><input type="checkbox" id="opt-hazards" checked> Obstacles</label>
+      <label class="ck"><input type="checkbox" id="opt-nogo" checked> Craters</label>
       <label class="ck"><input type="checkbox" id="opt-truth"> Hidden ice <span class="hint">(rovers can't see it)</span></label>
     </div>
   </div>
@@ -177,15 +178,7 @@
       <li><i class="sw" style="--c:#ff4d4d"></i><b>Red patch</b><span>Ice found here</span></li>
       <li><i class="sw ring dash" style="--c:#ff5d5d"></i><b>Red dashed ring</b><span>A flagged hazard; rovers plan around it</span></li>
       <li><i class="sw line" style="--c:#5aa7ff"></i><b>Coloured line</b><span>The route a rover is following</span></li>
-    </ul>
-  </section>
-
-  <section>
-    <h3>In the Surveyor's camera</h3>
-    <ul class="legend">
-      <li><i class="sw line" style="--c:#4fd18b"></i><b>Green grid</b><span>Flat, easy ground</span></li>
-      <li><i class="sw line" style="--c:#f2c94c"></i><b>Yellow grid</b><span>Sloping, 8 to 15°</span></li>
-      <li><i class="sw line" style="--c:#ff5d5d"></i><b>Red grid</b><span>Too steep, or rocks</span></li>
+      <li><i class="sw ring" style="--c:#e5574f"></i><b>Red ring</b><span>A crater rim from the terrain map. On the overhead map, red marks ground the route planner will not cross</span></li>
     </ul>
   </section>
 

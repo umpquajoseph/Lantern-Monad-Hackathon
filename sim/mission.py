@@ -80,22 +80,41 @@ ODOM_DRIFT = 0.02
 ODOM_HEADING_NOISE_RAD = 0.0005   # ASSUMED, per 0.5 m step, as in sim/rover.py on step-4-spine
 NAV_STANDIN = ("navigation: true pose plus a slowly wandering error with std = sigma "
                "(STAND-IN for the step 3 particle filter)")
+# Step 3, the real one when present (sim/nav.py, Calvin's ShadowNav particle
+# filter), fed the rim-point stand-in (sim/standins.py) every NAV_EVERY_M.
+try:
+    import nav as _nav
+    import standins as _standins
+    PARTICLE_NAV = _nav.ParticleNav
+except ImportError:   # a branch without step 3: fall back to the labelled stand-in
+    PARTICLE_NAV = None
+NAV_EVERY_M = 2.0     # ASSUMED, as run_demo.py: one see-locate step every 2 m
 
 SCIENCE_WH = H.Health.science_wh([{"name": n, "dur": d} for n, d in science.PHASES])
 SCIENCE_S = sum(d for _, d in science.PHASES)
 
 
 class Rover:
-    def __init__(self, agency, dock, rng):
+    def __init__(self, agency, dock, rng, craters=None):
         self.agency, self.dock = agency, dock
         self.pose = (dock[0], dock[1], 0.0)
         self.err = np.zeros(2)
         self.sigma = NAV_SIGMA_M[agency]
+        self.pf = None
+        if PARTICLE_NAV is not None and craters is not None:
+            # The real filter: it never sees the true pose, only odometry and rims.
+            self.pf = PARTICLE_NAV(True, rng, craters)
+            self.pf.start(np.array(dock[:2]) + self.pf.err, 0.0)
+            self.sigma = self.pf.sigma
+            self.craters = craters
+            self._est = np.array(dock[:2]) + self.pf.err
+            self._pend = [0.0, 0.0]   # odometry (distance, dheading) since the last filter step
         self.t = 0.0
+        self.start_soc = START_SOC[agency]
         self.health = H.Health(agency, battery_wh=START_SOC[agency] * H.BATTERY_WH)
         self.odom = list(self.pose)   # dead reckoning from the wheels alone
-        # (t, x, y, h, est_x, est_y, odom_x, odom_y, odom_h)
-        self.track = [(0.0, *self.pose, *self.estimate, *self.odom)]
+        # (t, x, y, h, est_x, est_y, odom_x, odom_y, odom_h, sigma, soc)
+        self.track = [(0.0, *self.pose, *self.estimate, *self.odom, self.sigma, self.health.soc)]
         self.odo = 0.0
         self.next_survey = SURVEY_EVERY_M
         self.next_tel = 0.0
@@ -109,11 +128,26 @@ class Rover:
 
     @property
     def estimate(self):
+        if self.pf is not None:
+            return (float(self._est[0]), float(self._est[1]))
         return (self.pose[0] + self.err[0], self.pose[1] + self.err[1])
 
-    def nav_step(self):
-        s = self.sigma * math.sqrt(1 - NAV_CORR ** 2)
-        self.err = NAV_CORR * self.err + self.rng.normal(0, s, 2)
+    def nav_step(self, d=0.0, dh=0.0):
+        if self.pf is None:
+            s = self.sigma * math.sqrt(1 - NAV_CORR ** 2)
+            self.err = NAV_CORR * self.err + self.rng.normal(0, s, 2)
+            return
+        # Between filter steps, dead-reckon the estimate on the odometry.
+        d_o, dh_o = d * (1 + ODOM_DRIFT), dh
+        self._pend[0] += d_o
+        self._pend[1] += dh_o
+        h = self.pf.heading + self._pend[1]
+        self._est = self._est + d_o * np.array([math.cos(h), math.sin(h)])
+        if self._pend[0] >= NAV_EVERY_M:
+            rims = _standins.rims_standin(self.pose, self.craters, self.rng)
+            est, self.sigma = self.pf.step(tuple(self._pend), rims)
+            self._est = np.asarray(est, float)
+            self._pend = [0.0, 0.0]
 
     def odom_step(self, d, dh):
         """Wheel odometry: the true turn plus heading noise, the true
@@ -129,7 +163,7 @@ class Rover:
 
 
 class Mission:
-    def __init__(self, seed=11, planner="auto", terrain_path=None, mission_id=None):
+    def __init__(self, seed=11, planner="auto", terrain_path=None, mission_id=None, site_params=None):
         self.rng = np.random.default_rng(seed)
         self.seed = seed
         self.terrain_path = Path(terrain_path or terrain.default_path())
@@ -137,14 +171,15 @@ class Mission:
         self.size = self.height.shape[0] * self.cell
         self.link = planner_link.RouteLink(self.height, self.x0, self.y0, self.cell, prefer=planner)
         self.deposits, self.board = resources.build_site(
-            self.height, self.craters, self.x0, self.y0, self.cell, resources.Params(seed=seed))
+            self.height, self.craters, self.x0, self.y0, self.cell, site_params or resources.Params(seed=seed))
         self.store = MS.MissionStore(mission_id)
         self.outbox = []
         self.survey = {}   # resource map accumulator: (i, j) -> [sum, n]
         self.rovers = {}
         for ag, (fx, fy) in DOCK_FRAC.items():
             dock = self.link.free_near(self.x0 + fx * self.size, self.y0 + fy * self.size)
-            self.rovers[ag] = Rover(ag, dock, self.rng)
+            self.rovers[ag] = Rover(ag, dock, self.rng, self.craters)
+        self.nav_label = PARTICLE_NAV.NAME + "; " + _standins.RIMS_STANDIN if PARTICLE_NAV else NAV_STANDIN
 
     # ---- helpers -------------------------------------------------------
     def ev(self, r, etype, **kw):
@@ -288,7 +323,9 @@ class Mission:
             self.ev(r, "check_requested", target_id=chk["id"], for_agency="other agency")
         self.tel(r)
 
-    def drive(self, r, route, abort_on_low):
+    def drive(self, r, route, abort_on_low, on_step=None):
+        """Drive a route. True when done, False on a battery abort, "stopped"
+        when on_step(r) asked to stop (a new obstacle, say)."""
         prev = r.pose
         for pose in self.link.drive(route, r.pose):
             d = math.dist(pose[:2], prev[:2])
@@ -298,9 +335,11 @@ class Mission:
             r.odo += d
             r.t += d / H.DRIVE_SPEED_M_S
             r.health.spend(H.Health.drive_wh(d))
-            r.nav_step()
+            r.nav_step(d, dh)
             r.odom_step(d, dh)
-            r.track.append((r.t, *r.pose, *r.estimate, *r.odom))
+            r.track.append((r.t, *r.pose, *r.estimate, *r.odom, r.sigma, r.health.soc))
+            if on_step is not None and on_step(r):
+                return "stopped"
             if r.odo >= r.next_survey:
                 r.next_survey += SURVEY_EVERY_M
                 self.take_survey(r)
@@ -398,7 +437,7 @@ class Mission:
                 rovers[ag] = {"true_pose": [round(v, 3) for v in row[1:4]],
                               "odom_pose": [round(v, 3) for v in row[6:9]],
                               "estimate": [round(row[4], 3), round(row[5], 3)],
-                              "sigma": NAV_SIGMA_M[ag], "nav_on": True, "rims": [], "fp_frame": None}
+                              "sigma": round(float(row[9]), 3), "nav_on": True, "rims": [], "fp_frame": None}
             evs, sci = [], []
             for e in events:
                 if t <= e["t"] < t + RUN_LOG_DT_S and e["type"] == "science":
@@ -440,7 +479,7 @@ class Mission:
                           find_threshold_wt=science.ICE_THRESHOLD_WT_PCT),
             # Named parts, as run_demo.py writes them and web/js/data.js reads them.
             "standins": dict(
-                navigation=NAV_STANDIN,
+                navigation=self.nav_label,
                 chain="chain: not posted yet; the calls wait in outbox.json, so there are no tx hashes",
                 **({} if self.link.real else {"planner": self.link.name})),
             "steps": steps,
@@ -472,6 +511,9 @@ class Mission:
             "cache": dict(path=str(self.store.db.path), **self.store.db.counts(self.store.id)),
         }
 
+    def extra_manifest(self):
+        return {}
+
     def finish(self, wall_s):
         self.store.write("targets.json", self.board.to_list())
         self.store.write("HIDDEN_TRUTH.json", {
@@ -489,7 +531,7 @@ class Mission:
                 distance_m=round(r.odo, 1), duration_s=round(r.t, 1),
                 speed_made_good_m_s=round(r.odo / r.t, 4) if r.t else 0.0,
                 speed_target_m_s=H.TARGET_SPEED_MADE_GOOD_M_S,
-                battery_start_soc=START_SOC[ag], battery_end_soc=round(r.health.soc, 3),
+                battery_start_soc=r.start_soc, battery_end_soc=round(r.health.soc, 3),
                 reserve_kept=r.health.soc >= H.RESERVE_FRAC, **r.stats)
         manifest = {
             "schema": MS.SCHEMA, "mission_id": self.store.id,
@@ -497,7 +539,7 @@ class Mission:
             "terrain": {"file": str(self.terrain_path.name), "x0": self.x0, "y0": self.y0,
                         "cell": self.cell, "size_m": self.size},
             "planner": {"name": self.link.name, "real": self.link.real},
-            "navigation": NAV_STANDIN,
+            "navigation": self.nav_label,
             "rovers": rovers,
             "targets": {s: sum(1 for t in self.board.targets if t["status"] == s)
                         for s in ("open", "claimed", "sampled", "failed", "unreachable")},
@@ -508,6 +550,7 @@ class Mission:
             "files": sorted(p.name for p in self.store.dir.iterdir()),
             "wall_seconds": round(wall_s, 1),
         }
+        manifest.update(self.extra_manifest())
         self.store.write("mission.json", manifest)
         self.store.close()
         try:
@@ -632,13 +675,26 @@ def publish_run(store, runs_dir):
     and an entry in <runs_dir>/index.json. run_demo.py's entries are kept."""
     import shutil
     runs_dir = Path(runs_dir)
-    (runs_dir / store.id).mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(store.dir / "run_log.json", runs_dir / store.id / "log.json")
+    out = runs_dir / store.id
+    out.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(store.dir / "run_log.json", out / "log.json")
+    if (store.dir / "fp").exists():   # first-person frames, if rendered
+        shutil.copytree(store.dir / "fp", out / "fp", dirs_exist_ok=True)
+    # The mission's evidence objects, so a static host serves them and a
+    # browser can re-hash them against the chain.
+    (out / "evidence").mkdir(exist_ok=True)
+    cids = [r["cid"] for r in store.db.c.execute("SELECT cid FROM evidence WHERE mission_id = ?", (store.id,))]
+    for rec in store.reports():
+        cids += [rec["evidence"]["report"]["cid"], rec["evidence"]["route"]["cid"]]
+    for cid in set(cids):
+        src = store.ev.objects / f"{cid}.json"
+        if src.exists():
+            shutil.copyfile(src, out / "evidence" / f"{cid}.json")
+    label = json.loads((store.dir / "run_log.json").read_text()).get("label", "Science mission")
     idx_path = runs_dir / "index.json"
     index = json.loads(idx_path.read_text()) if idx_path.exists() else []
     index = [r for r in index if r.get("run_id") != store.id]
-    index.append({"run_id": store.id, "label": "Science mission: survey, drill, find, check",
-                  "dir": store.id, "status": "mission"})
+    index.append({"run_id": store.id, "label": label, "dir": store.id, "status": "mission"})
     idx_path.write_text(json.dumps(index, indent=1))
     print(f"published as a run: {runs_dir / store.id / 'log.json'} (python app.py serves it)")
 

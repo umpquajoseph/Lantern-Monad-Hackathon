@@ -94,7 +94,19 @@ class RouteLink:
                     math.dist(start_xy, goal_xy) > 1.0 and np.allclose(pts[0], goal_xy):
                 raise NoRoute(f"spine planner found no route to {goal_xy}")
             return np.vstack([start_xy, pts])
-        return np.array([start_xy, goal_xy], float)
+        # Stand-in: straight, but stepping around any known hazard.
+        pts = [tuple(start_xy)]
+        for hx, hy, hr in getattr(self, "hazards", []):
+            a, b = np.array(pts[-1]), np.array(goal_xy, float)
+            ab = b - a
+            L2 = float(ab @ ab) or 1.0
+            t = float(np.clip((np.array([hx, hy]) - a) @ ab / L2, 0, 1))
+            c = a + t * ab
+            if 0 < t < 1 and math.hypot(c[0] - hx, c[1] - hy) < hr + 1.0:
+                n = np.array([-ab[1], ab[0]]) / math.sqrt(L2)
+                pts.append(tuple(np.array([hx, hy]) + n * (hr + 3.0)))
+        pts.append(tuple(goal_xy))
+        return np.array(pts, float)
 
     def drive(self, route, start_pose):
         if self.kind == "calvin":
@@ -115,6 +127,8 @@ class RouteLink:
                 yield (x, y, hd)
 
     def blocked(self, x, y):
+        if self._in_hazard(x, y):
+            return True
         if self.kind == "calvin":
             return self._p.is_blocked_xy(x, y)
         if self.kind == "spine":
@@ -128,6 +142,25 @@ class RouteLink:
         if self.kind == "spine":
             return self._p.deg > 15.0, self._p.x0, self._p.y0, self._p.b
         return None
+
+    def add_hazard(self, x, y, r):
+        """Mark ground a rover has just found impassable (a new boulder, say)
+        in THIS planner's map, so every later plan routes around it. The
+        teammate's planner object is ours to update; its file is untouched."""
+        self.hazards = getattr(self, "hazards", [])
+        self.hazards.append((float(x), float(y), float(r)))
+        grid = None
+        if self.kind == "calvin":
+            grid, gx0, gy0, gc = self._p.blocked, self._p.x0, self._p.y0, self._p.pc
+        elif self.kind == "spine":
+            grid, gx0, gy0, gc = self._p.deg, self._p.x0, self._p.y0, self._p.b
+        if grid is not None:
+            ii, jj = np.mgrid[0:grid.shape[0], 0:grid.shape[1]]
+            near = np.hypot(gx0 + jj * gc - x, gy0 + ii * gc - y) <= r + gc
+            grid[near] = True if grid.dtype == bool else 90.0
+
+    def _in_hazard(self, x, y):
+        return any(math.hypot(x - hx, y - hy) <= hr for hx, hy, hr in getattr(self, "hazards", []))
 
     def segment_clear(self, a, b, step=0.5):
         """True if the straight segment a-b crosses no blocked ground."""

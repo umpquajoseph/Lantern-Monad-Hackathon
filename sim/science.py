@@ -216,8 +216,17 @@ def classify_sample(sample, target):
 # One science stop.
 # --------------------------------------------------------------------------
 
+# ASSUMED. The Prospector's fuller instrument sequence: a near-infrared
+# volatiles scan before the arm goes out, a longer drill and a longer read
+# ([PB] p. 5 lists NIR volatiles spectrometer, drill and mass spectrometer).
+PROSPECTOR_PHASES = (
+    ("park", 2.0), ("nir_scan", 5.0), ("arm_deploy", 4.0), ("drill", 12.0),
+    ("sample_lift", 3.0), ("analyze", 8.0), ("arm_stow", 4.0),
+)
+
+
 def run_science(agency, target, deposits, t, true_pose, estimate, sigma,
-                est_track, true_track, seed=None, attempts=1):
+                est_track, true_track, seed=None, attempts=1, phases_spec=PHASES):
     """Run the arm-and-drill sequence at a target and return the record.
 
     true_pose  (x, y, heading): where the drill really is. Used ONLY to read
@@ -235,7 +244,7 @@ def run_science(agency, target, deposits, t, true_pose, estimate, sigma,
     true_route, _ = last_route(true_track)
 
     phases, t0 = [], float(t)
-    for name, dur in PHASES:
+    for name, dur in phases_spec:
         phases.append({"name": name, "t0": round(t0, 2), "dur": dur})
         t0 += dur
 
@@ -311,7 +320,11 @@ def run_log_event(record):
             "y": record["position"]["y"], "sigma": record["position"]["sigma"],
             "verdict": record["result"]["verdict"], "reading": record["result"]["reading"],
             "summary": record["result"]["summary"], "phases": record["phases"],
-            "chain_call": record["chain"]["call"]}
+            "chain_call": record["chain"]["call"], "observation": record.get("observation"),
+            "kind": record["target"].get("kind"),
+            "report_cid": (record.get("evidence") or {}).get("report", {}).get("cid"),
+            "route_cid": (record.get("evidence") or {}).get("route", {}).get("cid"),
+            "data_hash": record.get("data_hash")}
 
 
 # --------------------------------------------------------------------------

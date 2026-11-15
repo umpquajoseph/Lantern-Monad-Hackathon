@@ -308,8 +308,8 @@ def make_report(mission_id, record, route_ref, parent_ref=None):
     """The report object from a science record (sim/science.py). Everything a
     reader needs, nothing hidden."""
     p, s, r = record["position"], record["sample"], record["result"]
-    observation = "check of another agency's find" if record["target"]["purpose"] == "check" \
-        else "survey drill"
+    observation = record.get("observation") or (
+        "check of another agency's find" if record["target"]["purpose"] == "check" else "survey drill")
     return {
         "schema": SCHEMA_REPORT, "mission_id": mission_id, "report_id": record["record_id"],
         "site_id": record["target"]["id"], "site_source": record["target"].get("source"),
@@ -329,6 +329,25 @@ def make_report(mission_id, record, route_ref, parent_ref=None):
         "drill_attempts": record.get("attempts", 1),
         "refs": {"route": route_ref["cid"], "parent_report": parent_ref},
         "data_sources": DATA_SOURCES,
+    }
+
+
+def make_candidate(mission_id, site_id, target, agency, t, est_xy, sigma, latlon, scan, conf):
+    """The candidate object: why the Surveyor thinks this site is worth a
+    drill. A neutron scan around the site, before any drilling."""
+    return {
+        "schema": "lantern.candidate/1", "mission_id": mission_id, "site_id": site_id,
+        "target_id": target["id"], "rover": agency, "observation": "candidate (neutron survey scan)",
+        "simulated": True, "t": round(float(t), 1),
+        "position": {"x": round(float(est_xy[0]), 2), "y": round(float(est_xy[1]), 2),
+                     "sigma": round(float(sigma), 2), "lat": round(latlon[0], 6), "lon": round(latlon[1], 6),
+                     "source": "rover estimate"},
+        "measurements": {"instrument": "neutron spectrometer (simulated)",
+                         "unit": "wt% water-equivalent hydrogen, top 1 m",
+                         "scan": [[round(x, 2), round(y, 2), round(w, 3)] for x, y, w in scan]},
+        "confidence": {"value": round(conf, 3),
+                       "basis": "strongest scan reading against the 1 wt% threshold (simulated)"},
+        "site_source": target.get("source"), "data_sources": DATA_SOURCES,
     }
 
 

@@ -113,13 +113,19 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
 }
 ```
 
-- `fp/<agency>_<step>.jpg`: the first-person frame from `scene.first_person`.
+- `fp/<agency>_<step>.jpg`: the first-person frame from `scene.first_person`,
+  a sensor frame. It is rendered live in the sim loop, right after the rover
+  drives and before it localises, so vision can read it there.
 - Per rover, optional `fp_sub`: `[[f, "fp/A_0039_1.jpg"], ...]`, extra
   first-person frames between step k and step k+1, f in (0, 1) ascending,
   about every 0.5 m driven (`run_demo.py --sub-frame-m`). Frame f is at the
   pose interpolated as `web/js/data.js poseAt` does: x, y linear, heading
   along the shorter turn, the camera's own rover only. A player shows the
   last frame with f at or below the playback fraction, else `fp_frame`.
+  These are display frames, not sensor frames: they are rendered after the
+  sim from the logged poses, in parallel, and no rover ever sees them.
+- Top level `frames`: one sentence each for `fp_frame` and `fp_sub` saying
+  how they were made (sensor frame vs interpolated display frame).
 - Also written by `run_demo.py` (additive): top level `standins`, `dt_s`,
   `final_finds`, `truth.ice_units`, `truth.find_threshold_wt`; per rover
   `mode`, `ice_reading`, `est_error`, `distance`. `index.json` in

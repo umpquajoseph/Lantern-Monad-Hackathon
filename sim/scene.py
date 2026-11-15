@@ -46,6 +46,7 @@ from __future__ import annotations
 import math
 import time
 import zlib
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -104,6 +105,7 @@ SENSOR_FULL_WELL_E = 6000.0
 SENSOR_READ_E = 2.0
 NORMAL_MIN_VIEW_COS = 0.1     # assumed: detail normals bent to face the camera at least this much
 BLOCK_TAPER_CELLS = 8         # assumed: display relief fades out over the fine square's outer 2 m (seam to coarse mesh)
+SHARED_ARRAYS = ("height", "grid_h", "grid_hg", "alb_map", "disp_alb")  # Scene.share()
 DISPLAY_DIR_MAIN ="C:/Monad-Hackathon-Project/data/terrain/display"  # built assets, git-ignored
 LAMP_FADE_START_M = 60.0      # assumed: the lit region ends smoothly between these ranges.
 LAMP_FADE_END_M = 80.0        # assumed: by 60 m, 1/r^2 has already made the ground near-black.
@@ -117,7 +119,8 @@ HORIZON_DR_M = 0.125          # assumed: sample spacing along each ray (half a g
 # narrower than the 0.25 m mesh still cast their shadow arcs.
 NEAR_RES_M = 0.05             # assumed: resolves lip widths (0.06 R) of craters down to ~2 m across
 NEAR_HALF_M = 42.0            # assumed: square half-width; past ~40 m a rim arc is under a pixel or two
-NEAR_RECENTER_M = 8.0         # assumed: rebuild when the rover is this far from the square's centre
+NEAR_SNAP_M = 8.0             # assumed: square centres sit on this lattice, so the rover is within 5.7 m of the
+                              # centre and the square reaches 36 m past it (beyond HORIZON_NEAR_M)
 HORIZON_NEAR_M = 34.0         # assumed: horizon rays sample at HORIZON_DR_NEAR_M out to here (inside the square)
 HORIZON_DR_NEAR_M = 0.05      # assumed
 # Horizon spans either side of the heading. Ground in the camera's view lies
@@ -133,8 +136,11 @@ SHADOW_SELF_MARGIN_CAM_M = 0.03  # assumed: self-margin when the camera horizon 
 SHADOW_SOFT_TAN_CAM = 0.0002   # assumed
 
 FINE_HALF_CELLS = 320         # assumed: fine mesh square is 2*320 cells = 160 m across.
-FINE_RECENTER_M = 20.0        # assumed: rebuild a rover's fine square when it drives this far from its centre,
-                              # so the square always reaches LAMP_FADE_START_M past the rover.
+FINE_SNAP_M = 20.0            # assumed: fine square centres sit on this lattice, so the rover is within 14.1 m
+                              # of the centre and the square reaches 66 m past it (beyond LAMP_FADE_START_M).
+# Both squares are snapped, not recentred on the rover after it drives some
+# distance, so a frame depends only on the two rovers' poses, never on the
+# order frames were drawn in. That lets display frames render in parallel.
 COARSE_STEP = 8               # assumed: coarse mesh vertex every 8 cells (2 m).
 NEAR_CLIP_M = 0.2             # assumed: GPU near and far planes.
 FAR_CLIP_M = 3000.0
@@ -153,6 +159,11 @@ STATUS_RGB = {"reported": (1.0, 0.85, 0.2), "confirmed": (0.3, 0.95, 0.4), "disp
 DRAPE_M = 0.10                # assumed: tracks float this far above the ground.
 
 
+def _snap(v, step):
+    """v to the nearest multiple of step (halves round up)."""
+    return step * math.floor(v / step + 0.5)
+
+
 def _smoothstep(e0, e1, x):
     t = np.clip((x - e0) / (e1 - e0), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
@@ -162,15 +173,18 @@ def _smoothstep(e0, e1, x):
 # Height grid sampling (local frame: world minus self.origin).
 # ---------------------------------------------------------------------------
 class _Grid:
-    def __init__(self, height, x0, y0, cell):
+    def __init__(self, height, x0, y0, cell, hg=None):
         self.h = np.ascontiguousarray(height, dtype=np.float32)
         self.H, self.W = self.h.shape
         self.x0, self.y0, self.cell = float(x0), float(y0), float(cell)
         self._hf = self.h.ravel()
         # Height and its central-difference slopes per cell, gathered together
-        # so one lookup gives a point's height and smooth normal.
-        gy, gx = np.gradient(self.h, self.cell)
-        self._hg = np.stack([self.h, gx, gy], axis=-1).reshape(-1, 3).astype(np.float32)
+        # so one lookup gives a point's height and smooth normal. hg: the same,
+        # already computed (a shared memory map, see Scene.share).
+        if hg is None:
+            gy, gx = np.gradient(self.h, self.cell)
+            hg = np.stack([self.h, gx, gy], axis=-1).reshape(-1, 3).astype(np.float32)
+        self._hg = hg
 
     def _corners(self, x, y):
         fj = np.clip((np.asarray(x, dtype=np.float64) - self.x0) / self.cell, 0.0, self.W - 1.000001)
@@ -661,19 +675,30 @@ class Scene:
     Use camera_model() or depth_to_rover() to turn it into rover-frame points.
     """
 
-    def __init__(self, height, craters, x0, y0, cell, display="full", display_dir=None, strength=None):
+    def __init__(self, height, craters, x0, y0, cell, display="full", display_dir=None, strength=None,
+                 shared=None):
         """display: "full" (display layer with rim lips and rocks), "detail"
         (its texture, albedo and Hapke shading only: no made-up geometry, for
         the vision step), or "off" (the sim grid, Lambert, as before).
-        strength: terrain_display's one knob (None = its built default)."""
+        strength: terrain_display's one knob (None = its built default).
+        shared: a folder written by share(); its big arrays are opened as
+        read-only memory maps, so worker processes hold one copy between them."""
+        sh = None
+        if shared is not None:
+            sh = {k: np.load(Path(shared) / f"{k}.npy", mmap_mode="r") for k in SHARED_ARRAYS
+                  if (Path(shared) / f"{k}.npy").exists()}
         if display not in DISPLAY_MODES:
             raise ValueError(f"display must be one of {DISPLAY_MODES}")
         height = np.asarray(height, dtype=np.float32)
+        self._height = height
         H, W = height.shape
         # Render in a local frame near the map centre: world coordinates such
         # as LOLA stereographic metres (~1e5) lose millimetres in float32.
         self.origin = np.array([x0 + 0.5 * W * cell, y0 + 0.5 * H * cell, float(np.median(height))])
-        self.grid = _Grid(height - self.origin[2], x0 - self.origin[0], y0 - self.origin[1], cell)
+        if sh is not None:
+            self.grid = _Grid(sh["grid_h"], x0 - self.origin[0], y0 - self.origin[1], cell, hg=sh["grid_hg"])
+        else:
+            self.grid = _Grid(height - self.origin[2], x0 - self.origin[0], y0 - self.origin[1], cell)
         self.surface = _Surface(self.grid)  # what the lamp and camera see; fine squares added per rover
         self.mesh_surface = _Surface(self.grid)  # what VTK draws: fine squares over the sim grid
         self.craters = np.asarray(craters, dtype=np.float64)
@@ -692,7 +717,11 @@ class Scene:
             D = self.disp
             self._tile = _DetailTile(D.tile_h, D.tile_a, D.p.tile_period_m, D.s)
             # Per-cell albedo map at the knob's strength (terrain_display FORMAT, "Combine").
-            self._alb_map = (1.0 + D.s * (D.alb - 1.0)).astype(np.float32)
+            if sh is not None:
+                D.alb = sh["disp_alb"]
+                self._alb_map = sh["alb_map"]
+            else:
+                self._alb_map = (1.0 + D.s * (D.alb - 1.0)).astype(np.float32)
             self.grid.alb = self._alb_map
             mu0r, mur, cgr = _reference_angles()
             hp = D.p
@@ -760,6 +789,17 @@ class Scene:
         self._rover_actors = {}  # agency -> (fp actor, tp actor)
         self.timings = {}
 
+    def share(self, folder):
+        """Write the big arrays a Scene(..., shared=folder) maps instead of building."""
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        arrs = dict(height=self._height, grid_h=self.grid.h, grid_hg=self.grid._hg)
+        if self.disp is not None:
+            arrs.update(alb_map=self._alb_map, disp_alb=self.disp.alb)
+        for k, a in arrs.items():
+            np.save(folder / f"{k}.npy", np.ascontiguousarray(a))
+        return folder
+
     # -- public API (docs/handoffs.md) ---------------------------------------
     def set_rover(self, agency, true_pose):
         x, y, hd = (float(v) for v in true_pose)
@@ -768,11 +808,13 @@ class Scene:
         self._lamp_colors_dirty = True
         lx, ly = x - self.origin[0], y - self.origin[1]
         blk = self.blocks.get(agency)
-        if blk is None or math.hypot(lx - blk["cx"], ly - blk["cy"]) > FINE_RECENTER_M:
-            self._build_block(agency, lx, ly)
+        bc = (_snap(lx, FINE_SNAP_M), _snap(ly, FINE_SNAP_M))
+        if blk is None or (blk["cx"], blk["cy"]) != bc:
+            self._build_block(agency, *bc)
         near = self.near.get(agency)
-        if self.disp is not None and (near is None or math.hypot(lx - near.cx, ly - near.cy) > NEAR_RECENTER_M):
-            self._build_near(agency, lx, ly)
+        nc = (_snap(lx, NEAR_SNAP_M), _snap(ly, NEAR_SNAP_M))
+        if self.disp is not None and (near is None or (near.cx, near.cy) != nc):
+            self._build_near(agency, *nc)
         self.cams.pop(agency, None)
         self._place_rover_actor(agency)
 

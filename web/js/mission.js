@@ -50,11 +50,12 @@ const FOCUS_TAIL_S = 3;    // and holds this long after it
 const NARROW = matchMedia("(max-width: 760px)");
 
 const S = {
+  lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
-  opts: { routes: true, hazards: true, truth: false }, focus: true, focusEv: null, prev: null, lastPanel: "",
+  opts: { routes: true, hazards: true, nogo: true, truth: false }, focus: true, focusEv: null, prev: null, lastPanel: "",
 };
 let terrain, world, map, rigs = {}, ov, sci = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
-let satObjs = [], tagEls = {}, extras = {}, dressed = {}, odo = {}, susp = {}, fans = {};
+let satObjs = [], tagEls = {}, extras = {}, dressed = {}, odo = {}, susp = {};
 // Rover camera, as sim/scene.py: 640x480, 60 deg wide, 15 deg down, 2.5 m up.
 const FP = { w: 640, h: 480, pitch: (15 * Math.PI) / 180, camH: 2.5, fx: 320 / Math.tan((30 * Math.PI) / 180) };
 const evidenceCache = new Map();
@@ -102,7 +103,7 @@ async function openRun(entry) {
   world.setRun(run);
   world.setVisibility({ fill: true, tracks: S.opts.routes, truth: S.opts.truth });
   map.setRun(run);
-  map.opts = { tracks: S.opts.routes, truth: S.opts.truth };
+  map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
   document.title = `Lantern Mission Control · ${log.label || entry.label}`;
 
   sci = [];
@@ -167,15 +168,6 @@ function dressRover(a) {
     const panel = box(mat(0x1d3f7a), -0.75, 0, 1.45, 0.9, 1.5, 0.04);
     panel.rotation.y = -0.5;
     extras.A = { sensors: [s1, s2] };
-    // The mast camera's field of view on the ground while it maps a site: a
-    // pale wedge ahead of the rover, 60 deg wide like the camera.
-    const fan = new THREE.Mesh(new THREE.CircleGeometry(14, 32, -Math.PI / 6, Math.PI / 3),
-      new THREE.MeshBasicMaterial({ color: 0x7fd8ff, transparent: true, opacity: 0.16, depthWrite: false,
-        side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
-    fan.position.set(0.1, 0, 0.25);
-    fan.visible = false;
-    g.add(fan);
-    fans.A = fan;
   } else {
     // Prospector: side battery pods, a taller frame, and the NIR head on the mast.
     const pod = mat(0x8a4a1c);
@@ -208,12 +200,23 @@ const modelNote = {};
 // clustering their vertices (3 along the body, 2 across), give each its own
 // pivot at its centre, and do the same for the two rocker halves. Opportunity
 // is a single mesh, so its body tilts and lifts but its wheels do not move alone.
-function clusterMesh(mesh, seedsFor) {
-  const geo = mesh.geometry, pos = geo.attributes.position, n = pos.count;
-  if (!geo.index) return null;
-  const get = [(i) => pos.getX(i), (i) => pos.getY(i), (i) => pos.getZ(i)];
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox, ctr = bb.getCenter(new THREE.Vector3()), ext = bb.getSize(new THREE.Vector3());
+function clusterMesh(obj, seedsFor) {
+  // NASA's glTF splits a part into one mesh per material under a group, so
+  // gather every child mesh's vertices into the group's frame and cluster them
+  // together; each mesh is then cut by the shared labels.
+  obj.updateMatrix();
+  const meshes = obj.isMesh ? [{ mesh: obj, mat: new THREE.Matrix4() }] : obj.children.filter((o) => o.isMesh).map((o) => { o.updateMatrix(); return { mesh: o, mat: o.matrix.clone() }; });
+  if (!meshes.length || meshes.some(({ mesh }) => !mesh.geometry.index)) return null;
+  const P = [];                                     // [x, y, z] in obj's frame
+  const v3 = new THREE.Vector3();
+  for (const m of meshes) {
+    const pos = m.mesh.geometry.attributes.position;
+    m.off = P.length;
+    for (let i = 0; i < pos.count; i++) { v3.fromBufferAttribute(pos, i).applyMatrix4(m.mat); P.push([v3.x, v3.y, v3.z]); }
+  }
+  const n = P.length, bb = new THREE.Box3();
+  for (const q of P) bb.expandByPoint(v3.set(q[0], q[1], q[2]));
+  const ctr = bb.getCenter(new THREE.Vector3()), ext = bb.getSize(new THREE.Vector3());
   let best = null;
   for (const [fa, la] of [[0, 2], [2, 0]]) {       // glTF is y up: forward is x or z
     const seeds = seedsFor(ctr.getComponent(fa), ext.getComponent(fa), ctr.getComponent(la), ext.getComponent(la));
@@ -223,7 +226,7 @@ function clusterMesh(mesh, seedsFor) {
       const acc = seeds.map(() => [0, 0, 0]);
       sse = 0;
       for (let v = 0; v < n; v++) {
-        const f = get[fa](v), l = get[la](v);
+        const f = P[v][fa], l = P[v][la];
         let bi = 0, bd = Infinity;
         for (let k = 0; k < seeds.length; k++) {
           const d = (f - seeds[k][0]) ** 2 + (l - seeds[k][1]) ** 2;
@@ -235,42 +238,55 @@ function clusterMesh(mesh, seedsFor) {
     }
     if (!best || sse < best.sse) best = { lab, sse, seeds, fa, la };
   }
-  // One pivot per cluster, at the cluster's centre, holding that cluster's triangles.
-  const idx = geo.index.array, root = new THREE.Group();
-  root.position.copy(mesh.position); root.quaternion.copy(mesh.quaternion); root.scale.copy(mesh.scale);
-  mesh.parent.add(root);
-  mesh.visible = false;
-  const parts = best.seeds.map(() => ({ tri: [], min: new THREE.Vector3(Infinity, Infinity, Infinity), max: new THREE.Vector3(-Infinity, -Infinity, -Infinity) }));
-  for (let i = 0; i < idx.length; i += 3) parts[best.lab[idx[i]]].tri.push(idx[i], idx[i + 1], idx[i + 2]);
+  // One pivot per cluster, at the cluster's centre, holding that cluster's
+  // triangles from every mesh.
+  const root = new THREE.Group();
+  root.position.copy(obj.position); root.quaternion.copy(obj.quaternion); root.scale.copy(obj.scale);
+  obj.parent.add(root);
+  obj.visible = false;
+  const parts = best.seeds.map(() => ({ min: new THREE.Vector3(Infinity, Infinity, Infinity), max: new THREE.Vector3(-Infinity, -Infinity, -Infinity), count: 0 }));
   for (let v = 0; v < n; v++) {
     const q = parts[best.lab[v]];
-    q.min.min(new THREE.Vector3(pos.getX(v), pos.getY(v), pos.getZ(v)));
-    q.max.max(new THREE.Vector3(pos.getX(v), pos.getY(v), pos.getZ(v)));
+    v3.set(P[v][0], P[v][1], P[v][2]);
+    q.min.min(v3); q.max.max(v3); q.count++;
   }
   const out = [];
-  for (const q of parts) {
-    if (!q.tri.length) continue;
-    const g2 = new THREE.BufferGeometry();
-    for (const [k, v] of Object.entries(geo.attributes)) g2.setAttribute(k, v);
-    g2.setIndex(q.tri);
-    const m = new THREE.Mesh(g2, mesh.material);
-    m.castShadow = m.receiveShadow = true;
+  parts.forEach((q, k) => {
+    if (!q.count) return;
     const c = q.min.clone().add(q.max).multiplyScalar(0.5);
     const pivot = new THREE.Group();
     pivot.position.copy(c);
-    m.position.copy(c).negate();
-    pivot.add(m);
+    const inner = new THREE.Group();
+    inner.position.copy(c).negate();
+    pivot.add(inner);
+    for (const m of meshes) {
+      const geo = m.mesh.geometry, idx = geo.index.array, tri = [];
+      for (let i = 0; i < idx.length; i += 3) if (best.lab[m.off + idx[i]] === k) tri.push(idx[i], idx[i + 1], idx[i + 2]);
+      if (!tri.length) continue;
+      const g2 = new THREE.BufferGeometry();
+      for (const [key, v] of Object.entries(geo.attributes)) g2.setAttribute(key, v);
+      g2.setIndex(tri);
+      const piece = new THREE.Mesh(g2, m.mesh.material);
+      piece.castShadow = piece.receiveShadow = true;
+      piece.matrixAutoUpdate = false;
+      piece.matrix.copy(m.mat);
+      inner.add(piece);
+    }
     root.add(pivot);
     out.push({ pivot, base: c.clone(), radius: (q.max.y - q.min.y) / 2, la: best.la, fa: best.fa });
-  }
+  });
   return out;
 }
 
 function setupSuspension(a, g, sg, fit) {
-  const box = new THREE.Box3().setFromObject(fit), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  // Measure the model in the rover's own frame: setFromObject gives scene
+  // coordinates, and the rover is hundreds of metres from the scene origin.
+  g.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(fit).applyMatrix4(g.matrixWorld.clone().invert());
+  const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
   const S_ = { g: sg, pitch: 0, roll: 0, z: 0, wheels: [], rockers: [], contacts: [] };
   const wheelMesh = fit.getObjectByName("Wheels_objs"), rockMesh = fit.getObjectByName("suspension");
-  if (wheelMesh && wheelMesh.isMesh) {
+  if (wheelMesh) {
     const w = clusterMesh(wheelMesh, (fc, fe, lc, le) => [-1, 0, 1].flatMap((i) => [-1, 1].map((j) => [fc + (i * fe) / 2.6, lc + (j * le) / 3])));
     if (w && w.length === 6) {
       g.updateMatrixWorld(true);
@@ -284,7 +300,7 @@ function setupSuspension(a, g, sg, fit) {
       S_.contacts = S_.wheels.map((wh) => [wh.fx, wh.fy]);
     }
   }
-  if (rockMesh && rockMesh.isMesh && S_.wheels.length) {
+  if (rockMesh && S_.wheels.length) {
     const r = clusterMesh(rockMesh, (fc, fe, lc, le) => [[fc, lc - le / 4], [fc, lc + le / 4]]);
     if (r) {
       g.updateMatrixWorld(true);
@@ -501,6 +517,11 @@ function bind() {
   $("zoom-in").onclick = () => zoom(1 / 1.35);
   $("zoom-out").onclick = () => zoom(1.35);
   document.querySelectorAll("#rover-seg button").forEach((b) => (b.onclick = () => { exitFocus(true); setRover(b.dataset.rover); }));
+  document.querySelectorAll("#lid-seg button").forEach((b) => (b.onclick = () => {
+    S.lidarKind = b.dataset.lk;
+    document.querySelectorAll("#lid-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    render(true);
+  }));
   document.querySelectorAll("[data-expand]").forEach((b) => (b.onclick = () => { exitFocus(true); setCam(b.dataset.expand); }));
   $("back-chip").onclick = () => { exitFocus(true); setCam("third"); };
   document.querySelectorAll(".rail button").forEach((b) => (b.onclick = () => {
@@ -511,11 +532,11 @@ function bind() {
     setTab(b.dataset.tab);
   }));
   $("collapse").onclick = () => $("panel").classList.toggle("closed");
-  for (const k of ["routes", "hazards", "truth"]) {
+  for (const k of ["routes", "hazards", "nogo", "truth"]) {
     $("opt-" + k).onchange = (e) => {
       S.opts[k] = e.target.checked;
       world.setVisibility({ fill: true, tracks: S.opts.routes, truth: S.opts.truth });
-      map.opts = { tracks: S.opts.routes, truth: S.opts.truth };
+      map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
       render(true);
     };
   }
@@ -690,6 +711,7 @@ function render(panels) {
   if (!run) return;
   world.currentT = t;
   world.update(t, { tracks: S.opts.routes });
+  updateCraterRings(t);
   for (const a of run.agencies) {
     updateSuspension(a, t);
     const ev = sci.filter((e) => e.agency === a && t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + 1).at(-1) || null;
@@ -705,11 +727,6 @@ function render(panels) {
     const txt = instrumentNow(a, t, ev);
     if (tagEls[a] && tagEls[a].textContent !== txt) tagEls[a].textContent = txt;
     const ph = ev ? (phaseOf(ev, t) || {}).name : "idle";
-    if (fans[a]) {
-      fans[a].visible = ["mast_pan", "terrain_map", "photo", "neutron_dwell"].includes(ph);
-      fans[a].rotation.z = ph === "mast_pan" ? 0.45 * Math.sin(performance.now() / 500) : 0;
-      fans[a].material.opacity = ph === "photo" ? 0.4 : 0.12 + 0.06 * Math.sin(performance.now() / 180);
-    }
     const on = txt === "neutron survey" || txt === "NEUTRON DWELL" || ph === "nir_scan";
     for (const m of (extras[a] || {}).sensors || []) m.material.emissive.setHex(on ? (a === "A" ? 0x33aa66 : 0x7744ff) : 0);
   }
@@ -755,22 +772,29 @@ function showLidar(t) {
   if (run.hasLidar === undefined) run.hasLidar = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_frame));
   box.hidden = !run.hasLidar;
   if (!run.hasLidar) return;
+  // Top-down / First person (lidar_fp_frame, step-6-nav 6846caf), only when the run logs both.
+  if (run.hasLidarFp === undefined) run.hasLidarFp = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_fp_frame));
+  $("lid-seg").hidden = !run.hasLidarFp;
+  const fp = run.hasLidarFp && S.lidarKind === "fp";
   const a = S.rover, k = run.stepAt(t);
   let src = null;
-  for (let i = k; i >= 0 && i > k - 50 && !src; i--) src = run.steps[i].rovers[a] && run.steps[i].rovers[a].lidar_frame;
+  for (let i = k; i >= 0 && i > k - 50 && !src; i--) {
+    const r = run.steps[i].rovers[a];
+    src = r && (fp && r.lidar_fp_frame ? r.lidar_fp_frame : r.lidar_frame);
+  }
   const img = $("lid-img");
   $("lid-none").hidden = !!src;
   img.hidden = !src;
   if (src && img.dataset.src !== run.dir + src) { img.src = run.dir + src; img.dataset.src = run.dir + src; }
   // Top-down scans (step-6-nav 40304d4) are 800 px wide; older range images 400.
-  const top = img.naturalWidth >= 800;
-  const cap = `${ROLE[a] || "Rover " + a} lidar, ${top ? "from above" : "range image"}`;
-  if ($("lid-cap").textContent !== cap) {
-    $("lid-cap").textContent = cap;
-    $("lid-cap").title = top
-      ? "Top-down, forward up, rover at the bottom centre. Grey safe, amber crater floor (avoided), red steeper than 15° (no-go). Rings every 5 m."
-      : "Range image beside the camera, 120° x 33°: near warm, far cool.";
-  }
+  const top = !(img.naturalWidth > 0 && img.naturalWidth < 800);   // not loaded yet: the current kind
+  const isFp = fp && src && src.endsWith("_fp.jpg");
+  const cap = run.hasLidarFp ? `${ROLE[a] || "Rover " + a} lidar` : `${ROLE[a] || "Rover " + a} lidar, ${top ? "from above" : "range image"}`;
+  const tip = isFp ? "First person: the same scan, 120° across, near bright, far dark. Red no-go, amber crater floor."
+    : top ? "Top-down, forward up, rover at the bottom centre. Grey safe, amber crater floor (avoided), red steeper than 15° (no-go). Rings every 5 m."
+    : "Range image beside the camera, 120° x 33°: near warm, far cool.";
+  if ($("lid-cap").textContent !== cap) $("lid-cap").textContent = cap;
+  if ($("in-lidar").title !== tip) $("in-lidar").title = tip;
 }
 
 function showFrame(img, cv, none, small) {
@@ -808,9 +832,9 @@ function drawFpOverlay(fr, cv, small) {
   const col = a === "A" ? "#5aa7ff" : "#f2994a";
   const route = planned.filter((p) => p.agency === a && p.t <= tf).at(-1);
   const st = stateAt(a, tf).state;
-  // A Surveyor stop under way: its own effects instead of the usual marks.
+  // A Surveyor stop under way: just its camera, no marks.
   const sev = a === "A" ? sci.find((e) => e.agency === "A" && S.t >= e.t0 && S.t <= e.t1 + FOCUS_TAIL_S) : null;
-  if (sev) { drawSurveyFx(c, sev, S.t, P, k, font); return; }
+  if (sev) return;   // a plain camera view while it surveys
   if (route && S.opts.routes && ["EXPLORING", "NAVIGATING", "REPLANNING", "PLANNING", "NAVIGATING_TO_SITE"].includes(st)) {
     const pts = route.points;
     let best = 0, bd = Infinity;
@@ -866,229 +890,39 @@ function drawFpOverlay(fr, cv, small) {
   }
 }
 
-// ------------------------------------------------- Surveyor camera effects
-// The ground around a site or hazard as the mast camera maps it: a 1 m grid,
-// each point with its slope across 2 m (as the planner's slope map) and,
-// at a hazard, whether it lies in the boulder field.
-const gridCache = new Map();
-function surveyGrid(ev) {
-  if (gridCache.has(ev.record_id)) return gridCache.get(ev.record_id);
-  const hz = ev.kind === "hazard" ? ev.hazard : null;
-  const site = hz || (S.run.log.satellite_sites || []).find((q) => q.id === ev.target_id) || ev;
-  const R = hz ? hz.radius + 6 : 9, n = Math.round(R);
-  const rows = [];
-  let maxSlope = 0, count = 0;
-  for (let i = -n; i <= n; i++) {
-    const row = [];
-    for (let j = -n; j <= n; j++) {
-      const x = site.x + j, y = site.y + i;
-      const gx = (terrain.heightAt(x + 1, y) - terrain.heightAt(x - 1, y)) / 2;
-      const gy = (terrain.heightAt(x, y + 1) - terrain.heightAt(x, y - 1)) / 2;
-      const slope = (Math.atan(Math.hypot(gx, gy)) * 180) / Math.PI;
-      const inside = Math.hypot(i, j) <= R;
-      const rock = !!hz && Math.hypot(x - hz.x, y - hz.y) <= hz.radius;
-      if (inside) { maxSlope = Math.max(maxSlope, slope); count++; }
-      row.push({ x, y, slope, inside, rock });
-    }
-    rows.push(row);
-  }
-  const g = { site, hz, R, rows, maxSlope, count };
-  gridCache.set(ev.record_id, g);
-  return g;
-}
-const slopeColor = (q) => (q.rock || q.slope >= 15 ? "#ff5d5d" : q.slope >= 8 ? "#f2c94c" : "#4fd18b");
-
-function strokeWorld(c, pts, P, style, w, lift = 0.05) {
-  c.beginPath();
-  let open = false;
-  for (const p of pts) {
-    const q = P(p[0], p[1], lift);
-    if (!q) { open = false; continue; }
-    open ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]);
-    open = true;
-  }
-  c.lineWidth = w; c.strokeStyle = style; c.stroke();
-}
-const circlePts = (x, y, r, n = 48) => Array.from({ length: n + 1 }, (_, i) => [x + r * Math.cos((i / n) * 2 * Math.PI), y + r * Math.sin((i / n) * 2 * Math.PI)]);
-const dense = (pts, step = 1) => {
-  const out = [pts[0]];
-  for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
-    for (let j = 1; j <= n; j++) out.push([a[0] + ((b[0] - a[0]) * j) / n, a[1] + ((b[1] - a[1]) * j) / n]);
-  }
-  return out;
-};
-
-function drawSurveyFx(c, ev, t, P, k, font) {
-  const ph = phaseOf(ev, t);
-  if (!ph) return;
-  const G = surveyGrid(ev), names = ev.phases.map((p) => p.name);
-  const past = (name) => names.indexOf(name) >= 0 && (ph.i > names.indexOf(name) || (ph.name === name && ph.p >= 1));
-  const W = FP.w, H = FP.h, now = performance.now(), cyan = "#7fd8ff";
-  const hz = G.hz;
-  c.save();
-  c.fillStyle = "rgba(8, 28, 44, 0.22)";
-  c.fillRect(0, 0, W, H);
-  // Viewfinder: corner brackets, a header, a blinking REC.
-  c.strokeStyle = "rgba(127,216,255,.9)"; c.lineWidth = 2 * k;
-  const m = 12, L = 30 * k;
-  for (const [x0, y0, sx, sy] of [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]]) {
-    c.beginPath(); c.moveTo(x0, y0 + sy * L); c.lineTo(x0, y0); c.lineTo(x0 + sx * L, y0); c.stroke();
-  }
-  c.font = font(11); c.fillStyle = cyan; c.textAlign = "left";
-  c.fillText(hz ? `SURVEYOR A · HAZARD ${ev.target_id}` : `SURVEYOR A · SITE ${ev.target_id}`, m + 10, m + 14 * k + 4);
-  c.textAlign = "right"; c.fillStyle = "#ff8a8a"; c.fillText("REC", W - m - 10, m + 14 * k + 4);
-  if (Math.floor(now / 450) % 2) { c.fillStyle = "#ff4d4d"; c.beginPath(); c.arc(W - m - 10 - 30 * k, m + 10 * k + 4, 4 * k, 0, 7); c.fill(); }
-  c.textAlign = "left";
-
-  // Terrain map: a 1 m grid revealed from near to far while mapping, then kept.
-  if (ph.name === "terrain_map" || past("terrain_map")) {
-    const proj = G.rows.map((row) => row.map((q) => (q.inside ? P(q.x, q.y, 0.06) : null)));
-    let dmin = Infinity, dmax = 0;
-    for (const row of proj) for (const q of row) if (q) { dmin = Math.min(dmin, q[2]); dmax = Math.max(dmax, q[2]); }
-    const front = ph.name === "terrain_map" ? dmin + (dmax - dmin) * Math.min(1, ph.p * 1.1) : Infinity;
-    const seg = (q1, q2, a1, a2) => {
-      if (!q1 || !q2 || q1[2] > front || q2[2] > front) return;
-      const near = Math.abs(q1[2] - front) < 1.2;
-      c.strokeStyle = slopeColor(a1.slope > a2.slope ? a1 : a2);
-      c.globalAlpha = near ? 1 : ph.name === "terrain_map" ? 0.75 : 0.5;
-      c.lineWidth = (near ? 2.2 : 1.1) * k;
-      c.beginPath(); c.moveTo(q1[0], q1[1]); c.lineTo(q2[0], q2[1]); c.stroke();
-    };
-    for (let i = 0; i < proj.length; i++) for (let j = 0; j < proj[i].length; j++) {
-      if (j + 1 < proj[i].length) seg(proj[i][j], proj[i][j + 1], G.rows[i][j], G.rows[i][j + 1]);
-      if (i + 1 < proj.length) seg(proj[i][j], proj[i + 1][j], G.rows[i][j], G.rows[i + 1][j]);
-    }
-    c.globalAlpha = 1;
-    if (hz) {   // the boulders, as the stereo map picks them out
-      c.fillStyle = "#ff5d5d";
-      for (let i = 0; i < proj.length; i++) for (let j = 0; j < proj[i].length; j++) {
-        const q = proj[i][j];
-        if (q && G.rows[i][j].rock && q[2] <= front && (i + j) % 2 === 0) c.fillRect(q[0] - 1.5 * k, q[1] - 1.5 * k, 3 * k, 3 * k);
-      }
+// ------------------------------------------------------- crater rings
+// Joseph's crater map (terrain.craters: [x, y, diameter]) drawn as red rim
+// rings on the ground near the rover being followed: 11,000 craters is too
+// many to draw at once, so the rings within CRATER_RING_R_M are rebuilt as
+// one line object whenever the rover has moved CRATER_RING_STEP_M.
+const CRATER_RING_R_M = 150, CRATER_RING_STEP_M = 40, CRATER_RING_SEG = 28;
+let craterRings = null, craterAt = null;
+function updateCraterRings(t) {
+  const [x, y] = S.run.poseAt(S.rover, t);
+  if (craterRings) craterRings.visible = S.opts.nogo;
+  if (!S.opts.nogo || (craterAt && Math.hypot(x - craterAt[0], y - craterAt[1]) < CRATER_RING_STEP_M)) return;
+  craterAt = [x, y];
+  const pos = [];
+  for (const [cx, cy, d] of terrain.craters) {
+    if (Math.abs(cx - x) > CRATER_RING_R_M || Math.abs(cy - y) > CRATER_RING_R_M) continue;
+    const r = d / 2;
+    let prev = null;
+    for (let i = 0; i <= CRATER_RING_SEG; i++) {
+      const a = (i / CRATER_RING_SEG) * Math.PI * 2;
+      const p = world.groundL(cx + r * Math.cos(a), cy + r * Math.sin(a), 0.12);
+      if (prev) pos.push(prev.x, prev.y, prev.z, p.x, p.y, p.z);
+      prev = p;
     }
   }
-
-  // The reticle on the site or hazard: it closes in while the camera pans, then holds.
-  const ctr = P(G.site.x, G.site.y, 0.4);
-  if (ctr) {
-    const lock = ph.name === "stop" || ph.name === "park" ? 0 : ph.name === "mast_pan" ? ph.p : 1;
-    const half = (70 - 40 * lock) * k * (ctr[2] < 8 ? 1.3 : 1);
-    const col = hz ? "#ff6b6b" : cyan;
-    c.strokeStyle = col; c.lineWidth = 2 * k;
-    const b = half * 0.35;
-    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-      const x0 = ctr[0] + sx * half, y0 = ctr[1] + sy * half * 0.7;
-      c.beginPath(); c.moveTo(x0 - sx * b, y0); c.lineTo(x0, y0); c.lineTo(x0, y0 - sy * b * 0.7); c.stroke();
-    }
-    c.fillStyle = col; c.font = font(12);
-    c.fillText(`${ev.target_id} · ${ctr[2].toFixed(0)} m`, ctr[0] + half + 6, ctr[1] - half * 0.7 + 12 * k);
+  if (!craterRings) {
+    craterRings = new THREE.LineSegments(new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0xe5574f, transparent: true, opacity: 0.85 }));
+    craterRings.frustumCulled = false;
+    world.scene.add(craterRings);
   }
-
-  // Camera pan: a bright line sweeping across the frame.
-  if (ph.name === "mast_pan") {
-    const x = W * (0.5 + 0.44 * Math.sin(ph.p * Math.PI * 2));
-    const gr = c.createLinearGradient(x - 40, 0, x + 40, 0);
-    gr.addColorStop(0, "rgba(127,216,255,0)"); gr.addColorStop(0.5, "rgba(127,216,255,.45)"); gr.addColorStop(1, "rgba(127,216,255,0)");
-    c.fillStyle = gr; c.fillRect(x - 40, 0, 80, H);
-    c.fillStyle = cyan; c.fillRect(x - 1, 0, 2, H);
-  }
-
-  // Neutron dwell: rings pulsing out from the site, the seven dwell points filling in.
-  if (ph.name === "neutron_dwell") {
-    for (let i = 0; i < 3; i++) {
-      const r = ((now / 900 + i / 3) % 1) * 5;
-      c.globalAlpha = 1 - r / 5;
-      strokeWorld(c, circlePts(G.site.x, G.site.y, r, 40), P, "#b8f0ff", 2 * k, 0.1);
-    }
-    c.globalAlpha = 1;
-    const pts = [[0, 0], ...Array.from({ length: 6 }, (_, i) => [3 * Math.cos((i * Math.PI) / 3), 3 * Math.sin((i * Math.PI) / 3)])];
-    pts.forEach(([dx, dy], i) => {
-      const q = P(G.site.x + dx, G.site.y + dy, 0.1);
-      if (!q) return;
-      const on = i < ph.p * 7;
-      c.fillStyle = on ? "#b8f0ff" : "rgba(184,240,255,.25)";
-      c.beginPath(); c.arc(q[0], q[1], (on ? 4 : 3) * k, 0, 7); c.fill();
-    });
-  }
-
-  // Photo: a flash, then the frame it kept.
-  if (ph.name === "photo") {
-    const f = Math.max(0, 1 - ph.p * 3);
-    if (f > 0) { c.fillStyle = `rgba(255,255,255,${0.85 * f})`; c.fillRect(0, 0, W, H); }
-    if (ctr) {
-      c.strokeStyle = "#fff"; c.lineWidth = 2 * k;
-      c.strokeRect(ctr[0] - 110 * k, ctr[1] - 75 * k, 220 * k, 150 * k);
-    }
-  }
-
-  // Hazard: flag it, cross out the way the rover was going, show the way round.
-  if (hz && (ph.name === "flag" || past("flag"))) {
-    const pulse = 0.6 + 0.4 * Math.sin(now / 160);
-    c.globalAlpha = pulse;
-    strokeWorld(c, circlePts(hz.x, hz.y, hz.radius), P, "#ff4d4d", 4 * k, 0.15);
-    c.globalAlpha = 1;
-    const t0 = ev.phases[0].t0;
-    const old = planned.filter((q) => q.agency === "A" && q.t <= t0).at(-1);
-    const nxt = planned.find((q) => q.agency === "A" && q.kind === "replanned" && q.t >= t0);
-    const pose = S.run.poseAt("A", t);
-    const ahead = (r) => {
-      const d = dense(r.points);
-      let bi = 0, bd = Infinity;
-      d.forEach((p, i) => { const dd = Math.hypot(p[0] - pose[0], p[1] - pose[1]); if (dd < bd) { bd = dd; bi = i; } });
-      return d.slice(bi, bi + 45);
-    };
-    if (old) {
-      const pts = ahead(old);
-      strokeWorld(c, pts, P, "rgba(255,77,77,.85)", 4 * k);
-      const mid = pts[Math.min(pts.length - 1, 12)], q = mid && P(mid[0], mid[1], 0.1);
-      if (q) {
-        c.strokeStyle = "#ff4d4d"; c.lineWidth = 4 * k; const r = 14 * k;
-        c.beginPath(); c.moveTo(q[0] - r, q[1] - r); c.lineTo(q[0] + r, q[1] + r); c.moveTo(q[0] + r, q[1] - r); c.lineTo(q[0] - r, q[1] + r); c.stroke();
-      }
-    }
-    if (nxt) {
-      strokeWorld(c, ahead(nxt), P, "rgba(0,0,0,.5)", 9 * k);
-      strokeWorld(c, ahead(nxt), P, "#5aa7ff", 4 * k);
-    }
-    banner(c, `UNSAFE · ${ev.target_id} FLAGGED FOR THE PROSPECTOR`, "#ff4d4d", k, font);
-  }
-
-  // The verdict at the end of a site survey.
-  if (!hz && (past("photo") || (ph.name === "photo" && ph.p > 0.4))) {
-    const v = { ice: ["HYDROGEN HIGH · WORTH A CORE", ICE_CSS], trace: ["SOME HYDROGEN · BELOW THRESHOLD", "#f2c94c"],
-      dry: ["DRY · NOTHING TO DRILL", "#c9ccd1"] }[ev.verdict] || [String(ev.verdict).toUpperCase(), "#fff"];
-    banner(c, v[0], v[1], k, font);
-  }
-
-  // What it is doing, bottom left, in words.
-  const pct = Math.round(100 * ph.p);
-  const label = {
-    stop: "STOPPING · FACING IT", park: "PARKED · FACING THE SITE", mast_pan: "CAMERA PAN",
-    terrain_map: past("terrain_map") ? `MAP DONE · STEEPEST ${G.maxSlope.toFixed(0)}°` : `MAPPING TERRAIN ${pct}% · ${Math.round(G.count * ph.p)} POINTS`,
-    neutron_dwell: `NEUTRON DWELL ${Math.round(42 * ph.p)}/42 READINGS`, photo: "PHOTO SAVED TO THE REPORT",
-    flag: "WRITING IT INTO THE ROUTE REPORT",
-  }[ph.name] || "";
-  c.font = font(15); c.fillStyle = "#fff";
-  c.fillText(label, m + 10, H - m - 12);
-  if (ph.name === "terrain_map" || past("terrain_map")) {
-    c.font = font(10);
-    let x = m + 10;
-    for (const [col, txt] of [["#4fd18b", "flat"], ["#f2c94c", "8–15°"], ["#ff5d5d", hz ? "steep / rocks" : "over 15°"]]) {
-      c.fillStyle = col; c.fillRect(x, H - m - 40 * k, 10 * k, 4 * k);
-      c.fillText(txt, x + 14 * k, H - m - 36 * k);
-      x += c.measureText(txt).width + 30 * k;
-    }
-  }
-  c.restore();
-}
-
-function banner(c, text, col, k, font) {
-  c.font = font(14);
-  const w = c.measureText(text).width + 28 * k, h = 30 * k, x = (FP.w - w) / 2, y = 40 * k;
-  c.fillStyle = "rgba(10,12,16,.82)"; c.fillRect(x, y, w, h);
-  c.fillStyle = col; c.fillRect(x, y, 4 * k, h);
-  c.textAlign = "center"; c.fillText(text, FP.w / 2 + 2 * k, y + h / 2 + 5 * k); c.textAlign = "left";
+  craterRings.geometry.dispose();
+  craterRings.geometry = new THREE.BufferGeometry();
+  craterRings.geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
 }
 
 function registryAt(t) {

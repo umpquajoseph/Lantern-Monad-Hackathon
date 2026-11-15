@@ -45,7 +45,7 @@ from sim.ice import (DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit,
                      FOOTPRINT_RADIUS_M)
 from sim.rover import PLANNER_STANDIN, SLOPE_LIMIT_DEG, SPEED_M_S, STEP_M, Rover, SlopeMap
 from sim.nav import ParticleNav
-from sim.lidar import Lidar
+from sim.lidar import Lidar, fp_name
 from sim.vision import Vision, rover_to_world
 from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
 try:
@@ -141,6 +141,8 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                 "distance": round(r.distance, 2),
                 "fp_frame": cam.last.get(r.agency) if cam is not None and cam.run_dir is not None else None,
                 "lidar_frame": cam.last_lidar.get(r.agency) if cam is not None else None,
+                "lidar_fp_frame": (fp_name(cam.last_lidar[r.agency]) if cam is not None and cam.run_dir is not None
+                                   and cam.last_lidar.get(r.agency) else None),
                 "lidar_hazards": cam.haz_count.get(r.agency, {}) if cam is not None else {},
                 **_plan_fields(r, mode[r.agency]),
                 "particles": _particles_log(r.nav)}
@@ -447,6 +449,7 @@ class LiveCamera:
                     # The site draws the planned route from the log instead.
                     lname = f"lidar/{ag}_{k:04d}.jpg"
                     _write_jpg(self.run_dir / lname, self.lid[ag].view(rng_img))
+                    _write_jpg(self.run_dir / fp_name(lname), self.lid[ag].view_fp(rng_img))   # same scan, first person
                     self.last_lidar[ag] = lname
             if self.run_dir is not None:
                 _write_jpg(self.run_dir / name, shown)

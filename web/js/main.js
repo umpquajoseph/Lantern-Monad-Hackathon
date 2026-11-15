@@ -18,6 +18,7 @@ const PART_NAMES = { nav: "navigation", rims: "rim detection", planner: "route p
 
 const state = {
   runs: [], run: null, t: 0, playing: false, speed: 200, cam: "A",
+  lidarKind: "top",   // "top": lidar_frame (from above); "fp": lidar_fp_frame (first person)
   opts: { fill: true, tracks: true, particles: true, rims: true, nogo: false, truth: false },
   lastEventsKey: "",
 };
@@ -152,9 +153,11 @@ function bindControls() {
   };
   document.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
   setView("A");
-  document.querySelectorAll("#cam-seg button").forEach((b) => (b.onclick = () => {
-    state.cam = b.dataset.ag;
-    document.querySelectorAll("#cam-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  // The camera's A / B is the same choice as Follow rover A / B: one sets both.
+  document.querySelectorAll("#cam-seg button").forEach((b) => (b.onclick = () => setView(b.dataset.ag)));
+  document.querySelectorAll("#lidar-seg button").forEach((b) => (b.onclick = () => {
+    state.lidarKind = b.dataset.lk;
+    document.querySelectorAll("#lidar-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     render(true);
   }));
   document.querySelectorAll("#map-seg button").forEach((b) => (b.onclick = () => {
@@ -266,7 +269,9 @@ function render(force = false) {
   $("clock").textContent = `${fmtClock(t)} · step ${String(k + 1).padStart(n.length, "\u2007")}/${n}`;
   hud(run, k);
   const fr = run.frameNear(state.cam, t);
-  const camKey = `${state.cam}:${fr ? fr.src : "-"}`;
+  // The step is in the key so the caption (per step) changes with the step,
+  // not when the next image happens to arrive.
+  const camKey = `${state.cam}:${k}:${fr ? fr.src : "-"}`;
   if (force || camKey !== lastCamKey) { camera(run, fr, k); lastCamKey = camKey; }
   if (force || k !== lastK) record(run, k);
   lastK = k;
@@ -316,21 +321,27 @@ function camera(run, fr, k) {
       img.src = fr.src;
     }
   } else img.removeAttribute("src");
-  $("fp-cap").innerHTML = captionHtml(run, a, fr ? fr.k : k, !!(fr && fr.sub));
+  // Per step, not per frame: the caption must not change between a step's frames.
+  $("fp-cap").innerHTML = captionHtml(run, a, k);
   // Lidar panel: the scan taken with this step's live frame (run_demo.py --vision).
   const r = run.rover(a, fr ? fr.k : k);
   const li = $("lidar-img");
   // Runs without --vision have no lidar: hide the panel rather than show an empty box.
   if (run.hasLidar === undefined) run.hasLidar = run.agencies.some((ag) => run.steps.some((_, j) => run.rover(ag, j).lidar_frame));
-  li.parentElement.hidden = $("lidar-cap").hidden = !run.hasLidar;
-  if (r.lidar_frame) {
-    const src = run.dir + r.lidar_frame;
+  li.parentElement.hidden = $("lidar-cap").hidden = $("lidar-head").hidden = !run.hasLidar;
+  // The Top-down / First person toggle only when the run logs both kinds.
+  if (run.hasLidarFp === undefined) run.hasLidarFp = run.agencies.some((ag) => run.steps.some((_, j) => run.rover(ag, j).lidar_fp_frame));
+  $("lidar-seg").hidden = !run.hasLidarFp;
+  const lf = lidarFile(run, r);
+  if (lf) {
+    const src = run.dir + lf;
     if (li.dataset.src !== src) { li.dataset.src = src; li.src = src; }
   } else {
     li.removeAttribute("src");
     delete li.dataset.src;
   }
   $("lidar-cap").textContent = lidarCapText(run, a, fr ? fr.k : k);
+  li.onload = () => { $("lidar-cap").textContent = lidarCapText(run, a, fr ? fr.k : k); };
   // Rim points are logged per step, in that step's pose: draw them only on a step's own frame.
   drawRims(run, a, fr ? fr.k : k, !!(fr && fr.sub));
   drawPlan(run, a, fr, k);
@@ -391,27 +402,40 @@ function drawPlan(run, a, fr, k) {
   }
 }
 
-function captionHtml(run, a, k, sub) {
+function captionHtml(run, a, k) {
   const r = run.rover(a, k);
   // Say how far apart the recorded frames are, from the log.
   const gapM = run.frameSpacing(a);
   const every = gapM ? `, one frame per ${gapM < 10 ? gapM.toFixed(1).replace(/\.0$/, "") : Math.round(gapM)} m` : "";
   return `Recorded lamp-only view from rover ${a}${every}. 60° view, camera 2.5 m up. Click to enlarge.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
-    (state.opts.rims && r.rims && r.rims.length && !sub ? ` ${r.rims.length} rim points${run.standin && run.standin.rims ? " (stand-in, from the crater map)" : " from the camera"}.` : "") +
-    (r.plan && !sub ? " Amber dots: the route it plans to drive, re-planned every 2 m." : "") +
-    (r.lidar_frame && !sub ? " Red marks: lidar hazards." : "");
+    // Rim dots are drawn on a step's own frame only (they are in that step's pose).
+    (state.opts.rims && r.rims && r.rims.length ? ` Dots on the step frames: ${r.rims.length} rim points${run.standin && run.standin.rims ? " (stand-in, from the crater map)" : " from the camera"}.` : "") +
+    (r.plan ? " Amber dashes: the route it plans to drive, re-planned every 2 m." : "");
 }
 
 // Lidar panel caption: the scan taken with this step's live frame (run_demo.py --vision).
 const LIDAR_TOPDOWN_W = 800;   // sim/lidar.py Lidar.view on step-6-nav 40304d4: 800 x 280
+// The lidar image to show: the first-person range image when that is
+// chosen and logged (lidar_fp_frame, step-6-nav), else the top-down one.
+function lidarFile(run, r) {
+  return state.lidarKind === "fp" && r.lidar_fp_frame ? r.lidar_fp_frame : r.lidar_frame;
+}
+
 function lidarCapText(run, a, k) {
   const r = run.rover(a, k);
   if (!r.lidar_frame) return "No lidar in this run.";
   const hz = r.lidar_hazards || {};
+  if (lidarFile(run, r) === r.lidar_fp_frame && r.lidar_fp_frame) {
+    // step-6-nav 6846caf Lidar.view_fp: bearing 60L..60R across, elevation
+    // -2..-35 deg up the side, near bright, far dark; no colour legend inside.
+    return `Rover ${a} lidar, first person: the same scan, 120° across, near bright, far dark. ` +
+      `Red no-go, amber crater floor. This scan: ${hz.crater || 0} crater cells, ${hz.slope || 0} steep cells.`;
+  }
   // Two image kinds, told apart by width (step-6-nav 40304d4): the top-down
   // map of what the scan found is 800 px wide; the older range image is 400.
-  const topDown = $("lidar-img").naturalWidth >= LIDAR_TOPDOWN_W;
+  // Until the image has loaded its width is 0: say top-down, the current kind.
+  const w = $("lidar-img").naturalWidth, topDown = !(w > 0 && w < LIDAR_TOPDOWN_W);
   return (topDown
     ? `Rover ${a} lidar, from above: what this scan found. Grey safe, amber crater floor (avoided), red too steep (no-go). `
     : `Rover ${a} lidar, beside the camera: 120° x 33°, near warm, far cool. `) +
@@ -426,8 +450,12 @@ function reserveHeights(run) {
   const last = run.steps.length - 1;
   const caps = new Set(), stories = new Set(), lidarCaps = new Set();
   for (let k = 0; k <= last; k++) {
-    for (const a of run.agencies) for (const sub of [false, true]) caps.add(captionHtml(run, a, k, sub));
-    for (const a of run.agencies) lidarCaps.add(lidarCapText(run, a, k));
+    for (const a of run.agencies) caps.add(captionHtml(run, a, k));
+    for (const a of run.agencies) {
+      const keep = state.lidarKind;
+      for (const kind of ["top", "fp"]) { state.lidarKind = kind; lidarCaps.add(lidarCapText(run, a, k)); }
+      state.lidarKind = keep;
+    }
     stories.add(story(run, k, run.findsAt(k)));
   }
   const evsAll = run.eventsUpTo(last).slice().reverse();

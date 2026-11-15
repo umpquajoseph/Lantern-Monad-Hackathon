@@ -53,6 +53,7 @@ from sim.rover import PLANNER_STANDIN, SLOPE_LIMIT_DEG, SPEED_M_S, STEP_M, Rover
 from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
 from sim.terrain import DATA, TERRAIN_DIR, default_path, load_terrain
 from sim.vision import Vision
+from sim.lidar import fp_name
 
 try:
     from sim import chain as lantern
@@ -249,6 +250,8 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                 "distance": round(r.distance, 2),
                 "fp_frame": cam.last.get(ag) if cam is not None and cam.run_dir is not None else None,
                 "lidar_frame": cam.last_lidar.get(ag) if cam is not None else None,
+                "lidar_fp_frame": (fp_name(cam.last_lidar[ag]) if cam is not None and cam.run_dir is not None
+                                   and cam.last_lidar.get(ag) else None),
                 "lidar_hazards": hz,
                 "lidar_hazard_total": int(sum(v for v in hz.values() if isinstance(v, (int, float)))),
                 "sees_unmapped_crater": bool(staged[ag] and sees_crater(r, staged[ag])),

@@ -12,6 +12,18 @@ Monad contract, and check each other's finds.
 ## Event rules
 
 - Build window about seven hours. Demo in the evening, top six pitch.
+- Judging criteria, as given by the organizers:
+  - Investability.
+  - Creativity: "how original is the idea? an original take on a real
+    problem scores highest".
+  - Completeness: "clean ui/ux and working features, end to end, no gaps".
+  - Presentation.
+- **A demo link is required.** Projects hosted only locally are
+  disqualified. Build locally, then port to a hosted link at the end. Keep
+  the simulation's state (poses, estimates, finds, transaction hashes)
+  separate from drawing it, so a hosted viewer can replay a run.
+- So: a demo that runs end to end with a clean dashboard beats an extra
+  feature. Polish step 5 before any upgrade (real terrain, vision).
 
 ## Layout (planned, one file per step)
 
@@ -22,7 +34,8 @@ Monad contract, and check each other's finds.
 | 3 | `sim/nav.py` | Particle filter |
 | 4 | `sim/rover.py` | Two rovers, planner, ice sensor |
 | 5 | `sim/dashboard.py` | Judges' window, backup video |
-| 6 | `sim/vision.py` | Raycast render, lamp shadows, Canny rims |
+| 6 | `sim/scene.py` | 3D scene: first-person lamp view with depth, third-person chase view |
+| 6 | `sim/vision.py` | Canny rims from the first-person image and depth |
 | | `run_demo.py` | Runs both demo runs end to end |
 
 ## Hard rules

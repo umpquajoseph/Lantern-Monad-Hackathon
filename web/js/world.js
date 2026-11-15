@@ -318,6 +318,7 @@ export class World {
     tag.innerHTML = `<span>Rover ${a}</span>`;
     const lbl = new CSS2DObject(tag);
     lbl.position.set(0, 0, 3.6);
+    lbl.center.set(1, 1);  // above-left of the rover; find labels go above-right
     g.add(lbl);
     this.scene.add(g);
     this.rovers[a] = { g, lamp };
@@ -417,9 +418,8 @@ export class World {
       const d = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: COLORS.truth }));
       d.position.copy(this.groundL(ice.x, ice.y, 0.8));
       d.scale.set(1, 1, 1.6);
-      const lbl = this.label("Hidden truth: ice", "#d8f3ff");
-      lbl.position.set(0, 0, 0.9);
-      d.add(lbl);
+      // Marker only: the sidebar legend names it, and a text label here
+      // would cover the find label at the same spot.
       const ring = this.ring(ice.x, ice.y, ice.radius, this.lineMat(COLORS.truth, 1.5, { dashed: true, opacity: 0.8 }));
       this.overlay.add(d, ring);
       this.truthObjs.push(d, ring);
@@ -440,6 +440,7 @@ export class World {
     const ring = this.ring(f.x, f.y, f.sigma, this.lineMat(col, 2.5));
     const lbl = this.label("", "#" + col.toString(16).padStart(6, "0"));
     lbl.position.set(p.x, p.y, p.z + 6.4);
+    lbl.center.set(0, 1);
     g.add(beam, ring, lbl);
     for (const c of f.checks) {
       const q = this.groundL(c.x, c.y, 0.3);

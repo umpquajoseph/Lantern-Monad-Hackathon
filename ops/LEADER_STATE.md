@@ -152,15 +152,18 @@ Read mail, then `mv` it to `leader/archive/`.
   camera panel 311/294 px because #fp-cap (main.js:281) adds the rim-count
   sentence only on full frames with rims. Task to viewer (124835): per-step
   text must never move layout; check by sampling header top each frame.
-- 12:52 Run 1203 was stale (stopped partway). Scene started the fast rerun
+- 12:50 Run 1203 was stale (stopped partway). Scene started the fast rerun
   run1/run2-20261115-1250 on 21cca99 (ParticleNav, Calvin's planner, B start
   fix, 15/32 lamp, particles, labels), ETA 13:10. 1108 rerun (old code)
   must not be published. Joseph is frustrated that run 2 still shows the
   old 11:08 log; told him vision means a rerun, not a rebuild.
-- 12:56 Joseph: "its just taking froever". Started worker `perf`
+- 12:51 Joseph: "its just taking froever". Started worker `perf` by start_session (wrong: should be inbox). 12:52 stopped it on Joseph's word, nothing left behind; task now in ops/mailboxes/perf/inbox/20261115-125200_leader_handoff.md for a session Joseph opens. Was
   (local_a6c203cf-f014-4fa6-913e-5f7101e31550), brief docs/briefs/performance.md
   (7fb785d): faster rerun and asset build, identical output, measure first,
   own worktree C:\Monad-Hackathon-perf on step-6-perf, coordinates with scene,
   no heavy benchmarks before 13:10. Doorbell address comes in its first mail.
   Scene lets the 1108 rerun finish (12:55) so run 2 stays consistent until
   1250 lands about 13:10; run_demo.py writes index.json itself.
+- Rule (Joseph 12:52): new workers go through the inbox system. Write the
+  brief and a handoff mail in ops/mailboxes/<handle>/inbox/; Joseph opens the
+  session. Never start_session for a worker.

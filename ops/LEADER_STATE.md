@@ -125,3 +125,9 @@ Read mail, then `mv` it to `leader/archive/`.
 - 12:31 Rewritten. Next: re-arm watcher; review run 2 when the integrator
   reports; get the designer's address from its first mail; merge
   `integration` into `joseph` after the second judge pass.
+- 12:36 viewer report accepted: fp_sub playback 8c7096c, particles map+3D
+  154b96d, planner HUD row, lamp 15/32 and exposure 0.55 match scene.py:76-81
+  at 2c8af7e (checked). Run 2 A on current sim clears the deep crater (9.3 m,
+  0 no-go steps); unconfirmed until the official rerun lands. Its shots show
+  "TEST run*-ptest" entries from its scratchpad; those must not reach
+  integration. Viewer mailed designer the dots legend and #opt-particles hooks.

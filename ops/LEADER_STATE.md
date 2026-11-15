@@ -383,3 +383,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - Archived: terrain + 27 idle sessions. Designer, perf, merger: Joseph archives from sidebar when idle.
 - Joseph prefs today: particles fine; full runs only at the end; workers needn't stress the merge; ask in plain text, no buttons.
 - NEXT: scope the Ritvik UI merge. Joseph: "in general the ui layout from ritviks is better", but some of his changes are worse (e.g. lidar). Ask Joseph where unsure.
+- 14:42 main fast-forwarded e3b205e to 4f51c54 (old-UI checkpoint, Joseph's word 14:39).

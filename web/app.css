@@ -263,7 +263,7 @@ select:focus { outline: none; border-color: var(--accent); }
 .status.confirmed { color: var(--confirmed); background: rgba(79, 191, 114, 0.1); }
 .status.disputed { color: var(--disputed); background: rgba(229, 87, 79, 0.12); }
 
-.feed { display: grid; gap: 0; }
+.feed { display: grid; gap: 0; align-content: start; }  /* rows keep their height when main.js reserves a min-height */
 .ev { display: grid; grid-template-columns: 64px 14px 1fr; gap: 0 8px; padding: 5px 0; border-bottom: 1px solid var(--hairline); align-items: baseline; }
 .ev:last-child { border-bottom: 0; }
 .ev.new { background: linear-gradient(90deg, rgba(61, 111, 196, 0.16), transparent 70%); }

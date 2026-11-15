@@ -516,6 +516,7 @@ function story(run, k, finds) {
   const f = finds[0];
   const a = run.agencies[0];
   const r = run.rover(a, k);
+  if (!f && run.log.mission) return missionStory(run, k);
   if (!f) return r.nav_on
     ? `Rover A drives in the dark and fixes its position on lamp-lit crater rims. Its estimate stays on the true track; plain odometry drifts.`
     : `Rover A drives on odometry alone. Its position error grows with every metre, and so does its σ.`;
@@ -523,6 +524,25 @@ function story(run, k, finds) {
   if (f.status === "reported") return `${f.agency} posted a find at <b>±${f.sigma.toFixed(1)} m</b>. ${other}, from another agency, reads it from the chain and drives there to check.`;
   if (f.status === "confirmed") return `${other} measured ice at the reported spot. The find is <b>confirmed</b> on chain.`;
   return `${other} found no ice at the reported spot: ${f.agency}'s position was off by more than the ice patch. The find stays on the record, <b>disputed</b>.`;
+}
+
+// Before the first find in a mission log (run_mission.py): what the
+// Surveyor is doing, from its logged phase ("to S1", "survey S1", ...), and
+// which sites it has already found dry.
+function missionStory(run, k) {
+  const roles = run.log.roles || {};
+  const name = (ag) => `The ${roles[ag] || "rover"} (${ag})`;
+  const [sv, pr] = ["A", "B"].map((ag) => (run.agencies.includes(ag) ? ag : run.agencies[0]));
+  const phase = run.rover(sv, k).phase || "";
+  const m = /^(to|survey) (\S+)/.exec(phase);
+  const sites = run.log.mission.sites || [];
+  const at = m ? sites.findIndex((x) => x.id === m[2]) : -1;
+  const dry = sites.slice(0, Math.max(at, 0)).filter((x) => x.verdict === "dry").map((x) => x.id);
+  const before = dry.length ? `${dry.join(" and ")} ${dry.length > 1 ? "were" : "was"} dry. ` : "";
+  const doing = !m ? `${name(sv)} is ${phase || "driving"}.`
+    : m[1] === "to" ? `${name(sv)} drives to orbital candidate ${m[2]}.`
+    : `${name(sv)} surveys ${m[2]} for ice.`;
+  return `${before}${doing} ${name(pr)} waits for a find on chain.`;
 }
 
 window.lantern = { state, get world() { return world; }, get map() { return map; } };

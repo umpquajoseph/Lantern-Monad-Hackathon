@@ -46,7 +46,7 @@ from sim.ice import (DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit,
 from sim.rover import PLANNER_STANDIN, SLOPE_LIMIT_DEG, SPEED_M_S, STEP_M, Rover, SlopeMap
 from sim.nav import ParticleNav
 from sim.lidar import Lidar
-from sim.vision import Vision, draw_plan, rover_to_world
+from sim.vision import Vision, rover_to_world
 from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
 try:
     from sim import chain as lantern   # step 1: the real contract on Monad testnet
@@ -386,8 +386,9 @@ class LiveCamera:
                 r.add_hazards(hz_world)
                 self.haz_count[ag] = {kk: kinds.count(kk) for kk in ("crater", "slope")}
                 if self.run_dir is not None:
-                    plan = list(getattr(r, "local_plan", [])[1:])
-                    shown = draw_plan(img, [tuple(r.true[:2])] + plan, r.true, self.scene, hz_world)
+                    # The frame goes to disk as rendered: the 0.5 m display frames
+                    # carry no overlay, so a burnt-in plan would flash every 2 m.
+                    # The site draws the planned route from the log instead.
                     lname = f"lidar/{ag}_{k:04d}.jpg"
                     _write_jpg(self.run_dir / lname, self.lid[ag].view(rng_img))
                     self.last_lidar[ag] = lname

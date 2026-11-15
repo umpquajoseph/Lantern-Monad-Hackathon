@@ -65,7 +65,7 @@ git at 73e77ab. Read this first after a compaction, then `ops/PROTOCOL.md`,
 | integrator | `uds:\\.\pipe\LOCAL\cc-msg-e4aa78077ba4f6511766cd4cc20730b8` | local_e783098d-945c-48ad-9f91-90350cb94056 | `C:\Monad-Hackathon-integration`, `integration` | owns `app.py`. Judge pass 1 done (7 items). Second pass after run 2 lands |
 | designer | `uds:\\.\pipe\LOCAL\cc-msg-42257a837952d8f3cb6dda87cb29e0fb` | local_ba34eb33-eb0d-45e1-8f58-6d1df15566b9 | own worktree, `step-5-design` | owns `web/app.css` and `index.html` layout. Judge items 1, 4, 5, 6, 7. Brief `docs/briefs/design.md` |
 | perf | `uds:\\.\pipe\LOCAL\cc-msg-b5fa754137f62a9b8f31896194e2668b` | local_e264d133-dfe3-4b08-a7be-8c66b5b4e005 | `C:\Monad-Hackathon-perf`, `step-6-perf` | rerun and asset build speed, identical output. Brief `docs/briefs/performance.md`. Profiles after 1250 lands |
-| merger | `Inbox triage and monitoring [37f8c1]` | opened by Joseph 13:07 | `C:\Monad-Hackathon-checkpoint`, `checkpoint` | checkpoint merge + clean-up, brief `docs/briefs/merge.md` |
+| merger | `uds:\\.\pipe\LOCAL\cc-msg-28bfcc486ae1da380bb0690a0ec10c73` (session local_90314b3a-adbc-4de4-867b-6478ad3b534f) | opened by Joseph 13:07 | `C:\Monad-Hackathon-checkpoint`, `checkpoint` | checkpoint merge + clean-up, brief `docs/briefs/merge.md` |
 
 My watcher (run_in_background, re-arm after every mail):
 
@@ -239,3 +239,4 @@ Read mail, then `mv` it to `leader/archive/`.
   confirmed: A err 1.18 m sigma 0.75; B 0.41 m sigma 0.72. Lidar hazards:
   B drives 638 m vs 280 m, in-crater track B 38 m -> 4 m. Run 2 with vision
   still running. Told merger to take it (conflicts run_demo.py, main.js).
+- 13:17 merger: Calvin 2e28d61 merged into checkpoint 70324d6 (pushed); fresh default run from a clean clone in progress.

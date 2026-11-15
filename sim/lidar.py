@@ -35,6 +35,7 @@ MAX_RANGE_M = 30.0
 MIN_RANGE_M = 1.0
 RANGE_NOISE_M = 0.02             # 1-sigma range noise
 MARCH_STEP_M = 0.25              # ray march step, then refined by bisection
+MARCH_BLOCK = 8                  # march steps sampled per height call (speed only; ranges do not depend on it)
 
 # --- hazards (ASSUMED)
 HAZ_CELL_M = 0.5                 # hazard grid cell
@@ -77,30 +78,40 @@ class Lidar:
         dx = np.cos(EL) * np.cos(AZ + h)
         dy = np.cos(EL) * np.sin(AZ + h)
         dz = np.sin(EL)
+        from sim.scene import _par   # row-chunked threads; same arithmetic per point
         surf = self.scene.surface
-        rng = np.full(EL.shape, np.nan)
-        prev = np.full(EL.shape, MIN_RANGE_M)
-        live = np.ones(EL.shape, bool)
-        for t in np.arange(MIN_RANGE_M + MARCH_STEP_M, MAX_RANGE_M + 1e-9, MARCH_STEP_M):
-            idx = np.nonzero(live)
-            if len(idx[0]) == 0:
+        # March MARCH_BLOCK steps per height call on the rays still live, then
+        # bisect every hit ray together. Each sample and bisection step is the
+        # same arithmetic as a step-by-step march, so ranges are unchanged.
+        ts = np.arange(MIN_RANGE_M + MARCH_STEP_M, MAX_RANGE_M + 1e-9, MARCH_STEP_M)
+        fdx, fdy, fdz = dx.ravel(), dy.ravel(), dz.ravel()
+        rng = np.full(fdx.shape, np.nan)
+        first = np.full(fdx.shape, -1)
+        live = np.arange(len(fdx))
+        for s0 in range(0, len(ts), MARCH_BLOCK):
+            if len(live) == 0:
                 break
-            px = O[0] + dx[idx] * t
-            py = O[1] + dy[idx] * t
-            pz = O[2] + dz[idx] * t
-            below = pz <= surf.height(px, py)
-            if np.any(below):
-                hi = (idx[0][below], idx[1][below])
-                lo_t = prev[hi]
-                hi_t = np.full(len(hi[0]), t)
-                for _ in range(6):   # bisection to ~4 mm
-                    mid = 0.5 * (lo_t + hi_t)
-                    under = O[2] + dz[hi] * mid <= surf.height(O[0] + dx[hi] * mid, O[1] + dy[hi] * mid)
-                    hi_t = np.where(under, mid, hi_t)
-                    lo_t = np.where(under, lo_t, mid)
-                rng[hi] = hi_t
-                live[hi] = False
-            prev[idx] = t
+            tb = ts[s0:s0 + MARCH_BLOCK]
+            px = O[0] + fdx[live, None] * tb[None, :]
+            py = O[1] + fdy[live, None] * tb[None, :]
+            pz = O[2] + fdz[live, None] * tb[None, :]
+            below = pz <= _par(surf.height, px, py)
+            got = below.any(axis=1)
+            first[live[got]] = s0 + np.argmax(below[got], axis=1)   # first step at or under the ground
+            live = live[~got]
+        hit = np.flatnonzero(first >= 0)
+        if len(hit):
+            fi = first[hit]
+            hi_t = ts[fi]
+            lo_t = np.where(fi > 0, ts[np.maximum(fi - 1, 0)], MIN_RANGE_M)
+            hdx, hdy, hdz = fdx[hit], fdy[hit], fdz[hit]
+            for _ in range(6):   # bisection to ~4 mm
+                mid = 0.5 * (lo_t + hi_t)
+                under = O[2] + hdz * mid <= surf.height(O[0] + hdx * mid, O[1] + hdy * mid)
+                hi_t = np.where(under, mid, hi_t)
+                lo_t = np.where(under, lo_t, mid)
+            rng[hit] = hi_t
+        rng = rng.reshape(EL.shape)
         rng = rng + RANGE_NOISE_M * self.rng.standard_normal(rng.shape)
         ok = np.isfinite(rng)
         # Rover frame: x forward, y left, z up, origin at the lidar.

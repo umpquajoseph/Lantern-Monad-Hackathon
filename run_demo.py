@@ -46,7 +46,7 @@ from sim.ice import (DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit,
 from sim.rover import PLANNER_STANDIN, SLOPE_LIMIT_DEG, SPEED_M_S, STEP_M, Rover, SlopeMap
 from sim.nav import ParticleNav
 from sim.lidar import Lidar
-from sim.vision import Vision, draw_plan, rover_to_world
+from sim.vision import Vision, rover_to_world
 from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
 try:
     from sim import chain as lantern   # step 1: the real contract on Monad testnet
@@ -142,6 +142,7 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                 "fp_frame": cam.last.get(r.agency) if cam is not None and cam.run_dir is not None else None,
                 "lidar_frame": cam.last_lidar.get(r.agency) if cam is not None else None,
                 "lidar_hazards": cam.haz_count.get(r.agency, {}) if cam is not None else {},
+                **_plan_fields(r, mode[r.agency]),
                 "particles": _particles_log(r.nav)}
 
     for k in range(MAX_STEPS):
@@ -265,15 +266,75 @@ def _write_jpg(path, img):
     cv2.imwrite(str(path), img[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
 
 
+PLAN_CHANGE_M = 2.0   # assumed: the route counts as changed when its first 15 m moved this far
+                      # (ordinary re-aiming between waypoints moves it about 1 m)
+
+
+def _plan_fields(r, mode):
+    """Per step, with sensors on: "plan", the route the rover is about to drive
+    (world xy, from the rover forward); "plan_changed", true when that route
+    moved more than PLAN_CHANGE_M from the last step's; and "divert", true when
+    it changed right after the sensors added hazards, so the viewer can mark the
+    step and a staged demo can pause just before it."""
+    if not (r.sensing and mode in ("survey", "goto")):
+        return {"plan": None, "plan_changed": False, "divert": False}
+    plan = np.array(r.planned_route(), float)
+    prev = getattr(r, "_last_plan", None)
+    changed = False
+    if prev is not None and len(prev) >= 2 and len(plan) >= 2:
+        along = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(plan, axis=0).T))])
+        pts = plan[along <= 15.0]
+        a, b = prev[:-1], prev[1:]
+        ab = b - a
+        L2 = np.maximum((ab ** 2).sum(1), 1e-9)
+        t = np.clip(((pts[:, None, :] - a) * ab).sum(2) / L2, 0, 1)
+        d = np.hypot(*(pts[:, None, :] - (a + t[..., None] * ab)).transpose(2, 0, 1)).min(1)
+        changed = bool(d.max() > PLAN_CHANGE_M)
+    r._last_plan = plan
+    # A divert: the route changed right after the sensors added hazards
+    # (route changes from simply reaching the next waypoint do not count).
+    # Each step the rover plans first and senses after, so hazards seen on
+    # the previous step are the ones this step's plan reacts to.
+    hist = getattr(r, "_hazard_hist", [0, 0])
+    new_haz = r.n_hazard_cells > hist[-2]
+    r._hazard_hist = [hist[-1], r.n_hazard_cells]
+    return {"plan": np.round(plan, 2).tolist(), "plan_changed": changed, "divert": bool(changed and new_haz)}
+
+
+def _thin_marks(hz, kinds, hz_world, cell_m=1.5, max_range_m=25.0, max_marks=30):
+    """Crater cells only, one mark per cell_m square, nearest first: the lidar
+    flags 0.5 m cells, and marking every one buries the camera view."""
+    if len(hz) == 0:
+        return hz_world
+    keep, seen = [], set()
+    order = np.argsort(np.hypot(hz[:, 0], hz[:, 1]))
+    for i in order:
+        if kinds[i] != "crater" or np.hypot(*hz[i]) > max_range_m:
+            continue
+        key = (int(hz[i, 0] // cell_m), int(hz[i, 1] // cell_m))
+        if key in seen:
+            continue
+        seen.add(key)
+        keep.append(i)
+        if len(keep) >= max_marks:
+            break
+    return hz_world[keep] if keep else np.zeros((0, 2))
+
+
 class LiveCamera:
     """Sensor frames, fp/<agency>_<step>.jpg: taken inside the sim loop right
     after a rover drives and before it localises, as its camera would (vision
     reads them there once it lands). The other rover is wherever it is at
     that moment in the loop."""
 
-    def __init__(self, scene, run_dir, frame_every=1, sensors=True):
+    def __init__(self, scene, run_dir, frame_every=1, sensors=True, replay=None):
         """run_dir None: sense only, write no files (pass 1, so A's path matches pass 2).
-        sensors: run vision (rims) and lidar (hazards) on each live frame."""
+        sensors: run vision (rims) and lidar (hazards) on each live frame.
+        replay: pass 1's LiveCamera. Pass 2 puts both rovers at the same poses
+        as pass 1 until A's find, so while a shot's inputs (step, both poses,
+        sensor noise states) equal pass 1's, its frame and sensor results are
+        pass 1's: they are taken from there instead of computed twice. The
+        first mismatch ends the replay for the run."""
         self.scene, self.run_dir, self.frame_every = scene, run_dir, frame_every
         if run_dir is not None:
             (run_dir / "fp").mkdir(parents=True, exist_ok=True)
@@ -287,6 +348,11 @@ class LiveCamera:
         self.t_vision, self.t_lidar = [], []   # seconds per live frame, for the timing summary
         self.score_every = 0                   # score vision on every Nth live frame (sim/rim_truth.py)
         self.scores = []
+        self.record = [] if run_dir is None else None   # pass 1: every shot's inputs and results
+        self._replay = replay.record if replay is not None else None
+        self._ri = 0
+        self.replayed = 0
+        self._rovers = ()
 
     def attach(self, agency, rng_vision, rng_lidar):
         """Per-run sensor noise streams, so pass 1 and pass 2 see the same."""
@@ -300,42 +366,85 @@ class LiveCamera:
             self.scene.set_rover(r.agency, pose)
             self._posed[r.agency] = pose
 
+    def _sync(self):
+        """Put every rover in the scene at its current pose. Between its shots
+        a rover's pose does not change, so this is the scene the old
+        place-on-shoot order built; a replayed shot leaves the scene behind."""
+        for o in self._rovers:
+            self._place(o)
+
     def start(self, rovers):
-        for r in rovers:
-            self._place(r)
+        self._rovers = tuple(rovers)
+        self._sync()
+
+    def _key(self, k, r):
+        ag = r.agency
+        noise = ((self.vis[ag].rng.bit_generator.state, self.lid[ag].rng.bit_generator.state)
+                 if ag in self.vis else None)
+        return (k, ag, tuple(float(v) for v in r.true), tuple(tuple(_pose_log(o)) for o in self._rovers), noise)
+
+    def _from_replay(self, key):
+        """Pass 1's results for this shot, or None (and no replay from here on)."""
+        if self._replay is None or self.score_every:
+            return None
+        rec = self._replay[self._ri] if self._ri < len(self._replay) else None
+        if rec is None or rec["key"] != key:
+            self._replay = None
+            return None
+        self._ri += 1
+        self.replayed += 1
+        return rec
 
     def shoot(self, k, r, moved):
         ag = r.agency
-        self._place(r)
         self._moved[ag] = self._moved.get(ag, 0) + (1 if moved else 0)
         if k == 0 or ag not in self.last or (moved and self._moved[ag] % self.frame_every == 0):
-            t0 = time.perf_counter()
-            img, depth = self.scene.first_person(ag)
-            self.times.append(time.perf_counter() - t0)
+            key = self._key(k, r) if (self.record is not None or self._replay is not None) else None
+            rec = self._from_replay(key) if key is not None else None
+            if rec is not None:
+                img = np.repeat(rec["grey"][..., None], 3, axis=2)  # first_person's own layout
+                rims, rng_img, hz, kinds = rec["rims"], rec["rng_img"], rec["hz"], rec["kinds"]
+                if ag in self.vis:
+                    self.vis[ag].rng.bit_generator.state = rec["noise_after"][0]
+                    self.lid[ag].rng.bit_generator.state = rec["noise_after"][1]
+            else:
+                self._sync()
+                t0 = time.perf_counter()
+                img, depth = self.scene.first_person(ag)
+                self.times.append(time.perf_counter() - t0)
+                rims = rng_img = hz = kinds = None
+                if ag in self.vis:
+                    # Vision: rim points for the particle filter. Lidar: crater and
+                    # slope hazards for the planner, from the moment they are seen.
+                    t1 = time.perf_counter()
+                    rims = self.vis[ag].rims(img, depth)
+                    t2 = time.perf_counter()
+                    pts, rng_img = self.lid[ag].scan(r.true)
+                    hz, kinds = self.lid[ag].hazards(pts)
+                    self.t_vision.append(t2 - t1)
+                    self.t_lidar.append(time.perf_counter() - t2)
+                    if self.score_every and len(self.t_vision) % self.score_every == 0:
+                        try:
+                            from sim.rim_truth import rim_truth, score   # branch step-6-rim-truth
+                            self.scores.append(score(rims, rim_truth(self.scene, ag, depth)))
+                        except ImportError:
+                            self.score_every = 0
+                if self.record is not None:
+                    noise_after = ((self.vis[ag].rng.bit_generator.state, self.lid[ag].rng.bit_generator.state)
+                                   if ag in self.vis else None)
+                    self.record.append(dict(key=key, grey=img[..., 0].copy(), rims=rims, rng_img=rng_img,
+                                            hz=hz, kinds=kinds, noise_after=noise_after))
             name = f"fp/{ag}_{k:04d}.jpg"
-            rims, shown = None, img
+            shown = img
             if ag in self.vis:
-                # Vision: rim points for the particle filter. Lidar: crater and
-                # slope hazards for the planner, from the moment they are seen.
-                t1 = time.perf_counter()
-                rims = self.vis[ag].rims(img, depth)
-                t2 = time.perf_counter()
-                pts, rng_img = self.lid[ag].scan(r.true)
-                hz, kinds = self.lid[ag].hazards(pts)
-                self.t_vision.append(t2 - t1)
-                self.t_lidar.append(time.perf_counter() - t2)
-                if self.score_every and len(self.t_vision) % self.score_every == 0:
-                    try:
-                        from sim.rim_truth import rim_truth, score   # branch step-6-rim-truth
-                        self.scores.append(score(rims, rim_truth(self.scene, ag, depth)))
-                    except ImportError:
-                        self.score_every = 0
+                rims = np.array(rims, copy=True)
                 hz_world = rover_to_world(self.lid[ag].to_camera_frame(hz), r.true)
-                r.add_hazards(hz_world)
+                r.add_hazards(hz_world, kinds)
                 self.haz_count[ag] = {kk: kinds.count(kk) for kk in ("crater", "slope")}
                 if self.run_dir is not None:
-                    plan = list(getattr(r, "local_plan", [])[1:])
-                    shown = draw_plan(img, [tuple(r.true[:2])] + plan, r.true, self.scene, hz_world)
+                    # The frame goes to disk as rendered: the 0.5 m display frames
+                    # carry no overlay, so a burnt-in plan would flash every 2 m.
+                    # The site draws the planned route from the log instead.
                     lname = f"lidar/{ag}_{k:04d}.jpg"
                     _write_jpg(self.run_dir / lname, self.lid[ag].view(rng_img))
                     self.last_lidar[ag] = lname
@@ -405,6 +514,7 @@ def _worker_run(chunk):
 
 
 WORKER_GB_ASSUMED = 0.7    # one render worker's private memory with the maps shared: 0.61 GB measured 12:19
+THREAD_GB_MEASURED = 0.06  # extra private memory per render thread in a worker (sim/scene.py RENDER_THREADS): +0.43 GB at 8 threads, measured 13:50
 HEADROOM_GB = 2.0          # leave this much RAM free
 MAX_WORKERS = 8
 
@@ -413,20 +523,143 @@ def render_sub_frames(jobs, shared, terrain, display, workers=None):
     """Render display frames across a process pool sized to free memory."""
     import multiprocessing as mp
     import psutil
+    from sim.scene import RENDER_THREADS
+    cpus = os.cpu_count() or 1
+
+    budget = None
+
+    def threads_for(w):
+        """Threads per worker: its share of the cores, and no more than the memory left allows."""
+        t = max(1, min(RENDER_THREADS, cpus // w))
+        if budget is not None:
+            while t > 1 and round(w * (WORKER_GB_ASSUMED + THREAD_GB_MEASURED * t), 6) > round(budget, 6):
+                t -= 1
+        return t
+
     if workers is None:
         free_gb = psutil.virtual_memory().available / 2 ** 30
-        workers = int(max(1, min(MAX_WORKERS, os.cpu_count() or 1, (free_gb - HEADROOM_GB) // WORKER_GB_ASSUMED)))
-        print(f"  pool: {free_gb:.1f} GB free, {workers} workers")
+        budget = free_gb - HEADROOM_GB
+        # Most workers whose memory fits at one thread each (processes scale
+        # better than threads), then as many threads each as still fit.
+        # Round before comparing: in floats (3.4 - 2.0) // 0.7 is 1.0, not 2.
+        workers = next((w for w in range(min(MAX_WORKERS, cpus), 0, -1)
+                        if round(w * (WORKER_GB_ASSUMED + THREAD_GB_MEASURED), 6) <= round(budget, 6)), 1)
+        print(f"  pool: {free_gb:.1f} GB free, {workers} workers x {threads_for(workers)} threads")
     _, _, x0, y0, cell = terrain
     size = math.ceil(len(jobs) / (workers * 4))
     chunks = [jobs[i:i + size] for i in range(0, len(jobs), size)]  # contiguous: squares rebuild rarely
     times, mem = [], {}
-    with mp.get_context("spawn").Pool(workers, _worker_init, (str(shared), x0, y0, cell, display)) as pool:
-        for t, pid, uss, peak in pool.imap_unordered(_worker_run, chunks):
-            times += t
-            u0, p0 = mem.get(pid, (0, 0))
-            mem[pid] = (max(uss, u0), max(peak, p0))
+    old_env = os.environ.get("LANTERN_RENDER_THREADS")
+    os.environ["LANTERN_RENDER_THREADS"] = str(threads_for(workers))  # read by sim/scene.py in each spawned worker
+    try:
+        with mp.get_context("spawn").Pool(workers, _worker_init, (str(shared), x0, y0, cell, display)) as pool:
+            for t, pid, uss, peak in pool.imap_unordered(_worker_run, chunks):
+                times += t
+                u0, p0 = mem.get(pid, (0, 0))
+                mem[pid] = (max(uss, u0), max(peak, p0))
+    finally:
+        if old_env is None:
+            os.environ.pop("LANTERN_RENDER_THREADS", None)
+        else:
+            os.environ["LANTERN_RENDER_THREADS"] = old_env
     return times, workers, mem
+
+
+class _FrameNames:
+    """Stands in for LiveCamera in --resume: names each step frame exactly as
+    LiveCamera would and records how to render it (the camera's pose and the
+    other rovers' poses at that moment in the loop), but renders nothing.
+    A frame is a function of those poses alone, so a missing one can be
+    rendered later, anywhere, with the same pixels."""
+
+    def __init__(self, run_dir, frame_every=1):
+        self.run_dir, self.frame_every = run_dir, frame_every
+        self.sensors = False
+        self.last, self.times, self.t_vision, self.scores = {}, [], [], []
+        self.last_lidar, self.haz_count = {}, {}
+        self.jobs = []                      # (path, agency, pose, {other agency: pose})
+        self._moved, self._posed = {}, {}
+
+    def start(self, rovers):
+        for r in rovers:
+            self._posed[r.agency] = _pose_log(r)
+
+    def attach(self, *_):
+        pass
+
+    def shoot(self, k, r, moved):
+        ag = r.agency
+        self._posed[ag] = _pose_log(r)
+        self._moved[ag] = self._moved.get(ag, 0) + (1 if moved else 0)
+        if k == 0 or ag not in self.last or (moved and self._moved[ag] % self.frame_every == 0):
+            name = f"fp/{ag}_{k:04d}.jpg"
+            others = {a: p for a, p in self._posed.items() if a != ag}
+            self.jobs.append((str(self.run_dir / name), ag, self._posed[ag], others))
+            self.last[ag] = name
+        return None
+
+
+def _jpeg_complete(path):
+    """True if the file ends with the JPEG end-of-image marker (a frame cut
+    short by a stopped run does not)."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(-2, os.SEEK_END)
+            return f.read(2) == b"\xff\xd9"
+    except OSError:
+        return False
+
+
+def fill_sub_frames(out, stamp, keys, terrain, sub_m, workers=None):
+    """Stage 2 of a run: the 0.5 m display frames from a written log's poses,
+    without simulating again (a --vision run cannot be re-simulated without
+    rendering its live frames again). Renders the missing ones, then rewrites
+    each log with fp_sub. The live frames and everything else stay as logged."""
+    height, craters, x0, y0, cell = terrain
+    runs, jobs = [], []
+    for key in keys:
+        run_dir = Path(out) / f"{key}-{stamp}"
+        log = json.loads((run_dir / "log.json").read_text(encoding="utf8"))
+        for s in log["steps"]:
+            for r in s["rovers"].values():
+                r.pop("fp_sub", None)
+        want = sub_frame_jobs(log["steps"], run_dir, sub_m)
+        missing = [j for j in want if not _jpeg_complete(j[0])]
+        print(f"{key}: {len(want)} display frames, {len(missing)} to render")
+        jobs += missing
+        runs.append((run_dir, log))
+    if jobs:
+        from sim.scene import Scene
+        display = runs[0][1].get("display") or "full"
+        sc = Scene(height, craters, x0, y0, cell, display=display, display_dir=TERRAIN_DIR / "display")
+        shared = sc.share(Path(out) / "_shared")
+        np.save(shared / "craters.npy", np.asarray(craters))
+        sc = None
+        gc.collect()
+        t = time.perf_counter()
+        rt, n, _ = render_sub_frames(jobs, shared, terrain, display, workers)
+        dt = time.perf_counter() - t
+        print(f"display frames: {len(rt)} in {dt:.0f}s on {n} workers ({len(rt) / max(dt, 1e-9):.1f} frames/s)")
+        shutil.rmtree(shared, ignore_errors=True)
+    for run_dir, log in runs:
+        tmp = run_dir / "log.json.tmp"
+        with open(tmp, "w", encoding="utf8") as f:
+            json.dump(log, f, separators=(",", ":"))
+        os.replace(tmp, run_dir / "log.json")   # the site never reads a half-written log
+        print(f"wrote {run_dir / 'log.json'} with fp_sub")
+
+
+def _merge_index(path, entries):
+    """index.json with these runs replacing any earlier run of the same
+    scenario; other scenarios' entries stay. Order follows SCENARIOS."""
+    try:
+        old = json.loads(Path(path).read_text(encoding="utf8"))
+    except (OSError, ValueError):
+        old = []
+    keys = {e["run_id"].split("-")[0] for e in entries}
+    merged = [e for e in old if e["run_id"].split("-")[0] not in keys] + list(entries)
+    order = {s["key"]: i for i, s in enumerate(SCENARIOS)}
+    return sorted(merged, key=lambda e: order.get(e["run_id"].split("-")[0], len(order)))
 
 
 def main():
@@ -448,7 +681,19 @@ def main():
                     help="also render first-person frames every this many metres between steps (0: one per step)")
     ap.add_argument("--workers", type=int, default=None,
                     help="processes for the in-between display frames (default: from free memory, at most 8)")
+    ap.add_argument("--fill-sub", action="store_true",
+                    help="stage 2 (needs --stamp): render the in-between display frames of a run already "
+                         "written (e.g. with --sub-frame-m 0) from its logged poses, without simulating again")
+    ap.add_argument("--resume", action="store_true",
+                    help="finish an earlier run (needs --stamp): simulate again, render only frames that are "
+                         "missing or cut short, then write the logs and index.json")
     args = ap.parse_args()
+    if args.fill_sub and not args.stamp:
+        ap.error("--fill-sub needs the --stamp of the run to fill")
+    if args.resume and not args.stamp:
+        ap.error("--resume needs the --stamp of the run to finish")
+    if args.resume and (args.vision or args.no_render):
+        ap.error("--resume finishes a run made without --vision; it renders, so not with --no-render")
 
     t = time.perf_counter()
     tpath = default_path()
@@ -458,8 +703,15 @@ def main():
     print(f"terrain {Path(tpath).name} loaded in {time.perf_counter() - t:.1f}s")
     out = Path(args.out)
     stamp = args.stamp or datetime.now().strftime("%Y%m%d-%H%M")
+    if args.fill_sub:
+        keys = [s["key"] for s in SCENARIOS if not args.only or s["key"] == args.only]
+        fill_sub_frames(out, stamp, keys, terrain, args.sub_frame_m if args.sub_frame_m > 0 else 0.5, args.workers)
+        return
     scene = display = shared = cam = None
-    if not args.no_render:
+    if args.resume:
+        # Built later, and only if a frame is missing.
+        display = args.display if (TERRAIN_DIR / "display" / "display.json").exists() else "off"
+    elif not args.no_render:
         try:
             from sim.scene import Scene
         except ImportError as e:   # vtk: the camera, vision and lidar all need it
@@ -487,7 +739,9 @@ def main():
         run_id = f"{scn['key']}-{stamp}"
         run_dir = out / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        cam = LiveCamera(scene, run_dir, args.frame_every, sensors=args.vision) if scene is not None else None
+        cam = LiveCamera(scene, run_dir, args.frame_every, sensors=args.vision, replay=cam1) if scene is not None else None
+        if args.resume:
+            cam = _FrameNames(run_dir, args.frame_every)
         if cam is not None:
             cam.score_every = args.score_rims
         steps, chain, ft = simulate(scn, terrain, slope, field=field, cam=cam)
@@ -524,12 +778,25 @@ def main():
         if cam is not None and cam.scores:
             sc = {k: float(np.nanmean([d[k] for d in cam.scores])) for k in ("precision", "recall", "recall_shadow", "mean_dist_m", "gauss")}
             print(f"  vision vs rim_truth on {len(cam.scores)} frames: " + ", ".join(f"{k} {v:.2f}" for k, v in sc.items()))
-        if shared is not None:
+        if args.resume:
+            want = cam.jobs + (sub_frame_jobs(steps, run_dir, args.sub_frame_m)
+                               if args.sub_frame_m > 0 and args.frame_every == 1 else [])
+            missing = [j for j in want if not _jpeg_complete(j[0])]
+            print(f"  resume: {len(want) - len(missing)} of {len(want)} frames already there, {len(missing)} to render")
+            jobs += missing
+        elif shared is not None:
             jobs += sub_frame_jobs(steps, run_dir, args.sub_frame_m)
         sensing = cam is not None and cam.sensors
-        done.append((scn, run_id, run_dir, steps, field, finds))
+        done.append((scn, run_id, run_dir, steps, field, finds, chain, sensing))
     t_sim = time.perf_counter() - t_all
 
+    if jobs and args.resume:
+        from sim.scene import Scene
+        sc = Scene(height, craters, x0, y0, cell, display=args.display, display_dir=TERRAIN_DIR / "display")
+        display = sc.display
+        shared = sc.share(out / "_shared")
+        np.save(shared / "craters.npy", np.asarray(craters))
+        sc = None
     if jobs:
         cam = scene = None  # the loop's Scene is not needed by the pool
         gc.collect()
@@ -545,7 +812,7 @@ def main():
         shutil.rmtree(shared, ignore_errors=True)
 
     index = []
-    for scn, run_id, run_dir, steps, field, finds in done:
+    for scn, run_id, run_dir, steps, field, finds, chain, sensing in done:
         log = {
             "run_id": run_id,
             "label": scn["label"],
@@ -573,9 +840,10 @@ def main():
         print(f"wrote {run_dir}")
     print(f"total {time.perf_counter() - t_all:.0f}s (simulation with live step frames {t_sim:.0f}s)")
 
-    if not args.only:
-        with open(out / "index.json", "w", encoding="utf8") as f:
-            json.dump(index, f, indent=1)
+    merged = _merge_index(out / "index.json", index)
+    with open(out / "index.json", "w", encoding="utf8") as f:
+        json.dump(merged, f, indent=1)
+    print("index.json: " + ", ".join(e["run_id"] for e in merged))
 
 
 if __name__ == "__main__":

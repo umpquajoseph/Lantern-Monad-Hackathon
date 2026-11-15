@@ -33,9 +33,37 @@ MAP_MARGIN_M = 15.0             # assumed: stay this far inside the map edge
 LOOKAHEAD_WAYPOINTS = 4         # assumed: steer for the global waypoint ~16 m ahead
 LOCAL_PLAN_MAX_CELLS = 3000     # assumed: local A* search budget (2 m cells)
 
-# Assumed: share of a 2 m planning cell that sensor hazards must cover before
-# the planner routes around the whole cell.
-HAZARD_CELL_FRAC = 0.01   # any hazard cell blocks its 2 m planning cell (lidar hazards are craters, not lone rocks)
+# Sensor hazards come in two kinds (sim/lidar.py hazards()):
+# - "slope": ground over the slope limit. No-go: never driven onto (checked
+#   on the 0.25 m grid by _feasible), and a 2 m planning cell is closed when
+#   at least STEEP_CELL_FRAC of it is steep (the fine check handles the rest).
+# - "crater": a crater floor under gentle slopes. Drivable, but avoided: the
+#   planner pays CRATER_COST extra per crater-covered cell, so it detours
+#   round small craters and still reaches its goal when no detour exists.
+# The earlier rule closed a whole 2 m cell for any one hazard point of either
+# kind (fraction 0.01), which fenced rover A in among the small craters near
+# its start on run 1 (it turned back at step 42).
+STEEP_CELL_FRAC = 0.5      # assumed
+CRATER_COST = 4.0          # assumed: a crater cell costs 1 + 4 x its crater share to cross
+HAZARD_CELL_FRAC = STEEP_CELL_FRAC   # old name, kept for readers of this module
+
+# Assumed: how a sensing rover steers (run_demo.py --vision). A real rover
+# drives arcs and turns at a bounded rate; here it turns by at most
+# MAX_TURN_DEG per 2 m step (a turn radius of about 5.7 m) and aims at the
+# local plan AIM_M ahead, so the grid's 45 deg corners are cut, not driven.
+# When nothing inside that turn is clear it turns in place, as a skid-steer
+# rover can, to the clear heading nearest its aim (searched every
+# POINT_TURN_SCAN_DEG), or by POINT_TURN_DEG when no heading is clear.
+MAX_TURN_DEG = 20.0
+AIM_M = 6.0
+POINT_TURN_DEG = 30.0
+POINT_TURN_SCAN_DEG = 5.0
+TURN_STEP_DEG = 2.5        # heading candidates inside the turn limit
+
+# Assumed: how much of the planned route is logged for display (the camera
+# view's dotted line), metres ahead of the rover: about as far as the camera
+# resolves rims and the lidar judges craters (20-25 m).
+PLAN_DISPLAY_M = 20.0
 
 # Assumed: how far the rover turns in place when no way forward is clear.
 STUCK_TURN_DEG = 60.0
@@ -95,12 +123,14 @@ class SlopeMap:
     def inside(self, x, y):
         return (self.x0 + MAP_MARGIN_M <= x <= self.x1 - MAP_MARGIN_M) and (self.y0 + MAP_MARGIN_M <= y <= self.y1 - MAP_MARGIN_M)
 
-    def plan(self, start_xy, goal_xy, max_expand=None, blocked=None):
+    def plan(self, start_xy, goal_xy, max_expand=None, blocked=None, cost=None):
         """A* over the 2 m grid, 8-connected, through cells under the slope limit.
 
         Returns world (x, y) waypoints from start to goal, [goal] if no path
         exists, or None if max_expand cells were searched without reaching it. The rover follows them by its estimate, so drift still
         moves its real path off the planned one.
+        cost: optional extra cost per 2 m cell (0 = plain ground), paid on
+        entering it; the straight-line heuristic stays admissible.
         """
         import heapq
         ny, nx = self.deg.shape
@@ -135,7 +165,7 @@ class SlopeMap:
                 n = (c[0] + di, c[1] + dj)
                 if not (0 <= n[0] < ny and 0 <= n[1] < nx) or not ok[n]:
                     continue
-                ng = gc + w
+                ng = gc + (w * (1.0 + cost[n]) if cost is not None else w)
                 if ng < gcost.get(n, 1e18):
                     gcost[n] = ng
                     came[n] = c
@@ -168,8 +198,12 @@ class Rover:
         self.goal = None
         # Hazards seen by this rover's camera (sim/vision.py), in the true frame:
         # relative geometry from depth, placed around where the rover really is.
-        self.haz_fine = np.zeros(slope.fine_deg.shape, dtype=bool)
-        self.haz_2m = np.zeros(slope.deg.shape, dtype=bool)
+        self.haz_fine = np.zeros(slope.fine_deg.shape, dtype=bool)    # either kind (goal_blocked)
+        self.haz_steep = np.zeros(slope.fine_deg.shape, dtype=bool)   # no-go, widened by half width
+        self.haz_crater = np.zeros(slope.fine_deg.shape, dtype=bool)  # avoided, widened by half width
+        self.haz_2m = np.zeros(slope.deg.shape, dtype=bool)           # closed planning cells
+        self.cost_2m = np.zeros(slope.deg.shape, dtype=np.float32)    # extra cost per planning cell
+        self.point_turns = 0      # sensing runs: turns in place
         self.n_hazard_cells = 0
         self.stuck_turns = 0      # turns in place because no way forward was clear
         # True when the rover drives on its camera and lidar (run_demo.py
@@ -194,6 +228,8 @@ class Rover:
         around it. Relative geometry is what stereo measures exactly, so
         this is honest even when the global estimate is 20 m off.
         """
+        if self.sensing:
+            return self._follow_sensing()
         est = self.estimate
         if getattr(self, "_replan", False) and self.slope.at(self.true[0], self.true[1]) <= SLOPE_LIMIT_DEG:
             self.set_goal(self.goal)
@@ -236,6 +272,119 @@ class Rover:
             return 0.0, turn
         return moved, dh
 
+    def _waypoint_target(self):
+        """The global waypoint to steer for, placed relative to where the rover
+        is (waypoint minus estimate, plus the true position): the stereo and
+        lidar frame. Drops waypoints already passed."""
+        est = self.estimate
+        if getattr(self, "_replan", False) and self.slope.at(self.true[0], self.true[1]) <= SLOPE_LIMIT_DEG:
+            self.set_goal(self.goal)
+        head = self.path[:12]
+        near = int(np.argmin([math.hypot(p[0] - est[0], p[1] - est[1]) for p in head]))
+        self.path = self.path[near:]
+        while len(self.path) > 1 and math.hypot(self.path[0][0] - est[0], self.path[0][1] - est[1]) < 3.0:
+            self.path.pop(0)
+        wp = self.path[min(len(self.path) - 1, LOOKAHEAD_WAYPOINTS)]
+        x, y = self.true[0], self.true[1]
+        return (x + wp[0] - est[0], y + wp[1] - est[1])
+
+    def _follow_sensing(self):
+        """One step for a rover on its own sensors: local A* around what the
+        lidar found (steep = closed, crater = costly), then a turn of at most
+        MAX_TURN_DEG toward the plan AIM_M ahead, or a turn in place."""
+        est = self.estimate
+        tgt = self._waypoint_target()
+        x, y = self.true[0], self.true[1]
+        local = self.slope.plan((x, y), tgt, max_expand=LOCAL_PLAN_MAX_CELLS, blocked=self.haz_2m, cost=self.cost_2m)
+        self.local_plan = [(x, y)] + list(local) if local else [(x, y), tgt]   # true frame, for drawing
+        aim = self._aim_along(self.local_plan, AIM_M)
+        d = min(STEP_M, math.hypot(self.goal[0] - est[0], self.goal[1] - est[1]))
+        if d < 1e-6:
+            return 0.0, 0.0
+        h = self.true[2]
+        bearing = math.atan2(aim[1] - y, aim[0] - x)
+        want = (bearing - h + math.pi) % (2 * math.pi) - math.pi
+        lim = math.radians(MAX_TURN_DEG)
+        best, best_cost = None, None
+        if abs(want) <= math.pi / 2 + lim:      # aim not behind: drive, turning toward it
+            for off in np.arange(-MAX_TURN_DEG, MAX_TURN_DEG + 1e-9, TURN_STEP_DEG):
+                dh = math.radians(float(off))
+                if not self._feasible(x, y, h + dh, d, steep_only=True):
+                    continue
+                # Heading error to the aim (rad), plus the crater ground the step crosses.
+                c = abs(want - dh) + 0.1 * CRATER_COST * self._crater_share(x, y, h + dh, d)
+                if best_cost is None or c < best_cost - 1e-9:
+                    best, best_cost = dh, c
+        if best is not None:
+            self.true = np.array([x + d * math.cos(h + best), y + d * math.sin(h + best), h + best])
+            return d, best
+        # Aim behind the rover, or no clear heading inside the turn limit:
+        # turn in place to the clear heading nearest the aim (the next step
+        # then drives it). With none clear, keep turning one way.
+        turn, best_cost = None, None
+        for off in np.arange(-180.0, 180.0, POINT_TURN_SCAN_DEG):
+            dh = math.radians(float(off))
+            if not self._feasible(x, y, h + dh, d, steep_only=True):
+                continue
+            c = abs((want - dh + math.pi) % (2 * math.pi) - math.pi) + 0.1 * CRATER_COST * self._crater_share(x, y, h + dh, d)
+            if best_cost is None or c < best_cost - 1e-9:
+                turn, best_cost = dh, c
+        if turn is None:
+            turn = math.radians(POINT_TURN_DEG)
+        self.true = np.array([x, y, h + turn])
+        self.point_turns += 1
+        self.stuck_turns += 1
+        return 0.0, turn
+
+    @staticmethod
+    def _aim_along(pts, dist_m):
+        """The point dist_m along the polyline pts (its end if shorter)."""
+        total = 0.0
+        for a, b in zip(pts[:-1], pts[1:]):
+            seg = math.hypot(b[0] - a[0], b[1] - a[1])
+            if total + seg >= dist_m and seg > 0:
+                t = (dist_m - total) / seg
+                return (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))
+            total += seg
+        return pts[-1]
+
+    def _crater_share(self, x, y, h, d):
+        """Share of the 0.25 m cells along a d metre step that are crater hazard."""
+        c = self.slope.cell
+        n = max(1, int(math.ceil(d / c)))
+        f = np.arange(1, n + 1) / n
+        px, py = x + f * d * math.cos(h), y + f * d * math.sin(h)
+        hi = np.clip(np.rint((py - self.slope.y0) / c).astype(int), 0, self.haz_crater.shape[0] - 1)
+        hj = np.clip(np.rint((px - self.slope.x0) / c).astype(int), 0, self.haz_crater.shape[1] - 1)
+        return float(self.haz_crater[hi, hj].mean())
+
+    def planned_route(self, max_m=None):
+        """Where the rover intends to drive next, true frame, starting at the
+        rover: its local plan around what its sensors have found, smoothed
+        (two rounds of corner cutting, as a rover follows a 2 m grid path),
+        cut at max_m metres. The global route beyond it is left out: it is
+        held in the believed frame and would jump with every estimate."""
+        max_m = PLAN_DISPLAY_M if max_m is None else max_m
+        pts = np.array([tuple(self.true[:2])] + [tuple(p) for p in getattr(self, "local_plan", [])[1:]], float)
+        for _ in range(2):   # Chaikin corner cutting; keeps the first and last point
+            if len(pts) < 3:
+                break
+            q = [pts[0]]
+            for a_, b_ in zip(pts[:-1], pts[1:]):
+                q += [0.75 * a_ + 0.25 * b_, 0.25 * a_ + 0.75 * b_]
+            q.append(pts[-1])
+            pts = np.array(q)
+        out, total = [tuple(pts[0])], 0.0
+        for a_, b_ in zip(pts[:-1], pts[1:]):
+            seg = float(np.hypot(*(b_ - a_)))
+            if total + seg >= max_m:
+                t = (max_m - total) / seg if seg > 0 else 0.0
+                out.append(tuple(a_ + t * (b_ - a_)))
+                break
+            out.append(tuple(b_))
+            total += seg
+        return out
+
     def goal_blocked(self):
         """True if the goal (taken where the rover believes it is) is on ground
         the rover may not enter: a sensor hazard or a slope over the limit."""
@@ -247,11 +396,23 @@ class Rover:
         j = int(np.clip(round((gx - self.slope.x0) / c), 0, self.haz_fine.shape[1] - 1))
         return bool(self.haz_fine[i, j]) or float(self.slope.at(gx, gy)) > SLOPE_LIMIT_DEG
 
-    def add_hazards(self, world_xy):
-        """Mark hazard points from the camera (world xy, true frame), widened
-        by the rover's half width, for _feasible and the local planner."""
+    def add_hazards(self, world_xy, kinds=None):
+        """Mark hazard points from the lidar (world xy, true frame), widened
+        by the rover's half width, for _feasible and the local planner.
+        kinds: "crater" | "slope" | "rock" per point (sim/lidar.py); on a
+        sensing rover, craters are costly and the rest no-go. Without kinds
+        every point is no-go and closes its 2 m cell, as before."""
         pts = np.asarray(world_xy, float).reshape(-1, 2)
         if len(pts) == 0:
+            return
+        if kinds is not None and self.sensing:
+            kinds = np.asarray(kinds)
+            soft = kinds == "crater"
+            self._mark(pts[~soft], self.haz_steep)
+            self._mark(pts[soft], self.haz_crater)
+            self.haz_fine = self.haz_steep | self.haz_crater
+            self._refresh_cells(pts)
+            self.n_hazard_cells = int(self.haz_fine.sum())
             return
         sm = self.slope
         c = sm.cell
@@ -274,6 +435,39 @@ class Rover:
             self.haz_2m[i0 // k:i1 // k, j0 // k:j1 // k] |= blk >= HAZARD_CELL_FRAC
         self.n_hazard_cells = int(self.haz_fine.sum())
 
+    def _mark(self, pts, grid):
+        """Set grid cells within the rover's half width of each point."""
+        if len(pts) == 0:
+            return
+        sm, c = self.slope, self.slope.cell
+        H, W = grid.shape
+        r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+        ci = np.rint((pts[:, 1] - sm.y0) / c).astype(int)
+        cj = np.rint((pts[:, 0] - sm.x0) / c).astype(int)
+        for di in range(-r, r + 1):
+            for dj in range(-r, r + 1):
+                i, j = ci + di, cj + dj
+                ok = (i >= 0) & (i < H) & (j >= 0) & (j < W)
+                grid[i[ok], j[ok]] = True
+
+    def _refresh_cells(self, pts):
+        """Recompute closed cells and crater cost for the 2 m cells near pts."""
+        sm, c = self.slope, self.slope.cell
+        H, W = self.haz_steep.shape
+        k = int(round(sm.b / c))
+        r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+        ci = np.rint((pts[:, 1] - sm.y0) / c).astype(int)
+        cj = np.rint((pts[:, 0] - sm.x0) / c).astype(int)
+        i0, i1 = max(ci.min() - r, 0) // k * k, min(ci.max() + r + k, H) // k * k
+        j0, j1 = max(cj.min() - r, 0) // k * k, min(cj.max() + r + k, W) // k * k
+        if i1 <= i0 or j1 <= j0:
+            return
+        shp = ((i1 - i0) // k, k, (j1 - j0) // k, k)
+        steep = self.haz_steep[i0:i1, j0:j1].reshape(shp).mean(axis=(1, 3))
+        crat = self.haz_crater[i0:i1, j0:j1].reshape(shp).mean(axis=(1, 3))
+        self.haz_2m[i0 // k:i1 // k, j0 // k:j1 // k] = steep >= STEEP_CELL_FRAC
+        self.cost_2m[i0 // k:i1 // k, j0 // k:j1 // k] = CRATER_COST * crat
+
     def _drive_true(self, aim_xy, d):
         """Step d metres toward aim_xy (true frame), the nearest heading under the slope limit."""
         if d < 1e-6:
@@ -288,7 +482,7 @@ class Rover:
                 return d, dh
         return 0.0, 0.0
 
-    def _feasible(self, x, y, h, d):
+    def _feasible(self, x, y, h, d, steep_only=False):
         """True if a straight move of d metres on heading h stays under the
         slope limit, checked at every 0.25 m cell along it.
 
@@ -306,10 +500,11 @@ class Rover:
         s = self.slope.at(px, py)
         here = float(self.slope.at(x, y))
         c = self.slope.cell
-        hi = np.clip(np.rint((py - self.slope.y0) / c).astype(int), 0, self.haz_fine.shape[0] - 1)
-        hj = np.clip(np.rint((px - self.slope.x0) / c).astype(int), 0, self.haz_fine.shape[1] - 1)
-        haz = self.haz_fine[hi, hj]
-        on_haz = bool(self.haz_fine[int(np.clip(round((y - self.slope.y0) / c), 0, self.haz_fine.shape[0] - 1)),
+        hz = self.haz_steep if steep_only else self.haz_fine
+        hi = np.clip(np.rint((py - self.slope.y0) / c).astype(int), 0, hz.shape[0] - 1)
+        hj = np.clip(np.rint((px - self.slope.x0) / c).astype(int), 0, hz.shape[1] - 1)
+        haz = hz[hi, hj]
+        on_haz = bool(hz[int(np.clip(round((y - self.slope.y0) / c), 0, self.haz_fine.shape[0] - 1)),
                                     int(np.clip(round((x - self.slope.x0) / c), 0, self.haz_fine.shape[1] - 1))])
         if haz.any() and not (on_haz and not haz[-1]):   # standing on a hazard: may only step off it
             return False

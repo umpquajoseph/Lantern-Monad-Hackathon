@@ -333,6 +333,60 @@ function camera(run, fr, k) {
   $("lidar-cap").textContent = lidarCapText(run, a, fr ? fr.k : k);
   // Rim points are logged per step, in that step's pose: draw them only on a step's own frame.
   drawRims(run, a, fr ? fr.k : k, !!(fr && fr.sub));
+  drawPlan(run, a, fr, k);
+}
+
+// The rover's planned route (logged per step as "plan", world xy, out to
+// ~20 m) as an amber dashed line on the camera image, projected from the pose of the
+// frame shown, so the line moves with every frame (every 0.5 m with
+// sub-frames) and bends as soon as the rover re-plans around a crater.
+function drawPlan(run, a, fr, k) {
+  const kk = fr ? fr.k : k;
+  const r = run.rover(a, kk);
+  if (!r.plan || r.plan.length < 2) return;
+  const c = $("fp-rims").getContext("2d");
+  // The pose the shown image was taken from: its step, plus the sub-frame's
+  // fraction toward the next step.
+  const k1 = Math.min(kk + 1, run.steps.length - 1);
+  const tf = run.times[kk] + (fr ? fr.f || 0 : 0) * (run.times[k1] - run.times[kk]);
+  const [x, y, h] = run.poseAt(a, tf);
+  const camZ = terrain.heightAt(x, y) + FP.camH;
+  const p = (FP.pitch * Math.PI) / 180, cp = Math.cos(p), sp = Math.sin(p);
+  const ch = Math.cos(h), sh = Math.sin(h);
+  // Dashes 0.6 m long with 0.4 m gaps along the route, each drawn as a
+  // projected line segment, thicker nearer the rover.
+  c.strokeStyle = "rgba(255, 200, 60, 0.95)";
+  c.lineCap = "round";
+  const DASH = 0.6, GAP = 0.4;
+  const proj = (wx, wy) => {
+    const dx = wx - x, dy = wy - y;
+    const f = dx * ch + dy * sh, l = -dx * sh + dy * ch;
+    const z = terrain.heightAt(wx, wy) + 0.05 - camZ;
+    const Xc = -l, Yc = f * sp + z * cp, Zc = f * cp - z * sp;
+    if (Zc <= 0.5) return null;
+    return [FP.w / 2 + (FP.fx * Xc) / Zc, FP.h / 2 - (FP.fx * Yc) / Zc, Math.hypot(f, l)];
+  };
+  // Walk the route, emitting [start, end] world points for each dash.
+  let pos = 0, on = true, left = DASH, start = r.plan[0];
+  for (let i = 0; i + 1 < r.plan.length; i++) {
+    const [ax, ay] = r.plan[i], [bx, by] = r.plan[i + 1];
+    const seg = Math.hypot(bx - ax, by - ay);
+    let s0 = 0;
+    while (s0 < seg) {
+      const take = Math.min(left, seg - s0);
+      const s1 = s0 + take;
+      const p1 = [ax + (bx - ax) * s1 / seg, ay + (by - ay) * s1 / seg];
+      if (on) {
+        const pa = proj(start[0], start[1]), pb = proj(p1[0], p1[1]);
+        if (pa && pb) {
+          c.lineWidth = Math.max(1.2, Math.min(6, 20 / Math.max(pa[2], 1)));
+          c.beginPath(); c.moveTo(pa[0], pa[1]); c.lineTo(pb[0], pb[1]); c.stroke();
+        }
+      }
+      left -= take; s0 = s1; pos += take;
+      if (left <= 1e-9) { on = !on; left = on ? DASH : GAP; start = p1; }
+    }
+  }
 }
 
 function captionHtml(run, a, k, sub) {
@@ -343,7 +397,8 @@ function captionHtml(run, a, k, sub) {
   return `Recorded lamp-only view from rover ${a}${every}. 60° view, camera 2.5 m up. Click to enlarge.` +
     (r.nav_on ? "" : ` <span class="off">Crater fixes off.</span>`) +
     (state.opts.rims && r.rims && r.rims.length && !sub ? ` ${r.rims.length} rim points${run.standin && run.standin.rims ? " (stand-in, from the crater map)" : " from the camera"}.` : "") +
-    (r.lidar_frame && !sub ? " Amber dots: planned path. Red marks: lidar hazards." : "");
+    (r.plan && !sub ? " Amber dots: the route it plans to drive, re-planned every 2 m." : "") +
+    (r.lidar_frame && !sub ? " Red marks: lidar hazards." : "");
 }
 
 // Lidar panel caption: the scan taken with this step's live frame (run_demo.py --vision).

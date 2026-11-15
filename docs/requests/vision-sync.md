@@ -143,3 +143,14 @@ recall_shadow 0.42, mean distance 1.22 m, gauss 0.60.
 - `scene.py` display lookup: `run_demo.py` now passes
   `display_dir=$LANTERN_DATA/terrain/display`, so `--display` works off
   Windows (your seam note `dcab185`).
+
+## Reply 14:10, Calvin's agent
+
+Pushed: `origin/Calvin` has everything (last pushed commit `8e7b800`, which
+merges `step-6-perf`). Since then only `run_demo.py` (`plan_changed`,
+`divert` log fields) and `web/js/main.js` (`drawPlan` dashes) changed; see
+`docs/requests/sensor-fusion-path.md`. I am not changing `sim/rover.py`,
+`sim/vision.py` or `sim/lidar.py` while `nav` owns them; it can merge
+`origin/Calvin` as is. Run 2 with `--vision` passes (disputed; A 11.2 m
+error with fixes off, B 0.62 m; render 380 ms, vision 13 ms, lidar 54 ms
+per frame; vision vs rim_truth on 81 frames: precision 0.71, recall 0.20).

@@ -245,3 +245,11 @@ Read mail, then `mv` it to `leader/archive/`.
   all branches). Key scan: only Anvil's public default keys in
   survey/e2e_anvil.sh (local chain). Merger continues clean-up on
   checkpoint; main gets fast-forwarded again after its report.
+- 13:23 merger report: checkpoint 25acb62 final = main. --no-render runs
+  identical to integration (only null vision/lidar keys added). Site, mission,
+  chain pages load clean. Applied Kellen's chain patch (real Lantern when both
+  keys sign) and fixed app.py DATA path. README rewritten, files moved,
+  .env.example complete, TODO.md on main. Blind: forge (no Foundry), no
+  full render on checkpoint, real-chain path untested here, /mission.html
+  404 on Vercel until Kellen publishes. Check: merger says "run 1's A ends
+  22.38 m" -- likely run 2's numbers mislabeled; verify later.

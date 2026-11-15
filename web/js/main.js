@@ -307,7 +307,7 @@ function camera(run, fr, k) {
 }
 
 // The rover's planned route (logged per step as "plan", world xy, out to
-// ~60 m) as amber dots on the camera image, projected from the pose of the
+// ~20 m) as an amber dashed line on the camera image, projected from the pose of the
 // frame shown, so the line moves with every frame (every 0.5 m with
 // sub-frames) and bends as soon as the rover re-plans around a crater.
 function drawPlan(run, a, fr, k) {
@@ -323,25 +323,39 @@ function drawPlan(run, a, fr, k) {
   const camZ = terrain.heightAt(x, y) + FP.camH;
   const p = (FP.pitch * Math.PI) / 180, cp = Math.cos(p), sp = Math.sin(p);
   const ch = Math.cos(h), sh = Math.sin(h);
-  c.fillStyle = "rgba(255, 200, 60, 0.95)";
-  const step = 0.75;   // metres between dots
-  let carry = 0;
+  // Dashes 0.6 m long with 0.4 m gaps along the route, each drawn as a
+  // projected line segment, thicker nearer the rover.
+  c.strokeStyle = "rgba(255, 200, 60, 0.95)";
+  c.lineCap = "round";
+  const DASH = 0.6, GAP = 0.4;
+  const proj = (wx, wy) => {
+    const dx = wx - x, dy = wy - y;
+    const f = dx * ch + dy * sh, l = -dx * sh + dy * ch;
+    const z = terrain.heightAt(wx, wy) + 0.05 - camZ;
+    const Xc = -l, Yc = f * sp + z * cp, Zc = f * cp - z * sp;
+    if (Zc <= 0.5) return null;
+    return [FP.w / 2 + (FP.fx * Xc) / Zc, FP.h / 2 - (FP.fx * Yc) / Zc, Math.hypot(f, l)];
+  };
+  // Walk the route, emitting [start, end] world points for each dash.
+  let pos = 0, on = true, left = DASH, start = r.plan[0];
   for (let i = 0; i + 1 < r.plan.length; i++) {
     const [ax, ay] = r.plan[i], [bx, by] = r.plan[i + 1];
     const seg = Math.hypot(bx - ax, by - ay);
-    for (let s = carry; s < seg; s += step) {
-      const wx = ax + (bx - ax) * s / seg, wy = ay + (by - ay) * s / seg;
-      const dx = wx - x, dy = wy - y;
-      const f = dx * ch + dy * sh, l = -dx * sh + dy * ch;   // rover frame
-      const z = terrain.heightAt(wx, wy) + 0.05 - camZ;
-      const Xc = -l, Yc = f * sp + z * cp, Zc = f * cp - z * sp;
-      if (Zc <= 0.5) continue;
-      const u = FP.w / 2 + (FP.fx * Xc) / Zc, v = FP.h / 2 - (FP.fx * Yc) / Zc;
-      if (u < 0 || v < 0 || u > FP.w || v > FP.h) continue;
-      const rad = Math.max(1.2, Math.min(5, 18 / Math.hypot(f, l)));
-      c.beginPath(); c.arc(u, v, rad, 0, 2 * Math.PI); c.fill();
+    let s0 = 0;
+    while (s0 < seg) {
+      const take = Math.min(left, seg - s0);
+      const s1 = s0 + take;
+      const p1 = [ax + (bx - ax) * s1 / seg, ay + (by - ay) * s1 / seg];
+      if (on) {
+        const pa = proj(start[0], start[1]), pb = proj(p1[0], p1[1]);
+        if (pa && pb) {
+          c.lineWidth = Math.max(1.2, Math.min(6, 20 / Math.max(pa[2], 1)));
+          c.beginPath(); c.moveTo(pa[0], pa[1]); c.lineTo(pb[0], pb[1]); c.stroke();
+        }
+      }
+      left -= take; s0 = s1; pos += take;
+      if (left <= 1e-9) { on = !on; left = on ? DASH : GAP; start = p1; }
     }
-    carry = ((carry - seg) % step + step) % step;
   }
 }
 

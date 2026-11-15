@@ -142,8 +142,7 @@ def simulate(scn, terrain, slope, field=None, cam=None):
                 "fp_frame": cam.last.get(r.agency) if cam is not None and cam.run_dir is not None else None,
                 "lidar_frame": cam.last_lidar.get(r.agency) if cam is not None else None,
                 "lidar_hazards": cam.haz_count.get(r.agency, {}) if cam is not None else {},
-                "plan": ([[round(float(px), 2), round(float(py), 2)] for px, py in r.planned_route()]
-                         if r.sensing and mode[r.agency] in ("survey", "goto") else None),
+                **_plan_fields(r, mode[r.agency]),
                 "particles": _particles_log(r.nav)}
 
     for k in range(MAX_STEPS):
@@ -265,6 +264,41 @@ def _pose_log(r):
 
 def _write_jpg(path, img):
     cv2.imwrite(str(path), img[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+
+
+PLAN_CHANGE_M = 2.0   # assumed: the route counts as changed when its first 15 m moved this far
+                      # (ordinary re-aiming between waypoints moves it about 1 m)
+
+
+def _plan_fields(r, mode):
+    """Per step, with sensors on: "plan", the route the rover is about to drive
+    (world xy, from the rover forward); "plan_changed", true when that route
+    moved more than PLAN_CHANGE_M from the last step's; and "divert", true when
+    it changed right after the sensors added hazards, so the viewer can mark the
+    step and a staged demo can pause just before it."""
+    if not (r.sensing and mode in ("survey", "goto")):
+        return {"plan": None, "plan_changed": False, "divert": False}
+    plan = np.array(r.planned_route(), float)
+    prev = getattr(r, "_last_plan", None)
+    changed = False
+    if prev is not None and len(prev) >= 2 and len(plan) >= 2:
+        along = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(plan, axis=0).T))])
+        pts = plan[along <= 15.0]
+        a, b = prev[:-1], prev[1:]
+        ab = b - a
+        L2 = np.maximum((ab ** 2).sum(1), 1e-9)
+        t = np.clip(((pts[:, None, :] - a) * ab).sum(2) / L2, 0, 1)
+        d = np.hypot(*(pts[:, None, :] - (a + t[..., None] * ab)).transpose(2, 0, 1)).min(1)
+        changed = bool(d.max() > PLAN_CHANGE_M)
+    r._last_plan = plan
+    # A divert: the route changed right after the sensors added hazards
+    # (route changes from simply reaching the next waypoint do not count).
+    # Each step the rover plans first and senses after, so hazards seen on
+    # the previous step are the ones this step's plan reacts to.
+    hist = getattr(r, "_hazard_hist", [0, 0])
+    new_haz = r.n_hazard_cells > hist[-2]
+    r._hazard_hist = [hist[-1], r.n_hazard_cells]
+    return {"plan": np.round(plan, 2).tolist(), "plan_changed": changed, "divert": bool(changed and new_haz)}
 
 
 def _thin_marks(hz, kinds, hz_world, cell_m=1.5, max_range_m=25.0, max_marks=30):

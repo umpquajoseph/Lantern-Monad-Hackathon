@@ -199,16 +199,17 @@ def place_ice(scn, a_steps, x0, y0, rng):
     return IceField(deps)
 
 
-def render(scn, steps, terrain, run_dir, frame_every):
+def render(scn, steps, terrain, run_dir, frame_every, display="full"):
     from sim.scene import Scene
     height, craters, x0, y0, cell = terrain
-    scene = Scene(height, craters, x0, y0, cell)
+    scene = Scene(height, craters, x0, y0, cell, display=display)
     fp_dir = run_dir / "fp"
     fp_dir.mkdir(parents=True, exist_ok=True)
     last = {}
     moved_count = {"A": 0, "B": 0}
     times = []
     posed = {}
+    render.display = scene.display  # what was drawn, for the log (falls back to "off" without assets)
     for k, s in enumerate(steps):
         for ag, r in s["rovers"].items():
             if posed.get(ag) != r["true_pose"]:  # set_rover rebuilds that rover's lamp shadow map
@@ -237,6 +238,9 @@ def main():
     ap.add_argument("--frame-every", type=int, default=1, help="render a first-person frame every N steps a rover moves")
     ap.add_argument("--no-render", action="store_true", help="simulate and write logs without frames")
     ap.add_argument("--stamp", default=None, help="run_id suffix (default: now, YYYYMMDD-HHMM); reuse one to overwrite a run")
+    ap.add_argument("--display", choices=("full", "detail", "off"), default="full",
+                    help="first-person terrain display layer (sim/scene.py): full = rim lips and rocks, "
+                         "detail = texture only (no made-up geometry), off = sim grid only")
     args = ap.parse_args()
 
     t = time.perf_counter()
@@ -286,7 +290,7 @@ def main():
                     r["fp_frame"] = None
             rt = []
         else:
-            rt = render(scn, steps, terrain, run_dir, args.frame_every)
+            rt = render(scn, steps, terrain, run_dir, args.frame_every, args.display)
         log = {
             "run_id": run_id,
             "label": scn["label"],
@@ -298,6 +302,7 @@ def main():
             "standins": {"nav": NavStandin.STANDIN, "rims": RIMS_STANDIN, "planner": PLANNER_STANDIN,
                          "chain": ChainStandin.STANDIN, "ice_sensor": IceSensor.STANDIN},
             "dt_s": round(DT_S, 2),
+            "display": None if args.no_render else render.display,
             "steps": steps,
             "final_finds": finds,
         }

@@ -106,3 +106,5 @@ Doorbells (SendMessage `to` = these addresses; all sessions share the name
 - Integrator briefed (`docs/briefs/integrator.md`, branch `integration`, handle `integrator`, Opus). Owns the single launch app and glue; may merge worker branches into `integration` only. Waiting for Joseph to open its session.
 
 - 11:30 Spine merged into joseph: run1 confirmed, run2 disputed (data/runs/run*-20261115-1108). Scene worker idle; told to expect mail from integrator.
+
+- 11:27 Viewer merged into joseph (1bfd1cf). Screens checked: run1 confirmed, run2 disputed. Flaws: rover camera washed out (scene exposure); hidden-truth labels cover the find label in run 2. Next: hosting.

@@ -42,6 +42,13 @@ Laid out after NASA's "Experience Curiosity" (eyes.nasa.gov/apps/curiosity):
 - **Crater rings.** Joseph's crater map (`terrain.craters`, 11,082 craters) is drawn as red rim rings on the ground within 150 m of the followed rover. The overhead map shows his no-go layer (`map.js`, `opts.nogo`). Both are under Layers → Craters.
 - **"How to read this"** is rebuilt as sections: the two rovers, the ground colours, the camera colours, on chain, and controls.
 
+## 1d. Lidar view and steep craters (UI team)
+
+- **The team's lidar.** `sim/lidar.py` and `sim/scene.py` are taken unchanged from `integration` (Calvin's top-down `Lidar.view`, 40304d4, and the perf work it needs). `sim/mission_render.py` scans at every step that has a camera frame and saves `Lidar.view` as `lidar_frame`, with `lidar_hazards` beside `fp_frame`. `--lidar-only` adds lidar frames to a mission that already has camera frames (565 frames, about 15 ms each). A camera frame from the new `scene.py` differs from a stored one by 1.7/255 on average, so stored camera frames stay.
+- **Camera | Lidar switch.** A pill in the rover camera box, and the same pill over the full-screen first-person view; `L` toggles it. Lidar mode shows the top-down scan (grey safe, amber crater floor, red steeper than 15 deg, rings every 5 m); the caption counts the scan's hazard cells. Runs without lidar frames disable the switch.
+- **Only steep craters ringed.** The red rings on the ground are drawn only for craters with at least one cell steeper than 15 deg across 2 m inside the rim (Joseph's `nogo.png`, from the planner's `SlopeMap`): 6,680 of the 11,082. Shallow craters the planner drives through are not ringed.
+- Keyboard shortcuts now work after clicking the timeline (it kept focus and swallowed them).
+
 ## 2. The larger build (master implementation prompt)
 
 The team agreed to extend Lantern, not rewrite it in React/TypeScript.
@@ -71,7 +78,7 @@ The team agreed to extend Lantern, not rewrite it in React/TypeScript.
 
 ```bash
 export LANTERN_DATA="$PWD/lantern_data"
-python sim/roles.py run --render --publish-run data/runs
+python sim/roles.py run --render --publish-run data/runs   # camera and lidar frames
 python web/build_assets.py
 cp -R data/runs/<mission id> web/runs/ && python web/serve.py   # open /mission.html
 ```

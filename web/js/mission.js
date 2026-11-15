@@ -763,7 +763,7 @@ function showLidar(t) {
   img.hidden = !src;
   if (src && img.dataset.src !== run.dir + src) { img.src = run.dir + src; img.dataset.src = run.dir + src; }
   // Top-down scans (step-6-nav 40304d4) are 800 px wide; older range images 400.
-  const top = img.naturalWidth >= 800;
+  const top = !(img.naturalWidth > 0 && img.naturalWidth < 800);   // not loaded yet: the current kind
   const cap = `${ROLE[a] || "Rover " + a} lidar, ${top ? "from above" : "range image"}`;
   if ($("lid-cap").textContent !== cap) {
     $("lid-cap").textContent = cap;

@@ -5,7 +5,7 @@ and this file first.
 
 ## What it is for
 
-Joseph, 12:53: "dude its just taking froever have a performance agent go
+Joseph, 12:51: "dude its just taking froever have a performance agent go
 and try to improve the performance of the scene/terrain build and
 navigation".
 

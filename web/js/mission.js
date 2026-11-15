@@ -613,7 +613,10 @@ function applyInsets() {
 // Prospector, once per play-through. A rover picked by hand in the hold wins.
 function rearmAutoB(t) {
   const f = S.run.events.find((e) => e.type === "find");
-  if (!f || t < S.run.times[f.k]) S.autoB = { armed: true, at: 0 };
+  if (f && t >= S.run.times[f.k]) return;
+  // The auto switch fired in this play-through: going back before the find returns to the Surveyor.
+  if (!S.autoB.armed && S.autoB.switched && S.rover === "B") setRover("A");
+  S.autoB = { armed: true, at: 0 };
 }
 
 function autoB(prevT, t, now) {
@@ -623,8 +626,8 @@ function autoB(prevT, t, now) {
   if (S.autoB.armed && !S.autoB.at && prevT < ft && t >= ft) S.autoB = { armed: true, at: now + AUTO_B_HOLD_MS, rover: S.rover };
   if (S.autoB.at && now >= S.autoB.at) {
     const untouched = S.rover === S.autoB.rover;
-    S.autoB = { armed: false, at: 0 };
-    if (untouched && S.rover !== "B") { exitFocus(true); setRover("B"); }
+    S.autoB = { armed: false, at: 0, switched: untouched && S.rover !== "B" };
+    if (S.autoB.switched) { exitFocus(true); setRover("B"); }
   }
 }
 

@@ -356,3 +356,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:21 nav fix 3 9025960: any steep point closes its 2 m cell; mission no-go 0.0/0.0, 20 deg max, 0 reversals; run_demo run1 vision confirmed (find 457,418); run2 running. Changes mission poses. Integrator: merge 9025960 + viewer de9d1e2; scene: final mission render from that head after the 46d42d0 interim. Nav: mission poses frozen at 9025960.
 - 14:22 SIM FREEZE: integration 2fad40b (nav 9025960 + viewer de9d1e2 on 97dd89c). Scene told to stop 46d42d0 render and render the final mission from 2fad40b.
 - 14:22 scene: final mission render on 2fad40b started 14:22:30, ETA 14:30.
+- 14:25 nav ba9b549: --vision default for run_demo (--standin-rims). Harness: mission no-go 0.0/0.0; run1 confirmed; run2 disputed. Integrator to merge. Nav last task: score final mission rims with rim_truth, then stop.

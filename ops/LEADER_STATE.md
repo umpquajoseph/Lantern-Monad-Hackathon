@@ -186,3 +186,10 @@ Read mail, then `mv` it to `leader/archive/`.
   banner (hosting, by hand), WORKING.md. Then joseph and main on his word.
   Skip data-shoemaker. Calvin is 45 commits behind integration (scene.py
   about 300 lines); request docs/requests/vision-sync.md for his agent.
+- 13:02 viewer: jitter fixed (84e14bf, main.js only). Live boxes reserve
+  their tallest text per run; clock padded. 0 boxes move over ~33k frames,
+  both runs, desktop and phone (was 10/23). Dashed rectangle = fine-tile
+  edge aliasing; fine tiles hide beyond 150 m (0a75b73). Next: No-go hatch.
+  Joseph asked what Ritvik's Mission Control adds; I proposed taking verify
+  button, science stop, route on camera into the main site after the
+  checkpoint merge; waiting on his answer and on Mission Control placement.

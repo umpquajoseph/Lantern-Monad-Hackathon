@@ -13,7 +13,7 @@ post to Kellen's Lantern contract on Monad testnet.
 |---|---|---|
 | 1 | One sim: the 8-site mission writes our run log, with our renderer and ParticleNav | scene + Ritvik |
 | 2 | Site plays the mission: NASA models, science stops, verify button | viewer |
-| 3 | Smart contract: live chain feed on the site; every tx links to Monadscan | viewer + Kellen |
+| 3 | Smart contract: live chain feed on the site; every tx opens on Monadscan in a second window (it cannot be embedded) | viewer + Kellen |
 | 4 | Live demo: the laptop runs the mission with keys and posts on testnet; the hosted site replays as backup | Kellen |
 | 5 | Vision: rims from camera frames, replacing the stand-in | Calvin |
 | 6 | Faster reruns | perf |

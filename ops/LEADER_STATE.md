@@ -202,3 +202,7 @@ Read mail, then `mv` it to `leader/archive/`.
   (one sim emitting our log format with roles and 8 sites; viewer plays it
   with NASA models, verify, science stops). Open: dispute story in the
   mission; sigma formula (now posts on a real chain).
+- 13:06 Joseph OK: Monadscan in a second window (it sets X-Frame-Options
+  SAMEORIGIN, so no embed). Live demo = laptop posts with keys, site's chain
+  feed (Kellen's chain.js) shows each tx, links open Monadscan. To-do list
+  docs/TODO.md (e60d4fc).

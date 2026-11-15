@@ -1,5 +1,10 @@
 # Hosting the demo
 
+**Live: https://lantern-teal.vercel.app** (Vercel project `lantern` in
+Kellen's scope `kellensniders-projects`, Hobby plan; first published
+2026-11-15 12:20 PST with stand-in runs and no camera frames). Every
+`python web/publish.py vercel` replaces it in about a minute.
+
 The judges' link is a hosted copy of `web/`. Nothing on the server runs: the
 page is static files, with relative paths, and loads three.js from jsdelivr.
 Two folders in `web/` are generated and git-ignored, so the hosted copy is
@@ -50,8 +55,20 @@ The first run creates a Vercel project named `lantern` and links `web/` to it
 `web/.vercelignore` keeps the Python scripts out of the upload. The Vercel
 CLI does not read `.gitignore`, so the generated folders go up.
 
-Set up `VERCEL_TOKEN` (Account Settings, Tokens) if a second machine or an
-agent must deploy without a browser.
+On the first `vercel link` the CLI also tries to connect the GitHub
+repository and prints "Failed to connect umpquajoseph/Monad-Hackathon-Project"
+when the Vercel account cannot see the private repo. Harmless: that is only
+the Git integration (Route B), and the upload goes ahead. It also writes
+`web/.env.local` (a token, git-ignored, never uploaded).
+
+**Publishing from Joseph's machine.** The project lives in Kellen's Hobby
+scope, which has no collaborators, so either:
+
+- Kellen makes a token at vercel.com/account/tokens and Joseph sets
+  `VERCEL_TOKEN` in his shell, then runs `python web/publish.py vercel`
+  (the script links to the existing `lantern` project by name); or
+- Joseph runs `python web/publish.py branch`, Kellen checks out `deploy`
+  somewhere and runs `python web/publish.py vercel --site <that folder>`.
 
 ### Route B, GitHub to Vercel (auto-deploy on push)
 

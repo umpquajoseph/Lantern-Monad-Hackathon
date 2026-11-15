@@ -14,6 +14,7 @@ for each route is in docs/hosting.md. Needs Node 20+ for the vercel route
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -83,10 +84,14 @@ def vercel(site: Path, prod: bool, project: str):
                 sys.exit("[publish] could not link; see above")
     args = base + ["deploy", "--yes", "--archive=tgz"] + (["--prod"] if prod else [])
     say(" ".join(args[3:]) + f"   (in {site})")
-    r = subprocess.run(args, cwd=site, stdout=subprocess.PIPE, text=True)   # progress on stderr, URL on stdout
-    url = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+    r = subprocess.run(args, cwd=site, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    sys.stdout.write(r.stdout)
     if r.returncode:
         sys.exit(f"[publish] vercel deploy failed (exit {r.returncode}); see above")
+    # The CLI prints the deployment URL and, for production, the stable alias.
+    urls = re.findall(r"https://[\w.-]+\.vercel\.app", r.stdout)
+    alias = re.search(r"Aliased\s+(https://\S+)", r.stdout)
+    url = alias.group(1) if alias else (urls[-1] if urls else "(see above)")
     say(f"{'PRODUCTION' if prod else 'preview'}: {url}")
     say("open it, watch the console for 404s, click one tx hash, then paste the URL in docs/WORKING.md")
 

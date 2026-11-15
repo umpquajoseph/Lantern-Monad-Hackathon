@@ -3,3 +3,5 @@
 assets/
 runs/
 .vercel/
+# written by `vercel link`: holds a token, never commit
+.env*

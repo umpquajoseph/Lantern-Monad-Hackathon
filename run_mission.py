@@ -490,7 +490,7 @@ def main():
     if run_dir.exists():
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
-    cam = LiveCamera(scene, run_dir, args.frame_every, sensors=sensors) if scene is not None else None
+    cam = LiveCamera(scene, run_dir, args.frame_every, sensors=sensors, replay=cam1) if scene is not None else None
     steps, chain, truth, states, sites = simulate(scn, terrain, slope, field=field, cam=cam)
     finds = chain.get_finds()
     verdicts = {sid: tr.get("verdict") for sid, tr in truth.items() if "verdict" in tr}

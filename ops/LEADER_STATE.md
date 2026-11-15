@@ -262,3 +262,8 @@ Read mail, then `mv` it to `leader/archive/`.
   and 850 live frames done, display frames 1396/2540 on ONE worker (float
   rounding in (3.4-2)//0.7), ends about 13:40; run 1 0.8 m confirmed, run 2
   22.2 m disputed. Finding passed to perf.
+- 13:27 Stopped scene's 1250 display pass (pids 23996, 8676) to free the
+  machine for the vision run and perf. Joseph, angry: I let perf sit idle
+  from 12:55 to 13:25 behind my own brief's "no heavy benchmarks before
+  13:10" and never checked when 13:10 passed. RULE: any worker blocked on
+  another gets checked at the stated time; never let a wait run silently.

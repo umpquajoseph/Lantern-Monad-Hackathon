@@ -181,3 +181,46 @@ the console for 404s. Then try it at phone width.
 - Rebuilt terrain or new runs are not live until published again.
 - The site is public. The logs hold poses, finds, tx hashes and the contract
   address, nothing else; keys never leave `.env`.
+
+## The demo mission and the live uplink
+
+The hosted demo is one precomputed run of `run_mission.py` (format:
+`docs/handoffs.md`, "Mission log"). The page pauses at its checkpoints, and
+on every play-through posts the mission's two chain calls for real:
+
+| Moment | What the page does |
+|---|---|
+| Surveyor's survey at S2 ends | `postFind` as agency A, the mission's exact values, new transaction |
+| Prospector's instrument sequence ends | `checkFind` as agency B on the find just posted, new transaction |
+
+The calls go through `web/api/chain.js`, a Vercel serverless function that
+holds the agency keys. Nothing is in git: the keys live in the Vercel
+project's environment. One-time setup, from a machine logged in to the
+Vercel CLI, in `web/` (linked to the project):
+
+```
+printf '%s' "$AGENCY_A_PRIVATE_KEY" | npx vercel env add AGENCY_A_PRIVATE_KEY production
+printf '%s' "$AGENCY_B_PRIVATE_KEY" | npx vercel env add AGENCY_B_PRIVATE_KEY production
+printf '%s' "$(openssl rand -hex 6)"  | npx vercel env add DEMO_KEY production
+```
+
+(Source `.env` first, or paste each value when the CLI asks. Repeat with
+`preview` in place of `production` to test on preview deployments.) Then
+publish once more; `GET /api/chain` answers `{"signers": {"A": true, "B": true}}`
+when the keys are in.
+
+The demo link carries the key: `https://lantern-teal.vercel.app/?key=<DEMO_KEY>`.
+Without it the page is a plain replay with the recorded hashes. With it,
+each play-through adds a find and a check to the contract (about 0.03 MON
+each from the agencies' testnet gas; the wallets hold about 9 MON). Anyone
+with the link can trigger them, which is the point of the demo; the key
+only keeps strangers from spending the gas.
+
+Build the run on a machine with VTK (three minutes with frames):
+
+```
+export LANTERN_DATA="$PWD/lantern_data"
+python run_mission.py --out data/runs --stamp demo     # real chain when .env has the keys
+python web/build_assets.py && LANTERN_DATA="$PWD/data" python web/collect_runs.py
+python web/publish.py vercel
+```

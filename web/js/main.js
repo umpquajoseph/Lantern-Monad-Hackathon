@@ -2,6 +2,7 @@
 import { Terrain, Run, loadIndex, fmtClock } from "./data.js";
 import { World, COLORS } from "./world.js";
 import { MapView } from "./map.js";
+import { MissionPlayer, ensureStyles } from "./mission_player.js";
 
 const $ = (id) => document.getElementById(id);
 const hex = (c) => "#" + c.toString(16).padStart(6, "0");
@@ -96,8 +97,30 @@ async function openRun(id, t) {
   const ch = run.chain || {};
   $("chain-hint").textContent = ch.contract && /^0x/.test(ch.contract) ? `contract ${short(ch.contract)}` : ch.contract || (si ? "not posted" : "");
 
+  // Mission checkpoints and live chain calls (docs/handoffs.md, "Mission log").
+  ensureStyles();
+  let box = $("checkpoint");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "checkpoint"; box.className = "checkpoint"; box.hidden = true;
+    $("story").insertAdjacentElement("afterend", box);
+  }
+  state.player = new MissionPlayer(run, {
+    pause: (t) => { state.t = t; state.playing = false; $("play").textContent = "Play"; render(true); },
+    resume: () => { if (!state.playing) togglePlay(); },
+    note: (html) => { box.hidden = !html; box.innerHTML = html || ""; },
+    rerender: () => { state.lastEventsKey = ""; render(true); },
+  });
+
   const ticks = $("ticks");
   ticks.innerHTML = "";
+  for (const c of (run.log.mission && run.log.mission.checkpoints) || []) {
+    const d = document.createElement("div");
+    d.className = "tick cp";
+    d.style.left = `${(100 * run.times[c.step]) / run.tEnd}%`;
+    d.title = c.label;
+    ticks.appendChild(d);
+  }
   for (const e of run.events) {
     const d = document.createElement("div");
     d.className = "tick";
@@ -122,7 +145,11 @@ function bindControls() {
   $("back").onclick = () => stepBy(-1);
   $("fwd").onclick = () => stepBy(1);
   $("speed").onchange = (e) => { state.speed = Number(e.target.value); speedNote(); };
-  $("time").oninput = (e) => { state.t = Number(e.target.value); render(); };
+  $("time").oninput = (e) => {
+    const t = Number(e.target.value);
+    if (t < state.t && state.player) state.player.rewound(t);
+    state.t = t; render();
+  };
   document.querySelectorAll("[data-view]").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
   setView("A");
   document.querySelectorAll("#cam-seg button").forEach((b) => (b.onclick = () => {
@@ -192,7 +219,7 @@ function setView(v) {
 
 function togglePlay() {
   if (!state.run) return;
-  if (!state.playing && state.t >= state.run.tEnd) state.t = 0;
+  if (!state.playing && state.t >= state.run.tEnd) { state.t = 0; if (state.player) state.player.restart(); }
   state.playing = !state.playing;
   $("play").textContent = state.playing ? "Pause" : "Play";
 }
@@ -202,7 +229,9 @@ function stepBy(n) {
   state.playing = false;
   $("play").textContent = "Play";
   const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(state.t) + n));
+  const back = run.times[k] < state.t;
   state.t = run.times[k];
+  if (back && state.player) state.player.rewound(state.t);
   render();
 }
 
@@ -211,9 +240,10 @@ function loop(now) {
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
   if (state.playing && state.run) {
+    const prev = state.t;
     state.t += dt * state.speed;
     if (state.t >= state.run.tEnd) { state.t = state.run.tEnd; state.playing = false; $("play").textContent = "Play"; }
-    render();
+    if (!(state.player && state.player.tick(prev, state.t))) render();
   }
   world.render();
   requestAnimationFrame(loop);
@@ -474,7 +504,7 @@ function feedHtml(run, evs, fresh) {
     const tx = run.fakeTx && !ex
       ? `<span class="fake">fake tx</span><span class="h">${short(e.tx)}</span>`
       : ex ? `<a class="h" href="${ex.replace(/\/$/, "")}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx)}</a>` : `<span class="h">${short(e.tx)}</span>`;
-    return `<div class="ev${e.tx === fresh ? " new" : ""}"><span class="t">${fmtClock(e.t).slice(2)}</span>` +
+    return `<div class="ev${e.tx === fresh ? " new" : ""}${e.live ? " live" : ""}"><span class="t">${fmtClock(e.t).slice(2)}</span>` +
       `<span class="who c-${e.agency}">${e.agency}</span><span>${what}</span><span class="tx">${tx}</span></div>`;
   }).join("") : `<div class="empty">No transactions yet.</div>`;
 }

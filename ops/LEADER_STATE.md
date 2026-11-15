@@ -172,3 +172,9 @@ Read mail, then `mv` it to `leader/archive/`.
   The inbox rule above still does.
 - 12:55 perf started from the inbox (Joseph opened it). Stopped session
   local_a6c203cf is the dead duplicate; told perf.
+- 12:56 integrator report: both ParticleNav runs on the site (623fbd1). Run 2
+  A err 22.38 m, sigma 15.39 m, find disputed. Judge problem: HUD reads
+  "thinks it is within ±15.4 m / actually off by 22.4 m". Sigma decision now
+  urgent (Joseph). Joseph wants a big merge soon: Ritvik, Kellen, Calvin into
+  joseph, then main, as a checkpoint foundation for the final 2 hours. He
+  interrupted my dry merge-tree check; waiting on his word.

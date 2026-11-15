@@ -362,3 +362,4 @@ Read mail, then `mv` it to `leader/archive/`.
 - 14:30 nav rim score on final mission: camera rims precision 0.75, recall 0.24, mean 0.58 m (stand-ins 0.99/0.57/0.07); B steered up to 9.2 m differently, estimate error no worse (0.72 vs 0.80 m); confirmed, 0.0 m no-go. Nav told the lidar toggle task is still open.
 - 14:30 integrator: final mission-demo (2fad40b) live on :8000, 267 steps, 951 camera + 240 top-down lidar frames, 8 checkpoints, no console errors.
 - 14:31 viewer: top-down lidar checks out on final mission (main site + Mission Control captions); lidar_fp_frame agreed with nav; caption flash fixes before 14:40, toggle after. Leader read lidar-mission.png: baked legend unreadable at ~340 px; told nav to enlarge or drop it.
+- 14:32 Joseph: top-down lidar approved as is (legend change withdrawn). A/B camera toggle must also switch the 3D follow target -> viewer, bundled with caption flash fix.

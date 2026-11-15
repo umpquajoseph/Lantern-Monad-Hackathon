@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 sys.path.insert(0, str(WEB))
-from check_site import check, site_files  # noqa: E402
+from check_site import check, frame_keys, frames_named, site_files  # noqa: E402
 
 DEPLOY_BRANCH = "deploy"     # orphan branch holding only the built site
 PROJECT = "lantern"          # Vercel project name -> lantern-<hash>.vercel.app until a domain is set
@@ -46,7 +46,8 @@ def preflight(site: Path):
 
 def prune(site: Path) -> None:
     """Delete files under web/runs/ that no listed log names (frames from a rerun, runs
-    dropped from index.json). web/runs/ holds copies; the data folder is untouched."""
+    dropped from index.json, sub-frames no script reads). web/runs/ holds copies; the
+    data folder is untouched. Which keys count: check_site.frame_keys."""
     runs = site / "runs"
     idx = runs / "index.json"
     if not idx.exists():
@@ -55,6 +56,7 @@ def prune(site: Path) -> None:
     j = json.loads(idx.read_text(encoding="utf8"))
     entries = j if isinstance(j, list) else j.get("runs", [])
     keep = {idx.resolve()}
+    keys = frame_keys(site)
     for r in entries:
         rel = (r.get("path") or f"runs/{r.get('dir', r.get('run_id'))}/log.json").replace("runs/", "", 1)
         log = runs / rel
@@ -64,8 +66,8 @@ def prune(site: Path) -> None:
         lg = json.loads(log.read_text(encoding="utf8"))
         for st in lg.get("steps", []):
             for rv in st.get("rovers", {}).values():
-                if rv.get("fp_frame"):
-                    keep.add((log.parent / rv["fp_frame"]).resolve())
+                for f in frames_named(rv, keys):
+                    keep.add((log.parent / f).resolve())
     gone, mb = 0, 0.0
     for f in runs.rglob("*"):
         if f.is_file() and f.resolve() not in keep:
@@ -76,7 +78,7 @@ def prune(site: Path) -> None:
         if not any(d.iterdir()):
             d.rmdir()
     if gone:
-        say(f"pruned {gone} files ({mb:.0f} MB) under {runs} that no log names")
+        say(f"pruned {gone} files ({mb:.0f} MB) under {runs} that no log names under {'/'.join(keys)}")
 
 
 def copy_site(site: Path, dest: Path) -> tuple[int, float]:

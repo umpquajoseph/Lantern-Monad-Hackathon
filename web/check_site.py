@@ -66,6 +66,26 @@ def site_files(site: Path) -> dict[str, int]:
                 out[rel] = p.stat().st_size
     return out
 
+def frame_keys(site: Path) -> tuple[str, ...]:
+    """Run-log keys that name frames and that the site's scripts actually read. fp_frame
+    always; fp_sub (the spine's half-metre sub-frames, [[fraction, path], ...]) only once a
+    script mentions it, so unread sub-frames are not uploaded and read ones are never pruned."""
+    keys = ["fp_frame"]
+    for js in (site / "js").glob("*.js"):
+        if "fp_sub" in js.read_text(encoding="utf8"):
+            keys.append("fp_sub")
+            break
+    return tuple(keys)
+
+
+def frames_named(rover: dict, keys) -> list[str]:
+    out = []
+    if "fp_frame" in keys and rover.get("fp_frame"):
+        out.append(rover["fp_frame"])
+    if "fp_sub" in keys:
+        out += [p for _, p in rover.get("fp_sub") or []]
+    return out
+
 
 class Report:
     def __init__(self):
@@ -183,6 +203,9 @@ def check(site: Path) -> Report:
                  f"{sum(files[base + w] for w in present) / 1e6:.1f} MB, source: {m.get('source', '?')}")
 
     # Runs, as js/data.js loadIndex and Run.load read them.
+    keys = frame_keys(site)
+    if "fp_sub" in keys:
+        rep.note("the scripts read fp_sub: sub-frames are kept and counted")
     if need("runs/index.json", "loadIndex('runs/') in js/main.js"):
         j = json.loads((site / "runs/index.json").read_text(encoding="utf8"))
         runs = j if isinstance(j, list) else j.get("runs", [])
@@ -196,7 +219,7 @@ def check(site: Path) -> Report:
             log = json.loads((site / path).read_text(encoding="utf8"))
             rdir = posixpath.dirname(path)
             steps = log.get("steps", [])
-            frames = {rv["fp_frame"] for s in steps for rv in s.get("rovers", {}).values() if rv.get("fp_frame")}
+            frames = {f for s in steps for rv in s.get("rovers", {}).values() for f in frames_named(rv, keys)}
             missing = [f for f in frames if posixpath.join(rdir, f) not in have]
             if missing:
                 rep.err(f"{rid}: {len(missing)} of {len(frames)} first-person frames missing, e.g. {rdir}/{missing[0]}")
@@ -230,13 +253,13 @@ def check(site: Path) -> Report:
             except Exception:
                 continue
             rdir = posixpath.dirname(path)
-            used |= {posixpath.join(rdir, rv["fp_frame"]) for st in lg.get("steps", [])
-                     for rv in st.get("rovers", {}).values() if rv.get("fp_frame")}
+            used |= {posixpath.join(rdir, f) for st in lg.get("steps", [])
+                     for rv in st.get("rovers", {}).values() for f in frames_named(rv, keys)}
         unused = [f for f in have if f.startswith("runs/") and f not in used]
         if unused:
             mb = sum(files[f] for f in unused) / 1e6
-            rep.warn(f"{len(unused)} files under runs/ ({mb:.0f} MB) are not named by any log, e.g. {unused[0]}; "
-                     f"`python web/publish.py prune` removes them from web/runs/ (copies; the data folder is untouched)")
+            rep.warn(f"{len(unused)} files under runs/ ({mb:.0f} MB) are not named by any log under {'/'.join(keys)}, "
+                     f"e.g. {unused[0]}; `python web/publish.py prune` removes them from web/runs/ (copies; the data folder is untouched)")
 
     # Size and shape.
     total, n = sum(files.values()), len(files)

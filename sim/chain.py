@@ -35,6 +35,15 @@ Monad notes
   (docs.monad.xyz/developer-essentials/differences), so limits here are a tight margin over
   the estimate instead of a round number.
 
+Dropping it into run_demo.py (replaces sim/standins.py ChainStandin, same four calls)
+    chain = lantern.client().run_scope()      # instead of ChainStandin(salt=...)
+    ...                                       # post_find / check_find / get_finds / last_tx as before
+    "chain": chain.run_log_chain(),           # the log's chain block: chain_id, contract, explorer
+    "standins": {... no "chain" key ...}      # the viewer links real hashes only if standins.chain is absent
+  A RunScope sees only the finds posted since it was made, so B goes to this run's find and
+  not to one from an earlier run (the contract never forgets), and it caches get_finds()
+  for a moment so a rover polling every step does not hit the public RPC's 20 req/s cap.
+
 CLI
     python sim/chain.py finds       # every find on chain, newest last
     python sim/chain.py zones
@@ -73,8 +82,11 @@ class LanternError(Exception):
     """Base class for everything this module raises on purpose."""
 
 
-class LanternRefused(LanternError):
+class LanternRefused(LanternError, ValueError):
     """The contract refused the transaction before anything was sent.
+
+    Also a ValueError, which is what the spine's stand-in raises, so `except ValueError`
+    catches a refusal from either.
 
     `name` is the Solidity error (OwnFind, AlreadyChecked, TooFar, NoSuchFind, NotAnAgency),
     `values` its arguments, `raw` the revert data. (Not `args`: BaseException owns that.)
@@ -298,9 +310,28 @@ class LanternClient:
         """Native MON balance of an agency's wallet, for the dashboard and for faucet checks."""
         return float(self.w3.from_wei(self.w3.eth.get_balance(self.address_of(agency)), "ether"))
 
+    @property
+    def last_tx(self) -> str | None:
+        """Hash of the last transaction sent, or None. Same name as the spine's stand-in."""
+        return self.tx_log[-1]["tx_hash"] if self.tx_log else None
+
     def run_log_chain(self) -> dict:
-        """The `chain` block of the run log (docs/handoffs.md): chain_id, contract, explorer."""
-        return {"chain_id": self.chain_id, "contract": self.address, "explorer": self.address_url()}
+        """The `chain` block of the run log (docs/handoffs.md): chain_id, contract, explorer.
+
+        `explorer` is the explorer's base URL; the viewer links each hash as <explorer>/tx/<hash>
+        (web/README.md). `contract_url` is the contract's own page.
+        """
+        return {
+            "chain_id": self.chain_id,
+            "contract": self.address,
+            "explorer": self.explorer,
+            "contract_url": self.address_url(),
+            "verified": "sourcify" if self.chain_id == 10143 else None,
+        }
+
+    def run_scope(self, cache_s: float | None = None) -> "RunScope":
+        """A view of this client for one demo run: see `RunScope`."""
+        return RunScope(self, cache_s=cache_s)
 
     def tx_url(self, tx_hash: str) -> str | None:
         return f"{self.explorer}/tx/{tx_hash}" if self.explorer else None
@@ -422,6 +453,67 @@ class LanternClient:
         return {}
 
 
+# ---------------------------------------------------------------------- run scope
+
+FINDS_CACHE_S = 2.0  # ASSUMED: how long a RunScope trusts its last get_finds() between its own writes
+
+
+class RunScope:
+    """One demo run's view of the contract, with the stand-in's interface.
+
+    The contract keeps every find ever posted, including other runs' and the smoke test's.
+    A scope remembers the find count when it was created and `get_finds()` returns only the
+    finds posted since, with their real on-chain IDs, so "the first reported find" is this
+    run's find. Writes go straight to the chain. `get_finds()` is cached for `cache_s`
+    seconds, refreshed at once after any write through this scope.
+    """
+
+    STANDIN = None  # not a stand-in: the real contract on Monad testnet
+
+    def __init__(self, client: "LanternClient", cache_s: float | None = None):
+        self.client = client
+        self.cache_s = FINDS_CACHE_S if cache_s is None else float(cache_s)
+        self.first_id = int(client.contract.functions.findCount().call())
+        self.tx_log: list[dict] = []
+        self.last_tx: str | None = None
+        self._cached: list[dict] | None = None
+        self._cached_at = 0.0
+
+    def post_find(self, agency, x, y, sigma, reading, data_hash) -> int:
+        find_id = self.client.post_find(agency, x, y, sigma, reading, data_hash)
+        self._wrote()
+        return find_id
+
+    def check_find(self, agency, find_id, x, y, sigma, reading, agrees) -> str:
+        tx = self.client.check_find(agency, find_id, x, y, sigma, reading, agrees)
+        self._wrote()
+        return tx
+
+    def get_finds(self) -> list[dict]:
+        now = time.time()
+        if self._cached is None or now - self._cached_at > self.cache_s:
+            self._cached = [f for f in self.client.get_finds() if f["id"] >= self.first_id]
+            self._cached_at = now
+        return [dict(f) for f in self._cached]
+
+    def post_safety_zone(self, agency, x, y, radius, until, purpose) -> int:
+        zone_id = self.client.post_safety_zone(agency, x, y, radius, until, purpose)
+        self._wrote()
+        return zone_id
+
+    def get_zones(self, active_only: bool = False) -> list[dict]:
+        return self.client.get_zones(active_only)
+
+    def run_log_chain(self) -> dict:
+        return self.client.run_log_chain()
+
+    def _wrote(self) -> None:
+        entry = self.client.tx_log[-1]
+        self.tx_log.append(entry)
+        self.last_tx = entry["tx_hash"]
+        self._cached = None
+
+
 # ------------------------------------------------------- module-level convenience API
 
 _default: LanternClient | None = None
@@ -453,6 +545,10 @@ def post_safety_zone(agency, x, y, radius, until, purpose) -> int:
 
 def get_zones(active_only: bool = False) -> list[dict]:
     return client().get_zones(active_only)
+
+
+def run_scope(cache_s: float | None = None) -> RunScope:
+    return client().run_scope(cache_s)
 
 
 # -------------------------------------------------------------------------------- CLI

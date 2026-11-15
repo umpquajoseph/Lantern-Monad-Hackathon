@@ -175,9 +175,20 @@ get_finds() -> list[dict]   # each: id, agency, x, y, sigma, reading,
   arguments; nothing is sent.
 - Also available: `chain.client().tx_log` (every transaction sent: `kind`,
   `agency`, `tx_hash`, `url`, `block`, `gas_used`, `seconds`, `find_id`),
-  `chain.client().run_log_chain()` (the run log's `chain` block),
+  `chain.client().last_tx` (hash of the last one, as the spine's stand-in
+  has it), `chain.client().run_log_chain()` (the run log's `chain` block:
+  `chain_id`, `contract`, `explorer` as the explorer's *base* URL so the
+  viewer links `<explorer>/tx/<hash>`, plus `contract_url` and `verified`),
   `post_safety_zone(agency, x, y, radius, until, purpose) -> zone_id` and
   `get_zones()` (Artemis Accords section 11 upgrade).
+- For `run_demo.py`: `chain.run_scope()` is a drop-in for `ChainStandin`,
+  with the same `post_find`, `check_find`, `get_finds`, `last_tx` and a
+  `STANDIN` of `None`. Its `get_finds()` returns only the finds posted since
+  the scope was made (the contract keeps every find from every run), with
+  their real on-chain IDs (0-based), and is cached for 2 s between the
+  scope's own writes so a rover polling every step stays under the public
+  RPC's 20 req/s. Verified end to end: the unmodified spine ran both demo
+  runs against the testnet contract (2026-11-15, see `contracts/README.md`).
 - Read-only use needs no keys: the address and ABI come from
   `sim/lantern_deployment.json` and `sim/lantern_abi.json` (committed, written
   by `contracts/deploy.sh`). The web viewer can read the same two files.

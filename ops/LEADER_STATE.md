@@ -64,6 +64,7 @@ git at 73e77ab. Read this first after a compaction, then `ops/PROTOCOL.md`,
 | terrain | `uds:\\.\pipe\LOCAL\cc-msg-3956fbcec9b14cf96512bbeaf1a4ac16` | local_f1ad01df-54d1-41c3-a8ba-611e840a57d3 | `C:\Monad-Hackathon-terrain`, `step-6-rim-truth` | answer key done (644cf16); revalidates on the new runs. Realism checker for scene and viewer |
 | integrator | `uds:\\.\pipe\LOCAL\cc-msg-e4aa78077ba4f6511766cd4cc20730b8` | local_e783098d-945c-48ad-9f91-90350cb94056 | `C:\Monad-Hackathon-integration`, `integration` | owns `app.py`. Judge pass 1 done (7 items). Second pass after run 2 lands |
 | designer | `uds:\\.\pipe\LOCAL\cc-msg-42257a837952d8f3cb6dda87cb29e0fb` | local_ba34eb33-eb0d-45e1-8f58-6d1df15566b9 | own worktree, `step-5-design` | owns `web/app.css` and `index.html` layout. Judge items 1, 4, 5, 6, 7. Brief `docs/briefs/design.md` |
+| perf | `uds:\.\pipe\LOCAL\cc-msg-b5fa754137f62a9b8f31896194e2668b` | local_e264d133-dfe3-4b08-a7be-8c66b5b4e005 | `C:\Monad-Hackathon-perf`, `step-6-perf` | rerun and asset build speed, identical output. Brief `docs/briefs/performance.md`. Profiles after 1250 lands |
 
 My watcher (run_in_background, re-arm after every mail):
 
@@ -169,3 +170,5 @@ Read mail, then `mv` it to `leader/archive/`.
   session. Never start_session for a worker.
 - Joseph 12:54: the global 4-Opus worker cap does not apply to this project.
   The inbox rule above still does.
+- 12:55 perf started from the inbox (Joseph opened it). Stopped session
+  local_a6c203cf is the dead duplicate; told perf.

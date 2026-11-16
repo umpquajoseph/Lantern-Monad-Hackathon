@@ -625,7 +625,9 @@ function bind() {
     const nt = (Number(e.target.value) / 1000) * S.run.tEnd;
     S.pauseAtT = 0;
     if (nt < S.t) { S.player.rewound(nt); rearmAutoB(nt); }
-    else if (!S.player.busy) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
+    else if (S.player.busy) return;                            // a live post is in flight: the slider waits
+    else if (!S.player.jumped(S.t, nt)) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
+    // (a jump over a chain step posts it live, paused at nt, and says so in the card)
     S.t = nt; exitFocus(); S.dismissed = null; render(true);
   };
   $("step-back").onclick = () => stepBy(-1);
@@ -761,10 +763,10 @@ function stepBy(n) {
   S.playing = false;
   setPlayIcon();
   const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(S.t) + n));
-  const back = run.times[k] < S.t;
+  const back = run.times[k] < S.t, prevT = S.t;
   S.t = run.times[k];
   if (back) { S.player.rewound(S.t); rearmAutoB(S.t); }
-  else $("checkpoint").hidden = true;
+  else if (!S.player.jumped(prevT, S.t)) $("checkpoint").hidden = true;   // stepping onto a chain step posts it live
   exitFocus(true);
   render(true);
 }
@@ -1695,8 +1697,8 @@ function txLink(e) {
 function chainHtml(e) {
   const unit = S.run.unit || "";
   const head = e.type === "find"
-    ? `postFind #${e.find_id} · ${esc(e.site_id || "")}`
-    : `checkFind #${e.find_id} · ${esc(e.site_id || "")} <span class="res ${e.agrees ? "Positive" : "Negative"}">${e.agrees ? "agrees" : "disagrees"}</span>`;
+    ? `postFind #${e.live ? e.live_find_id : e.find_id} · ${esc(e.site_id || "")}`
+    : `checkFind #${e.live ? e.live_find_id : e.find_id} · ${esc(e.site_id || "")} <span class="res ${e.agrees ? "Positive" : "Negative"}">${e.agrees ? "agrees" : "disagrees"}</span>`;
   return `<div class="chain-item${e.live ? " live" : ""}">
     <div class="what"><i class="dot ${e.agency}"></i> ${ROLE[e.agency]} ${e.agency} · ${head}${e.live ? `<span class="tag monad" style="margin-left:auto">Live</span>` : ""}</div>
     <div class="split"><div><span class="k">Position</span>${e.x.toFixed(1)}, ${e.y.toFixed(1)} ± ${e.sigma.toFixed(2)} m</div><div><span class="k">Reading</span>${e.reading.toFixed(2)}${esc(unit)}</div></div>

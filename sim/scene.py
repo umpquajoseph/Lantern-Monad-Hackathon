@@ -58,10 +58,14 @@ from vtk.util import numpy_support as vnp
 # ---------------------------------------------------------------------------
 # Camera and lamp: grounded in ShadowNav.
 # ---------------------------------------------------------------------------
-# Atha et al. 2024, sec. V and Table 1: best stereo configuration is the
-# camera 2.5 m off the ground with the light 0.2 m below it.
-CAMERA_HEIGHT_M = 2.5
-LAMP_BELOW_CAMERA_M = 0.2
+# Camera on the Scout's mast, lamp below it: sim/settings.py camera_height_m
+# (brief p.6, 1.6 m mast) and lamp_below_camera_m (A24 sec. IV, 0.2 m).
+try:
+    from sim.settings import Settings as _Settings
+except ImportError:  # run as a script from sim/
+    from settings import Settings as _Settings
+CAMERA_HEIGHT_M = _Settings().camera_height_m
+LAMP_BELOW_CAMERA_M = _Settings().lamp_below_camera_m
 # Atha et al. 2024, sec. IV: the field rig camera has a 60 deg horizontal FOV.
 HFOV_DEG = 60.0
 # Atha et al. 2024, Table 1 caption: with the light below the camera, stereo
@@ -90,8 +94,10 @@ TONE_KNEE = 0.6               # display-linear (0.79 after gamma)
 
 # Display layer (sim/terrain_display.py, docs/handoffs.md "Terrain display").
 # "full": rim lips and rocks in the fine mesh, plus the detail tile and albedo
-# per pixel. "detail": texture and albedo only, no made-up geometry (for vision,
-# so invented lips do not become edges). "off": the plain sim grid, Lambert.
+# per pixel. "detail": texture, albedo and rocks, no rim lips (for vision, so
+# invented lips do not become edges, while rocks still cast shadows and hide
+# ground as they would; draft item 23 "turn rocks on"). "off": the plain sim
+# grid, Lambert.
 DISPLAY_MODES = ("full", "detail", "off")
 TILE_MIP_LEVELS = 9           # detail tile prefiltered 2048 -> 8 texels, so far ground does not sparkle
 MICRO_SHADOW_STEPS_M = (0.01, 0.02, 0.035, 0.055, 0.08, 0.12, 0.17, 0.24, 0.33)  # assumed: march for tile-relief shadows
@@ -730,7 +736,7 @@ class Scene:
     def __init__(self, height, craters, x0, y0, cell, display="full", display_dir=None, strength=None,
                  shared=None):
         """display: "full" (display layer with rim lips and rocks), "detail"
-        (its texture, albedo and Hapke shading only: no made-up geometry, for
+        (its texture, albedo, Hapke shading and rocks, but no rim lips, for
         the vision step), or "off" (the sim grid, Lambert, as before).
         strength: terrain_display's one knob (None = its built default).
         shared: a folder written by share(); its big arrays are opened as
@@ -783,7 +789,7 @@ class Scene:
             def brdf(mu0, mu, cos_g):  # Hapke I/F (Xu et al. 2020 Eqs. 5-12), equal to mu0 at the reference
                 return TD.hapke_radf(mu0, mu, np.arccos(np.clip(cos_g, -1.0, 1.0)), hp) * k
             self._brdf = brdf
-            self._mesh_layers = ("lips", "rocks") if display == "full" else ()
+            self._mesh_layers = ("lips", "rocks") if display == "full" else ("rocks",)
 
         self.poses = {}     # agency -> (x, y, heading), world
         self.lamps = {}     # agency -> _Lamp (local frame), built lazily
@@ -1596,7 +1602,7 @@ def main():
     ap.add_argument("--out", default="frames/scene_drive.mp4")
     ap.add_argument("--frames", type=int, default=160)
     ap.add_argument("--display", choices=DISPLAY_MODES, default="full",
-                    help="display layer: full (lips, rocks, texture), detail (texture only), off (sim grid)")
+                    help="display layer: full (lips, rocks, texture), detail (rocks, texture), off (sim grid)")
     args = ap.parse_args()
 
     t = time.perf_counter()

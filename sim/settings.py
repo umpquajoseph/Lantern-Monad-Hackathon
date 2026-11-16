@@ -129,6 +129,22 @@ class Settings:
     p_fail_neutron: float = S(0.01, ASSUMED)
     swap_downtime_h: float = S(24.0, ASSUMED)
 
+    # ------------------------------------- camera navigation (showcase only)
+    # Batch runs sample navigation (above) and never read these.
+    camera_height_m: float = S(1.6, "brief p.6 '1.6 m mast'; draft item 24. Camera assumed at the mast top. "
+                                    "A24 sec. IV tested 1.5, 2.5 and 3 m")
+    lamp_below_camera_m: float = S(0.2, "A24 sec. IV 'Light offsets of 0.2 m below the camera'")
+    # The truth: how the odometer errs (sim/rover.py, sim/mission.py). The
+    # bias is drift_frac above.
+    odom_noise_frac: float = S(0.005, ASSUMED + "; white distance noise per step, share of the step")
+    odom_heading_noise_rad: float = S(0.0005, ASSUMED + "; heading noise per step (~0.7 deg after 1 km)")
+    # The filter's own model (sim/nav.py), set without reference to the
+    # truth above, as a real filter is tuned without knowing it.
+    pf_drift_sigma: float = S(0.02, "C23 sec. 6B 'utilizing 2% odometry noise'")
+    pf_step_noise_frac: float = S(0.01, ASSUMED + "; filter's process noise, not the truth's odom_noise_frac")
+    pf_heading_walk_rad: float = S(0.001, ASSUMED + "; filter's process noise, not the truth's "
+                                                     "odom_heading_noise_rad")
+
     # -------------------------------------------------------------- logging
     log_spacing_m: float = S(10.0, ASSUMED + " (record size, not physics)")
     plan_cell_m: float = S(5.0, "LOLA 5 m spacing (code sim/terrain.py:57)")
@@ -157,6 +173,37 @@ class WorldRanges:
     deposit_peak_wt: tuple = S((1.0, 5.6), "upper end brief p.12 (LCROSS); lower end the find threshold")
     drift_frac: tuple = S((0.01, 0.04), "draft 4.6 'odometry drift from 1 to 4%'")
     dock_reg_sigma_m: tuple = S((0.5, 5.0), ASSUMED + "; draft item 15")
+    # ---- part 3 (sim/terrain.py campaign_world). The true crater list holds
+    # the sizes ShadowNav can use, so the share missing from the starting map
+    # is a share of craters a Scout could have matched.
+    crater_d_m: tuple = S((7.5, 20.0), "A24 sec. V-B 'craters of diameters between 7.5 m and 20 m can be "
+                                       "detected reliably'")
+    crater_sfd_b: float = S(2.0, ASSUMED + "; cumulative N(>D) ~ D^-b (code sim/terrain.py:106)")
+    ice_reach_m: float = S(3000.0, ASSUMED + "; hidden deposits lie on PSR floor within this driving "
+                                            "distance of the dock (1.5 km descent + half the 4 km survey, "
+                                            "brief p.6)")
+
+
+@dataclass(frozen=True)
+class SiteBuild:
+    """How the candidate PSR terrain windows were chosen (sim/psr_sites.py).
+
+    Build-time only: a run reads the built window, never these. Kept here so
+    the choice of site is sourced like every other number.
+    """
+    window_m: float = S(8000.0, ASSUMED + "; square window centred on the dock, 4 km each way, "
+                                          "so all ground within ice_reach_m of the dock is inside it")
+    cell_m: float = S(5.0, "PGDA product 81 (ldem_87s_5mpp): native 5 m/pixel LOLA mosaic")
+    slope_limit_deg: float = S(15.0, "brief p.7 '15 deg slope limit for routes (VIPER's own design limit)'")
+    reach_m: float = S(3000.0, ASSUMED + "; driving distance from the dock to PSR floor counted as "
+                                        "surveyable (1.5 km descent + half the 4 km survey, brief p.6)")
+    dock_max_from_psr_m: float = S(1500.0, "brief p.6 '1.5 km descent'")
+    dock_min_sun: float = S(0.30, ASSUMED + "; average sunlit fraction at the ground (Mazarico, "
+                                          "AVGVISIB_85S_060M) the dock site must reach. The 20 m Power "
+                                          "Tower (brief p.3) sees more sun than the ground")
+    psr_min_km2: float = S(1.0, ASSUMED + "; smallest PSR screened")
+    screen_px_m: float = S(40.0, ASSUMED + "; screening resolution (level-3 overview of the 5 m mosaic)")
+    dock_samples: int = S(60, ASSUMED + "; dock positions tried per site at 5 m")
 
 
 def sources(obj) -> list[tuple[str, object, str]]:
@@ -169,7 +216,7 @@ def unlabelled(obj) -> list[str]:
 
 
 if __name__ == "__main__":
-    for obj in (Settings(), WorldRanges()):
+    for obj in (Settings(), WorldRanges(), SiteBuild()):
         print(f"== {type(obj).__name__}")
         for name, val, src in sources(obj):
             print(f"{name:26} {val!s:28} {src}")

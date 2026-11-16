@@ -8,8 +8,8 @@ fine display height.
     python sim/terrain_look.py            # writes data/terrain/display/look_*.png
     python sim/terrain_look.py --strength 0 --tag bare
 
-Camera and lamp, first person: [A24] sections IV-V, camera 2.5 m above the
-ground, lamp 0.2 m below it, 60 deg horizontal field of view. Pitch, lamp
+Camera and lamp, first person: camera on the 1.6 m mast (brief p.6), lamp
+0.2 m below it ([A24] sec. IV), 60 deg horizontal field of view. Pitch, lamp
 cone, exposure, chase camera and fill light copy the ASSUMED values in
 sim/scene.py so the two renderers can be compared.
 """
@@ -27,8 +27,12 @@ from scipy.ndimage import map_coordinates, rotate
 import terrain as T
 import terrain_display as TD
 
-CAMERA_HEIGHT_M = 2.5        # [A24] sec. V
-LAMP_BELOW_CAMERA_M = 0.2    # [A24] sec. V
+try:
+    from sim.settings import Settings as _Settings
+except ImportError:  # run as a script from sim/
+    from settings import Settings as _Settings
+CAMERA_HEIGHT_M = _Settings().camera_height_m          # brief p.6 1.6 m mast
+LAMP_BELOW_CAMERA_M = _Settings().lamp_below_camera_m  # [A24] sec. IV
 HFOV_DEG = 60.0              # [A24] sec. IV
 FP_SIZE = (640, 480)         # sim/scene.py, ASSUMED there
 CAMERA_PITCH_DEG = 15.0      # sim/scene.py, ASSUMED there

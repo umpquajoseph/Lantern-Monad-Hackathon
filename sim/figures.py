@@ -207,7 +207,7 @@ def fig_confirm(bdir: Path, runs):
     caps = sorted({float(r["confirm_bound_max_m"]) for r in runs})
     edges = np.linspace(0, 0.7, 8)
     mids = (edges[:-1] + edges[1:]) / 2
-    fig, axes = plt.subplots(2, len(pols), figsize=(3.6 * len(pols) + 0.8, 6.2), sharex=True, sharey="row",
+    fig, axes = plt.subplots(3, len(pols), figsize=(3.6 * len(pols) + 0.8, 8.4), sharex=True, sharey="row",
                              squeeze=False, constrained_layout=True)
     for j, pol in enumerate(pols):
         for k, cap in enumerate(caps):
@@ -215,6 +215,7 @@ def fig_confirm(bdir: Path, runs):
                   and r.get("wrong_match_rate") and int(r.get("searches") or 0) > 0]
             conf = np.full(len(mids), np.nan)
             false = np.full(len(mids), np.nan)
+            refused = np.full(len(mids), np.nan)
             nsr = np.zeros(len(mids), int)
             for b in range(len(mids)):
                 inb = [r for r in rs if edges[b] <= float(r["wrong_match_rate"]) < edges[b + 1]]
@@ -223,28 +224,33 @@ def fig_confirm(bdir: Path, runs):
                 if n:
                     conf[b] = sum(int(r["confirmed"]) for r in inb) / n
                     false[b] = sum(int(r["false_confirmed"]) for r in inb) / n
+                    refused[b] = sum(int(r["search_bound_too_large"]) for r in inb) / n
             c, mk = SERIES[k % 4], MARKERS[k % 4]
-            lab = f"limit {cap:g} m"
-            for ax, y in ((axes[0, j], conf), (axes[1, j], false)):
+            lab = f"limit {cap:g} m" if cap < 1e6 else "no limit"
+            for ax, y in ((axes[0, j], conf), (axes[1, j], false), (axes[2, j], refused)):
                 full = nsr >= 10
                 ax.plot(mids, y, color=c, lw=2, label=lab)
                 ax.plot(mids[full], y[full], ls="none", marker=mk, ms=7, color=c, mec="white", mew=1.2)
                 ax.plot(mids[~full], y[~full], ls="none", marker=mk, ms=7, mfc="white", mec=c, mew=1.5)
                 _label_end(ax, mids, y, lab, c)
+            if cap >= 1e6:
+                continue
             th = confirm_threshold(cap)
             for ax in axes[:, j]:
                 ax.axvline(th, color=c, lw=1, ls=(0, (4, 3)))
             axes[0, j].annotate(f"{th:.2f}", (th, 1.0), xytext=(3, -2), textcoords="offset points",
                                 fontsize=8, color=INK2, va="top")
         axes[0, j].set_title(pol, fontsize=10, color=INK)
-        axes[1, j].set_xlabel("Wrong-match rate in the run (wrong / fixes)", color=INK, fontsize=9.5)
-        for i in range(2):
+        axes[2, j].set_xlabel("Wrong-match rate in the run (wrong / fixes)", color=INK, fontsize=9.5)
+        for i in range(3):
             _style(axes[i, j])
             axes[i, j].set_xlim(0, 0.8)
             axes[i, j].set_ylim(0, 1.05 if i == 0 else None)
     axes[0, 0].set_ylabel("Searches confirmed", color=INK, fontsize=9.5)
     axes[1, 0].set_ylabel("Searches falsely confirmed", color=INK, fontsize=9.5)
     axes[1, 0].set_ylim(bottom=0)
+    axes[2, 0].set_ylabel("Searches refused\n(combined bound over the limit)", color=INK, fontsize=9.5)
+    axes[2, 0].set_ylim(0, 1.05)
     axes[0, 0].legend(frameon=False, fontsize=8.5, loc="upper right")
     fig.suptitle("Deposit check against false-match rate. Dashed: best-case limit (both Scouts just fixed); "
                  "hollow = under 10 searches in the bin", fontsize=9, color=INK2)

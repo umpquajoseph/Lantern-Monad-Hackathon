@@ -1,106 +1,80 @@
 # Lantern
 
-**A shared map of lunar ice that rovers write themselves, and check for each other.**
+**A campaign simulator for the PROSPECT Scouts, for the RASC-AL 2027 paper.**
 
-**See it live: https://lantern-teal.vercel.app**
+One dock in a permanently shadowed crater sends out one to five identical
+Scouts. Each sortie drives a survey, stops to fix its position against crater
+rims, logs ice readings, and comes home to charge. A second Scout checks
+each ice find. Craters the Scouts see but the orbital map lacks are added to
+a shared crater map, so later sorties navigate on a better map.
 
-![Mission Control: the Prospector drills at the Surveyor's ice find, with the Surveyor parked beside it](docs/img/readme/hero-prospector-drills-the-find.jpg)
+Lantern runs thousands of seeded worlds through that workflow and writes
+the numbers for the paper's section 4.6 and Figure 1. A local site replays
+any run.
 
-## The problem
+![The runs list: one row per campaign, its setup and results](docs/img/campaign/runs-list.jpg)
 
-Water ice at the Moon's south pole is the resource every lunar plan depends
-on. NASA's LCROSS impact measured water in a crater there. But that ice sits
-in craters that never see sunlight. Rover missions need to know their
-position to within 10 m of the orbital map. A rover tracking itself by its
-own wheels and cameras drifts about 2%, so after 500 m it can be off by more
-than that (JPL, ShadowNav, 2023).
+## What a run is
 
-Rovers will also come from different agencies and companies. The Artemis
-Accords ask nations to share science data, but they do not require anyone to
-report a find. Lantern gives agencies a voluntary way to report finds and to
-check each other's.
+A run is one world seed and one set of design choices: fleet size, when to
+check position, whether to refine the map, top speed, drill limit. The world
+is drawn from the seed alone, so every design choice is tried on the same
+worlds. Position error is sampled from ShadowNav's measured results, not
+re-derived (`sim/campaign.py`). Every constant lives in `sim/settings.py`
+with its source, or marked `assumed`.
 
-## What Lantern does
+Each run writes `record.json` and `poses.npz` to
+`data/campaigns/<batch_id>/<run_id>/`. The format is in
+[docs/handoffs.md](docs/handoffs.md), "Campaign simulator". The scope is in
+[docs/campaign-spec.md](docs/campaign-spec.md).
 
-- **Rovers find their way in the dark.** A lamp under the camera makes each
-  crater rim throw a shadow line. Matching those rims to the orbital map
-  fixes the rover's position, the method from JPL's ShadowNav.
-- **A Surveyor posts what it finds.** When it measures ice, it sends the find
-  to a contract on Monad, together with how sure it is of its position.
-- **A Prospector from another agency checks it.** It reads the find from the
-  chain, drives there on its own navigation and measures again. The contract
-  accepts a check only from a different agency, and only from close enough.
-- **The record is public and tamper-evident.** Every find and every check is
-  a transaction. Agreements and disagreements both stay on the record.
+## Run it
 
-## The mission
+    python -m sim.campaign --seed 42           # one run: 3 Scouts x 16 sorties
+    python -m sim.batch --batch-id small50 --worlds 50 \
+        --sweep n_scouts=1,2,3,4,5 --sweep check_policy=fixed,p95,before_work
+    python app.py                              # the site, at http://localhost:8000
 
-Mission Control replays one complete mission, with two rovers and two candidate
-sites picked from orbit. The replay pauses at each key moment, and you press
-Play to go on.
+A batch writes `summary.csv`, `by_sortie.csv`, `drills.csv`, `report.md`
+(hand checks and what is still a stand-in) and Figures 1a and 1b.
 
-**1. Two candidate sites from orbit.** The Surveyor (blue) sets out for S1.
-The Prospector (orange) waits for a find to appear on chain.
+## The site
 
-![Mission overview at the start](docs/img/readme/1-mission-overview.jpg)
+`python app.py` builds the terrain assets it needs and serves the runs from
+the data folder. The site runs locally only.
 
-**2. A crater the map missed.** The orbital map is too coarse to show small
-craters. The planned route (amber) runs straight at one. Red marks ground
-too steep to drive.
+- **Runs list.** Every run in a batch with its setup and results. Sort by any
+  column, filter by fleet size, check policy and map refinement.
+- **Run map.** The crater seen from above. A slider steps through the
+  sorties: each Scout's believed path, the ice map with each find's 95%
+  position bound, the craters added to the map, and a time bar for every
+  sortie.
+- **Hidden truth.** By default the map shows only what the Scouts knew. A
+  labelled button reveals the truth: where they really drove, the real
+  deposits, the craters missing from their map, and the ones added in the
+  wrong place.
+- **3D replay.** Any sortie from its saved poses, with every Scout that was
+  out at the same time. "Next cross-check" jumps to the moment a second
+  Scout searches around another's find.
 
-![The Surveyor about to meet a crater the orbital map does not show](docs/img/readme/2-crater-the-map-missed.jpg)
+![A run's map with the hidden truth revealed](docs/img/campaign/run-map-truth.jpg)
 
-**3. Around it.** The rover's lidar sees the crater, and the route bends
-around it.
+![The 3D replay: S1 searching around S2's ice find](docs/img/campaign/replay-cross-check.jpg)
 
-![The planned route bends around the crater](docs/img/readme/3-route-bends-around-it.jpg)
+## What is real and what is not
 
-**4. A find, posted on chain.** S1 is dry. At S2 the Surveyor measures ice and
-posts the find with its position, ±0.6 m. The Prospector reads it from the
-chain, not from the Surveyor, and sets off.
+Real: the LOLA elevation of the Shoemaker crater region (5 m and 20 m), and
+the position errors ShadowNav measured after a crater-rim fix (Cauligi et
+al., 2023, Table 2; the papers are in `docs/sources/`). Simulated: the crater population below
+orbital resolution, the ice deposits, and every instrument reading. The
+current world is a 6 km window of Shoemaker terrain, not shadowed floor;
+every page says so in a banner until the real world model lands. The 3D
+replay is for looking. It re-simulates nothing, and the paper's numbers come
+from the batch files, not from the site.
 
-![The Surveyor's ice find at S2, posted on chain](docs/img/readme/4-find-posted-fill-off.jpg)
+## History
 
-**5. The check.** The Prospector drives to the find, drills, cores and
-analyses. The Surveyor has parked a few metres aside.
-
-![The Prospector drilling at the find](docs/img/readme/5-prospector-drills.jpg)
-
-**6. Confirmed.** The Prospector's reading agrees, so the find is confirmed.
-Both transactions sit in the record.
-
-![The record: the find and the check, confirmed](docs/img/readme/6-record-confirmed.jpg)
-
-## Fill light on and off
-
-The rovers see only what their own lamps light. Mission Control can add a
-fill light for viewers, so you can see the ground. Here is the same moment
-both ways.
-
-| What the rovers see: only their lamps | Fill light added for viewers |
-|---|---|
-| ![Fill light off](docs/img/readme/4-find-posted-fill-off.jpg) | ![Fill light on](docs/img/readme/4-find-posted-fill-on.jpg) |
-
-## Built on
-
-- **ShadowNav (NASA JPL):** finding a rover's position in the dark from
-  lamp-lit crater rims (Cauligi et al., 2023; Atha et al., 2024).
-- **NASA LOLA terrain:** laser elevation maps of the lunar south pole, near
-  Shoemaker crater, from the Lunar Reconnaissance Orbiter.
-- **NASA 3D rover models:** Opportunity and Perseverance, Mars rovers standing
-  in for lunar ones.
-- **Monad:** the Lantern contract is deployed on Monad testnet and its source
-  is verified, with 25 tests on its checking rules.
-
-Every source, and what each one contributed, is listed in
-[docs/SOURCES.md](docs/SOURCES.md).
-
-**Simulated:** the ice deposits and every instrument reading are simulated,
-not NASA data. The screenshots show a recorded replay, whose transactions are
-marked "stand-in" in the record.
-
-## Team
-
-Calvin, Joseph, Kellen and Ritvik, at Monad Blitz Oregon, 15 November 2026.
-
-How to run it, the code layout and the tests are in [docs/TECHNICAL.md](docs/TECHNICAL.md).
+Lantern began at Monad Blitz Oregon on 15 November 2026 as a shared,
+on-chain map of lunar ice. That README, with its link to the hackathon
+build, is in [docs/hackathon-README.md](docs/hackathon-README.md). The chain
+code is in `_archive/`.

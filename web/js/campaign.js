@@ -152,6 +152,16 @@ export function standinOf(rec) {
   return parts.join(" ") || null;
 }
 
+// The 3D and map assets for a run's terrain site: assets/terrain/<site>/ when
+// web/build_assets.py --site built them, else the Shoemaker drive area's.
+export async function assetsBase(rec) {
+  const site = rec.terrain && rec.terrain.site;
+  if (site && /^[A-Za-z0-9_-]+$/.test(site) && site !== "shoemaker") {
+    try { if ((await fetch(`assets/terrain/${site}/meta.json`)).ok) return `assets/terrain/${site}/`; } catch { /* fall back */ }
+  }
+  return "assets/terrain/";
+}
+
 // The 5 m terrain window under a run (web/build_windows.py), if the site has one.
 export async function windowFor(rec, base = "assets/terrain/") {
   try {

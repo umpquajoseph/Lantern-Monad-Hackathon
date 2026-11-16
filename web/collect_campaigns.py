@@ -136,6 +136,21 @@ def standin_text(rec: dict) -> str | None:
     return " ".join(parts) or None
 
 
+def site_assets(t: dict, say) -> None:
+    """3D assets for a terrain site with its own 0.25 m grid (web/build_assets.py --site), once."""
+    from sim.terrain import TERRAIN_DIR
+    site = str((t or {}).get("site") or "")
+    if not NAME.match(site) or site == "shoemaker" or not (TERRAIN_DIR / f"{site}.npz").exists():
+        return
+    meta = ROOT / "web" / "assets" / "terrain" / site / "meta.json"
+    if meta.exists() and meta.stat().st_mtime >= (TERRAIN_DIR / f"{site}.npz").stat().st_mtime:
+        return
+    import build_assets
+    say(f"assets: building web/assets/terrain/{site}/")
+    build_assets.main(site)
+    build_assets.OUT = ROOT / "web" / "assets" / "terrain"
+
+
 def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[dict]:
     from build_windows import build as build_window
     batches = []
@@ -161,6 +176,7 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
                 copy_run(by_name[r["run_id"]], DST / bdir.name / r["run_id"])
         for t in meta.get("terrains", {}).values():
             build_window(t, say=say)
+            site_assets(t, say)
         if rows:
             batches.append({"batch_id": bdir.name, "standin": meta.get("standin"), "showcase": meta.get("showcase"), "runs": rows})
         say(f"campaigns: {bdir.name}, {len(rows)} runs" + (f" ({missing} in summary.csv have no record)" if missing else "")

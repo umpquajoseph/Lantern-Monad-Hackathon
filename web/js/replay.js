@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { Terrain, Run } from "./data.js";
 import { World, COLORS } from "./world.js";
-import { CampaignRun, SCOUT_COLOR, STATUS_COLOR, ACTIVITY, OUTCOME_WORD, fmtNum, fmtDay, standinBanner, standinOf, bannersOf, windowFor } from "./campaign.js";
+import { CampaignRun, SCOUT_COLOR, STATUS_COLOR, ACTIVITY, OUTCOME_WORD, fmtNum, fmtDay, standinBanner, standinOf, bannersOf, windowFor, assetsBase } from "./campaign.js";
 
 const $ = (id) => document.getElementById(id);
 const P = new URLSearchParams(location.search);
@@ -109,7 +109,8 @@ async function main() {
   $("run-link").href = `run.html?batch=${encodeURIComponent(batch || "")}&run=${encodeURIComponent(id || "")}`;
   $("run-link").textContent = id;
   try {
-    [cr, terrain] = await Promise.all([CampaignRun.load(batch, id), Terrain.load("assets/terrain/")]);
+    cr = await CampaignRun.load(batch, id);
+    terrain = await Terrain.load(await assetsBase(cr.rec));
   } catch (e) {
     $("loading").textContent = String(e.message).includes("assets") ? "Terrain assets missing. Run python app.py." : "Run not found.";
     throw e;

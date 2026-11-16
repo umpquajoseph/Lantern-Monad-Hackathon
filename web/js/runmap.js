@@ -3,7 +3,7 @@
 // Everything drawn comes from the run record and its poses (docs/handoffs.md).
 import {
   CampaignRun, SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, OUTCOME_WORD, OUTCOME_SHORT, TIME_KINDS,
-  fmtNum, fmtDay, fmtHM, timeBar, timeLegend, standinBanner, standinOf, bannersOf, windowFor, esc,
+  fmtNum, fmtDay, fmtHM, timeBar, timeLegend, standinBanner, standinOf, bannersOf, windowFor, assetsBase, esc,
 } from "./campaign.js";
 import { Terrain } from "./data.js";
 
@@ -60,16 +60,18 @@ async function main() {
 // Hillshade under the map from the 3D viewer's terrain assets, when the run
 // is on the tile they were built from. Display only.
 async function loadShade(rec) {
-  if (!rec.terrain || !/shoemaker/i.test(rec.terrain.site || rec.terrain.file || "")) return;
-  const T = await Terrain.load("assets/terrain/");
-  if (!/shoemaker/i.test(T.meta.source || "")) return;
+  if (!rec.terrain) return;
+  const T = await Terrain.load(await assetsBase(rec));
+  // Only ground the record's site: Shoemaker records use the default assets, others their own.
+  const site = String(rec.terrain.site || rec.terrain.file || "");
+  if (!(/shoemaker/i.test(site) ? /shoemaker/i.test(T.meta.source || "") : T.meta.site === site)) return;
   const far = await T.loadBackdrop("backdrop");
   const near = await T.loadBackdrop("backdrop_near");
   const win = await windowFor(rec);
   let wgrid = null;
   if (win) { T.meta.window = win; wgrid = await T.loadBackdrop("window"); }
   for (const g of [far, near, wgrid, T.coarse]) if (g) shade.push(hillshade(g));
-  $("mapnote").textContent = "Ground: LOLA elevation, 20 m and 5 m (real). Inside the 1 km drive area, 1 m with made-up small craters." +
+  $("mapnote").textContent = `Ground: LOLA elevation, 20 m and 5 m (real). Inside the 1 km ${T.meta.site && T.meta.site !== "shoemaker" ? "showcase grid" : "drive area"}, 1 m with made-up small craters.` +
     (rec.crater_map.scope ? ` Craters: ${rec.crater_map.scope}.` : "");
 }
 

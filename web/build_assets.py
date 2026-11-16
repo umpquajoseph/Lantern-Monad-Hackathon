@@ -17,7 +17,14 @@ This writes, under web/assets/terrain/:
 Heights: metres = hmin + value * hscale. Row 0 of every grid is the south
 edge (rows run north), as in docs/handoffs.md.
 
-    python web/build_assets.py
+    python web/build_assets.py                   # Shoemaker drive area -> web/assets/terrain/
+    python web/build_assets.py --site s89_134e   # a PSR site -> web/assets/terrain/s89_134e/
+
+For a PSR site (terrain's sim/psr_sites.py) the grid is data/terrain/<site>.npz,
+the display layer data/terrain/display_<site>/, and the backdrops come from
+the site's own 5 m LOLA window (data/terrain/psr_sites/<site>.npz): native as
+backdrop_near, averaged to 20 m as backdrop. Its display layer's own
+backdrops, if any, are not used (terrain: cut from the wrong tile).
 """
 from __future__ import annotations
 
@@ -107,13 +114,28 @@ def far_normal(z, cell):
     return rgb[::-1]  # north up
 
 
-def main():
+def site_backdrops(site):
+    """(backdrop, backdrop_near) dicts of height, x0, y0, cell from the site's 5 m LOLA window."""
+    z = np.load(DATA / "psr_sites" / f"{site}.npz")
+    h, x0, y0, c = z["height"].astype(np.float32), float(z["x0"]), float(z["y0"]), float(z["cell"])
+    k = 4
+    n0, n1 = (h.shape[0] // k) * k, (h.shape[1] // k) * k
+    far = h[:n0, :n1].reshape(n0 // k, k, n1 // k, k).mean((1, 3))
+    # A block of k cells centred at x0 + c * (k - 1) / 2.
+    return ({"height": far, "x0": x0 + c * (k - 1) / 2, "y0": y0 + c * (k - 1) / 2, "cell": c * k},
+            {"height": h, "x0": x0, "y0": y0, "cell": c})
+
+
+def main(site=None):
+    global OUT
+    if site:
+        OUT = OUT / site
     OUT.mkdir(parents=True, exist_ok=True)
-    height, craters, x0, y0, cell = load_terrain(DATA / "shoemaker.npz")
+    height, craters, x0, y0, cell = load_terrain(DATA / f"{site or 'shoemaker'}.npz")
     H, W = height.shape
     # The planner works on the sim grid as is, so the no-go layer does too.
     nogo = nogo_png(height, x0, y0, cell, OUT / "nogo.png")
-    disp = DATA / "display"
+    disp = DATA / (f"display_{site}" if site else "display")
     dj = disp / "display.json"
     d = json.loads(dj.read_text()) if dj.exists() else None
     if d is not None and (disp / "lips.npy").exists():
@@ -141,7 +163,9 @@ def main():
     (OUT / "craters.json").write_text(json.dumps(np.round(craters, 2).tolist(), separators=(",", ":")))
 
     meta = {
-        "source": "shoemaker.npz (step 2: LOLA Shoemaker 5 m window, upsampled, with stamped small craters)",
+        "source": (f"{site}.npz (sim/terrain.py build --site {site}: LOLA 5 m, upsampled, with stamped small craters)" if site
+                   else "shoemaker.npz (step 2: LOLA Shoemaker 5 m window, upsampled, with stamped small craters)"),
+        "site": site or "shoemaker",
         "x0": x0, "y0": y0, "cell": cell, "rows": H, "cols": W,
         "hmin": hmin, "hscale": hscale,
         "coarse": {"file": "coarse.bin", "step": COARSE, "rows": coarse.shape[0], "cols": coarse.shape[1]},
@@ -160,10 +184,14 @@ def main():
         # Hapke [X20] parameters, from display.json (terrain worker's sources).
         meta["hapke"] = {k: P[k] for k in ("hapke_w", "hapke_b", "hapke_bs0", "hapke_hs")}
         meta["hapke"]["source"] = d.get("sources", {}).get("hapke", "")
+        bds = dict(zip(("backdrop", "backdrop_near"), site_backdrops(site))) if site else {}
         for key, name in (("backdrop", "backdrop.npz"), ("backdrop_near", "backdrop_near.npz")):
-            if not (disp / name).exists():
+            if site:
+                bd = bds[key]
+            elif (disp / name).exists():
+                bd = np.load(disp / name)
+            else:
                 continue
-            bd = np.load(disp / name)
             bh = bd["height"]
             bmin = float(bh.min()) - 1.0
             bscale = (float(bh.max()) + 1.0 - bmin) / 65535.0
@@ -171,9 +199,13 @@ def main():
             meta[key] = {"file": f"{key}.bin", "x0": float(bd["x0"]), "y0": float(bd["y0"]),
                          "cell": float(bd["cell"]), "rows": bh.shape[0], "cols": bh.shape[1],
                          "hmin": bmin, "hscale": bscale}
-        meta["backdrop"]["note"] = "LOLA Shoemaker 5 m averaged to 20 m, whole 20 km tile (real)"
-        if "backdrop_near" in meta:
-            meta["backdrop_near"]["note"] = "LOLA Shoemaker native 5 m, 5 km square (real)"
+        if site:
+            meta["backdrop"]["note"] = f"LOLA 5 m mosaic (87S) averaged to 20 m, the site's 8 km window (real)"
+            meta["backdrop_near"]["note"] = f"LOLA 5 m mosaic (87S), the site's 8 km window, native (real)"
+        else:
+            meta["backdrop"]["note"] = "LOLA Shoemaker 5 m averaged to 20 m, whole 20 km tile (real)"
+            if "backdrop_near" in meta:
+                meta["backdrop_near"]["note"] = "LOLA Shoemaker native 5 m, 5 km square (real)"
         if (disp / "far_detail_height.npy").exists():
             fz = np.load(disp / "far_detail_height.npy") * P["strength"]
             imwrite(OUT / "far_normal.png", far_normal(fz, P["far_tile_cell_m"])[..., ::-1])
@@ -215,4 +247,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--site", help="a PSR site with data/terrain/<site>.npz (default: the Shoemaker drive area)")
+    main(ap.parse_args().site)

@@ -1,10 +1,11 @@
 """The showcase run (docs/campaign-spec.md 6.4): camera navigation and first-person frames, for the video.
 
-    python -m sim.showcase                 # render, navigate on the camera, write the record
-    python -m sim.showcase --no-render     # quick check: stand-in rims, no frames
+    python -m sim.showcase                     # on the PSR site s89_134e: render, navigate on the camera
+    python -m sim.showcase --site shoemaker    # on the Shoemaker drive area
+    python -m sim.showcase --no-render         # quick check: stand-in rims, no frames
 
-One short campaign on the 1 km drive area of the Shoemaker tile (0.25 m
-grid with made-up small craters, sim/terrain.py). S1 leaves the dock and
+One short campaign on a 1 km, 0.25 m grid with made-up small craters
+(sim/terrain.py): by default terrain's PSR site s89_134e. S1 leaves the dock and
 surveys. Its camera sees crater rims under its own lamp (sim/scene.py,
 sim/vision.py), and a particle filter matches them to the crater map
 (sim/nav.py, after ShadowNav). It crosses buried ice and logs a find with its
@@ -21,10 +22,8 @@ S1 and S2, and writes the result in the campaign record format
 The record says plainly, in `showcase`, that its navigation is Lantern's own
 and not the source of the paper's numbers, which come from sim/campaign.py.
 
-Why the drive area and not the campaign window: a camera needs ground finer
-than the 5 m LOLA window the campaign uses. The drive area is the only
-0.25 m ground with craters a lamp can light. It is Shoemaker terrain, not
-shadowed crater floor.
+Why a 1 km grid and not the campaign window: a camera needs ground finer
+than the 5 m LOLA window the campaign uses, with craters a lamp can light.
 """
 from __future__ import annotations
 
@@ -43,34 +42,56 @@ from sim.ice import FIND_THRESHOLD_WT
 from sim.nav import ParticleNav
 from sim.rover import SPEED_M_S, SlopeMap
 from sim.settings import Settings
-from sim.terrain import DATA, TERRAIN_DIR, default_path, load_terrain
+from sim.terrain import DATA, load_terrain
 from sim.vision import Vision
 
 OUT = DATA / "campaigns" / "showcase"
 K95 = math.sqrt(-2.0 * math.log(0.05))   # 2.448: 95% radius of a circular Gaussian, x sigma (sim/nav.py's sigma is per axis)
 ACT = {"survey": 1, "goto": 6, "wait": 8, "done": 1}   # web/js/campaign.js ACTIVITY codes (docs/handoffs.md poses)
 
-# Metres from the drive area's (x0, y0) corner. S1's start and goal are run_demo.py run 1's
-# (ground checked under the slope limit); the dock and S2 sit just west of S1.
-DOCK = (294.0, 300.0)                # assumed
-SCENARIO = dict(key="showcase", label="Showcase: S1 finds ice by camera navigation, S2 confirms it",
-                seed=101, a_fixes=True,
-                a_start=(300.0, 300.0, 0.6), a_goal=(620.0, 520.0), find_at_m=260.0,
-                b_start=(296.0, 300.0, 0.6))
+# Starts and goals are metres from the grid's (x0, y0) corner, on ground under the slope limit
+# for 3 m round (checked when chosen). The dock is in world metres.
+SITES = {
+    # run_demo.py run 1's start and goal; the dock just west of S1.
+    "shoemaker": dict(
+        terrain=DATA / "terrain" / "shoemaker.npz", display=DATA / "terrain" / "display", dock_off=(294.0, 300.0),
+        a_start=(300.0, 300.0, 0.6), b_start=(296.0, 300.0, 0.6), a_goal=(620.0, 520.0), find_at_m=260.0,
+        ground="Shoemaker LOLA with made-up small craters, not shadowed crater floor."),
+    # Terrain's PSR site (sim/psr_sites.py; data/terrain/s89_134e.npz, 0.25 m, LOLA 5 m upsampled
+    # with stamped craters). The dock is the site's own, 200 m west of the fine grid; the Scouts start
+    # on the floor near the end of the 887 m descent, which is off the fine grid.
+    "s89_134e": dict(
+        terrain=DATA / "terrain" / "s89_134e.npz", display=DATA / "terrain" / "display_s89_134e",
+        dock=(22117.5, -21057.5),
+        # Floor here is near the slope limit; this pair completes (S2 jammed on a route from (611, 473)).
+        a_start=(638.96, 412.07, 0.8), b_start=(633.96, 412.07, 0.8), a_goal=(900.0, 700.0), find_at_m=150.0,
+        ground="An unnamed PSR crater at 89.0 S 130 E (LOLA 5 m, upsampled with made-up small craters). "
+               "The Scouts start on the floor at the end of the descent; the descent itself is not shown."),
+}
 
-SHOWCASE_NOTE = ("Showcase run (sim/showcase.py): the Scouts navigate on their own lamp camera, with Lantern's "
-                 "rim finder and particle filter. This is not how the paper's numbers are made, and none of them "
-                 "come from it. Ground: Shoemaker LOLA with made-up small craters, not shadowed crater floor.")
+
+def scenario(site):
+    c = SITES[site]
+    return dict(key="showcase", label="Showcase: S1 finds ice by camera navigation, S2 confirms it", seed=101,
+                a_fixes=True, a_start=c["a_start"], a_goal=c["a_goal"], find_at_m=c["find_at_m"], b_start=c["b_start"])
+
+
+def showcase_note(site):
+    return ("Showcase run (sim/showcase.py): the Scouts navigate on their own lamp camera, with Lantern's "
+            "rim finder and particle filter. This is not how the paper's numbers are made, and none of them "
+            "come from it. Ground: " + SITES[site]["ground"])
 
 
 def bound95(sigma):
     return round(float(sigma) * K95, 3)
 
 
-def to_record(run_id, steps, field, finds, ft, terrain, sensing, display):
+def to_record(run_id, steps, field, finds, ft, terrain, sensing, display, site):
     """run_demo's log -> campaign-record/1 (docs/handoffs.md), with S1 = rover A, S2 = rover B."""
     height, craters, x0, y0, cell = terrain
     s = Settings()
+    scn, cfg = scenario(site), SITES[site]
+    dock = cfg.get("dock") or (x0 + cfg["dock_off"][0], y0 + cfg["dock_off"][1])
     name = {"A": "S1", "B": "S2"}
     sid = {"A": "S1-01", "B": "S2-01"}
     kw_h = s.avg_load_w / 1000.0 / 3600.0      # energy per second at the draft's average load
@@ -141,23 +162,23 @@ def to_record(run_id, steps, field, finds, ft, terrain, sensing, display):
                         "checks": 0, "wrong_matches": 0})
     n = height.shape[0]
     xmin, ymin = x0 - cell / 2, y0 - cell / 2
-    summary = {"run_id": run_id, "seed": SCENARIO["seed"], "n_scouts": 2, "check_policy": "every step",
+    summary = {"run_id": run_id, "seed": scn["seed"], "n_scouts": 2, "check_policy": "every step",
                "map_refinement": False, "top_speed_mps": SPEED_M_S, "sorties": 2, "sorties_ok": 2,
                "finds": 1, "confirmed": int(status == "confirmed"), "false_confirmed": 0,
                "n_deposits": len(field.deposits)}
     return {
         "format": "campaign-record/1",
         "run_id": run_id,
-        "seed": SCENARIO["seed"],
+        "seed": scn["seed"],
         "made_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "nav": f"camera: {ParticleNav.NAME}" + (f"; rims from {Vision.NAME}" if sensing else "; stand-in rims (no render)"),
-        "showcase": SHOWCASE_NOTE,
-        "label": SCENARIO["label"],
+        "showcase": showcase_note(site),
+        "label": scn["label"],
         "settings": {"battery_kwh": s.battery_kwh, "avg_load_w": s.avg_load_w, "speed_mps": SPEED_M_S,
                      "step_m": rd.STEP_M, "note": "the loop is run_demo.py's; energy is the draft's average load over time"},
-        "terrain": {"site": "shoemaker drive area", "file": Path(default_path()).name, "x0": x0, "y0": y0, "cell": cell,
+        "terrain": {"site": site, "file": Path(cfg["terrain"]).name, "x0": x0, "y0": y0, "cell": cell,
                     "bounds": [xmin, ymin, xmin + n * cell, ymin + n * cell]},
-        "dock": {"x": x0 + DOCK[0], "y": y0 + DOCK[1]},
+        "dock": {"x": dock[0], "y": dock[1]},
         "scouts": ["S1", "S2"],
         "standins": [] if sensing else ["rims: stand-in rims from the crater map, no camera (--no-render)"],
         "crater_map": {"start": [[round(float(c[0]), 2), round(float(c[1]), 2), round(float(c[2]), 2)] for c in craters],
@@ -177,19 +198,21 @@ def main():
     ap.add_argument("--no-render", action="store_true", help="stand-in rims, no camera frames (a quick check)")
     ap.add_argument("--display", choices=("full", "detail", "off"), default="full")
     ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--site", choices=sorted(SITES), default="s89_134e")
     a = ap.parse_args()
+    cfg, SCENARIO = SITES[a.site], scenario(a.site)
 
-    terrain = load_terrain(default_path())
+    terrain = load_terrain(cfg["terrain"])
     height, craters, x0, y0, cell = terrain
     slope = SlopeMap(height, x0, y0, cell)
     scene = display = None
     if not a.no_render:
         from sim.scene import Scene
         t = time.perf_counter()
-        scene = Scene(height, craters, x0, y0, cell, display=a.display, display_dir=TERRAIN_DIR / "display")
+        scene = Scene(height, craters, x0, y0, cell, display=a.display, display_dir=cfg["display"])
         display = scene.display
         print(f"scene built in {time.perf_counter() - t:.0f} s", flush=True)
-    run_id = "showcase-" + datetime.now().strftime("%Y%m%d-%H%M")
+    run_id = f"showcase-{a.site}-" + datetime.now().strftime("%Y%m%d-%H%M")
     run_dir = Path(a.out) / run_id
     t0 = time.perf_counter()
     # Pass 1 learns S1's path, so the deposit can sit on it (run_demo.py's docstring says why this is fair).
@@ -201,7 +224,7 @@ def main():
     cam = rd.LiveCamera(scene, run_dir, 1, sensors=True, replay=cam1) if scene is not None else None
     steps, chain, ft = rd.simulate(SCENARIO, terrain, slope, field=field, cam=cam)
     print(f"pass 2: {len(steps)} steps, {steps[-1]['t'] / 3600:.2f} h simulated, in {time.perf_counter() - t0:.0f} s", flush=True)
-    rec, poses = to_record(run_id, steps, field, chain.get_finds(), ft, terrain, scene is not None, display)
+    rec, poses = to_record(run_id, steps, field, chain.get_finds(), ft, terrain, scene is not None, display, a.site)
     (run_dir / "record.json").write_text(json.dumps(rec, separators=(",", ":")), encoding="utf8")
     np.savez_compressed(run_dir / "poses.npz", **poses)
     lidar = run_dir / "lidar"

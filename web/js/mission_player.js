@@ -32,6 +32,13 @@ export class MissionPlayer {
     this.liveChecked = new Set();          // live find ids that already got B's check (one per agency; a second is refused)
     this.busy = false;
     this.restart();
+    if (!this.live.enabled) {
+      // No ?key= in the link: say so loudly at the start, so a rehearsal is not
+      // mistaken for a live run (the feed would show the recorded hashes).
+      const box = document.getElementById("checkpoint");
+      const keep = box && !box.hidden ? box.innerHTML + " " : "";
+      this.hooks.note(`${keep}<span class="cp-tag err">Not live</span> This link has no demo key: nothing will be posted to Monad, the feed shows the recorded transactions. Open the demo link with <code>?key=…</code> to post live.`);
+    }
     if (this.live.enabled) this.live.probe().then((info) => {
       if (!info || !info.signers || !info.signers.A || !info.signers.B || !info.keyed) {
         const why = !info ? "api/chain is missing" : !info.keyed ? "DEMO_KEY is not set on the server" : "the uplink has no signing keys yet";

@@ -14,8 +14,14 @@ worktrees through sim/terrain.py DATA). Arrays follow docs/handoffs.md
 rows run north; x, y are south polar stereographic metres (R 1737.4 km,
 true scale at the pole), the frame of every LOLA product used here.
 
-Datasets (all NASA LOLA team products, U.S. Government work; PGDA asks that
-the papers below be cited; read 16 Nov 2026):
+Licence. Every PGDA dataset below is NASA LOLA team work. PGDA's
+"Reproduction Guidelines" link points to the NASA Images and Media Usage
+Guidelines (https://www.nasa.gov/nasa-brand-center/images-and-media/, read
+16 Nov 2026): NASA content "generally [is] not subject to copyright in the
+United States", may be used for educational purposes and in "computer
+graphical simulations", and "NASA should be acknowledged as the source".
+PGDA asks that the papers below be cited. The IAU Gazetteer is a public
+USGS service. Datasets:
 """
 from __future__ import annotations
 
@@ -85,9 +91,12 @@ GAZETTEER = {
 # Chosen from `screen` (40 m), then checked at 5 m (`build`). `screen_dock`
 # is the 5 m check's dock and the centre of the fetch; `build` refines it.
 SITES = {
-    "haynes": dict(label="Haynes rim PSR", screen_dock=(14438.0, -30632.0)),
-    "s89_014e": dict(label="PSR at 89.4 S 14 E", screen_dock=(4592.0, 19018.0)),
-    "s89_134e": dict(label="PSR at 89.0 S 134 E", screen_dock=(22192.0, -21642.0)),
+    # Unnamed PSRs; key = nearest named crater or dock lat/lon. All three are
+    # closed lows: floor median 47-111 m below a ring 50-300 m outside it.
+    "haynes": dict(label="Unnamed PSR 3 km outside Haynes' rim (88.9 S 151 E), 15 km2",
+                   screen_dock=(14438.0, -30632.0)),
+    "s89_014e": dict(label="Unnamed PSR at 89.3 S 20 E, 7.7 km2", screen_dock=(4592.0, 19018.0)),
+    "s89_134e": dict(label="Unnamed PSR crater at 89.0 S 130 E, 5.9 km2", screen_dock=(22192.0, -21642.0)),
 }
 
 

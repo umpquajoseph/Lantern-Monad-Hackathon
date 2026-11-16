@@ -428,3 +428,5 @@ Read mail, then `mv` it to `leader/archive/`.
 - main fast-forwarded to origin/main 51d136b, then d2be7f9 (spec draft, ignores). Base for parts: campaign-handoffs 9fa39e4.
 - Workers, Opus, own windows and worktrees: engine, crossing, terrain, viewer (C:\Monad-Hackathon-<part>, branch campaign-<part>). Briefs docs/briefs/campaign-*.md.
 - Hosting off until approved; new Vercel project later; never republish lantern-teal.
+
+- 2026-11-16 14:03 Joseph: the leader leads intent and the paper concept; technical specs are the workers' job. Workers told their settings and record details are theirs to change.

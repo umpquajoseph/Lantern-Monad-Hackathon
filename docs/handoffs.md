@@ -377,7 +377,8 @@ One folder per run, `data/campaigns/<batch_id>/<run_id>/` (git-ignored):
   "crater_map": {
     "start": [[x, y, d]],
     "added": [{"crater_id": "C7", "x": 0, "y": 0, "d": 8.0, "after_sortie": "S2-03",
-               "bound95": 2.1, "sightings": 2, "true_crater": 1312, "true_offset_m": 1.4}]
+               "bound95": 2.1, "sightings": 2, "true_crater": 12, "true_offset_m": 1.4,
+               "misplaced": false}]
   },
   "sorties": [
     {"sortie_id": "S1-01", "scout": "S1", "n": 1, "t_start": 0.0, "t_end": 79200.0,
@@ -477,7 +478,10 @@ World side; takes truth, for part 1's world model and scoring only:
 - `wrong_match_cause(view, s, rng)`, `make_sighting(true_crater,
   scout_true_xy, scout_err_xy, scout_bound95, anchor, rng, s)`.
 - `deposit_at`, `score_search` (`truth_has_deposit`, `false_confirmed`,
-  `missed`), `score_added` (`true_crater`, `true_offset_m`, `misplaced`).
+  `missed`), `score_added(added, truth_craters_missing, s)` (`true_crater`,
+  `true_offset_m`, `misplaced`), all three written into `crater_map.added`.
+  `true_crater` indexes `truth.craters_missing`. `misplaced` (offset beyond
+  `map_match_tol_m`) means that crater is still effectively missing.
 
 A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_wt", "anchor", "status"}`,
 `status` one of `find`, `confirmed`, `unconfirmed`, `drilled`.

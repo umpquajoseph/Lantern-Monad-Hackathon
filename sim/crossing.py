@@ -435,9 +435,16 @@ def score_search(find_true_xy, result: str, truth_ice, s: Settings, match_true_x
             "missed": result == "unconfirmed" and has}
 
 
-def score_added(added: dict, true_craters, s: Settings) -> dict:
-    """Nearest true crater to an added crater, its offset, and whether it is misplaced."""
-    tc = np.asarray(true_craters, dtype=np.float64).reshape(-1, 3)
+def score_added(added: dict, craters_missing, s: Settings) -> dict:
+    """Nearest missing crater to an added crater, its offset, and whether it is misplaced.
+
+    Pass `truth.craters_missing` (the true craters absent from the starting
+    map), so `true_crater` indexes that list in the record. Sightings are
+    made only of craters absent from the map, so the nearest one is the
+    crater the sightings came from. `misplaced` (offset beyond
+    `map_match_tol_m`) means that true crater is still effectively missing.
+    """
+    tc = np.asarray(craters_missing, dtype=np.float64).reshape(-1, 3)
     r = np.hypot(tc[:, 0] - added["x"], tc[:, 1] - added["y"])
     j = int(np.argmin(r))
     return {"true_crater": j, "true_offset_m": round(float(r[j]), 3),

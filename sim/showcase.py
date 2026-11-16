@@ -41,7 +41,7 @@ import run_demo as rd
 from sim.ice import FIND_THRESHOLD_WT
 from sim.nav import ParticleNav
 from sim.rover import SPEED_M_S, SlopeMap
-from sim.settings import Settings
+from sim.settings import Settings, WorldRanges
 from sim.terrain import DATA, load_terrain
 from sim.vision import Vision
 
@@ -84,6 +84,11 @@ def showcase_note(site):
 
 def bound95(sigma):
     return round(float(sigma) * K95, 3)
+
+
+def orbital_map(craters):
+    """The craters the Scouts' map holds: those at least orbital_map_min_d_m across, as in the campaign."""
+    return craters[craters[:, 2] >= WorldRanges().orbital_map_min_d_m]
 
 
 def to_record(run_id, steps, field, finds, ft, terrain, sensing, display, site):
@@ -160,6 +165,17 @@ def to_record(run_id, steps, field, finds, ft, terrain, sensing, display, site):
                         "time_s": {"drive": dur, "check": 0.0, "reading": 0.0, "drill": 0.0, "wait": 0.0},
                         "energy_end_kwh": round(float(p[-1, 7]), 3), "distance_m": round(dist, 1),
                         "checks": 0, "wrong_matches": 0})
+    small = craters[craters[:, 2] < WorldRanges().orbital_map_min_d_m]
+    path = np.concatenate([p[:, 1:3] for p in poses.values()])[::4]
+    near = np.zeros(len(small), bool)
+    for i in range(0, len(path), 200):
+        dd = np.hypot(small[:, None, 0] - path[None, i:i + 200, 0], small[:, None, 1] - path[None, i:i + 200, 1]).min(1)
+        near |= dd <= 30.0 + small[:, 2] / 2
+    missing = small[near]
+
+    def rnd(cs):
+        return [[round(float(c[0]), 2), round(float(c[1]), 2), round(float(c[2]), 2)] for c in cs]
+
     n = height.shape[0]
     xmin, ymin = x0 - cell / 2, y0 - cell / 2
     summary = {"run_id": run_id, "seed": scn["seed"], "n_scouts": 2, "check_policy": "every step",
@@ -181,14 +197,15 @@ def to_record(run_id, steps, field, finds, ft, terrain, sensing, display, site):
         "dock": {"x": dock[0], "y": dock[1]},
         "scouts": ["S1", "S2"],
         "standins": [] if sensing else ["rims: stand-in rims from the crater map, no camera (--no-render)"],
-        "crater_map": {"start": [[round(float(c[0]), 2), round(float(c[1]), 2), round(float(c[2]), 2)] for c in craters],
-                       "added": [], "scope": "the drive area's whole crater list, which the filter matches against"},
+        "crater_map": {"start": rnd(orbital_map(craters)), "added": [],
+                       "scope": f"the map the filter matches against: craters of {WorldRanges().orbital_map_min_d_m:g} m and up; "
+                                "truth.craters_missing lists the smaller ones within 30 m of a driven path"},
         "finds": [{"find_id": 1, "scout": "S1", "sortie_id": "S1-01", "est": find["est"], "bound95": find["bound95"],
                    "reading_wt": find["reading_wt"], "status": status}],
         "sorties": sorties,
         "events": events,
         "frames": {"note": rd.FRAMES_NOTE["fp_frame"], "display": display, "by_sortie": frames},
-        "truth": {"label": "hidden truth", "ice": field.to_log(), "craters_missing": []},
+        "truth": {"label": "hidden truth", "ice": field.to_log(), "craters_missing": rnd(missing)},
         "summary": summary,
     }, poses
 
@@ -217,12 +234,15 @@ def main():
     t0 = time.perf_counter()
     # Pass 1 learns S1's path, so the deposit can sit on it (run_demo.py's docstring says why this is fair).
     cam1 = rd.LiveCamera(scene, None, 1, sensors=True) if scene is not None else None
-    a_steps, _, _ = rd.simulate(SCENARIO, terrain, slope, field=None, cam=cam1)
+    # The filter matches against the orbital map; the scene and the camera see every crater.
+    nav_terrain = (height, orbital_map(craters), x0, y0, cell)
+    print(f"map: {len(nav_terrain[1])} of {len(craters)} craters (>= {WorldRanges().orbital_map_min_d_m:g} m)", flush=True)
+    a_steps, _, _ = rd.simulate(SCENARIO, nav_terrain, slope, field=None, cam=cam1)
     field = rd.place_ice(SCENARIO, a_steps, x0, y0, np.random.default_rng([SCENARIO["seed"], 99]))
     print(f"pass 1: {len(a_steps)} steps in {time.perf_counter() - t0:.0f} s", flush=True)
     run_dir.mkdir(parents=True, exist_ok=True)
     cam = rd.LiveCamera(scene, run_dir, 1, sensors=True, replay=cam1) if scene is not None else None
-    steps, chain, ft = rd.simulate(SCENARIO, terrain, slope, field=field, cam=cam)
+    steps, chain, ft = rd.simulate(SCENARIO, nav_terrain, slope, field=field, cam=cam)
     print(f"pass 2: {len(steps)} steps, {steps[-1]['t'] / 3600:.2f} h simulated, in {time.perf_counter() - t0:.0f} s", flush=True)
     rec, poses = to_record(run_id, steps, field, chain.get_finds(), ft, terrain, scene is not None, display, a.site)
     (run_dir / "record.json").write_text(json.dumps(rec, separators=(",", ":")), encoding="utf8")

@@ -15,7 +15,6 @@ import math
 
 import numpy as np
 
-from sim.standins import ODOM_DRIFT
 
 # Spec ("How it works", step 4): the planner avoids slopes over 15 deg.
 SLOPE_LIMIT_DEG = 15.0
@@ -25,9 +24,12 @@ SLOPE_BASELINE_M = 2.0
 SPEED_M_S = 0.074
 
 STEP_M = 2.0                    # assumed: distance per sim step (one see-locate-plan-drive cycle)
-ODOM_BIAS = ODOM_DRIFT          # Cauligi et al. 2023 sec. 1: ~2% odometry drift, applied as a scale bias (sign assumed)
-ODOM_NOISE = 0.005              # assumed: per-step distance noise, fraction of the step
-ODOM_HEADING_NOISE_RAD = 0.0005 # assumed: per-step heading noise in odometry (~0.7 deg after 1 km)
+# The truth's odometer (sim/settings.py drift_frac, odom_*); the filter in
+# sim/nav.py has its own model (pf_*) and never reads these.
+from sim.settings import Settings as _Settings
+ODOM_BIAS = _Settings().drift_frac            # C23 sec. 1: ~2% drift, applied as a scale bias (sign assumed)
+ODOM_NOISE = _Settings().odom_noise_frac      # assumed: per-step distance noise, fraction of the step
+ODOM_HEADING_NOISE_RAD = _Settings().odom_heading_noise_rad  # assumed: per-step heading noise
 TURN_OFFSETS_DEG = (0, 10, -10, 20, -20, 30, -30, 45, -45, 60, -60, 90, -90, 135, -135, 180)  # assumed
 MAP_MARGIN_M = 15.0             # assumed: stay this far inside the map edge
 LOOKAHEAD_WAYPOINTS = 4         # assumed: steer for the global waypoint ~16 m ahead
@@ -79,6 +81,11 @@ PLANNER_STANDIN = ("planner: A* on a 2 m grid; a cell is blocked if any point wi
 
 class SlopeMap:
     """Worst slope in degrees across a 2 m baseline, per 2 m planning cell.
+
+    INTERPOLATED: the 0.25 m grid is 5 m LOLA upsampled, plus stamped
+    craters and assumed roughness (sim/terrain.py), so a 2 m slope is not a
+    measurement. The measured slope is LOLA's own at 5 m (ldsm), which the
+    campaign batch uses (sim/psr_sites.py).
 
     Slope is measured at every 0.25 m grid point as a central difference
     across 2 m (docs/handoffs.md, step 2), widened by the rover's half width,

@@ -74,10 +74,11 @@ RUN_LOG_DT_S = 120.0          # run log step spacing, simulated seconds
 # STAND-IN navigation filter (step 3 is someone else's and not built yet):
 NAV_SIGMA_M = {"A": 0.8, "B": 0.9}   # reported sigma
 NAV_CORR = 0.98                      # error is AR(1) per 0.5 m step, std NAV_SIGMA_M
-# Cauligi et al. 2023 sec. 1: odometry drifts about 2% of distance driven
-# (the same value as sim/standins.py ODOM_DRIFT). Applied as a scale bias.
-ODOM_DRIFT = 0.02
-ODOM_HEADING_NOISE_RAD = 0.0005   # ASSUMED, per 0.5 m step, as in sim/rover.py on step-4-spine
+# The truth's odometer: sim/settings.py drift_frac (C23 sec. 1, ~2%) as a
+# scale bias, odom_heading_noise_rad per step (assumed).
+from settings import Settings as _Settings
+ODOM_DRIFT = _Settings().drift_frac
+ODOM_HEADING_NOISE_RAD = _Settings().odom_heading_noise_rad
 NAV_STANDIN = ("navigation: true pose plus a slowly wandering error with std = sigma "
                "(STAND-IN for the step 3 particle filter)")
 # Step 3, the real one when present (sim/nav.py, Calvin's ShadowNav particle

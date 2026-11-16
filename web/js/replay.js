@@ -105,7 +105,7 @@ class FleetRun extends Run {
 
 async function main() {
   const batch = P.get("batch"), id = P.get("run");
-  $("runs-link").href = `index.html?batch=${encodeURIComponent(batch || "")}`;
+  $("runs-link").href = `runs.html?batch=${encodeURIComponent(batch || "")}`;
   $("run-link").href = `run.html?batch=${encodeURIComponent(batch || "")}&run=${encodeURIComponent(id || "")}`;
   $("run-link").textContent = id;
   try {

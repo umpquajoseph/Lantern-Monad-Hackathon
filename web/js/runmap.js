@@ -19,7 +19,7 @@ let estPaths = {}, truePaths = {};
 
 async function main() {
   const batch = P.get("batch"), id = P.get("run");
-  $("back").href = `index.html${batch ? `?batch=${encodeURIComponent(batch)}` : ""}`;
+  $("back").href = `runs.html${batch ? `?batch=${encodeURIComponent(batch)}` : ""}`;
   let run;
   try {
     run = await CampaignRun.load(batch, id);

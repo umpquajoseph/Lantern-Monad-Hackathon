@@ -65,8 +65,7 @@ SITES = {
         dock=(22117.5, -21057.5),
         # Floor here is near the slope limit; this pair completes (S2 jammed on a route from (611, 473)).
         a_start=(638.96, 412.07, 0.8), b_start=(633.96, 412.07, 0.8), a_goal=(900.0, 700.0), find_at_m=150.0,
-        ground="An unnamed PSR crater at 89.0 S 130 E (LOLA 5 m, upsampled with made-up small craters). "
-               "The Scouts start on the floor at the end of the descent; the descent itself is not shown."),
+        ground="an unnamed PSR crater at 89.0 S 130 E, LOLA 5 m with made-up small craters; the descent is not shown."),
 }
 
 
@@ -77,11 +76,9 @@ def scenario(site):
 
 
 def showcase_note(site):
-    return ("Showcase run (sim/showcase.py): the Scouts navigate on their own lamp camera, with Lantern's "
-            "rim finder and particle filter, matched to the orbital crater map (craters 10 m and up). "
-            "This is not how the batch runs go, and none of the paper's numbers come from it. Here the only "
-            "wrong matches are the ones this filter happens to make, so the second Scout confirms the find "
-            "easily. The batch runs draw wrong matches at the assumed false-match rate, and there confirmations "
+    return ("Showcase run (sim/showcase.py): the Scouts navigate on their own lamp cameras, matched to the orbital "
+            "crater map (craters 10 m and up). None of the paper's numbers come from it. Here the find confirms "
+            "easily; the batch runs draw wrong matches at the assumed false-match rate, and there confirmations "
             "are rare. Ground: " + SITES[site]["ground"])
 
 

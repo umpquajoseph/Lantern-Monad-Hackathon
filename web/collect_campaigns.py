@@ -32,6 +32,7 @@ import json
 import re
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -97,6 +98,11 @@ def has_record(d: Path) -> bool:
     return (d / "record.json").exists() and (d / "poses.npz").exists()
 
 
+def has_row(d: Path) -> bool:
+    """A run the batch runner wrote without a record (row.json: its summary row): results, no map."""
+    return (d / "row.json").exists()
+
+
 def record_rows(bdir: Path, runs: list[Path], say) -> tuple[list[dict], dict]:
     """Summary rows from each record, cached by mtime; plus what the batch's records say about stand-ins and terrain."""
     cache_p = DST / bdir.name / "rows.json"
@@ -107,12 +113,15 @@ def record_rows(bdir: Path, runs: list[Path], say) -> tuple[list[dict], dict]:
         c = cache.get(d.name)
         if not c or c["mtime"] != mt:
             rec = json.loads((d / "record.json").read_text(encoding="utf8"))
-            c = {"mtime": mt, "row": rec.get("summary") or {"run_id": rec["run_id"], "seed": rec.get("seed")},
+            row = dict(rec.get("summary") or {"run_id": rec["run_id"], "seed": rec.get("seed")})
+            row.setdefault("site", (rec.get("terrain") or {}).get("site"))
+            c = {"mtime": mt, "row": row,
                  "standin": standin_text(rec), "terrain": rec.get("terrain"), "showcase": rec.get("showcase")}
             cache[d.name] = c
             read += 1
             if read % 50 == 0:
                 say(f"campaigns: {bdir.name}, read {read} records")
+        c["row"].setdefault("site", (c.get("terrain") or {}).get("site"))
         rows.append(c["row"])
         meta.setdefault("standin", c["standin"])
         meta.setdefault("showcase", c.get("showcase"))
@@ -157,11 +166,12 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
     bdirs = sorted(p for p in SRC.glob("*") if p.is_dir() and NAME.match(p.name) and not p.name.startswith("_")) if SRC.exists() else []
     for bdir in bdirs:
         runs = sorted(d for d in bdir.iterdir() if d.is_dir() and has_record(d))
-        if not runs:
+        bare = sorted(d for d in bdir.iterdir() if d.is_dir() and not has_record(d) and has_row(d))
+        if not runs and not bare:
             continue
         # summary.csv when the batch has one (it lists runs without records too; keep those with one).
         by_name = {d.name: d for d in runs}
-        _, meta = record_rows(bdir, runs[:1], say)
+        _, meta = record_rows(bdir, runs[:1], say) if runs else ([], {})
         if (bdir / "summary.csv").exists():
             with open(bdir / "summary.csv", newline="", encoding="utf8") as fh:
                 rows = [{k: typed(v) for k, v in r.items()} for r in csv.DictReader(fh)]
@@ -170,6 +180,15 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
         else:
             rows, meta = record_rows(bdir, runs, say)
             missing = 0
+        for d in bare:   # rows only: listed with their results, without a map
+            try:
+                r = json.loads((d / "row.json").read_text(encoding="utf8")).get("summary") or {}
+            except (OSError, ValueError):
+                continue   # still being written
+            if r.get("run_id"):
+                rows.append({**r, "map": False})
+        for r in rows:
+            r.setdefault("map", r["run_id"] in by_name)
         rows = rows[: max_runs or None]
         if copy:
             for r in rows:
@@ -178,7 +197,18 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
             build_window(t, say=say)
             site_assets(t, say)
         if rows:
-            batches.append({"batch_id": bdir.name, "standin": meta.get("standin"), "showcase": meta.get("showcase"), "runs": rows})
+            made = max((d / ("record.json" if has_record(d) else "row.json")).stat().st_mtime for d in runs + bare)
+            info = {}
+            if (bdir / "batch.json").exists():
+                try:
+                    b = json.loads((bdir / "batch.json").read_text(encoding="utf8"))
+                    info = {k: b[k] for k in ("worlds", "sweeps", "set") if k in b}
+                except ValueError:
+                    pass
+            batches.append({"batch_id": bdir.name, "standin": meta.get("standin"), "showcase": meta.get("showcase"),
+                            "sites": sorted({str(r.get("site")) for r in rows if r.get("site")}),
+                            "made": datetime.fromtimestamp(made).astimezone().isoformat(timespec="minutes"),
+                            "maps": sum(1 for r in rows if r["map"]), **info, "runs": rows})
         say(f"campaigns: {bdir.name}, {len(rows)} runs" + (f" ({missing} in summary.csv have no record)" if missing else "")
             + (f"; stand-ins: {meta['standin'][:90]}" if meta.get("standin") else ""))
     DST.mkdir(parents=True, exist_ok=True)

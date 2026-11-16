@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { Terrain, Run } from "./data.js";
 import { World, COLORS } from "./world.js";
-import { CampaignRun, SCOUT_COLOR, STATUS_COLOR, ACTIVITY, OUTCOME_WORD, fmtNum, fmtDay, standinBanner, standinOf, bannersOf, windowFor, assetsBase } from "./campaign.js";
+import { CampaignRun, SCOUT_COLOR, STATUS_COLOR, ACTIVITY, OUTCOME_WORD, fmtNum, fmtDay, standinBanner, standinOf, bannersOf, fitPage, windowFor, assetsBase } from "./campaign.js";
 
 const $ = (id) => document.getElementById(id);
 const P = new URLSearchParams(location.search);
@@ -117,6 +117,7 @@ async function main() {
   }
   const banners = bannersOf(cr.rec);
   if (banners) { $("standin-slot").innerHTML = banners; $("page").classList.add("has-banner"); }
+  fitPage();
   const want = P.get("sortie");
   sortie = cr.sorties.find((s) => s.sortie_id === want) || cr.sorties[0];
   $("sortie-pick").innerHTML = cr.sorties.map((s) => `<option value="${s.sortie_id}">${s.sortie_id}</option>`).join("");

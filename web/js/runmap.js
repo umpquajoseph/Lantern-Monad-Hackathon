@@ -3,7 +3,7 @@
 // Everything drawn comes from the run record and its poses (docs/handoffs.md).
 import {
   CampaignRun, SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, OUTCOME_WORD, OUTCOME_SHORT, TIME_KINDS,
-  fmtNum, fmtDay, fmtHM, timeBar, timeLegend, standinBanner, standinOf, bannersOf, windowFor, assetsBase, esc,
+  fmtNum, fmtDay, fmtHM, timeBar, timeLegend, standinBanner, standinOf, bannersOf, fitPage, windowFor, assetsBase, esc,
 } from "./campaign.js";
 import { Terrain } from "./data.js";
 
@@ -34,6 +34,7 @@ async function main() {
   document.title = `Lantern · ${rec.run_id}`;
   const banners = bannersOf(rec);
   if (banners) { $("standin-slot").innerHTML = banners; $("page").classList.add("has-banner"); }
+  fitPage();
 
   for (const s of rec.sorties) {
     const rows = run.rows(s.sortie_id), c = run.col;

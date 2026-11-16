@@ -178,6 +178,16 @@ export function standinBanner(text, tag = "Stand-in") {
   return `<div class="standin" role="note"><b>${tag}</b>${esc}</div>`;
 }
 
+// A full-height page (#page) fills the window below the header and banners, without scrolling.
+export function fitPage() {
+  const set = () => {
+    const top = document.getElementById("page").getBoundingClientRect().top + scrollY;
+    document.documentElement.style.setProperty("--page-top", `${Math.ceil(top)}px`);
+  };
+  set();
+  addEventListener("resize", set);
+}
+
 // Every banner a record needs: the showcase note (sim/showcase.py), then what is a stand-in.
 export function bannersOf(rec) {
   return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec));

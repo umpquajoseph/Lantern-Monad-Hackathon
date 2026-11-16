@@ -463,3 +463,15 @@ A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_
 Records and `summary.csv` only. For the 3D replay it converts one sortie to
 the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
 `web/js/world.js` replays it unchanged.
+
+- `web/collect_campaigns.py` copies each hosted run to
+  `web/campaigns/<batch_id>/<run_id>/`: `record.json` as is, and `poses.npz`
+  as `poses.bin` (float32, rows back to back) plus `poses.json`
+  (`{"columns": [...], "sorties": {sortie_id: [first_row, n_rows]}}`).
+  `web/campaigns/index.json` lists the batches with their summary rows.
+- Optional top-level `standin` (string), written only by
+  `web/make_standin_campaign.py`: the site shows it as a banner. The engine
+  never writes it.
+- The site reads event `x`, `y` as the Scout's true position (hidden truth
+  only), `crater_map.added[].true_crater` as an index into
+  `truth.craters_missing`, and fits the map to `terrain.bounds`.

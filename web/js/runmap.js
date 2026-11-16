@@ -3,7 +3,7 @@
 // Everything drawn comes from the run record and its poses (docs/handoffs.md).
 import {
   CampaignRun, SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, OUTCOME_WORD, OUTCOME_SHORT, TIME_KINDS,
-  fmtNum, fmtDay, fmtHM, timeBar, timeLegend, standinBanner, standinOf, windowFor, esc,
+  fmtNum, fmtDay, fmtHM, timeBar, timeLegend, standinBanner, standinOf, bannersOf, windowFor, esc,
 } from "./campaign.js";
 import { Terrain } from "./data.js";
 
@@ -32,8 +32,8 @@ async function main() {
   const rec = run.rec;
   $("run-title").textContent = rec.run_id;
   document.title = `Lantern · ${rec.run_id}`;
-  const si = standinOf(rec);
-  if (si) { $("standin-slot").innerHTML = standinBanner(si); $("page").classList.add("has-banner"); }
+  const banners = bannersOf(rec);
+  if (banners) { $("standin-slot").innerHTML = banners; $("page").classList.add("has-banner"); }
 
   for (const s of rec.sorties) {
     const rows = run.rows(s.sortie_id), c = run.col;
@@ -418,7 +418,7 @@ function drawSide() {
         <span class="grow" style="flex:1"></span><a class="btn sm" href="replay.html?batch=${encodeURIComponent(run.batch)}&run=${encodeURIComponent(rec.run_id)}&sortie=${encodeURIComponent(s.sortie_id)}">Replay in 3D</a></h3>
       <dl class="kv">
         <dt>Launched</dt><dd>${fmtDay(s.t_start)}</dd>
-        <dt>Home</dt><dd>${fmtDay(s.t_end)} <span class="dim">(${fmtHM(s.t_end - s.t_start)})</span></dd>
+        <dt>${s.outcome === "showcase" ? "Ended" : "Home"}</dt><dd>${fmtDay(s.t_end)} <span class="dim">(${fmtHM(s.t_end - s.t_start)})</span></dd>
         <dt>Distance</dt><dd>${fmtNum(s.distance_m / 1000, 2)} km</dd>
         <dt>Position checks</dt><dd>${s.checks}, ${s.wrong_matches} wrong match${s.wrong_matches === 1 ? "" : "es"}</dd>
         <dt>Battery at the dock</dt><dd>${fmtNum(s.energy_end_kwh, 2)} kWh <span class="dim">of ${fmtNum(rec.settings.battery_kwh, 1)}</span></dd>
@@ -478,10 +478,12 @@ function checksHtml(run, s) {
 }
 
 function info() {
-  const rec = state.run.rec, s = rec.settings, w = rec.world, m = rec.summary || {};
-  const kv = (rows) => rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join("");
+  const rec = state.run.rec, s = rec.settings || {}, w = rec.world || {}, m = rec.summary || {};
+  // A row whose value the record does not hold (the showcase run has no world draws) is left out.
+  const kv = (rows) => rows.filter(([, b]) => b != null && !/undefined|NaN/.test(String(b)))
+    .map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join("");
   $("setup").innerHTML = kv([
-    ["Seed", rec.seed], ["Scouts", `${s.n_scouts}${s.n_scouts >= 4 ? ' <span class="tag x">beyond the brief\'s fleet of 3</span>' : ""}`],
+    ["Seed", rec.seed], ["Scouts", `${s.n_scouts ?? rec.scouts.length}${s.n_scouts >= 4 ? ' <span class="tag x">beyond the brief\'s fleet of 3</span>' : ""}`],
     ["Sorties per Scout", s.sorties_per_scout], ["Check policy", s.check_policy], ["Map refinement", s.map_refinement ? "on" : "off"],
     ["Top speed", `${fmtNum(s.top_speed_mps * 100, 0)} cm/s`], ["Check stop", `${fmtNum(s.check_stop_s, 0)} s`],
     ["Drill limit", `${fmtNum(s.drill_limit_m, 0)} m`], ["Battery", `${fmtNum(s.battery_kwh, 1)} kWh, ${fmtNum(s.reserve_frac * 100, 0)}% reserve`],
@@ -490,7 +492,7 @@ function info() {
   $("world").innerHTML = kv([
     ["Craters ≥10 m", `${fmtNum(w.crater_n_ge10_per_km2, 0)} per km²`], ["Odometry drift", `${fmtNum(w.drift_frac * 100, 2)}%`],
     ["Large craters missing from map", `${fmtNum((w.missing_share_large || 0) * 100, 1)}%`], ["Hidden deposits", w.n_deposits ?? rec.truth.ice.length],
-    ["Dock position error", w.dock_reg_err ? `${fmtNum(Math.hypot(...w.dock_reg_err), 2)} m <span class="dim">(never seen by the Scouts)</span>` : "–"],
+    ["Dock position error", w.dock_reg_err ? `${fmtNum(Math.hypot(...w.dock_reg_err), 2)} m <span class="dim">(never seen by the Scouts)</span>` : undefined],
   ]);
   $("results").innerHTML = kv([
     ["Sorties home with reserve", `${m.sorties_ok} of ${m.sorties}`], ["Below reserve", m.sorties_below_reserve], ["Fault returns", m.sorties_fault_return],

@@ -479,6 +479,13 @@ the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
   ground and the map's hillshade. Display only.
 - Banner: the record's `standins` list, plus an optional top-level `standin`
   string written only by `web/make_standin_campaign.py`.
+- The showcase run (`sim/showcase.py`, spec 6.4) writes the same record
+  under `data/campaigns/showcase/<run_id>/`, plus two keys only it writes:
+  `showcase` (string, shown as a banner: camera navigation, not the source
+  of the paper's numbers) and `frames`
+  (`{"note", "display", "by_sortie": {sortie_id: [[t, "fp/<file>.jpg"], ...]}}`,
+  paths relative to the run folder). Its sortie `outcome` is `"showcase"`.
+  The replay shows the followed Scout's latest frame at or before t.
 - The site reads event `x`, `y` as the Scout's true position (hidden truth
   only), `crater_map.added[].true_crater` as an index into the cut
   `truth.craters_missing`, and fits the map to `terrain.bounds`

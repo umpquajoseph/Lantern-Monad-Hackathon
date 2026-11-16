@@ -89,6 +89,8 @@ def copy_run(src: Path, dst: Path) -> None:
     if stale(src / "record.json", dst / "record.json"):
         shutil.copy2(src / "record.json", dst / "record.json")
     convert_poses(src / "poses.npz", dst)
+    if (src / "fp").is_dir():   # the showcase run's first-person frames (sim/showcase.py)
+        shutil.copytree(src / "fp", dst / "fp", dirs_exist_ok=True)
 
 
 def has_record(d: Path) -> bool:
@@ -106,13 +108,14 @@ def record_rows(bdir: Path, runs: list[Path], say) -> tuple[list[dict], dict]:
         if not c or c["mtime"] != mt:
             rec = json.loads((d / "record.json").read_text(encoding="utf8"))
             c = {"mtime": mt, "row": rec.get("summary") or {"run_id": rec["run_id"], "seed": rec.get("seed")},
-                 "standin": standin_text(rec), "terrain": rec.get("terrain")}
+                 "standin": standin_text(rec), "terrain": rec.get("terrain"), "showcase": rec.get("showcase")}
             cache[d.name] = c
             read += 1
             if read % 50 == 0:
                 say(f"campaigns: {bdir.name}, read {read} records")
         rows.append(c["row"])
         meta.setdefault("standin", c["standin"])
+        meta.setdefault("showcase", c.get("showcase"))
         meta.setdefault("terrains", {})[json.dumps(c["terrain"], sort_keys=True)] = c["terrain"]
     if read:
         cache_p.parent.mkdir(parents=True, exist_ok=True)
@@ -159,7 +162,7 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
         for t in meta.get("terrains", {}).values():
             build_window(t, say=say)
         if rows:
-            batches.append({"batch_id": bdir.name, "standin": meta.get("standin"), "runs": rows})
+            batches.append({"batch_id": bdir.name, "standin": meta.get("standin"), "showcase": meta.get("showcase"), "runs": rows})
         say(f"campaigns: {bdir.name}, {len(rows)} runs" + (f" ({missing} in summary.csv have no record)" if missing else "")
             + (f"; stand-ins: {meta['standin'][:90]}" if meta.get("standin") else ""))
     DST.mkdir(parents=True, exist_ok=True)

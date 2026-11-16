@@ -11,8 +11,8 @@ export const TIME_KINDS = [
   ["drive", "driving", "var(--t-drive)"], ["check", "position checks", "var(--t-check)"],
   ["reading", "readings", "var(--t-reading)"], ["drill", "drilling", "var(--t-drill)"], ["wait", "dock queue", "var(--t-wait)"],
 ];
-export const OUTCOME_WORD = { ok: "home with reserve", below_reserve: "home below reserve", fault_return: "turned back on a fault", lost: "lost" };
-export const OUTCOME_SHORT = { ok: "", below_reserve: "below reserve", fault_return: "fault", lost: "lost" };
+export const OUTCOME_WORD = { showcase: "showcase run", ok: "home with reserve", below_reserve: "home below reserve", fault_return: "turned back on a fault", lost: "lost" };
+export const OUTCOME_SHORT = { showcase: "showcase", ok: "", below_reserve: "below reserve", fault_return: "fault", lost: "lost" };
 
 async function fetchOk(url) {
   const r = await fetch(url);
@@ -32,7 +32,9 @@ export class CampaignRun {
       fetchOk(dir + "poses.json").then((r) => r.json()),
       fetchOk(dir + "poses.bin").then((r) => r.arrayBuffer()),
     ]);
-    return new CampaignRun(batch, rec, idx, new Float32Array(buf));
+    const run = new CampaignRun(batch, rec, idx, new Float32Array(buf));
+    run.dir = dir;
+    return run;
   }
 
   constructor(batch, rec, idx, flat) {
@@ -108,6 +110,7 @@ export function fmtNum(v, d = 1) {
   if (v === null || v === undefined || v === "") return "–";
   if (typeof v === "boolean") return v ? "on" : "off";
   if (typeof v !== "number") return String(v);
+  if (!Number.isFinite(v)) return "NaN";   // kv() rows drop it; never shown as a number
   return Number.isInteger(v) && d <= 1 ? String(v) : v.toFixed(d);
 }
 
@@ -159,10 +162,15 @@ export async function windowFor(rec, base = "assets/terrain/") {
   } catch { return null; }
 }
 
-export function standinBanner(text) {
+export function standinBanner(text, tag = "Stand-in") {
   if (!text) return "";
   const esc = String(text).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
-  return `<div class="standin" role="note"><b>Stand-in</b>${esc}</div>`;
+  return `<div class="standin" role="note"><b>${tag}</b>${esc}</div>`;
+}
+
+// Every banner a record needs: the showcase note (sim/showcase.py), then what is a stand-in.
+export function bannersOf(rec) {
+  return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec));
 }
 
 export function esc(s) {

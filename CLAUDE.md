@@ -1,13 +1,32 @@
-# Lantern: Monad Blitz Oregon, 15 Nov 2026
+# Lantern: campaign simulator for the RASC-AL 2027 PROSPECT paper
+
+Since 16 Nov 2026 Lantern simulates the PROSPECT Scouts' workflow: one dock,
+1 to 5 identical Scouts, sorties into a shadowed crater, ice finds checked by
+a second Scout, a crater map refined over sorties. It runs thousands of seeded
+worlds and produces the paper's section 4.6 numbers and Figure 1, and a local
+site replays any run.
+
+- `docs/campaign-spec.md` is the source of truth for scope.
+- `docs/handoffs.md`, "Campaign simulator", is the source of truth for the
+  run record and the interfaces between parts. Read it before writing any
+  function another part calls.
+- `sim/settings.py` holds every constant, each with its source or `assumed`.
+- Sources: `docs/sources/` (ShadowNav 2023 and 2024, the PROSPECT brief).
+  The team's area 3 draft is unpublished and lives outside this repo; never
+  copy it in.
+- Hosting: local only until Joseph says it is right, then a new Vercel
+  project. Never republish lantern-teal.vercel.app (the hackathon record).
+
+Everything below "Event rules" through "Layout" describes the Monad Blitz
+hackathon (15 Nov 2026) and is history. The hard rules still apply, except
+that chain code is being moved to `_archive/`.
+
+# History: Monad Blitz Oregon, 15 Nov 2026
 
 A shared map of lunar ice that rovers write themselves. Two rovers from two
 agencies drive a dark crater, find their position from lamp-lit crater rims
 (after JPL's ShadowNav), post ice finds with their position uncertainty to a
 Monad contract, and check each other's finds.
-
-- `docs/spec.html` is the source of truth for scope: goal, demo, the six steps.
-- `docs/handoffs.md` is the source of truth for the data passed between steps.
-  Read it before writing any function another step calls.
 
 ## Event rules
 

@@ -1,7 +1,11 @@
 # Lantern for RASC-AL: campaign simulator spec
 
-Draft, 16 Nov 2026. Not approved. Once approved, this replaces `docs/spec.html`
-as the source of truth for scope, and `CLAUDE.md` is updated to say so.
+16 Nov 2026. Build started 16 Nov from `main` at `d2be7f9`. This replaces
+`docs/spec.html` as the source of truth for scope. Formats live in
+`docs/handoffs.md`, "Campaign simulator"; constants in `sim/settings.py`.
+
+Deadlines: batch results and Figure 1 by 15 Jan 2027; site and video by
+10 Feb 2027; proposal due 24 Feb 2027.
 
 ## TL;DR
 
@@ -48,6 +52,11 @@ every run so any one of them can be replayed.
    play to watch a sortie as a 3D time-lapse. The same site is the Phase 2
    virtual prototype, and the 2-minute video is recorded from it.
 
+**Lantern produces the paper's numbers.** The question is whether they can be
+trusted, and the work must answer it (section 4a). The draft currently says
+Lantern is never a source of numbers (its 4.6 and future-work list); the team
+rewrites that wording itself.
+
 **What it is not:**
 
 - **It is not a source of navigation accuracy figures from Lantern's own
@@ -77,9 +86,12 @@ settings file. Each one carries its source as `file/section`, or is marked
 
 ### 3.1 Campaign
 
-- **Fleet.** One dock and `n_scouts` Scouts. The brief's baseline is "two to
-  three Scouts sharing one charging dock", and its 2030 plan adds two more, so
-  batches cover 2 to 5. A single quick run uses 3.
+- **Fleet.** One dock and `n_scouts` Scouts, swept 1 to 5. 1 is the brief's
+  2029 pathfinder (p.6), which cannot cross-check and so shows what a second
+  Scout adds. 2 to 3 is the baseline, "two to three Scouts sharing one
+  charging dock" (p.5). The 2030 mission adds 2 Scouts to the pathfinder, a
+  fleet of 3 (p.6-7), so 4 and 5 go beyond the brief's plan and are labelled
+  as an extrapolation. A single quick run uses 3.
 - **Sorties.** Each Scout makes `sorties_per_scout` sorties. The default is 16,
   one month, from the brief ("roughly 16 sorties a month").
 - **Dock queue.** The dock charges one Scout at a time, 3 h each (brief).
@@ -105,7 +117,14 @@ settings file. Each one carries its source as `file/section`, or is marked
 - **Turn-back rule.** The Scout turns for home when its remaining energy
   reaches what it needs to drive back with a 25% reserve (brief). A Scout that
   arrives below the reserve marks a failed sortie. One that cannot arrive at
-  all is lost, and the run continues with one Scout.
+  all is lost, and the run continues with one Scout fewer.
+- **Faults.** Each sortie, the camera, lamp and neutron sensor can each fail
+  (probabilities are settings). A failed camera or lamp means no position
+  checks, so the Scout turns back. A failed neutron sensor means no readings;
+  the Scout finishes its lines for crater sightings and searches. A failed
+  module is swapped at the dock, and the Scout is out of service for
+  `swap_downtime_h`. The brief's "swappable modules roughly triple the
+  sorties" study belongs to another area and is not reproduced.
 
 ### 3.3 Navigation
 
@@ -205,7 +224,28 @@ What varies at random in each world:
 | Dock position error | One draw per run | assumed, item 15 |
 | Sensor failure | Probability per sortie for the camera, lamp and neutron sensor | assumed |
 
+## 4a. How the numbers earn trust
+
+A number goes in the paper only with all four of these behind it:
+
+1. **Sourced inputs.** Every constant is cited (ShadowNav, the brief, the
+   draft) or labelled `assumed` in `sim/settings.py`.
+2. **Hand checks.** Before any figure, the engine must reproduce the draft's
+   own arithmetic within rounding:
+   - fix spacing from `e(d) = e_fix + 0.02 d` at a 10 m limit: 80 m on the
+     false-match row, 358 m on the best row (draft Table 1);
+   - the stop budget at 10, 15, 20 cm/s: 2.6, 9.0, 12.3 h (draft 4.1);
+   - the 205 W and 270 W loads (draft 4.6).
+   A run with one Scout, no faults and no refinement is checked against
+   these by hand, and the comparison is written into the batch report.
+3. **Sensitivity.** Each assumed setting that a result depends on is swept,
+   and the paper's table says which results move with it.
+4. **Replay.** Any run is redone exactly from its seed, and the site replays
+   the saved poses, so a reader can look at the run behind a number.
+
 ## 5. What a run saves
+
+The exact formats are in `docs/handoffs.md`, "Campaign simulator".
 
 ### 5.1 Run record
 
@@ -255,8 +295,11 @@ One row per run:
 
 ## 6. The viewer
 
-It builds on the existing site in `web/` (hosted on Vercel) and its 3D world
-(`web/js/world.js`).
+It builds on the existing site in `web/` and its 3D world
+(`web/js/world.js`). It runs locally until everything is right. Then it goes
+to a new Vercel project and URL. The hackathon site
+(lantern-teal.vercel.app) stays untouched as the record of the Monad Blitz
+entry.
 
 1. **Runs list.** Every hosted run with its setup and results, sortable and
    filterable. The hosted set is a chosen subset, so the site stays small; the
@@ -288,7 +331,8 @@ It builds on the existing site in `web/` (hosted on Vercel) and its 3D world
 | Agency, Monad and hackathon wording | `sim/ice.py`, `sim/mission.py`, `roles.py`: reused where they fit, rewritten where roles differ (all Scouts are identical) | Terrain windows not chosen for gentle slopes |
 | | `web/`: runs list, top-down map, replay | Top speed from settings |
 
-Work happens on new branches from `main` (`337f247`). `main` takes merges only
+Work happens on new branches from `main` (`d2be7f9`, which holds all the
+hackathon work). `main` takes merges only
 when the team lead says so.
 
 ## 8. Speed targets

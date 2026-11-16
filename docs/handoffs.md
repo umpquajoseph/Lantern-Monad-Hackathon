@@ -338,3 +338,128 @@ Per rover, per step (added to the run-log fields):
 Honesty: `standins` lists what is still simulated (the ice sensor and the
 instrument sequences). The chain block, the hashes and the finds are real
 when the run was made with the agency keys; the page shows "fake tx" otherwise.
+
+## Campaign simulator (docs/campaign-spec.md), shared by parts 1-4
+
+Written first, by the lead, 2026-11-16. Change it only by editing this
+section in the same commit and mailing every part.
+
+### Settings
+
+`sim/settings.py`: `Settings` (design choices plus fixed constants) and
+`WorldRanges` (what a world seed draws). Every field carries its source in
+`metadata["source"]`, or `assumed`. `python sim/settings.py` lists them and
+must print `unlabelled: none`. A new constant is a new field there, never a
+literal in another file. `Settings.drift_frac` is used by a single run; a
+batch draws drift from `WorldRanges.drift_frac` per world.
+
+A run is named `w<seed:05d>-<Settings.key()>`. Same seed and same key give
+the same record, byte for byte apart from `made_at`.
+
+### Run record (part 1 writes it; parts 2-4 read it)
+
+One folder per run, `data/campaigns/<batch_id>/<run_id>/` (git-ignored):
+
+- `record.json`:
+
+```json
+{
+  "format": "campaign-record/1",
+  "run_id": "w00042-6e3f2e33", "seed": 42, "made_at": "2026-11-16T15:00:00-08:00",
+  "nav": "sampled",
+  "settings": {"n_scouts": 3, "...": "every Settings field"},
+  "world": {"crater_n_ge10_per_km2": 640.0, "drift_frac": 0.021,
+            "dock_reg_err": [1.2, -0.4], "...": "every WorldRanges draw"},
+  "terrain": {"site": "shoemaker", "file": "shoemaker.npz",
+              "x0": 0.0, "y0": 0.0, "cell": 5.0, "bounds": [xmin, ymin, xmax, ymax]},
+  "dock": {"x": 0.0, "y": 0.0},
+  "scouts": ["S1", "S2", "S3"],
+  "crater_map": {
+    "start": [[x, y, d]],
+    "added": [{"crater_id": "C7", "x": 0, "y": 0, "d": 8.0, "after_sortie": "S2-03",
+               "sightings": 2, "true_crater": 1312}]
+  },
+  "sorties": [
+    {"sortie_id": "S1-01", "scout": "S1", "n": 1, "t_start": 0.0, "t_end": 79200.0,
+     "outcome": "ok", "faults": [],
+     "time_s": {"drive": 0, "check": 0, "reading": 0, "drill": 0, "wait": 0},
+     "energy_end_kwh": 2.1, "distance_m": 7012.0, "checks": 21, "wrong_matches": 0}
+  ],
+  "events": [
+    {"t": 0.0, "sortie_id": "S1-01", "scout": "S1", "type": "check",
+     "x": 0, "y": 0, "est": [0, 0], "bound95": 2.8, "wrong_match": false}
+  ],
+  "truth": {"label": "hidden truth",
+            "ice": [{"x": 0, "y": 0, "radius": 6.0, "peak": 3.0}],
+            "craters_missing": [[x, y, d]]},
+  "summary": {"...": "the summary row below, for this run"}
+}
+```
+
+- `poses.npz`: one float32 array per sortie, key = `sortie_id`, a row every
+  `log_spacing_m` driven plus one at every event:
+  `[t, true_x, true_y, true_heading, est_x, est_y, bound95, energy_kwh, activity]`.
+  `activity` codes: 0 descent, 1 survey, 2 return, 3 check, 4 reading,
+  5 drill, 6 search, 7 docked, 8 waiting at dock.
+- Units and frames as "Frames and units" above. `t` is campaign seconds from
+  the first launch. `bound95` is the 95th-percentile radial position bound in
+  metres the Scout believes, not the true error. Truth is never mixed into a
+  Scout field.
+
+`outcome`: `ok` (home with the reserve), `below_reserve` (home, under it),
+`fault_return` (turned back on a fault, home), `lost` (never home; the run
+goes on with one Scout fewer).
+
+Event `type`s and their extra fields:
+
+| type | fields |
+|---|---|
+| `launch`, `dock_arrive` | `energy_kwh` |
+| `check` | `est`, `bound95`, `wrong_match`, `craters_in_view` |
+| `reading` | only above `find_threshold_wt`, else counted in `time_s`: `reading_wt`, `est`, `bound95` |
+| `find` | `find_id`, `est`, `bound95`, `reading_wt` |
+| `search_start`, `search_end` | `find_id`, `radius_m`; end adds `result`: `confirmed` / `unconfirmed`, `truth_has_deposit` |
+| `drill` | `find_id`, `est`, `true_err_m` |
+| `sighting` | `est`, `d_est`, `bound95` (a rim seen but not matched) |
+| `crater_added` | `crater_id` (at the dock, `sortie_id` = the sortie just ended) |
+| `turn_back` | `reason`: `energy` / `fault` |
+| `fault` | `module`: `camera` / `lamp` / `neutron` |
+| `swap` | `module`, `downtime_h` |
+| `contact_lost`, `contact_regained` | none |
+
+### Summary row (part 1)
+
+`data/campaigns/<batch_id>/summary.csv`, one row per run: `run_id`, `seed`,
+every swept Settings field, every world draw, then
+`sorties`, `sorties_ok`, `sorties_below_reserve`, `sorties_fault_return`,
+`scouts_lost`, `drill_err_p95_m`, `checks_per_sortie`, `wrong_match_rate`,
+`finds`, `confirmed`, `false_confirmed`, `deposits_missed`, `area_km2`,
+`h_drive`, `h_check`, `h_reading`, `h_drill`, `h_wait`. By-sortie-number
+series for Figure 1b go in `by_sortie.csv`: `run_id`, `sortie_n`,
+`checks`, `wrong_matches`, `map_craters`.
+
+### Part 2 gives part 1 (`sim/crossing.py`, pure functions, no I/O)
+
+- `search_area(find, searcher_bound95, s: Settings) -> radius_m`
+- `pick_searcher(find, scouts_ready) -> scout_id | None`: never the finder.
+- `judge_search(find, readings, s) -> "confirmed" | "unconfirmed"`, where
+  `readings` are the searcher's `(est_x, est_y, bound95, reading_wt)` inside
+  the area.
+- `merge_sightings(sightings, crater_map, s) -> list[added crater]`, at the
+  dock after each sortie. `sightings` as the `sighting` events.
+
+A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_wt", "status"}`,
+`status` one of `find`, `confirmed`, `unconfirmed`, `drilled`.
+
+### Part 3 gives part 1 (`sim/terrain.py`)
+
+- `campaign_world(site, seed, ranges: WorldRanges) -> World`: 5 m height
+  grid, true crater list `(N, 3)`, the Scouts' starting map `(M, 3)`, dock
+  position on the rim, PSR floor mask, and the draws it made. Until the PSR
+  windows exist (spec 11.1), `site="shoemaker"` on the existing tile.
+
+### Part 4 reads (`web/`)
+
+Records and `summary.csv` only. For the 3D replay it converts one sortie to
+the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
+`web/js/world.js` replays it unchanged.

@@ -56,10 +56,10 @@ def _run_one(job):
     """One run. Writes record.json, poses.npz (unless --no-records) and
     row.json (its summary row, by-sortie rows and drills), so a batch that is
     stopped keeps every finished run and a re-run skips them."""
-    seed, overrides, batch_id, out_root, keep = job
+    seed, overrides, batch_id, out_root, keep, world_kw = job
     s = Settings(**overrides)
     t0 = time.perf_counter()
-    c = C.Campaign(seed, s, WorldRanges()).run()
+    c = C.Campaign(seed, s, WorldRanges(**world_kw)).run()
     t_sim = time.perf_counter() - t0
     if keep:
         c.save(batch_id, out_root)
@@ -185,6 +185,9 @@ def main():
     ap.add_argument("--seed0", type=int, default=1)
     ap.add_argument("--sweep", action="append", default=[], help="name=v1,v2,...  (repeatable)")
     ap.add_argument("--set", nargs="*", default=[], help="fixed overrides name=value for every run")
+    ap.add_argument("--world-set", nargs="*", default=[],
+                    help="WorldRanges overrides for every run, name=value or name=lo:hi. Runs are named by "
+                         "seed and Settings only, so give each world variant its own --batch-id")
     ap.add_argument("--jobs", type=int, default=0, help="worker processes (0 = half the cores; each "
                                                        "holds one world in memory)")
     ap.add_argument("--no-records", action="store_true", help="skip per-run record.json / poses.npz")
@@ -192,6 +195,13 @@ def main():
     a = ap.parse_args()
 
     base = C.settings_from(a.set)
+    world_kw = {}
+    for it in a.world_set:
+        k, v = it.split("=", 1)
+        vals = tuple(float(x) for x in v.split(":"))
+        world_kw[k] = vals if len(vals) > 1 else vals[0]
+        if isinstance(getattr(WorldRanges(), k), tuple) and len(vals) == 1:
+            world_kw[k] = (vals[0], vals[0])
     axes = parse_sweeps(a.sweep)
     out_root = Path(a.out) if a.out else C.CAMPAIGN_DIR
     bdir = out_root / a.batch_id
@@ -205,13 +215,13 @@ def main():
             kw.update({k: v for (k, _), v in zip(axes, combo)})
             kw = {k: (tuple(map(tuple, v)) if isinstance(v, list) and v and isinstance(v[0], list)
                       else tuple(v) if isinstance(v, list) else v) for k, v in kw.items()}
-            jobs.append((seed, kw, a.batch_id, out_root, not a.no_records))
+            jobs.append((seed, kw, a.batch_id, out_root, not a.no_records, world_kw))
     n_jobs = a.jobs or max(1, (os.cpu_count() or 2) // 2)
     todo = [j for j in jobs if not _row_path(out_root, a.batch_id, j[0], j[1]).exists()]
     print(f"{len(jobs)} runs ({a.worlds} worlds x {len(combos)} design choices), {len(jobs) - len(todo)} "
           f"already done, on {n_jobs} processes -> {bdir}")
     # Build the shared descent route once, here, so workers load it from disk.
-    C.Campaign(a.seed0, base, WorldRanges())
+    C.Campaign(a.seed0, base, WorldRanges(**world_kw))
     t0 = time.perf_counter()
     t_sims = []
     if todo:
@@ -242,7 +252,7 @@ def main():
     lines = [f"# Batch {a.batch_id}", "",
              f"{len(jobs)} runs: worlds {a.seed0}..{a.seed0 + a.worlds - 1}, sweeps "
              + (", ".join(f"{k} = {vs}" for k, vs in axes) or "none")
-             + f", overrides {a.set or 'none'}.", "",
+             + f", overrides {a.set or 'none'}, world {a.world_set or 'default ranges'}.", "",
              f"Wall time {wall / 60:.1f} min on {n_jobs} processes for {len(todo)} new runs; per run {np.median(t_sims):.1f} s median, "
              f"{np.max(t_sims):.1f} s max (simulation only, one process each, cores shared).", "",
              "Stand-ins in these runs: " + ("; ".join(standins) or "none"), "",
@@ -250,7 +260,7 @@ def main():
              "## Figures", ""] + [f"- `{f.name}`" for f in figs]
     (bdir / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (bdir / "batch.json").write_text(json.dumps({"batch_id": a.batch_id, "worlds": a.worlds, "seed0": a.seed0,
-                                                 "sweeps": axes, "set": a.set, "runs": len(jobs),
+                                                 "sweeps": axes, "set": a.set, "world_set": a.world_set, "runs": len(jobs),
                                                  "wall_s": wall, **hc}, default=str, indent=1), encoding="utf-8")
     print(f"done in {wall / 60:.1f} min -> {bdir / 'report.md'}")
 

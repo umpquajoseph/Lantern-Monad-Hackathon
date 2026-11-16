@@ -75,7 +75,7 @@ def fig1a(bdir: Path, runs, drills):
         for b in range(len(mids)):
             inb = [r for r in rs if edges[b] <= float(r["crater_n_ge10_per_km2"]) < edges[b + 1]]
             if inb:
-                ok[b] = sum(int(r["sorties_ok"]) for r in inb) / sum(int(r["sorties"]) for r in inb)
+                ok[b] = sum(int(r["sorties_completed"]) for r in inb) / sum(int(r["sorties"]) for r in inb)
             e_sv = [float(r["survey_err_p95_m"]) for r in inb if r.get("survey_err_p95_m")]
             if e_sv:
                 sv[b] = np.median(e_sv)
@@ -109,7 +109,7 @@ def fig1a(bdir: Path, runs, drills):
         _style(ax)
         ax.set_xscale("log")
         ax.set_xlim(edges[0], edges[-1] * 1.6)
-    a1.set_ylabel("Share of sorties home with the 25% reserve", color=INK, fontsize=9.5)
+    a1.set_ylabel("Share of sorties completed\n(survey, 2 drill sites, 22 h, reserve)", color=INK, fontsize=9.5)
     a1.set_ylim(min(0.0, np.nanmin([a1.get_ylim()[0]])), 1.02)
     a2.set_ylabel("Drill-site error, 95th pct (m)\n(pooled drills)", color=INK, fontsize=9.5)
     a2.set_xlabel("Craters ≥ 10 m per km² (world draw, log bins)", color=INK, fontsize=9.5)

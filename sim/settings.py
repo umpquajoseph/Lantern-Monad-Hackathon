@@ -177,6 +177,9 @@ class Settings:
                                       "(80 m at 10 m) or 'best' (358 m)")
     check_min_spacing_m: float = S(20.0, ASSUMED + "; floor on fix spacing when the limit is not "
                                                    "achievable (Table 1 'not achievable' cells)")
+    bound_model: str = S("mixture", ASSUMED + "; what a Scout believes its 95th-pct error is just after a fix: "
+                                         "'mixture' (C23 rows mixed at its estimated wrong-match rate) or "
+                                         "'good_rows' (C23 trajectories 2 and 3 only, as if every fix were good)")
     nav_limit_m: float = S(30.0, ASSUMED + "; 'before_work' also fixes when its bound reaches this")
     p_est_window_rims: int = S(20, ASSUMED + "; the Scout estimates its false-match rate from the share "
                                             "of the last N rims seen that its map could not match")

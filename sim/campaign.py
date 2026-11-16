@@ -426,6 +426,12 @@ class Sortie:
         share = (sum(self.rims) / len(self.rims)) if self.rims else self.s.missing_share_prior
         return min(max(self.s.p_wrong_base + self.s.p_wrong_per_missing * share, 0.0), 1.0)
 
+    def belief_e95(self):
+        """The 95th-pct error a Scout believes it has just after a fix.
+        'mixture': the C23 rows mixed at its own estimated wrong-match rate;
+        'good_rows': as if every fix were good (C23 trajectories 2 and 3)."""
+        return e95_mix(self.p_est() if self.s.bound_model == "mixture" else 0.0, self.s)
+
     def _nominal_spacing(self):
         s = self.s
         if s.check_policy == "fixed":
@@ -433,9 +439,9 @@ class Sortie:
         if s.check_policy == "fixed_time":
             return max(s.check_interval_h * 3600 * self.v, s.check_min_spacing_m)
         if s.check_policy == "before_work":
-            sp = (s.nav_limit_m - e95_mix(self.p_est(), s)) / s.drift_frac
+            sp = (s.nav_limit_m - self.belief_e95()) / s.drift_frac
         else:
-            sp = (s.drill_limit_m - e95_mix(self.p_est(), s)) / s.drift_frac
+            sp = (s.drill_limit_m - self.belief_e95()) / s.drift_frac
         return max(sp, s.check_min_spacing_m)
 
     def _new_drift_dir(self):
@@ -611,7 +617,7 @@ class Sortie:
             ox += float(view["fix_bias"][0]); oy += float(view["fix_bias"][1])
             self.errx, self.erry = ox, oy
             self.ex, self.ey = tx + ox, ty + oy
-            self.b_fix = K95_2D * sig if s.check_policy == "filter" else e95_mix(self.p_est(), s)
+            self.b_fix = K95_2D * sig if s.check_policy == "filter" else self.belief_e95()
             self.d_fix = 0.0
             self.t_fix = self.t
             self.hdg_err = 0.0 if s.star_tracker else self.hdg_err
@@ -694,7 +700,9 @@ class Sortie:
             self.work_check("search", force=True)
         radius = X.search_area(f, self.bound, s)
         pts = X.search_points(f, radius, s)
-        self.event("search_start", find_id=f["find_id"], radius_m=rnd(radius, 2))
+        comb = math.hypot(f["bound95"], self.bound)
+        self.event("search_start", find_id=f["find_id"], radius_m=rnd(radius, 2),
+                   find_bound95=f["bound95"], searcher_bound95=rnd(self.bound, 2), combined_bound95=rnd(comb, 2))
         readings, true_xy = [], []
         for px, py in pts:
             if not self.drive_to(float(px), float(py), ACT["search"]):
@@ -711,7 +719,8 @@ class Sortie:
         match_xy = true_xy[det["match"]] if det.get("match") is not None else None
         sc = X.score_search(self.true_find_xy[f["find_id"]], det["result"], self.w.ice, s, match_xy)
         self.event("search_end", find_id=f["find_id"], radius_m=rnd(radius, 2), result=det["result"],
-                   reason=det.get("reason"), truth_has_deposit=bool(sc["truth_has_deposit"]),
+                   reason=det.get("reason"), combined_bound95=rnd(comb, 2),
+                   truth_has_deposit=bool(sc["truth_has_deposit"]),
                    false_confirmed=bool(sc["false_confirmed"]), missed=bool(sc["missed"]))
         self.search_results.append((f["find_id"], det["result"], det))
         if det["result"] == "confirmed" and self.drills_left > 0:
@@ -759,16 +768,24 @@ class Sortie:
             k = min(range(len(items)), key=lambda i: math.hypot(items[i][1]["est"][0] - self.ex,
                                                                  items[i][1]["est"][1] - self.ey))
             kind, f = items.pop(k)
-            if self.survey_used >= s.survey_m:
+            if self.survey_used + math.hypot(f["est"][0] - c.entry[0], f["est"][1] - c.entry[1]) >= s.survey_m:
                 break
             if kind == "search":
                 self.search(f)
             elif self.drills_left > 0:
                 self.drill(f, f["est"])
-        for ln in lanes:
-            if self.returning or self.lost or self.survey_used >= s.survey_m:
+        ex, ey = c.entry
+        for i, ln in enumerate(lanes):
+            if self.returning or self.lost:
+                break
+            (ax, ay), (bx, by) = ln["a"], ln["b"]
+            da, db = math.hypot(ax - self.ex, ay - self.ey), math.hypot(bx - self.ex, by - self.ey)
+            fx, fy = (bx, by) if da <= db else (ax, ay)
+            need = min(da, db) + s.lane_segment_m + math.hypot(fx - ex, fy - ey)
+            if i and self.survey_used + need > s.survey_m:
                 break
             self.lane(ln)
+        self.survey_back = math.hypot(self.ex - ex, self.ey - ey)
         if not self.lost:
             self.returning = True
             self.drive_to(c.entry[0], c.entry[1], ACT["return"])
@@ -884,18 +901,26 @@ class Campaign:
         return lanes
 
     def _reserve_lanes(self, start_xy, budget):
-        """Greedy chain of pending lanes, nearest first, within the survey budget."""
+        """Greedy chain of pending lanes, nearest first. The survey budget
+        includes the drive back to the descent end, so a planned sortie is
+        descent_m + survey_m + descent_m (brief p.6: 1.5 + 4 km + return)."""
         out, used = [], 0.0
         x, y = start_xy
+        ex, ey = self.entry
         pending = [ln for ln in self.lanes if self.lane_state[ln["id"]] == "pending"]
-        while pending and used < budget:
+        while pending:
             k = min(range(len(pending)), key=lambda i: min(math.hypot(pending[i]["a"][0] - x, pending[i]["a"][1] - y),
                                                            math.hypot(pending[i]["b"][0] - x, pending[i]["b"][1] - y)))
-            ln = pending.pop(k)
+            ln = pending[k]
             da = math.hypot(ln["a"][0] - x, ln["a"][1] - y)
             db = math.hypot(ln["b"][0] - x, ln["b"][1] - y)
-            used += min(da, db) + self.s.lane_segment_m
-            x, y = ln["a"] if da > db else ln["b"]
+            nx, ny = ln["a"] if da > db else ln["b"]
+            step = min(da, db) + self.s.lane_segment_m
+            if out and used + step + math.hypot(nx - ex, ny - ey) > budget:
+                break
+            pending.pop(k)
+            used += step
+            x, y = nx, ny
             out.append(ln)
             self.lane_state[ln["id"]] = "reserved"
         return out
@@ -977,6 +1002,7 @@ class Campaign:
         # undriven go back to the pool on arrival.
         lanes = self._reserve_lanes(self.entry, s.survey_m)
         so.planned_lanes = [ln["id"] for ln in lanes]
+        so.planned_drills = len(drills)
         so.run(searches, drills, lanes)
         self.poses[so.sid] = so.rows
         return so
@@ -1042,9 +1068,38 @@ class Campaign:
                "checks": so.n_checks, "fixes": so.n_fixes, "wrong_matches": so.n_wrong,
                "survey_m": rnd(so.survey_used, 1), "map_craters": len(self.map_rows),
                "turn_back": so.turn_reason}
+        rec.update(self._completion(so))
         self.sorties.append(rec)
         so.rec = rec
         return rec
+
+    def _completion(self, so: Sortie) -> dict:
+        """Did the sortie do its planned work (draft 4.1-4.2)?
+
+        Planned work is survey_m of survey and drill_sites_max drill sites
+        (brief p.6). `completed` means: home with the reserve; the survey is
+        done (survey_m driven, or every lane it was given); every drill it
+        was given is done; and the sortie, plus the drill time of any of its
+        drill_sites_max sites it did not drill, fits in sortie_h and in the
+        energy above the reserve. A sortie with nothing to drill is charged
+        for the drill slots, so fixes that eat the stop budget show up even
+        before any find is confirmed.
+        """
+        s = self.s
+        back = getattr(so, "survey_back", 0.0)
+        survey_done = so.survey_used + back >= s.survey_m - s.lane_segment_m or (
+            set(so.planned_lanes) <= set(so.lanes_done))
+        n_drill = len(so.drilled)
+        slots = max(s.drill_sites_max - n_drill, 0)
+        dur_h = (so.t - so.rows[0][0]) / 3600.0
+        fits_time = dur_h + slots * s.drill_h <= s.sortie_h
+        e_left = so.energy - slots * s.drill_h * self.energy["p_drill_w"] / 1000.0
+        fits_energy = e_left >= s.reserve_frac * s.battery_kwh
+        completed = (so.outcome == "ok" and survey_done and n_drill >= getattr(so, "planned_drills", 0)
+                     and fits_time and fits_energy)
+        return {"completed": bool(completed), "survey_done": bool(survey_done), "drills": n_drill,
+                "drills_planned": getattr(so, "planned_drills", 0), "duration_h": rnd(dur_h, 3),
+                "fits_time": bool(fits_time), "fits_energy": bool(fits_energy)}
 
     def _contact_gaps(self):
         s = self.s
@@ -1088,6 +1143,7 @@ class Campaign:
         row.update({
             "sorties": len(sr),
             "sorties_ok": sum(r["outcome"] == "ok" for r in sr),
+            "sorties_completed": sum(bool(r.get("completed")) for r in sr),
             "sorties_below_reserve": sum(r["outcome"] == "below_reserve" for r in sr),
             "sorties_fault_return": sum(r["outcome"] == "fault_return" for r in sr),
             "scouts_lost": sum(r["outcome"] == "lost" for r in sr),
@@ -1106,6 +1162,13 @@ class Campaign:
             "h_wait": rnd(sum(r["time_s"]["wait"] or 0 for r in sr) / 3600, 2),
             # Additive (not in the handoffs list yet).
             "fixes": fixes,
+            "searches": len(ends),
+            "confirm_rate": rnd(sum(e["result"] == "confirmed" for e in ends) / len(ends), 3) if ends else None,
+            "search_bound_too_large": sum(e.get("reason") == "bound_too_large" for e in ends),
+            "search_no_match": sum(e.get("reason") == "no_match" for e in ends),
+            "search_no_readings": sum(e.get("reason") == "no_readings" for e in ends),
+            "search_combined_bound_med_m": rnd(np.median([e["combined_bound95"] for e in ends]), 3) if ends else None,
+            "sortie_h_mean": rnd(np.mean([r["duration_h"] for r in sr]), 3) if sr else None,
             "drills": len(drills),
             "drill_hit_rate": rnd(np.mean([e["hit"] for e in drills]), 3) if drills else None,
             "survey_err_p95_m": self._survey_err_p95(),

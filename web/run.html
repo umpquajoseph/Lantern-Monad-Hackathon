@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern run</title>
+<meta name="description" content="One campaign run: the Scouts' sortie paths, ice map and crater map, sortie by sortie.">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="campaign.css">
+</head>
+<body>
+<header class="top">
+  <a class="wm" href="index.html"><b>Lantern</b><span>Scout campaigns</span></a>
+  <div class="crumbs"><a id="back" href="index.html">Runs</a><span>/</span><span class="here" id="run-title">Loading</span></div>
+  <div class="grow"></div>
+</header>
+<div id="standin-slot"></div>
+<main class="runpage" id="page">
+  <section class="mapcol">
+    <div class="mapbox" id="mapbox">
+      <canvas id="map" aria-label="Top-down map of the run"></canvas>
+      <div class="maptools">
+        <button class="btn" id="truth-btn" aria-pressed="false" title="The hidden ice and the craters missing from the Scouts' map. The Scouts never see these.">Reveal hidden truth</button>
+        <button class="btn" id="paths-btn" aria-pressed="false" title="Show every sortie flown so far, or only the one picked">All paths</button>
+        <button class="btn" id="fit-btn" title="Fit the whole run">Fit</button>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="scale" id="scale"></div>
+      <div class="mapnote" id="mapnote"></div>
+    </div>
+    <div class="slider">
+      <div class="row">
+        <button class="btn sm" id="play" title="Step through the sorties">Play</button>
+        <input type="range" id="k" min="0" max="1" value="0" step="1" aria-label="Sorties flown">
+        <div class="lab" id="k-lab"></div>
+      </div>
+      <div class="ticks" id="ticks"></div>
+    </div>
+  </section>
+  <aside class="side" id="side">
+    <h2>This sortie</h2>
+    <div id="sortie"></div>
+    <h2>Maps after this sortie</h2>
+    <div id="mapstate"></div>
+    <h2>Every sortie <span class="dim" style="text-transform:none;letter-spacing:0">(where the time went)</span></h2>
+    <div id="tl-legend"></div>
+    <ol class="sorties" id="sorties"></ol>
+    <h2>Results</h2>
+    <dl class="kv" id="results"></dl>
+    <h2>Setup</h2>
+    <dl class="kv" id="setup"></dl>
+    <h2>World</h2>
+    <dl class="kv" id="world"></dl>
+  </aside>
+</main>
+<script type="module" src="js/runmap.js"></script>
+</body>
+</html>

@@ -559,3 +559,34 @@ A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_
 Records and `summary.csv` only. For the 3D replay it converts one sortie to
 the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
 `web/js/world.js` replays it unchanged.
+
+- `web/collect_campaigns.py` writes `web/campaigns/index.json`: the batches
+  with their summary rows, from `summary.csv` when the batch has one, else
+  from each `record.json` `summary` (so a batch still writing is listed).
+  Only runs with `record.json` and `poses.npz` are listed.
+- Locally `web/serve.py` answers `campaigns/<batch_id>/<run_id>/record.json`
+  from the data folder and converts `poses.npz` on first request to
+  `poses.bin` (float32, rows back to back) plus `poses.json`
+  (`{"columns": [...], "sorties": {sortie_id: [first_row, n_rows]}}`),
+  cached in `web/campaigns/`. `--copy` (and `python app.py --site`) copies
+  every run there instead, for a static host.
+- `web/build_windows.py` cuts each distinct `terrain` window (site
+  `shoemaker`, cell 5 m) from the LOLA tile the engine reads, for the 3D
+  ground and the map's hillshade. Display only.
+- Banner: the record's `standins` list, plus an optional top-level `standin`
+  string written only by `web/make_standin_campaign.py`.
+- The showcase run (`sim/showcase.py`, spec 6.4) writes the same record
+  under `data/campaigns/showcase/<run_id>/`, plus two keys only it writes:
+  `showcase` (string, shown as a banner: camera navigation, not the source
+  of the paper's numbers) and `frames`
+  (`{"note", "display", "by_sortie": {sortie_id: [[t, "fp/<file>.jpg"], ...]}}`,
+  paths relative to the run folder). Its sortie `outcome` is `"showcase"`.
+  The replay shows the followed Scout's latest frame at or before t.
+- 3D and map ground: `web/assets/terrain/` for Shoemaker records; for any
+  other `terrain.site` with a 0.25 m grid at `data/terrain/<site>.npz`,
+  `web/build_assets.py --site <site>` writes `web/assets/terrain/<site>/`
+  (backdrops from `data/terrain/psr_sites/<site>.npz`), and the site uses it.
+- The site reads event `x`, `y` as the Scout's true position (hidden truth
+  only), `crater_map.added[].true_crater` as an index into the cut
+  `truth.craters_missing`, and fits the map to `terrain.bounds`
+  (all three confirmed by the engine, 16 Nov).

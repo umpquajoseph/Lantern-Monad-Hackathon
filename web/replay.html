@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern replay</title>
+<meta name="description" content="A time-lapse of one sortie and every Scout out with it, from their saved poses, in 3D on the real terrain.">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="campaign.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<header class="top">
+  <a class="wm" href="index.html"><b>Lantern</b><span>Scout campaigns</span></a>
+  <div class="crumbs"><a id="runs-link" href="index.html">Runs</a><span>/</span><a id="run-link" class="mono" href="#">run</a><span>/</span><span class="here" id="sortie-title">Loading</span></div>
+  <div class="grow"></div>
+  <label class="dim" style="font-size:13px">Sortie <select id="sortie-pick" aria-label="Sortie"></select></label>
+</header>
+<div id="standin-slot"></div>
+<main class="replay" id="page">
+  <div class="viewport" id="viewport" aria-label="3D replay of the sortie"></div>
+  <div class="hud" id="hud"></div>
+  <div class="rtools">
+    <button class="btn" id="truth-btn" aria-pressed="false" title="The real ice deposits. The Scouts never see them.">Reveal hidden truth</button>
+    <button class="btn" id="fill-btn" aria-pressed="true" title="Fill light (F)">Fill light on</button>
+    <button class="btn" id="cam-btn" title="Follow the Scout, or see the whole sortie">Whole sortie</button>
+    <button class="btn" id="next-search" title="Jump to just before the next time a Scout searches another Scout's find, and follow the searcher">Next cross-check ›</button>
+  </div>
+  <figure class="fpcam" id="fpcam" hidden>
+    <img id="fp-img" alt="The followed Scout's first-person lamp camera frame">
+    <figcaption id="fp-cap"></figcaption>
+  </figure>
+  <div class="vnote" id="vnote">Fill light added so you can see the ground. The Scouts see only their lamps.</div>
+  <div class="loading" id="loading">Loading terrain</div>
+  <footer class="playbar">
+    <button class="btn" id="play" title="Play or pause (Space)">Play</button>
+    <select id="speed" aria-label="Speed" title="Simulated seconds per second">
+      <option value="60">60×</option>
+      <option value="200">200×</option>
+      <option value="600" selected>600×</option>
+      <option value="2000">2000×</option>
+    </select>
+    <div class="track"><div class="evmarks" id="evmarks"></div><div class="acts" id="acts"></div><input type="range" id="scrub" min="0" max="1" step="any" value="0" aria-label="Sortie time"></div>
+    <div class="clock" id="clock">T+00:00</div>
+  </footer>
+</main>
+<script type="module" src="js/replay.js"></script>
+</body>
+</html>

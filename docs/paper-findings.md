@@ -75,3 +75,28 @@ brief's 7 km, so the stop budget is looser than draft 4.1 assumes. The
 simulator keeps the real routes. Whether these sites are the large crater
 floor the brief pictures or small shadows near landing sites is being
 checked. (engine fyi 20261116-145247, batch "sitecheck", seed 42)
+
+## 6. The brief's sortie reaches only small PSRs, not the famous crater floors
+
+Terrain screened every PSR from 87 to 90 S at 40 m (LOLA 5 m heights,
+Barker 2021; PSR map, Barker 2023; sun visibility, Mazarico 2011). It
+looked for a dock lit at least 30% of the time (assumed threshold) with
+at least 1 km2 of PSR floor within 3 km of driving under 15 degrees.
+Shoemaker, Haworth, Faustini, Shackleton and de Gerlache all failed. One
+large PSR near Henson passed with only 1.1 km2 reachable.
+
+What passed are three unnamed small PSRs, each a closed low 47 to 111 m
+deep:
+
+| site | where | PSR size | reachable floor |
+|---|---|---|---|
+| haynes | 88.9 S 151 E, outside Haynes' rim | 15.3 km2 | 7.2 km2 |
+| s89_014e | 89.3 S 20 E, 25.7 km from Shackleton | 7.7 km2 | 4.1 km2 |
+| s89_134e | 89.0 S 130 E, 21.4 km from Shackleton | 5.9 km2 | 4.3 km2 |
+
+So a 22 h sortie from a sunlit rim dock fits small PSRs, not the large
+named crater floors. This is a finding for area 2 (sortie routes) and for
+the target choice (brief p.7). Nothing here says these PSRs hold ice.
+Not yet screened: 85 to 87 S, which includes Cabeus (the LCROSS site the
+brief cites) and Nobile. Also corrects spec 11.1: the Haworth tile does
+overlap western Haworth by about 10 km. (terrain report 20261116-150109)

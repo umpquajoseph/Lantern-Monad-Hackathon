@@ -625,7 +625,9 @@ function bind() {
     const nt = (Number(e.target.value) / 1000) * S.run.tEnd;
     S.pauseAtT = 0;
     if (nt < S.t) { S.player.rewound(nt); rearmAutoB(nt); }
-    else if (!S.player.busy) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
+    else if (S.player.busy) return;                            // a live post is in flight: the slider waits
+    else if (!S.player.jumped(S.t, nt)) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
+    // (a jump over a chain step posts it live, paused at nt, and says so in the card)
     S.t = nt; exitFocus(); S.dismissed = null; render(true);
   };
   $("step-back").onclick = () => stepBy(-1);
@@ -761,10 +763,10 @@ function stepBy(n) {
   S.playing = false;
   setPlayIcon();
   const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(S.t) + n));
-  const back = run.times[k] < S.t;
+  const back = run.times[k] < S.t, prevT = S.t;
   S.t = run.times[k];
   if (back) { S.player.rewound(S.t); rearmAutoB(S.t); }
-  else $("checkpoint").hidden = true;
+  else if (!S.player.jumped(prevT, S.t)) $("checkpoint").hidden = true;   // stepping onto a chain step posts it live
   exitFocus(true);
   render(true);
 }

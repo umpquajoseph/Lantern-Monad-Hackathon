@@ -9,12 +9,16 @@
 //  2. Live chain: with ?key=... in the URL, crossing a step that holds a chain
 //     event (find, check) pauses, posts that call for real through the site's
 //     uplink (js/live_chain.js -> api/chain.js), swaps the event's hash for
-//     the new transaction, and resumes. Going back to the start arms them
-//     again, so every play-through writes fresh transactions. Without the key
-//     the recorded hashes stay and the feed says "recorded".
+//     the new transaction, and resumes. Jumping forward over a chain step (the
+//     slider, the step button) posts it too, in order, paused at the jump's
+//     target: a play-through never skips a post. Going back re-arms the posts
+//     after the new time (a second check of the same live find is not re-armed:
+//     the contract refuses it), so every pass writes fresh transactions.
+//     Without the key the recorded hashes stay and the feed says "recorded".
 //
 // main.js calls: new MissionPlayer(run, hooks), player.tick(prevT, t) from its
-// loop, player.rewound(t) on any backward jump, player.restart() at t = 0.
+// loop, player.jumped(prevT, t) on any forward jump, player.rewound(t) on any
+// backward jump, player.restart() at t = 0.
 import { LiveChain } from "./live_chain.js";
 
 export class MissionPlayer {
@@ -25,6 +29,7 @@ export class MissionPlayer {
     this.checkpoints = (m.checkpoints || []).filter((c) => c.pause).sort((a, b) => a.step - b.step);
     this.live = new LiveChain();
     this.liveFindIds = new Map();          // log find_id -> find_id posted in this play-through
+    this.liveChecked = new Set();          // live find ids that already got B's check (one per agency; a second is refused)
     this.busy = false;
     this.restart();
     if (this.live.enabled) this.live.probe().then((info) => {
@@ -50,13 +55,31 @@ export class MissionPlayer {
     this.hooks.note(c0 ? `<span class="cp-tag">Start</span> <b>${esc(c0.label)}</b> · ${esc(c0.say)}` : null);
   }
 
-  /** Arm the checkpoints after t again (a backward jump); live posts only re-arm from the start. */
+  /** A backward jump: arm the checkpoints and the live posts after t again. */
   rewound(t) {
     const k = this.run.stepAt(t);
     for (const c of this.checkpoints) if (c.step > k) this.armed.add(c.id);
     if (t <= 0.5) this.restart();
+    else if (this.live.enabled) {
+      // Re-arm the finds after t; a check only if its find is re-armed too, or
+      // its live find has not been checked yet (the contract refuses a second
+      // check from the same agency, so one would only produce an error note).
+      const finds = new Set();
+      this.run.events.forEach((e, i) => { if (e.k > k && e.type === "find") { this.armedTx.add(i); finds.add(e.find_id); } });
+      this.run.events.forEach((e, i) => {
+        if (e.k <= k || e.type !== "check") return;
+        const fid = this.liveFindIds.get(e.find_id);
+        if (finds.has(e.find_id) || fid == null || !this.liveChecked.has(fid)) this.armedTx.add(i);
+      });
+    }
     this.active = null;
     this.hooks.note(null);
+  }
+
+  /** Armed live events on steps in (k0, k1], in log order. */
+  _crossed(k0, k1) {
+    if (!this.live.enabled) return [];
+    return [...this.run.events.entries()].filter(([i, e]) => this.armedTx.has(i) && e.k > k0 && e.k <= k1);
   }
 
   /** Called each animation frame while playing, before render. Returns true when it paused. */
@@ -64,38 +87,84 @@ export class MissionPlayer {
     if (this.busy) return true;
     const k0 = this.run.stepAt(prevT), k1 = this.run.stepAt(t);
     if (k1 <= k0) return false;
-    // Live chain calls first: a chain event on a step just crossed.
-    if (this.live.enabled) {
-      for (const [i, e] of this.run.events.entries()) {
-        if (this.armedTx.has(i) && e.k > k0 && e.k <= k1) {
-          this.armedTx.delete(i);
-          this.postLive(e);
-          return true;
-        }
-      }
+    // Live chain calls first: a chain event on a step just crossed. The post
+    // pauses on its step; when it is done, a checkpoint on that same step
+    // shows (with the transaction) instead of playing straight on.
+    const [hit] = this._crossed(k0, k1);
+    if (hit) {
+      const [i, e] = hit;
+      this.armedTx.delete(i);
+      this.postLive(e, { at: this.run.times[e.k], then: () => this._checkpointAt(e.k) || this.hooks.resume() });
+      return true;
     }
+    return this._checkpointIn(k0, k1);
+  }
+
+  /**
+   * A forward jump from prevT to t (slider, step button): post every armed chain
+   * event jumped over, in order, paused at t. Resolves when the posts are done.
+   * Returns false at once when there was nothing to post.
+   */
+  jumped(prevT, t) {
+    if (this.busy) return false;
+    const k0 = this.run.stepAt(prevT), k1 = this.run.stepAt(t);
+    const hits = this._crossed(k0, k1);
+    if (!hits.length) return false;
+    for (const [i] of hits) this.armedTx.delete(i);
+    // Checkpoints jumped over are spent (the clock will not cross them again).
+    for (const c of this.checkpoints) if (c.step > k0 && c.step <= k1) this.armed.delete(c.id);
+    const run = async () => {
+      for (const [n, [, e]] of hits.entries()) {
+        if (n) await new Promise((r) => setTimeout(r, LIVE_GAP_MS));   // the uplink allows one call every 2 s
+        await this.postLive(e, { at: t, then: null });
+      }
+    };
+    return run();
+  }
+
+  /** Show and pause at an armed checkpoint on a step in (k0, k1]. True when one was found. */
+  _checkpointIn(k0, k1) {
     for (const c of this.checkpoints) {
       if (this.armed.has(c.id) && c.step > k0 && c.step <= k1) {
-        this.armed.delete(c.id);
-        this.active = c;
-        const at = this.run.times[c.step];
-        // Pause here and wait for Play. A page may decide where to pause (the
-        // mission page lets the final-site drill play out first).
-        if (this.hooks.checkpoint) this.hooks.checkpoint(at);
-        else this.hooks.pause(at);
-        this.hooks.note(`<span class="cp-tag">Checkpoint</span> <b>${esc(c.label)}</b> · ${esc(c.say)}`);
+        this._showCheckpoint(c, "");
         return true;
       }
     }
     return false;
   }
 
-  async postLive(e) {
+  /** The armed checkpoint exactly on step k, if any: show it after a live post there. */
+  _checkpointAt(k) {
+    const c = this.checkpoints.find((c) => this.armed.has(c.id) && c.step === k);
+    if (!c) return false;
+    const box = document.getElementById("checkpoint");
+    this._showCheckpoint(c, box && !box.hidden ? box.innerHTML + "<br>" : "");
+    return true;
+  }
+
+  _showCheckpoint(c, prefix) {
+    this.armed.delete(c.id);
+    this.active = c;
+    const at = this.run.times[c.step];
+    // Pause here and wait for Play. A page may decide where to pause (the
+    // mission page lets the final-site drill play out first).
+    if (this.hooks.checkpoint) this.hooks.checkpoint(at);
+    else this.hooks.pause(at);
+    this.hooks.note(`${prefix}<span class="cp-tag">Checkpoint</span> <b>${esc(c.label)}</b> · ${esc(c.say)}`);
+  }
+
+  /**
+   * Sign and send one chain event through the uplink. `at`: where the clock
+   * pauses meanwhile. `then`: what to do when it is done (default: play on);
+   * null leaves the page paused with the result showing.
+   */
+  async postLive(e, { at, then } = {}) {
     this.busy = true;
     const run = this.run;
-    this.hooks.pause(run.times[e.k]);
+    this.hooks.pause(at ?? run.times[e.k]);
     const what = e.type === "find" ? `postFind for ${e.site_id || "the find"}` : `checkFind #${e.find_id}`;
     this.hooks.note(`<span class="cp-tag live">Live</span> Signing <b>${esc(what)}</b> as agency ${esc(e.agency)} and sending it to Monad testnet…`);
+    let ok = false;
     try {
       let r;
       if (e.type === "find") {
@@ -105,6 +174,7 @@ export class MissionPlayer {
         const fid = this.liveFindIds.get(e.find_id);
         if (fid == null) throw new Error(`no live find to check (the find was not posted in this play-through)`);
         r = await this.live.checkFind(e, fid);
+        this.liveChecked.add(fid);
       }
       e.recorded_tx = e.recorded_tx || e.tx;
       e.tx = r.tx;
@@ -116,15 +186,19 @@ export class MissionPlayer {
         (e.type === "find" ? ` as find #${r.find_id}` : r.status ? `, now <b>${esc(r.status)}</b>` : "") +
         `. <a href="${r.url}" target="_blank" rel="noopener">${esc(short(r.tx))}</a>`);
       this.hooks.rerender();
-      this.hooks.resume();
+      ok = true;
     } catch (err) {
       this.hooks.note(`<span class="cp-tag err">Live chain</span> ${esc(err.message)}. Showing the recorded transaction instead.`);
-      this.hooks.resume();
     } finally {
       this.busy = false;
     }
+    if (then === undefined) this.hooks.resume();
+    else if (then) then(ok);
+    return ok;
   }
 }
+
+const LIVE_GAP_MS = 2200;
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const short = (h) => (h ? h.slice(0, 10) + "…" + h.slice(-6) : "");

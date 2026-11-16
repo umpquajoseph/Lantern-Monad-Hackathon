@@ -33,11 +33,21 @@ class SortieRun extends Run {
       est: steps.map((x) => x.rovers[s.scout].estimate), odom: steps.map((x) => x.rovers[s.scout].estimate) } };
     this.cr = cr;
     this.sortie = s;
+    // world.js puts the rover body at true_pose. Until the truth is revealed
+    // the body sits where the Scout believed it was; the true pose is kept aside.
+    this.poses = { truth: rows.map((r) => [r[c.true_x], r[c.true_y], r[c.true_heading]]),
+      believed: rows.map((r) => [r[c.est_x], r[c.est_y], r[c.true_heading]]) };
+    this.showTruth(false);
     // What the dock knew at launch: every event of a sortie already home.
     const home = new Set(cr.rec.sorties.filter((x) => x.t_end <= s.t_start).map((x) => x.sortie_id));
     this.before = cr.events.filter((e) => e.sortie_id && home.has(e.sortie_id));
     this.mine = cr.events.filter((e) => e.sortie_id === s.sortie_id);
     this._finds = new Map();
+  }
+
+  showTruth(on) {
+    const P = on ? this.poses.truth : this.poses.believed, a = this.sortie.scout;
+    this.steps.forEach((st, k) => { st.rovers[a].true_pose = P[k]; });
   }
 
   // The ice map as this Scout knows it at step k: world.js draws each find
@@ -156,6 +166,7 @@ function dock() {
 }
 
 function vis() {
+  run.showTruth(state.truth);
   world.setVisibility({ fill: state.fill, tracks: true, truth: state.truth });
   // world.js draws the true path with the tracks; here it is hidden truth, behind the reveal.
   world.tracks[sortie.scout].truth.line.visible = state.truth;
@@ -184,7 +195,7 @@ function bind() {
   $("speed").onchange = (e) => { state.speed = Number(e.target.value); };
   $("scrub").oninput = (e) => { state.t = Number(e.target.value); render(); };
   $("fill-btn").onclick = () => { state.fill = !state.fill; vis(); };
-  $("truth-btn").onclick = () => { state.truth = !state.truth; vis(); render(); };
+  $("truth-btn").onclick = () => { state.truth = !state.truth; vis(); render(); world.setFollow(state.follow ? sortie.scout : "site"); };
   $("cam-btn").onclick = () => { state.follow = !state.follow; world.setFollow(state.follow ? sortie.scout : "site"); vis(); };
   window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "SELECT") return;
@@ -213,7 +224,8 @@ function hud() {
   const k = run.stepAt(state.t), st = run.steps[Math.min(k + 1, run.steps.length - 1)], r = run.steps[k].rovers[sortie.scout];
   const act = ACTIVITY[st.act] || "–";
   const [x, y] = run.poseAt(sortie.scout, state.t);
-  const err = Math.hypot(r.estimate[0] - r.true_pose[0], r.estimate[1] - r.true_pose[1]);
+  const tp = run.poses.truth[k];
+  const err = Math.hypot(r.estimate[0] - tp[0], r.estimate[1] - tp[1]);
   const finds = run.findsAt(k);
   const counts = ["find", "confirmed", "unconfirmed", "drilled"].map((s) => [s, finds.filter((f) => f.status === s).length]).filter(([, n]) => n);
   const dist = Math.hypot(x - cr.rec.dock.x, y - cr.rec.dock.y);
@@ -227,7 +239,7 @@ function hud() {
       <dt>From the dock</dt><dd>${fmtNum(dist / 1000, 2)} km</dd>
       <dt>Ice map</dt><dd>${counts.map(([s, n]) => `<span style="color:${STATUS_COLOR[s]}">${n} ${s}</span>`).join(", ") || "empty"}</dd>
     </dl>
-    <div class="note">Coloured line: the Scout's estimated path. Ring: its 95% position bound.${state.truth ? ' <span style="color:var(--truth)">White line and dashed rings: where it really drove and the real ice (hidden truth).</span>' : ""} A time-lapse of the saved poses; nothing is re-simulated.</div>`;
+    <div class="note">${state.truth ? '<span style="color:var(--truth)">Hidden truth shown: the Scout is drawn where it really was. White line and dashed rings: where it really drove and the real ice.</span>' : "The Scout is drawn where it believed it was."} Coloured line: its estimated path. Ring: its 95% position bound. A time-lapse of the saved poses; nothing is re-simulated.</div>`;
 }
 
 main();

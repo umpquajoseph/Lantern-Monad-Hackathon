@@ -456,10 +456,10 @@ function info() {
   ]);
   $("results").innerHTML = kv([
     ["Sorties home with reserve", `${m.sorties_ok} of ${m.sorties}`], ["Below reserve", m.sorties_below_reserve], ["Fault returns", m.sorties_fault_return],
-    ["Scouts lost", m.scouts_lost], ["Drill-site error, p95", m.drill_err_p95_m == null || m.drill_err_p95_m === "" ? "–" : `${fmtNum(m.drill_err_p95_m, 1)} m`],
+    ["Scouts lost", m.scouts_lost], ["Drill-site error, p95 <span class=\"dim\">(true)</span>", m.drill_err_p95_m == null || m.drill_err_p95_m === "" ? "–" : `${fmtNum(m.drill_err_p95_m, 1)} m`],
     ["Checks per sortie", fmtNum(m.checks_per_sortie, 1)], ["Wrong-match rate", m.wrong_match_rate == null || m.wrong_match_rate === "" ? "–" : `${fmtNum(m.wrong_match_rate * 100, 1)}%`],
-    ["Finds", m.finds], ["Confirmed", m.confirmed], ["False confirmations", m.false_confirmed],
-    ["Deposits missed", `${m.deposits_missed}${w.n_deposits != null ? ` of ${w.n_deposits}` : ""}`], ["Area surveyed", `${fmtNum(m.area_km2, 3)} km²`],
+    ["Finds", m.finds], ["Confirmed", m.confirmed], ["False confirmations <span class=\"dim\">(vs truth)</span>", m.false_confirmed],
+    ["Deposits missed <span class=\"dim\">(vs truth)</span>", `${m.deposits_missed}${w.n_deposits != null ? ` of ${w.n_deposits}` : ""}`], ["Area surveyed", `${fmtNum(m.area_km2, 3)} km²`],
     ["Hours: drive / checks / readings / drill / dock queue", `${fmtNum(m.h_drive, 0)} / ${fmtNum(m.h_check, 0)} / ${fmtNum(m.h_reading, 0)} / ${fmtNum(m.h_drill, 0)} / ${fmtNum(m.h_wait, 0)}`],
   ]);
 }

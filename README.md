@@ -19,8 +19,8 @@ any run.
 A run is one world seed and one set of design choices: fleet size, when to
 check position, whether to refine the map, top speed, drill limit. The world
 is drawn from the seed alone, so every design choice is tried on the same
-worlds. Position error is sampled from ShadowNav's measured results, not
-re-derived (`sim/campaign.py`). Every constant lives in `sim/settings.py`
+worlds. After each position fix, a Scout's error is drawn from ShadowNav's
+simulated results, not computed by a filter (`sim/campaign.py`). Every constant lives in `sim/settings.py`
 with its source, or marked `assumed`.
 
 Each run writes `record.json` and `poses.npz` to
@@ -63,14 +63,26 @@ the data folder. The site runs locally only.
 
 ## What is real and what is not
 
-Real: the LOLA elevation of the Shoemaker crater region (5 m and 20 m), and
-the position errors ShadowNav measured after a crater-rim fix (Cauligi et
-al., 2023, Table 2; the papers are in `docs/sources/`). Simulated: the crater population below
-orbital resolution, the ice deposits, and every instrument reading. The
-current world is a 6 km window of Shoemaker terrain, not shadowed floor;
-every page says so in a banner until the real world model lands. The 3D
-replay is for looking. It re-simulates nothing, and the paper's numbers come
-from the batch files, not from the site.
+Real: the LOLA elevation of the Shoemaker crater region (5 m and 20 m).
+Simulated: the crater population below orbital resolution, the ice
+deposits, and every instrument reading. The current world is a 6 km window
+of Shoemaker terrain, not shadowed floor. Every page says so in a banner
+until the real world model lands.
+
+Borrowed, as a modelling choice: ShadowNav's Table 2 (Cauligi et al., 2023,
+in `docs/sources/`) gives the final position error over whole simulated
+traverses, 25 seeds each. Lantern uses those errors as the error right after
+each fix. That is the team's draft's choice, not something ShadowNav
+measured.
+
+The main caveat is the false-match rate, the share of fixes that match the
+wrong crater. It is an assumed model, and it decides whether one Scout can
+confirm another's find. Above about 11%, at the 6 m confirmation limit,
+ShadowNav's accuracy is not enough for the check. Finding 1 in
+`docs/paper-findings.md` (branch `campaign-handoffs`) has the numbers.
+
+The 3D replay is for looking. It re-simulates nothing, and the paper's
+numbers come from the batch files, not from the site.
 
 ## History
 

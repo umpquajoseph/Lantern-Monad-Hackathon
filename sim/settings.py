@@ -133,6 +133,42 @@ class Settings:
     log_spacing_m: float = S(10.0, ASSUMED + " (record size, not physics)")
     plan_cell_m: float = S(5.0, "LOLA 5 m spacing (code sim/terrain.py:57)")
 
+    # ------------------------------------------- engine (part 1, sim/campaign.py)
+    turnaround_h: float = S(6.0, "brief p.6 'one full cycle takes about 31 h', minus the 22 h sortie "
+                                 "and the ~3 h recharge (derived)")
+    # The filter's own reported uncertainty after a fix, sqrt of the largest
+    # covariance eigenvalue (C23 sec. 6B), 1-sigma. Used only by the 'filter'
+    # policy, the one the draft rejects (draft 4.2: reported 1.84 m against a
+    # true 3.84 m on the false-match traverse).
+    fix_sigma_good: tuple = S(((1.32, 0.76), (1.39, 0.61)),
+                              "C23 Table 2 Uncertainty column, trajectories 2 and 3 (mean, s.d.) m")
+    fix_sigma_wrong_match: tuple = S((1.84, 1.12), "C23 Table 2 Uncertainty column, trajectory 1 (mean, s.d.) m")
+    fix_z95: float = S(1.645, "draft 4.2 '95th percentile ... mean plus 1.645 standard deviations'")
+    fixed_row: str = S("false_match", "draft 4.2 / Table 1: 'fixed' policy spacing from the false-match row "
+                                      "(80 m at 10 m) or 'best' (358 m)")
+    check_min_spacing_m: float = S(20.0, ASSUMED + "; floor on fix spacing when the limit is not "
+                                                   "achievable (Table 1 'not achievable' cells)")
+    nav_limit_m: float = S(30.0, ASSUMED + "; 'before_work' also fixes when its bound reaches this")
+    p_est_window_rims: int = S(20, ASSUMED + "; the Scout estimates its false-match rate from the share "
+                                            "of the last N rims seen that its map could not match")
+    missing_share_prior: float = S(1.0, ASSUMED + "; that share before any rim is seen (conservative)")
+    drift_mode: str = S("fixed_direction", ASSUMED + "; 'fixed_direction': drift_frac * d along one random "
+                                                     "direction per fix interval (the draft's linear bound, "
+                                                     "conservative); 'along_track': scale error along travel")
+    reading_stop_s: float = S(0.0, ASSUMED + "; neutron readings taken while driving")
+    searches_per_sortie_max: int = S(4, ASSUMED)
+    survey_reach_m: float = S(1500.0, ASSUMED + "; survey lanes within this of the descent end")
+    lane_segment_m: float = S(200.0, ASSUMED + "; lanes are planned in pieces this long")
+    find_sep_m: float = S(25.0, ASSUMED + "; a reading this close to a known find adds to it, not a new find")
+    # Stand-in world, used until part 3's campaign_world lands (spec 11.1).
+    standin_window_px: tuple = S((2400, 2800, 1200), "code: scan of Shoemaker_final_adj_5mpp_slp.tif, the 6 km "
+                                                     "window (row0, col0, size px) with most ground under 15 deg "
+                                                     "(98.8%); not PSR floor (spec 11.1)")
+    standin_crater_d_min_m: float = S(7.5, "A24 p.10 Fig. 6 text: 'craters of diameters between 7.5 m and "
+                                           "20 m can be detected reliably'; smaller ones are not modelled")
+    standin_crater_d_max_m: float = S(20.0, "A24 p.10 Fig. 6 text (upper end); code sim/terrain.py:104")
+    standin_crater_sfd_b: float = S(2.0, "code sim/terrain.py:106 (assumed there)")
+
     # ------------------------------------------------------------- helpers
     def key(self) -> str:
         """Short stable hash of every setting: (seed, key) names a run."""

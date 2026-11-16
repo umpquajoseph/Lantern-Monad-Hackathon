@@ -116,7 +116,10 @@ SITES = {
     "s89_014e": dict(label="Unnamed PSR at 89.3 S 20 E, 7.7 km2", screen_dock=(4592.0, 19018.0)),
     "s89_134e": dict(label="Unnamed PSR crater at 89.0 S 130 E, 5.9 km2", screen_dock=(22192.0, -21642.0)),
     # From `screen 85s` (80 m), the best of 306 PSRs in 84.5-87 S. Built on the
-    # 10 m 83 S product: the 5 m mosaic stops at 87 S.
+    # 10 m 83 S product: the 5 m mosaic stops at 87 S. Cabeus: of its 62 PSRs
+    # of 1 km2 or more (within 1.1 radii), the 8 largest (13-127 km2, its
+    # floor) have no ground lit 30% of the time within 1.5 km (best 0.03-0.24);
+    # 5 small ones (1.2-6 km2) pass with 1.0-3.4 km2 reachable.
     "nobile": dict(label="PSR on Nobile's floor (85.4 S 50 E), 138 km2", screen_dock=(111960.0, 83400.0),
                    region="85s"),
 }

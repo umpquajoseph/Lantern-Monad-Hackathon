@@ -377,7 +377,7 @@ One folder per run, `data/campaigns/<batch_id>/<run_id>/` (git-ignored):
   "crater_map": {
     "start": [[x, y, d]],
     "added": [{"crater_id": "C7", "x": 0, "y": 0, "d": 8.0, "after_sortie": "S2-03",
-               "sightings": 2, "true_crater": 1312}]
+               "bound95": 2.1, "sightings": 2, "true_crater": 1312, "true_offset_m": 1.4}]
   },
   "sorties": [
     {"sortie_id": "S1-01", "scout": "S1", "n": 1, "t_start": 0.0, "t_end": 79200.0,
@@ -415,12 +415,12 @@ Event `type`s and their extra fields:
 | type | fields |
 |---|---|
 | `launch`, `dock_arrive` | `energy_kwh` |
-| `check` | `est`, `bound95`, `wrong_match`, `craters_in_view` |
-| `reading` | only above `find_threshold_wt`, else counted in `time_s`: `reading_wt`, `est`, `bound95` |
-| `find` | `find_id`, `est`, `bound95`, `reading_wt` |
-| `search_start`, `search_end` | `find_id`, `radius_m`; end adds `result`: `confirmed` / `unconfirmed`, `truth_has_deposit` |
+| `check` | `est`, `bound95`, `wrong_match`, `craters_in_view`; when `wrong_match`, `wrong_match_cause`: `base` / `missing` / `misplaced:<crater_id or start-map row>` |
+| `reading` | only above `find_threshold_wt`, else counted in `time_s`: `reading_wt`, `est`, `bound95`, `anchor` |
+| `find` | `find_id`, `est`, `bound95`, `reading_wt`, `anchor` |
+| `search_start`, `search_end` | `find_id`, `radius_m`; end adds `result`: `confirmed` / `unconfirmed`, `reason`: `match` / `no_readings` / `no_match` / `bound_too_large`, `truth_has_deposit` |
 | `drill` | `find_id`, `est`, `true_err_m` |
-| `sighting` | `est`, `d_est`, `bound95` (a rim seen but not matched) |
+| `sighting` | `est`, `d_est`, `bound95`, `anchor` (a rim seen but not matched) |
 | `crater_added` | `crater_id` (at the dock, `sortie_id` = the sortie just ended) |
 | `turn_back` | `reason`: `energy` / `fault` |
 | `fault` | `module`: `camera` / `lamp` / `neutron` |
@@ -440,15 +440,42 @@ series for Figure 1b go in `by_sortie.csv`: `run_id`, `sortie_n`,
 
 ### Part 2 gives part 1 (`sim/crossing.py`, pure functions, no I/O)
 
-- `search_area(find, searcher_bound95, s: Settings) -> radius_m`
-- `pick_searcher(find, scouts_ready) -> scout_id | None`: never the finder.
-- `judge_search(find, readings, s) -> "confirmed" | "unconfirmed"`, where
-  `readings` are the searcher's `(est_x, est_y, bound95, reading_wt)` inside
-  the area.
-- `merge_sightings(sightings, crater_map, s) -> list[added crater]`, at the
-  dock after each sortie. `sightings` as the `sighting` events.
+`anchor` (on `reading`, `find`, `sighting` and the find dict): `"dock"` until
+the Scout's first check of the sortie, then `"<sortie_id>#<check n>"`.
+Positions with one anchor share one error (the dock registration, or one
+fix), so they are never treated as independent (draft 4.4). A dock-anchored
+`bound95` should include `Settings.dock_reg_bound95_m`, the bound the Scouts
+believe; the world's drawn error stays hidden.
 
-A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_wt", "status"}`,
+Scout and dock side; none takes truth:
+
+- `search_area(find, searcher_bound95, s) -> radius_m`:
+  `search_radius_k * hypot(both bound95) + footprint_radius_m`.
+- `pick_searcher(find, scouts_ready) -> scout_id | None`: first id that is
+  not the finder, only while `status == "find"`.
+- `search_points(find, radius_m, s) -> (K, 2)`: reading points in the
+  searcher's estimated frame, drive order.
+- `judge_search(find, readings, s) -> "confirmed" | "unconfirmed"`, where
+  `readings` are the searcher's `(est_x, est_y, bound95, reading_wt, anchor)`
+  inside the area. `judge_search_detail` adds `reason`, `match` (index),
+  `dist_m`, and the confirmed deposit's `est`, `bound95`.
+- `merge_sightings(sightings, crater_map, s, next_index=None) -> list[added crater]`,
+  at the dock after each sortie, on every sighting not yet used. `sightings`
+  as the `sighting` events; `crater_map` `(M, 3)`, start plus added. Each
+  added crater: `crater_id, x, y, d, bound95, sightings, members, scouts,
+  sorties`; `members` index into `sightings` and leave the pool.
+
+World side; takes truth, for part 1's world model and scoring only:
+
+- `crater_view(true_xy, true_craters, map_craters, s)`: `in_view`,
+  `missing` (make a sighting of each), `misplaced` (map rows), `share_bad`,
+  the share used in `p_wrong`.
+- `wrong_match_cause(view, s, rng)`, `make_sighting(true_crater,
+  scout_true_xy, scout_err_xy, scout_bound95, anchor, rng, s)`.
+- `deposit_at`, `score_search` (`truth_has_deposit`, `false_confirmed`,
+  `missed`), `score_added` (`true_crater`, `true_offset_m`, `misplaced`).
+
+A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_wt", "anchor", "status"}`,
 `status` one of `find`, `confirmed`, `unconfirmed`, `drilled`.
 
 ### Part 3 gives part 1 (`sim/terrain.py`)

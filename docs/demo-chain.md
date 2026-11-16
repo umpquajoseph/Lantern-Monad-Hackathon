@@ -93,5 +93,11 @@ is for after the demo, if ever (`contracts/README.md`, "Before the demo").
 - 15:45 PST: Vercel env vars set by Kellen (`contracts/uplink_env.sh`), the
   production build redeployed, `/api/chain` reports both signers and the key;
   a wrong key is refused with 403.
-- A headless play-through of the live site with the key: see the entry below
-  this line once it finished.
+- 16:20 PST: the page fix (`chain-live-fix`, f845cc4: a forward jump over a
+  chain step posts it too; the checkpoint on the find's step still pauses
+  after the post; rewinds re-arm) deployed to production with the site
+  rebuilt from the live copy. Headless Chrome against the live site: playing
+  across the find and the check posted find #24 and its check (confirmed);
+  dragging the slider past them posted #25 and its check (confirmed); both
+  rows tagged LIVE in the feed with Monadscan links. Direct uplink calls at
+  15:58 posted #22. Agency A = Surveyor (postFind), B = Prospector (checkFind).

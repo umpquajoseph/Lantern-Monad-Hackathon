@@ -45,6 +45,12 @@ C23_TRAJ3 = (1.68, 0.70)
 
 @dataclass(frozen=True)
 class Settings:
+    # ----------------------------------------------------------------- site
+    site: str = S("s89_134e", "sim/psr_sites.py SITES: 'haynes', 's89_014e', 's89_134e' (real LOLA 5 m PSR "
+                              "windows), 'nobile' (LOLA 10 m, 84.5-87 S; docs/handoffs.md Part 3), or 'shoemaker' (engine stand-in, not PSR "
+                              "floor). Swept for the site table (spec 5.3). Default: the site with 100% of "
+                              "survey poses on PSR floor (terrain fyi 20261116-145039)")
+
     # ---------------------------------------------------------------- fleet
     n_scouts: int = S(3, "brief p.5 baseline 'two to three Scouts sharing one charging dock'. "
                          "Sweep 1-5: 1 = brief p.6 2029 pathfinder; 4-5 is an extrapolation "
@@ -119,6 +125,35 @@ class Settings:
     map_refinement: bool = S(True, "draft 4.3; swept on/off for Figure 1b")
     sightings_to_add: int = S(2, ASSUMED + "; draft item 12")
     merge_tol_m: float = S(3.0, ASSUMED + "; draft item 12")
+    merge_size_tol_frac: float = S(0.3, ASSUMED + "; two sightings agree on size when their diameters "
+                                                  "differ by at most this share of the larger (draft item 12)")
+    # Rim sightings (sim/crossing.py make_sighting). ShadowNav sees the
+    # leading edge, a front arc, not the whole rim: A24 p.10 Fig. 6b plots
+    # "percent front arc of ground truth crater detected"; C23 p.8 finds the
+    # far edge in stereo at 5 m and only sparsely at 10 m.
+    rim_detect_d_min_m: float = S(7.5, "A24 p.10: 'craters of diameters between 7.5 m and 20 m "
+                                       "can be detected reliably'")
+    rim_detect_d_max_m: float = S(20.0, "A24 p.10 (same sentence)")
+    rim_pos_noise_m: float = S(1.0, ASSUMED + "; 1-sigma per axis of the located arc. Anchor: A24 p.10 "
+                                             "'average pixel detection is within 2 m of the crater rim', "
+                                             "and an arc averages many pixels")
+    rim_size_err_frac: float = S(0.2, ASSUMED + "; 1-sigma diameter error from a partial rim, as a share of "
+                                                "the diameter. Draft 4.3: size from a partial rim is not "
+                                                "demonstrated by ShadowNav; draft item 12")
+    map_match_tol_m: float = S(3.0, ASSUMED + "; a map crater further than this from the true crater "
+                                              "does not help a fix and counts as a bad map entry. Set at "
+                                              "the fix's own 95th-pct error, 2.8-3.0 m (draft Table 1): "
+                                              "a smaller offset is within fix noise")
+    # Ice cross-check (draft 4.4).
+    search_line_spacing_m: float = S(4.0, ASSUMED + "; grid of search readings. A deposit of radius "
+                                                    ">= spacing/sqrt(2) always holds a point; "
+                                                    "deposit radii are WorldRanges.deposit_radius_m")
+    confirm_bound_max_m: float = S(6.0, ASSUMED + "; a check is meaningful only when the combined bound is "
+                                                  "'well below the deposit radius and the spectrometer "
+                                                  "footprint' (draft 4.4); draft item 14 open")
+    dock_reg_bound95_m: float = S(6.0, ASSUMED + "; the 95th-pct registration bound the Scouts believe "
+                                                 "(draft 4.2, item 15). The world's actual error is "
+                                                 "WorldRanges.dock_reg_sigma_m and stays hidden")
 
     # --------------------------------------------------------------- faults
     # Per sortie, per Scout. Camera or lamp out: no fixes, Scout turns back.
@@ -129,9 +164,68 @@ class Settings:
     p_fail_neutron: float = S(0.01, ASSUMED)
     swap_downtime_h: float = S(24.0, ASSUMED)
 
+    # ------------------------------------- camera navigation (showcase only)
+    # Batch runs sample navigation (above) and never read these.
+    camera_height_m: float = S(1.6, "brief p.6 '1.6 m mast'; draft item 24. Camera assumed at the mast top. "
+                                    "A24 sec. IV tested 1.5, 2.5 and 3 m")
+    lamp_below_camera_m: float = S(0.2, "A24 sec. IV 'Light offsets of 0.2 m below the camera'")
+    # The truth: how the odometer errs (sim/rover.py, sim/mission.py). The
+    # bias is drift_frac above.
+    odom_noise_frac: float = S(0.005, ASSUMED + "; white distance noise per step, share of the step")
+    odom_heading_noise_rad: float = S(0.0005, ASSUMED + "; heading noise per step (~0.7 deg after 1 km)")
+    # The filter's own model (sim/nav.py), set without reference to the
+    # truth above, as a real filter is tuned without knowing it.
+    pf_drift_sigma: float = S(0.02, "C23 sec. 6B 'utilizing 2% odometry noise'")
+    pf_step_noise_frac: float = S(0.01, ASSUMED + "; filter's process noise, not the truth's odom_noise_frac")
+    pf_heading_walk_rad: float = S(0.001, ASSUMED + "; filter's process noise, not the truth's "
+                                                     "odom_heading_noise_rad")
+
     # -------------------------------------------------------------- logging
     log_spacing_m: float = S(10.0, ASSUMED + " (record size, not physics)")
     plan_cell_m: float = S(5.0, "LOLA 5 m spacing (code sim/terrain.py:57)")
+
+    # ------------------------------------------- engine (part 1, sim/campaign.py)
+    turnaround_h: float = S(6.0, "brief p.6 'one full cycle takes about 31 h', minus the 22 h sortie "
+                                 "and the ~3 h recharge (derived)")
+    # The filter's own reported uncertainty after a fix, sqrt of the largest
+    # covariance eigenvalue (C23 sec. 6B), 1-sigma. Used only by the 'filter'
+    # policy, the one the draft rejects (draft 4.2: reported 1.84 m against a
+    # true 3.84 m on the false-match traverse).
+    fix_sigma_good: tuple = S(((1.32, 0.76), (1.39, 0.61)),
+                              "C23 Table 2 Uncertainty column, trajectories 2 and 3 (mean, s.d.) m")
+    fix_sigma_wrong_match: tuple = S((1.84, 1.12), "C23 Table 2 Uncertainty column, trajectory 1 (mean, s.d.) m")
+    fix_z95: float = S(1.645, "draft 4.2 '95th percentile ... mean plus 1.645 standard deviations'")
+    fixed_row: str = S("false_match", "draft 4.2 / Table 1: 'fixed' policy spacing from the false-match row "
+                                      "(80 m at 10 m) or 'best' (358 m)")
+    check_min_spacing_m: float = S(20.0, ASSUMED + "; floor on fix spacing when the limit is not "
+                                                   "achievable (Table 1 'not achievable' cells)")
+    bound_model: str = S("mixture", ASSUMED + "; what a Scout believes its 95th-pct error is just after a fix: "
+                                         "'mixture' (C23 rows mixed at its estimated wrong-match rate) or "
+                                         "'good_rows' (C23 trajectories 2 and 3 only, as if every fix were good)")
+    nav_limit_m: float = S(30.0, ASSUMED + "; 'before_work' also fixes when its bound reaches this")
+    p_est_window_rims: int = S(20, ASSUMED + "; the Scout estimates its false-match rate from the share "
+                                            "of the last N rims seen that its map could not match")
+    missing_share_prior: float = S(1.0, ASSUMED + "; that share before any rim is seen (conservative)")
+    drift_mode: str = S("fixed_direction", ASSUMED + "; 'fixed_direction': drift_frac * d along one random "
+                                                     "direction per fix interval (the draft's linear bound, "
+                                                     "conservative); 'along_track': scale error along travel")
+    reading_stop_s: float = S(0.0, ASSUMED + "; neutron readings taken while driving")
+    searches_per_sortie_max: int = S(4, ASSUMED)
+    survey_reach_m: float = S(1500.0, ASSUMED + "; stand-in world only: deposits within this of the descent end")
+    lane_reach_m: float = S(3000.0, ASSUMED + "; survey lanes on PSR floor within this straight-line distance of "
+                                    "the descent end, on an approach under the slope limit. Nearest lanes go "
+                                    "first; this only matters once nearer floor is surveyed (Nobile: 6.0 km2 of "
+                                    "floor within 3 km driving, terrain fyi 20261116-151941)")
+    lane_segment_m: float = S(200.0, ASSUMED + "; lanes are planned in pieces this long")
+    find_sep_m: float = S(25.0, ASSUMED + "; a reading this close to a known find adds to it, not a new find")
+    # Stand-in world, used until part 3's campaign_world lands (spec 11.1).
+    standin_window_px: tuple = S((2400, 2800, 1200), "code: scan of Shoemaker_final_adj_5mpp_slp.tif, the 6 km "
+                                                     "window (row0, col0, size px) with most ground under 15 deg "
+                                                     "(98.8%); not PSR floor (spec 11.1)")
+    standin_crater_d_min_m: float = S(7.5, "A24 p.10 Fig. 6 text: 'craters of diameters between 7.5 m and "
+                                           "20 m can be detected reliably'; smaller ones are not modelled")
+    standin_crater_d_max_m: float = S(20.0, "A24 p.10 Fig. 6 text (upper end); code sim/terrain.py:104")
+    standin_crater_sfd_b: float = S(2.0, "code sim/terrain.py:106 (assumed there)")
 
     # ------------------------------------------------------------- helpers
     def key(self) -> str:
@@ -157,6 +251,37 @@ class WorldRanges:
     deposit_peak_wt: tuple = S((1.0, 5.6), "upper end brief p.12 (LCROSS); lower end the find threshold")
     drift_frac: tuple = S((0.01, 0.04), "draft 4.6 'odometry drift from 1 to 4%'")
     dock_reg_sigma_m: tuple = S((0.5, 5.0), ASSUMED + "; draft item 15")
+    # ---- part 3 (sim/terrain.py campaign_world). The true crater list holds
+    # the sizes ShadowNav can use, so the share missing from the starting map
+    # is a share of craters a Scout could have matched.
+    crater_d_m: tuple = S((7.5, 20.0), "A24 sec. V-B 'craters of diameters between 7.5 m and 20 m can be "
+                                       "detected reliably'")
+    crater_sfd_b: float = S(2.0, ASSUMED + "; cumulative N(>D) ~ D^-b (code sim/terrain.py:106)")
+    ice_reach_m: float = S(3000.0, ASSUMED + "; hidden deposits lie on PSR floor within this driving "
+                                            "distance of the dock (1.5 km descent + half the 4 km survey, "
+                                            "brief p.6)")
+
+
+@dataclass(frozen=True)
+class SiteBuild:
+    """How the candidate PSR terrain windows were chosen (sim/psr_sites.py).
+
+    Build-time only: a run reads the built window, never these. Kept here so
+    the choice of site is sourced like every other number.
+    """
+    window_m: float = S(8000.0, ASSUMED + "; square window centred on the dock, 4 km each way, "
+                                          "so all ground within ice_reach_m of the dock is inside it")
+    cell_m: float = S(5.0, "PGDA product 81 (ldem_87s_5mpp): native 5 m/pixel LOLA mosaic")
+    slope_limit_deg: float = S(15.0, "brief p.7 '15 deg slope limit for routes (VIPER's own design limit)'")
+    reach_m: float = S(3000.0, ASSUMED + "; driving distance from the dock to PSR floor counted as "
+                                        "surveyable (1.5 km descent + half the 4 km survey, brief p.6)")
+    dock_max_from_psr_m: float = S(1500.0, "brief p.6 '1.5 km descent'")
+    dock_min_sun: float = S(0.30, ASSUMED + "; average sunlit fraction at the ground (Mazarico, "
+                                          "AVGVISIB_85S_060M) the dock site must reach. The 20 m Power "
+                                          "Tower (brief p.3) sees more sun than the ground")
+    psr_min_km2: float = S(1.0, ASSUMED + "; smallest PSR screened")
+    screen_px_m: float = S(40.0, ASSUMED + "; screening resolution (level-3 overview of the 5 m mosaic)")
+    dock_samples: int = S(60, ASSUMED + "; dock positions tried per site at 5 m")
 
 
 def sources(obj) -> list[tuple[str, object, str]]:
@@ -169,7 +294,7 @@ def unlabelled(obj) -> list[str]:
 
 
 if __name__ == "__main__":
-    for obj in (Settings(), WorldRanges()):
+    for obj in (Settings(), WorldRanges(), SiteBuild()):
         print(f"== {type(obj).__name__}")
         for name, val, src in sources(obj):
             print(f"{name:26} {val!s:28} {src}")

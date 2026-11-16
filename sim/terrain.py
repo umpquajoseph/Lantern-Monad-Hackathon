@@ -125,6 +125,12 @@ class Params:
 
     seed: int = 7
 
+    # --- source. None: the Shoemaker tile window above (hackathon terrain,
+    # chosen for gentle slopes). A sim/psr_sites.py site name: a 1 km window
+    # of that PSR site centred on the first PSR floor cell the dock reaches,
+    # not chosen for slope (draft item 22).
+    site: str | None = None
+
     @property
     def n(self) -> int:
         return int(round(self.size_m / self.cell))
@@ -187,6 +193,32 @@ def lola_base(p: Params, margin: int = 8):
     x_left = LOLA_X_LEFT + LOLA_PX * p.lola_col0
     y_bottom = LOLA_Y_TOP - LOLA_PX * (p.lola_row0 + npx)
     return z, e, xc, yc, x_left, y_bottom
+
+
+def site_base(p: Params, margin: int = 8):
+    """Like lola_base, from a built PSR site (5 m, rows already run north).
+
+    The window is p.size_m square, centred on the first PSR floor cell under
+    the slope limit that the dock reaches. The 87-90 S mosaic has no height
+    error product, so err5 is p.synthetic_toterr_m everywhere (ASSUMED).
+    """
+    from sim.psr_sites import load_site
+    from sim.settings import SiteBuild
+    d = load_site(p.site)
+    z, dist, cell = d["height"], d["dist_dock"], d["cell"]
+    assert cell == LOLA_PX
+    fl = d["psr"] & (d["slope"] < SiteBuild().slope_limit_deg)
+    i, j = divmod(int(np.nanargmin(np.where(fl, dist, np.nan))), z.shape[1])
+    npx = int(round(p.size_m / LOLA_PX))
+    r0, c0 = i - npx // 2, j - npx // 2
+    assert r0 - margin >= 0 and c0 - margin >= 0 and r0 + npx + margin <= z.shape[0]         and c0 + npx + margin <= z.shape[1], "showcase window leaves the site"
+    z5 = z[r0 - margin:r0 + npx + margin, c0 - margin:c0 + npx + margin].astype(np.float64)
+    e5 = np.full_like(z5, p.synthetic_toterr_m)
+    xc = d["x0"] + cell * np.arange(c0 - margin, c0 + npx + margin)
+    yc = d["y0"] + cell * np.arange(r0 - margin, r0 + npx + margin)
+    x_left = d["x0"] + cell * (c0 - 0.5)
+    y_bottom = d["y0"] + cell * (r0 - 0.5)
+    return z5, e5, xc, yc, x_left, y_bottom
 
 
 def _fractal_noise(n, dx, beta, rng, k_lo=None, k_hi=None):
@@ -329,6 +361,9 @@ def build(synthetic: bool = False, p: Params | None = None, out=None):
     if synthetic:
         z5, e5, xc, yc, x_left, y_bottom = synthetic_base(p, rng)
         source = "synthetic"
+    elif p.site:
+        z5, e5, xc, yc, x_left, y_bottom = site_base(p)
+        source = f"psr-site-{p.site}"
     else:
         z5, e5, xc, yc, x_left, y_bottom = lola_base(p)
         source = "lola-shoemaker"
@@ -350,7 +385,8 @@ def build(synthetic: bool = False, p: Params | None = None, out=None):
     craters[:, 0] += x_left
     craters[:, 1] += y_bottom
     meta = dict(source=source, params=asdict(p), x_left=x_left, y_bottom=y_bottom)
-    out = Path(out) if out else TERRAIN_DIR / ("synthetic.npz" if synthetic else "shoemaker.npz")
+    out = Path(out) if out else TERRAIN_DIR / ("synthetic.npz" if synthetic else
+                                               f"{p.site}.npz" if p.site else "shoemaker.npz")
     save_terrain(out, height, craters, x0, y0, c,
                  crater_depth=depth.astype(np.float32),
                  meta=np.array(json.dumps(meta)))
@@ -395,8 +431,9 @@ def report(path):
         f"  y {y0 - cell/2:.1f}..{y0 + (n - .5) * cell:.1f}",
         f"craters {len(craters)}  D {craters[:, 2].min():.2f}..{craters[:, 2].max():.2f} m"
         f"  D>=5: {np.sum(craters[:, 2] >= 5)}  D>=7.5: {np.sum(craters[:, 2] >= 7.5)}",
-        f"slope 0.25 m: median {np.median(s):.1f}  under 15: {np.mean(s < 15):.3f}",
-        f"slope 5 m:    median {np.median(s5):.1f}  under 15: {np.mean(s5 < 15):.3f}",
+        f"slope 0.25 m (INTERPOLATED, 5 m LOLA upsampled + stamped craters + roughness): "
+        f"median {np.median(s):.1f}  under 15: {np.mean(s < 15):.3f}",
+        f"slope 5 m (LOLA spacing; resampled from this grid): median {np.median(s5):.1f}  under 15: {np.mean(s5 < 15):.3f}",
     ]
     for near, dmin in ((15, 0), (15, 7.5), (25, 7.5)):
         cnt = coverage(craters, x0, y0, n * cell, near=near, d_min=dmin)
@@ -466,8 +503,9 @@ def look(path, outdir=None):
 
     # 2. Close-up at full resolution: a 100 m square, lit (a) by the rover's
     # lamp and (b) by a 5 deg sun, to show facet artifacts. Crater list on top.
-    # [A24] section IV: camera 2.5 m above ground, lamp 0.2 m below it.
-    lamp_h = 2.5 - 0.2
+    # Lamp height: sim/settings.py camera_height_m - lamp_below_camera_m.
+    from sim.settings import Settings
+    lamp_h = Settings().camera_height_m - Settings().lamp_below_camera_m
     ci, cj = n // 2, n // 2
     half = 200  # 50 m each way
     lampimg = _lamp_render(height, cell, (ci, cj), lamp_h, half)
@@ -478,7 +516,7 @@ def look(path, outdir=None):
     fig, axs = plt.subplots(1, 2, figsize=(20, 10), dpi=100)
     axs[0].imshow(np.sqrt(np.clip(lampimg, 0, 1)), cmap="gray", origin="lower", extent=e2)
     axs[0].plot(x0 + cj * cell, y0 + ci * cell, "y+", ms=12)
-    axs[0].set_title(f"lamp {lamp_h} m above ground at the +, cast shadows, sqrt tone")
+    axs[0].set_title(f"lamp {lamp_h:.2f} m above ground at the +, cast shadows, sqrt tone")
     axs[1].imshow(low, cmap="gray", origin="lower", extent=e2)
     axs[1].set_title("sun az 315, elevation 5 deg")
     for a in axs:
@@ -495,6 +533,108 @@ def look(path, outdir=None):
     return outdir / f"{stem}_map.png", outdir / f"{stem}_closeup.png"
 
 
+# --------------------------------------------------------------------------
+# Campaign worlds (docs/handoffs.md "Part 3 gives part 1").
+# --------------------------------------------------------------------------
+
+@dataclass
+class CampaignWorld:
+    """The fields of sim/campaign.py World, in the same order and units."""
+    site: str
+    file: str
+    x0: float               # centre of cell [0, 0], rows run north
+    y0: float
+    cell: float             # 5 m, native LOLA (PGDA product 81)
+    height: np.ndarray      # (H, W) float32 m, LOLA ldem, no craters stamped in
+    slope: np.ndarray       # (H, W) float32 deg, LOLA ldsm at the native 5 m spacing
+    floor: np.ndarray       # (H, W) bool, permanent shadow (Barker 2023 LPSR, 20 m, sampled to 5 m)
+    craters: np.ndarray     # (N, 3) true craters [x, y, d], d in WorldRanges.crater_d_m
+    map_start: np.ndarray   # (M, 3) the Scouts' starting map, a subset of craters
+    dock: tuple             # true dock position, on sunlit rim ground
+    draws: dict             # every WorldRanges draw, plus dock_reg_err
+    ice: list               # hidden deposits [{x, y, radius, peak}]
+    standin: str | None = None
+
+
+def _world_rng(seed: int, *key: int):
+    # Same keying as sim/campaign.py rng_for(seed, 0), so a world drawn here
+    # equals the engine's stand-in draws for the same seed.
+    return np.random.default_rng(np.random.SeedSequence([int(seed), *map(int, key)]))
+
+
+def draw_world_values(seed: int, ranges, rng) -> dict:
+    """Every WorldRanges draw for this seed, in a fixed order (keys as sim/campaign.py)."""
+    import math
+    lo, hi = ranges.crater_n_ge10_per_km2
+    d = {
+        "crater_n_ge10_per_km2": float(math.exp(rng.uniform(math.log(lo), math.log(hi)))),
+        "orbital_map_min_d_m": float(ranges.orbital_map_min_d_m),
+        "missing_share_large": float(rng.uniform(*ranges.missing_share_large)),
+        "n_deposits": int(rng.integers(ranges.n_deposits[0], ranges.n_deposits[1] + 1)),
+        "drift_frac": float(rng.uniform(*ranges.drift_frac)),
+        "dock_reg_sigma_m": float(rng.uniform(*ranges.dock_reg_sigma_m)),
+    }
+    d["dock_reg_err"] = [float(v) for v in rng.normal(0.0, d["dock_reg_sigma_m"], 2)]
+    return d
+
+
+_SITE_CACHE: dict = {}
+
+
+def campaign_world(site: str, seed: int, ranges=None) -> CampaignWorld:
+    """One random world on a candidate PSR window (sim/psr_sites.py SITES).
+
+    Terrain, dock and PSR mask are fixed per site. The seed draws the crater
+    density, the true craters (uniform over the window, truncated power law
+    over ranges.crater_d_m), which of them the Scouts' starting map holds
+    (every crater under orbital_map_min_d_m is missing, plus a random share
+    missing_share_large of the rest), and the hidden ice (uniform over PSR
+    floor under the slope limit within ice_reach_m driving of the dock).
+    """
+    from sim.psr_sites import SITES, load_site
+    from sim.settings import SiteBuild, WorldRanges
+    ranges = ranges or WorldRanges()
+    if site not in SITES:
+        raise ValueError(f"unknown site {site!r}; built PSR sites: {sorted(SITES)} "
+                         f"(the Shoemaker tile is not PSR floor, spec 11.1; use sim/campaign.py standin_world)")
+    if site not in _SITE_CACHE:
+        _SITE_CACHE[site] = load_site(site)
+    t = _SITE_CACHE[site]
+    x0, y0, cell = t["x0"], t["y0"], t["cell"]
+    h, w = t["height"].shape
+    rng = _world_rng(seed, 0)
+    draws = draw_world_values(seed, ranges, rng)
+
+    dmin, dmax = ranges.crater_d_m
+    b = ranges.crater_sfd_b
+    area_km2 = (h * cell / 1000.0) * (w * cell / 1000.0)
+    n_tot = draws["crater_n_ge10_per_km2"] * area_km2 * ((dmin / 10) ** -b - (dmax / 10) ** -b)
+    nc = int(rng.poisson(n_tot))
+    u = rng.random(nc)
+    a_, b_ = dmin ** -b, dmax ** -b
+    d = (a_ - u * (a_ - b_)) ** (-1.0 / b)
+    xy = rng.uniform(0, 1, (nc, 2)) * [w * cell, h * cell] + [x0 - cell / 2, y0 - cell / 2]
+    craters = np.column_stack([xy, d])
+    in_map = (d >= draws["orbital_map_min_d_m"]) & (rng.random(nc) >= draws["missing_share_large"])
+    map_start = craters[in_map]
+
+    dist = t["dist_dock"]
+    good = t["psr"] & (t["slope"] < SiteBuild().slope_limit_deg) & (np.nan_to_num(dist, nan=np.inf) <= ranges.ice_reach_m)
+    cells = np.flatnonzero(good)
+    ice = []
+    if len(cells):
+        pick = rng.choice(cells, draws["n_deposits"], replace=len(cells) < draws["n_deposits"])
+        for k in pick:
+            i, j = divmod(int(k), w)
+            ice.append({"x": float(x0 + (j + rng.uniform(-.5, .5)) * cell),
+                        "y": float(y0 + (i + rng.uniform(-.5, .5)) * cell),
+                        "radius": float(rng.uniform(*ranges.deposit_radius_m)),
+                        "peak": float(rng.uniform(*ranges.deposit_peak_wt))})
+    return CampaignWorld(site=site, file=f"psr_sites/{site}.npz", x0=x0, y0=y0, cell=cell,
+                         height=t["height"], slope=t["slope"], floor=t["psr"], craters=craters,
+                         map_start=map_start, dock=t["dock"], draws=draws, ice=ice)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -502,11 +642,12 @@ def main():
     b.add_argument("--synthetic", action="store_true")
     b.add_argument("--out")
     b.add_argument("--seed", type=int, default=Params.seed)
+    b.add_argument("--site", default=None, help="a sim/psr_sites.py site: 1 km at its PSR edge")
     lk = sub.add_parser("look")
     lk.add_argument("path", nargs="?")
     a = ap.parse_args()
     if a.cmd == "build":
-        out = build(a.synthetic, Params(seed=a.seed), a.out)
+        out = build(a.synthetic, Params(seed=a.seed, site=a.site), a.out)
         print(f"wrote {out}")
         look(out)
     else:

@@ -74,9 +74,10 @@ img = scene.third_person(agency, overlays)    # (h, w, 3) uint8
 - Also: `scene.camera_model()` gives the intrinsics and pitch, and
   `scene.depth_to_rover(depth)` turns depth into rover-frame points
   `[x_fwd, y_left, z_up]` for the vision step.
-- The first-person camera and lamp follow ShadowNav: camera 2.5 m above the
-  ground, lamp 0.2 m below it, 60° horizontal field of view (Atha et al. 2024,
-  sections IV and V).
+- The first-person camera sits on the Scout's mast, `Settings.camera_height_m`
+  (1.6 m, brief p.6); the lamp is `Settings.lamp_below_camera_m` (0.2 m) below
+  it, 60° horizontal field of view (Atha et al. 2024, sections IV and V).
+  ShadowNav's own camera was 2.5 m up.
 
 ## Run log (`run_demo.py` writes it, the web viewer replays it)
 
@@ -353,6 +354,11 @@ must print `unlabelled: none`. A new constant is a new field there, never a
 literal in another file. `Settings.drift_frac` is used by a single run; a
 batch draws drift from `WorldRanges.drift_frac` per world.
 
+`Settings.site` picks the world: a PSR site from `sim/psr_sites.py`
+(`haynes`, `s89_014e`, `s89_134e`; default `s89_134e`) or `shoemaker`
+(engine stand-in, not PSR floor). It is part of `Settings.key()`, so runs
+on different sites never share a folder, and it is a summary.csv column.
+
 A run is named `w<seed:05d>-<Settings.key()>`. Same seed and same key give
 the same record, byte for byte apart from `made_at`.
 
@@ -377,7 +383,8 @@ One folder per run, `data/campaigns/<batch_id>/<run_id>/` (git-ignored):
   "crater_map": {
     "start": [[x, y, d]],
     "added": [{"crater_id": "C7", "x": 0, "y": 0, "d": 8.0, "after_sortie": "S2-03",
-               "sightings": 2, "true_crater": 1312}]
+               "bound95": 2.1, "sightings": 2, "true_crater": 12, "true_offset_m": 1.4,
+               "misplaced": false}]
   },
   "sorties": [
     {"sortie_id": "S1-01", "scout": "S1", "n": 1, "t_start": 0.0, "t_end": 79200.0,
@@ -415,17 +422,45 @@ Event `type`s and their extra fields:
 | type | fields |
 |---|---|
 | `launch`, `dock_arrive` | `energy_kwh` |
-| `check` | `est`, `bound95`, `wrong_match`, `craters_in_view` |
-| `reading` | only above `find_threshold_wt`, else counted in `time_s`: `reading_wt`, `est`, `bound95` |
-| `find` | `find_id`, `est`, `bound95`, `reading_wt` |
-| `search_start`, `search_end` | `find_id`, `radius_m`; end adds `result`: `confirmed` / `unconfirmed`, `truth_has_deposit` |
-| `drill` | `find_id`, `est`, `true_err_m` |
-| `sighting` | `est`, `d_est`, `bound95` (a rim seen but not matched) |
+| `check` | `est`, `bound95`, `wrong_match`, `craters_in_view` (detectable true rims in view), `matched` (map craters matched), `fixed` (false: under `fix_min_craters` matched, no fix), `reason` (`schedule` / `find` / `search` / `drill`), truth: `true_err_before_m`, `true_err_m`; `wrong_match_cause` (null unless `wrong_match`): `base` / `missing` / `misplaced:<crater_id or start-map row>` |
+| `reading` | only above `find_threshold_wt`, else counted in `time_s`: `reading_wt`, `est`, `bound95`, `anchor` |
+| `find` | `find_id`, `est`, `bound95`, `reading_wt`, `anchor` |
+| `search_start`, `search_end` | `find_id`, `radius_m`; end adds `result`: `confirmed` / `unconfirmed`, `reason`: `match` / `no_readings` / `no_match` / `bound_too_large`, `truth_has_deposit`, `false_confirmed`, `missed` |
+| `drill` | `find_id`, `est`, `true_err_m` (the Scout's position error), truth: `miss_m` (to the find's true reading point), `hit` (a deposit under the drill) |
+| `sighting` | `est`, `d_est`, `bound95`, `anchor` (a rim seen but not matched) |
 | `crater_added` | `crater_id` (at the dock, `sortie_id` = the sortie just ended) |
 | `turn_back` | `reason`: `energy` / `fault` |
 | `fault` | `module`: `camera` / `lamp` / `neutron` |
 | `swap` | `module`, `downtime_h` |
-| `contact_lost`, `contact_regained` | none |
+| `contact_lost`, `contact_regained` | none; `sortie_id` and `scout` are null |
+| `lost` | `energy_kwh` (0): battery empty before the dock |
+
+Part 1 also writes (2026-11-16, additive):
+
+- Top level: `world_ranges` (the ranges the world was drawn from; a single
+  run uses a zero-width drift range at `Settings.drift_frac`), `corridor`
+  (descent waypoints, map frame, from the dock's registered position),
+  `energy` (the per-activity draws after scaling to `avg_load_w`),
+  `standins` (parts still stand-ins), `finds` (every find as the dock
+  holds it at the end: the find dict plus `history` [[sortie_id, status]]
+  and `confirm_est` when confirmed).
+- Sorties: `fixes`, `survey_m`, `map_craters` (dock map size after this
+  sortie's merge), `turn_back` (`energy` / `fault` / null). Sorties are
+  ordered by `t_start`.
+- Sightings are made only at checks (crossing's rule), of rims in view
+  with no map partner.
+- `crater_map.start` and `truth.craters_missing` list only craters within
+  `fix_range_m + 10` m of a driven pose (`crater_map.scope` says so), plus
+  every crater an added one points at; `true_crater` indexes that cut
+  list. The full lists are regenerated from the seed.
+- `truth.ice_profile`: the field readings and `crossing.deposit_at` use
+  (sim/ice.py's profile).
+- `poses.npz`: after `dock_arrive`, rows with activity 8 (waiting) while
+  the dock is busy and 7 (docked) from charge start to charge end, the last
+  with a full battery.
+- `terrain` (stand-in world): the 5 m Shoemaker window; `bounds` covers the
+  dock and every pose.
+
 
 ### Summary row (part 1)
 
@@ -438,25 +473,86 @@ every swept Settings field, every world draw, then
 series for Figure 1b go in `by_sortie.csv`: `run_id`, `sortie_n`,
 `checks`, `wrong_matches`, `map_craters`.
 
+As built (part 1, 2026-11-16): `deposits_missed` counts searches that came
+back unconfirmed over a real deposit (`crossing.score_search` `missed`).
+`checks_per_sortie` counts every check stop, fixed or not. Added columns:
+`dock_reg_err_m` (length of the hidden draw), `fixes`, `drills`,
+`drill_hit_rate`, `survey_err_p95_m` (95th-pct true error over survey and
+search poses), `deposits_in_area`, `deposits_unfound` (deposits inside the
+surveyed area that no find landed in), `added_misplaced`, `craters_added`,
+`campaign_days`. `by_sortie.csv` sums over the fleet's n-th sorties and
+adds `fixes` and `sorties`; `map_craters` is the largest dock map after
+any of them. A batch also writes `drills.csv` (`run_id`, `sortie_id`,
+`true_err_m`, `miss_m`, `hit`), `report.md` (hand checks, timings,
+stand-ins), `batch.json`, `fig1a.png`, `fig1b.png`. Command:
+`python -m sim.batch --batch-id <id> --worlds N --sweep name=v1,v2 ...`.
+
 ### Part 2 gives part 1 (`sim/crossing.py`, pure functions, no I/O)
 
-- `search_area(find, searcher_bound95, s: Settings) -> radius_m`
-- `pick_searcher(find, scouts_ready) -> scout_id | None`: never the finder.
-- `judge_search(find, readings, s) -> "confirmed" | "unconfirmed"`, where
-  `readings` are the searcher's `(est_x, est_y, bound95, reading_wt)` inside
-  the area.
-- `merge_sightings(sightings, crater_map, s) -> list[added crater]`, at the
-  dock after each sortie. `sightings` as the `sighting` events.
+`anchor` (on `reading`, `find`, `sighting` and the find dict): `"dock"` until
+the Scout's first check of the sortie, then `"<sortie_id>#<check n>"`.
+Positions with one anchor share one error (the dock registration, or one
+fix), so they are never treated as independent (draft 4.4). A dock-anchored
+`bound95` should include `Settings.dock_reg_bound95_m`, the bound the Scouts
+believe; the world's drawn error stays hidden.
 
-A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_wt", "status"}`,
+Scout and dock side; none takes truth:
+
+- `search_area(find, searcher_bound95, s) -> radius_m`:
+  `search_radius_k * hypot(both bound95) + footprint_radius_m`.
+- `pick_searcher(find, scouts_ready) -> scout_id | None`: first id that is
+  not the finder, only while `status == "find"`.
+- `search_points(find, radius_m, s) -> (K, 2)`: reading points in the
+  searcher's estimated frame, drive order.
+- `judge_search(find, readings, s) -> "confirmed" | "unconfirmed"`, where
+  `readings` are the searcher's `(est_x, est_y, bound95, reading_wt, anchor)`
+  inside the area. `judge_search_detail` adds `reason`, `match` (index),
+  `dist_m`, and the confirmed deposit's `est`, `bound95`.
+- `merge_sightings(sightings, crater_map, s, next_index=None) -> list[added crater]`,
+  at the dock after each sortie, on every sighting not yet used. `sightings`
+  as the `sighting` events; `crater_map` `(M, 3)`, start plus added. Each
+  added crater: `crater_id, x, y, d, bound95, sightings, members, scouts,
+  sorties`; `members` index into `sightings` and leave the pool.
+
+World side; takes truth, for part 1's world model and scoring only:
+
+- `crater_view(true_xy, true_craters, map_craters, s)`: `in_view`,
+  `missing` (make a sighting of each), `misplaced` (map rows), `share_bad`,
+  the share used in `p_wrong`, `matched` (map rows), and `fix_bias` `[dx, dy]`,
+  the mean map-minus-true offset of the matched craters. Add `fix_bias` to
+  the Scout's error after every check, on top of the sampled error: a fix
+  on an added crater inherits its error (draft 4.3). The Scout's believed
+  `bound95` does not see it.
+- `wrong_match_cause(view, s, rng)`, `make_sighting(true_crater,
+  scout_true_xy, scout_err_xy, scout_bound95, anchor, rng, s)`.
+- `deposit_at`, `score_search` (`truth_has_deposit`, `false_confirmed`,
+  `missed`), `score_added(added, truth_craters_missing, s)` (`true_crater`,
+  `true_offset_m`, `misplaced`), all three written into `crater_map.added`.
+  `true_crater` indexes `truth.craters_missing`. `misplaced` (offset beyond
+  `map_match_tol_m`) means that crater is still effectively missing.
+
+A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_wt", "anchor", "status"}`,
 `status` one of `find`, `confirmed`, `unconfirmed`, `drilled`.
 
 ### Part 3 gives part 1 (`sim/terrain.py`)
 
-- `campaign_world(site, seed, ranges: WorldRanges) -> World`: 5 m height
-  grid, true crater list `(N, 3)`, the Scouts' starting map `(M, 3)`, dock
-  position on the rim, PSR floor mask, and the draws it made. Until the PSR
-  windows exist (spec 11.1), `site="shoemaker"` on the existing tile.
+- `campaign_world(site, seed, ranges: WorldRanges) -> CampaignWorld`: the
+  fields of `sim/campaign.py` `World`, same names and units: `site`, `file`,
+  `x0`, `y0`, `cell` (5 m, or 10 m for `nobile`), `height`, `slope` (LOLA
+  slope product at the native cell),
+  `floor` (PSR patches of at least `SiteBuild.psr_min_km2`), `craters` `(N, 3)`
+  (sizes `WorldRanges.crater_d_m`), `map_start` `(M, 3)`, `dock` (sunlit rim
+  ground), `draws` (every `WorldRanges` draw plus `dock_reg_err`, keys as
+  `campaign.draw_world_values`), `ice` (on floor within
+  `WorldRanges.ice_reach_m` driving of the dock), `standin=None`.
+- Sites (`sim/psr_sites.py` `SITES`): `haynes`, `s89_014e`, `s89_134e`
+  (87-90 S, 5 m mosaic) and `nobile` (84.5-87 S, 10 m 83 S product).
+  Built windows live in `DATA/terrain/psr_sites/<site>.npz`
+  (`python -m sim.psr_sites build`). `site="shoemaker"` raises: that tile is
+  not PSR floor; `sim/campaign.py` `standin_world` still serves it.
+- The site is not a `Settings` field, so a run id `w<seed>-<key>` does not
+  name it. Runs on different sites need different batch ids until the site
+  enters the run id.
 
 ### Part 4 reads (`web/`)
 

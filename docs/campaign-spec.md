@@ -7,63 +7,79 @@
 Deadlines: batch results and Figure 1 by 15 Jan 2027; site and video by
 10 Feb 2027; proposal due 24 Feb 2027.
 
-## TL;DR
+## 1. Intent (agreed 16 Nov 2026; overrides anything below it)
 
-**The workflow.** Lantern simulates the paper's Scout workflow. Two to five
-identical Scouts share one dock and drive sorties into a shadowed crater. They:
+Lantern expands; it does not replace. Everything the hackathon site showed
+stays, and campaign runs of 1 to 5 Scouts play inside it. Only the chain,
+Monad and agency wording go.
 
-- map ice;
-- check each other's finds;
-- add newly seen craters to a shared map;
-- get home on one battery charge.
+**Every run navigates by camera vision.** Each Scout's real pipeline runs
+live in the sim loop at every step: render the lamp-lit view, detect rims,
+update the particle filter, plan on what it sees. Nothing is drawn from a
+table of ShadowNav's errors. The ShadowNav-sampled model survives only as a
+comparison column in the paper.
 
-**The runs.** Thousands of random worlds are generated and every design choice
-is run on the same worlds. All runs are saved without 3D drawing. The paper's
-numbers and Figure 1 come from them. Position error is sampled from ShadowNav's
-published results.
+**Before any number is used, three things that make it look too good are
+fixed:**
 
-**The site.** It lists the runs, shows each run's map growing, and replays any
-sortie in 3D.
+1. the Scouts' starting crater map misses small craters, as an orbital map
+   would;
+2. the particle filter stops copying the true noise (`sim/nav.py:46-48`
+   reuse `sim/rover.py`'s odometry values);
+3. rim depth carries realistic noise.
 
-**What goes.** The chain, Monad and agency code is archived.
+Then Lantern's fix error and false-match rate are measured on a calibration
+set and compared with ShadowNav Table 2 (traj. 1: 3.84 ± 2.78 m, traj. 2:
+1.75 ± 0.78 m, traj. 3: 1.68 ± 0.70 m).
 
-**The team.** Four parts are built at the same time.
+**Sensor frames are not saved to disk.** They are rendered live, used, and
+dropped. The record keeps what the pipeline produced at each step (rim
+points, particles, lidar scan, estimate and bound), so every view replays
+from it.
 
-## 1. Intent
+**First batch: 3 runs**, each with a few Scouts and a few sorties. The count
+grows only once the pipeline's speed is measured.
 
-Lantern simulates the PROSPECT Scouts' proposed workflow for the RASC-AL 2027
-paper, research area 3. Between two and five identical Scouts work from one
-charging dock.
-They drive sorties into a dark crater. On each sortie they map ice and log every
-reading with its position and how unsure that position is. Each find is checked
-by another Scout. All add newly seen craters to a shared map, so later sorties
-navigate better. Every sortie must get back to the dock on its battery.
+### What a viewer sees, start to finish
 
-Lantern runs this workflow thousands of times with random variation. It saves
-every run so any one of them can be replayed.
+1. **Main page: Mission Control**, the hackathon page, at the site root. It
+   opens on a campaign run. A Runs button lists every run with its setup and
+   results; clicking one loads it into Mission Control.
+2. **A run plays sortie by sortie.** A timeline lists every sortie (Scout,
+   number, result). Pick one and press play, with the hackathon's speeds and
+   step keys. The Scouts drive down from the dock, survey and return.
+   - One card per Scout: energy, task, true against estimated position.
+   - A Finds panel replaces On chain: find, second Scout's search,
+     confirmed or not, drilled.
+   - The crater map grows after each sortie, added craters marked.
+   - Hidden truth sits behind a toggle.
+3. **Every run has every view:** third-person 3D, the satellite map full
+   window, the first-person box (drawn from the logged rim points, route and
+   lidar, not a saved image), lidar top-down and first person, and the
+   particle cloud.
 
-**Who uses it, start to finish:**
+### What the paper uses
 
-1. **The paper team** runs a batch of campaigns with one command. They get a
-   table of results and the paper's Figure 1. Every number in section 4.6
-   comes from here.
-2. **A judge or viewer** opens the hosted site. They see the list of runs and
-   their results, and click one to see its top-down map. From there they press
-   play to watch a sortie as a 3D time-lapse. The same site is the Phase 2
-   virtual prototype, and the 2-minute video is recorded from it.
+| Item | Where its numbers come from |
+|---|---|
+| Table 1, fix spacing | Draft arithmetic on ShadowNav Table 2 |
+| Calibration table | Lantern's fix error and false-match rate on the calibration set, beside ShadowNav Table 2 |
+| Figures 1a and 1b, fleet table, site table, section 4.6 numbers | Lantern's camera-vision runs, with a ShadowNav-sampled column as the comparison |
 
-**Lantern produces the paper's numbers.** The question is whether they can be
-trusted, and the work must answer it (section 4a). The draft currently says
-Lantern is never a source of numbers (its 4.6 and future-work list); the team
-rewrites that wording itself.
+### The video
 
-**What it is not:**
+Two minutes, recorded from Mission Control on a campaign run: a Scout leaves
+the dock, its first-person view with rim points, a fix, a find, a second
+Scout confirming it, the crater map growing over sorties, ending on
+Figure 1.
 
-- **It is not a source of navigation accuracy figures from Lantern's own
-  camera vision.** That vision uses a perfect crater map and the renderer's
-  perfect depth, so its errors come out too small. The paper's position
-  errors are sampled from ShadowNav's published results (section 4).
-- It has no blockchain, Monad, agencies or contract.
+### Superseded below
+
+Sections 3.3 ("Error after a check, sampled navigation"), 6 (separate runs
+list, map and replay pages; the showcase run), 7 (the "Remove" column takes
+the chain code only) and 8 (sampled-navigation speed targets) are replaced
+by this section where they disagree. The "showcase run" no longer exists:
+every run is a camera run.
 
 ## 2. Words used here
 
@@ -75,8 +91,8 @@ rewrites that wording itself.
 | Find | A reading above the ice threshold. It is a candidate deposit until another Scout checks it. |
 | Confirmed | Another Scout found a matching reading inside the search area. |
 | Wrong match | A position check that pairs a rim with the wrong mapped crater (a "false match" in the paper). |
-| Sampled navigation | Position error drawn from ShadowNav's published numbers. Used for every batch run. |
-| Camera navigation | Lantern's existing renderer, rim detection and particle filter. Used only for the 3D showcase. |
+| Sampled navigation | Position error drawn from ShadowNav's published numbers. Comparison column only. |
+| Camera navigation | Lantern's renderer, rim detection and particle filter, live in the loop. Used by every run. |
 
 ## 3. The workflow Lantern simulates
 

@@ -206,6 +206,17 @@ class SiteBuild:
     dock_samples: int = S(60, ASSUMED + "; dock positions tried per site at 5 m")
 
 
+@dataclass(frozen=True)
+class GroundBuild:
+    """The ground a campaign run is drawn on (sim/site_ground.py): the site's
+    LOLA window upsampled over everywhere the run drove, with that world's
+    craters stamped in. Display only; the run itself used the LOLA window."""
+    cell_m: float = S(1.0, ASSUMED + "; the smallest campaign crater (WorldRanges.crater_d_m, 7.5 m) "
+                                     "spans 7.5 cells")
+    margin_m: float = S(100.0, ASSUMED + "; ground kept beyond the run's furthest pose and the dock")
+    tile_m: float = S(256.0, ASSUMED + "; square tiles the viewer can load one at a time")
+
+
 def sources(obj) -> list[tuple[str, object, str]]:
     return [(f.name, getattr(obj, f.name), f.metadata.get("source", "")) for f in fields(obj)]
 
@@ -216,7 +227,7 @@ def unlabelled(obj) -> list[str]:
 
 
 if __name__ == "__main__":
-    for obj in (Settings(), WorldRanges(), SiteBuild()):
+    for obj in (Settings(), WorldRanges(), SiteBuild(), GroundBuild()):
         print(f"== {type(obj).__name__}")
         for name, val, src in sources(obj):
             print(f"{name:26} {val!s:28} {src}")

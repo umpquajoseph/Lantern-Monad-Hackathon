@@ -119,6 +119,35 @@ class Settings:
     map_refinement: bool = S(True, "draft 4.3; swept on/off for Figure 1b")
     sightings_to_add: int = S(2, ASSUMED + "; draft item 12")
     merge_tol_m: float = S(3.0, ASSUMED + "; draft item 12")
+    merge_size_tol_frac: float = S(0.3, ASSUMED + "; two sightings agree on size when their diameters "
+                                                  "differ by at most this share of the larger (draft item 12)")
+    # Rim sightings (sim/crossing.py make_sighting). ShadowNav sees the
+    # leading edge, a front arc, not the whole rim: A24 p.10 Fig. 6b plots
+    # "percent front arc of ground truth crater detected"; C23 p.8 finds the
+    # far edge in stereo at 5 m and only sparsely at 10 m.
+    rim_detect_d_min_m: float = S(7.5, "A24 p.10: 'craters of diameters between 7.5 m and 20 m "
+                                       "can be detected reliably'")
+    rim_detect_d_max_m: float = S(20.0, "A24 p.10 (same sentence)")
+    rim_pos_noise_m: float = S(1.0, ASSUMED + "; 1-sigma per axis of the located arc. Anchor: A24 p.10 "
+                                             "'average pixel detection is within 2 m of the crater rim', "
+                                             "and an arc averages many pixels")
+    rim_size_err_frac: float = S(0.2, ASSUMED + "; 1-sigma diameter error from a partial rim, as a share of "
+                                                "the diameter. Draft 4.3: size from a partial rim is not "
+                                                "demonstrated by ShadowNav; draft item 12")
+    map_match_tol_m: float = S(3.0, ASSUMED + "; a map crater further than this from the true crater "
+                                              "does not help a fix and counts as a bad map entry. Set at "
+                                              "the fix's own 95th-pct error, 2.8-3.0 m (draft Table 1): "
+                                              "a smaller offset is within fix noise")
+    # Ice cross-check (draft 4.4).
+    search_line_spacing_m: float = S(4.0, ASSUMED + "; grid of search readings. A deposit of radius "
+                                                    ">= spacing/sqrt(2) always holds a point; "
+                                                    "deposit radii are WorldRanges.deposit_radius_m")
+    confirm_bound_max_m: float = S(6.0, ASSUMED + "; a check is meaningful only when the combined bound is "
+                                                  "'well below the deposit radius and the spectrometer "
+                                                  "footprint' (draft 4.4); draft item 14 open")
+    dock_reg_bound95_m: float = S(6.0, ASSUMED + "; the 95th-pct registration bound the Scouts believe "
+                                                 "(draft 4.2, item 15). The world's actual error is "
+                                                 "WorldRanges.dock_reg_sigma_m and stays hidden")
 
     # --------------------------------------------------------------- faults
     # Per sortie, per Scout. Camera or lamp out: no fixes, Scout turns back.

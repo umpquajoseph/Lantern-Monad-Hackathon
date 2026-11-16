@@ -16,7 +16,6 @@ import { MissionPlayer, ensureStyles } from "./mission_player.js";
 // The judges' page plays Kellen's mission log (run_mission.py, docs/handoffs.md
 // "Mission log"): checkpoints and live chain posts come from mission_player.js,
 // the chain feed from the log's find and check events.
-const AUTO_B_HOLD_MS = 3000;   // assumed: wall time on the Surveyor after its ice find, then follow the Prospector
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -50,20 +49,30 @@ const MODE_SHORT = { local: "Local chain", monad: "Monad testnet", offline: "Off
 const STAGE_N = { None: 0, Candidate: 1, SurveyorInspected: 2, ProspectorAnalyzed: 3 };
 const SITE_COLOR = { Candidate: 0x9aa7b8, Positive: ICE_HEX, Negative: 0x8d939b, Inconclusive: 0xd9b44a, Analyzed: 0x58b4ff };
 const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop (Ritvik's short stops)
-const FOCUS_WALL_S = 12;   // assumed: a mission stop (160-270 s of sim time) plays in about this many real seconds
+const FOCUS_WALL_S = 3;    // asked for: the final-site drill plays in about this many real seconds (135-270 s of sim time)
 const FOCUS_LEAD_S = 3;    // the close-up starts this many sim seconds before the stop
 const FOCUS_TAIL_S = 3;    // and holds this long after it
+const BOTH_IN_SHOT_M = 20; // assumed: the drill close-up widens to frame the other rover when it is this near
 const NARROW = matchMedia("(max-width: 760px)");
+// Candidate sites from orbit (S1, S2): green in 3D, on the camera and on the map
+// (asked for: "the site rings can be green"), so amber means the planned route only.
+const SITE_HEX = 0x7ddc7a, SITE_CSS = "#7ddc7a";
+// Frost patches drawn at this brightness (asked for: "cut the ice patch brightness a bit").
+const FROST_DIM = 0.45;   // 0.6 still read as a white cloud at S2 with fill off; 0.45 reads as frost
+function dimFrost(obj) {
+  obj.traverse((o) => { if (o.isMesh && o.material && o.material.map && o.material.color) o.material.color.setScalar(FROST_DIM); });
+}
 
 const S = {
   lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
   run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
-  opts: { fill: true, routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
+  opts: { fill: false, routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
   player: null,        // MissionPlayer: checkpoints and live chain
-  autoB: { armed: true, at: 0 },   // switch to the Prospector once after the Surveyor's find
+  autoB: { armed: true, pending: false },   // switch to the Prospector once after the Surveyor's find
+  pauseAtT: 0,         // a checkpoint met during the drill pauses here, when the drill ends; 0 = none
 };
-let terrain, world, map, rigs = {}, ov, sci = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
-let satObjs = [], tagEls = {}, extras = {}, dressed = {}, odo = {}, susp = {};
+let terrain, world, map, rigs = {}, ov, sci = [], drill = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
+let satObjs = [], extras = {}, dressed = {}, odo = {}, susp = {};
 // Rover camera, as sim/scene.py: 640x480, 60 deg wide, 15 deg down, 2.5 m up.
 const FP = { w: 640, h: 480, pitch: (15 * Math.PI) / 180, camH: 2.5, fx: 320 / Math.tan((30 * Math.PI) / 180) };
 const evidenceCache = new Map();
@@ -87,6 +96,7 @@ async function main() {
   const entry = runs.find((r) => r.run_id === want) || runs.find((r) => r.run_id === "mission-demo") || runs[0];
   await openRun(entry);
   bind();
+  updateLegend();
   if (NARROW.matches) $("panel").classList.add("closed");
   window.lantern = { world, S, rigs };   // for poking at the scene from the browser console
   $("loading").hidden = true;
@@ -105,7 +115,10 @@ async function openRun(entry) {
   })));
   S.run = run;
   world.currentT = 0;
+  world.hideOdom = true;   // no odometry-alone line in the 3D view
   world.setRun(run);
+  for (const s of world.iceSites || []) dimFrost(s.obj);
+  for (const o of world.truthObjs || []) if (o.isGroup) dimFrost(o);
   run.hasLidar = run.agencies.some((ag) => run.steps.some((st) => st.rovers[ag] && st.rovers[ag].lidar_frame));
   for (const b of document.querySelectorAll("[data-sensor]")) {
     b.onclick = () => setSensor(b.dataset.sensor);
@@ -134,14 +147,24 @@ async function openRun(entry) {
   });
   if (!sci.length) sci = missionScience(run);
   sci.sort((a, b) => a.t0 - b.t0);
+  // Asked for: no slow-mo at the Surveyor's sites, only the drill at the final site.
+  drill = sci.filter((e) => e.agency === "B").slice(-1);
   reg.sort((a, b) => a.t - b.t);
   hazards = log.hazards || [];
   planned = log.planned_routes || [];
 
   ensureStyles();
   S.player = new MissionPlayer(run, {
-    pause: (tt) => { S.playing = false; S.t = tt; setPlayIcon(); },
-    resume: () => { S.playing = true; setPlayIcon(); },
+    pause: (tt) => { S.pauseAtT = 0; S.playing = false; S.t = tt; setPlayIcon(); },
+    resume: () => { S.pauseAtT = 0; S.playing = true; setPlayIcon(); },
+    // A checkpoint pauses at once and waits for Play. One inside the final-site
+    // drill lets the drill play out first, then pauses where it ends.
+    checkpoint: (tt) => {
+      S.t = tt;
+      const ev = drill.find((e) => tt >= e.t0 - FOCUS_LEAD_S && tt <= e.t1 + FOCUS_TAIL_S);
+      if (ev) { S.pauseAtT = ev.t1 + FOCUS_TAIL_S; return; }
+      S.pauseAtT = 0; S.playing = false; setPlayIcon();
+    },
     note: (html) => { const b = $("checkpoint"); b.hidden = !html; b.innerHTML = html || ""; },
     rerender: () => { $("chain-now").dataset.key = ""; render(true); },
   });
@@ -202,16 +225,15 @@ function missionScience(run) {
   return out;
 }
 
-// Each rover gets its own look and a name tag that also says what its
-// instrument is doing.
+// Each rover gets its own look. world.js pins a name tag 3.6 m above each
+// rover; in this close 3D view it floats loose from the rover, so it is taken
+// off here. The rover picker, the key and the status chip name the rovers.
 function dressRover(a) {
   const g = world.rovers[a].g;
-  g.traverse((o) => {
-    if (o.element && o.element.classList.contains("lbl3d")) {
-      o.element.innerHTML = `<span>${ROLE[a]} ${a}</span><em></em>`;
-      tagEls[a] = o.element.querySelector("em");
-    }
-  });
+  const tags = [];
+  g.traverse((o) => { if (o.element && o.element.classList.contains("lbl3d")) tags.push(o); });
+  for (const o of tags) { o.removeFromParent(); o.element.remove(); }
+  world.rovers[a].tag = null;
   const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.35 });
   const box = (m, cx, cy, cz, dx, dy, dz) => {
     const b = new THREE.Mesh(new THREE.BoxGeometry(dx, dy, dz), m);
@@ -489,6 +511,7 @@ function buildOverlay() {
     lbl.center.set(0, 1);
     // Ice found here: a frost patch on the ground, so nobody can miss it.
     const disc = frostPatch(world, e.x, e.y, 4.5, e.site_id);
+    dimFrost(disc);
     disc.visible = false;
     g.add(ring, beam, lbl, disc);
     ov.add(g);
@@ -498,7 +521,7 @@ function buildOverlay() {
   satObjs = [];
   for (const s of S.run.log.satellite_sites || []) {
     const g = new THREE.Group();
-    g.add(world.ring(s.x, s.y, 6, world.lineMat(0xe0a83a, 2, { dashed: true, opacity: 0.9 })));
+    g.add(world.ring(s.x, s.y, 6, world.lineMat(SITE_HEX, 2, { dashed: true, opacity: 0.9 })));
     const el = document.createElement("div");
     el.className = "lbl-sat";
     el.textContent = s.id;
@@ -567,14 +590,40 @@ function buildTimeline() {
   for (const e of S.run.events) add(S.run.times[e.k], "ice", e.type === "find" ? `Ice find posted (${ROLE[e.agency]})` : `Check posted (${ROLE[e.agency]})`);
 }
 
+// ------------------------------------------------------------------ legend
+// Bottom left, above the play bar. A row shows only while its layer draws.
+function updateLegend() {
+  const run = S.run, o = S.opts;
+  const on = {
+    routes: o.routes,
+    nogo: o.nogo && !!terrain.meta.nogo,
+    hazards: o.hazards && hazards.length > 0,
+    particles: o.routes && o.particles && run.hasParticles !== false,
+    sat: (run.log.satellite_sites || []).length > 0,
+    find: ((run.log.mission || {}).sites || []).some((s) => s.verdict === "ice"),
+    truth: o.truth && ((run.truth && run.truth.ice) || []).length > 0,
+  };
+  for (const li of document.querySelectorAll("#lg-rows [data-on]")) li.hidden = !on[li.dataset.on];
+}
+
+// The collapse button says what it does next.
+function syncCollapse() {
+  const closed = $("panel").classList.contains("closed"), b = $("collapse");
+  b.setAttribute("aria-label", closed ? "Show panel" : "Hide panel");
+  b.title = closed ? "Show panel" : "Hide panel";
+  b.setAttribute("aria-expanded", String(!closed));
+}
+
 // ---------------------------------------------------------------- controls
 function bind() {
   $("play").onclick = togglePlay;
-  $("restart").onclick = () => { S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; S.player.restart(); rearmAutoB(0); render(true); };
+  // A click on a paused checkpoint card plays on, like the Play button.
+  $("checkpoint").onclick = (e) => { if (!S.playing && !e.target.closest("a")) togglePlay(); };
+  $("restart").onclick = () => { S.pauseAtT = 0; S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; S.player.restart(); rearmAutoB(0); render(true); };
   $("speed").onchange = (e) => (S.speed = Number(e.target.value));
-  $("focus").onchange = (e) => { S.focus = e.target.checked; if (!S.focus) exitFocus(); };
   $("scrub").oninput = (e) => {
     const nt = (Number(e.target.value) / 1000) * S.run.tEnd;
+    S.pauseAtT = 0;
     if (nt < S.t) { S.player.rewound(nt); rearmAutoB(nt); }
     else if (!S.player.busy) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
     S.t = nt; exitFocus(); S.dismissed = null; render(true);
@@ -598,13 +647,18 @@ function bind() {
     S.tabBeforeFocus = null;
     setTab(b.dataset.tab);
   }));
-  $("collapse").onclick = () => $("panel").classList.toggle("closed");
+  $("collapse").onclick = () => { $("panel").classList.toggle("closed"); syncCollapse(); };
+  $("key-btn").onclick = () => {
+    const open = $("legend").classList.toggle("open");
+    $("key-btn").setAttribute("aria-expanded", String(open));
+  };
   for (const k of ["fill", "routes", "hazards", "nogo", "truth", "particles", "rims"]) {
     $("opt-" + k).onchange = (e) => {
       S.opts[k] = e.target.checked;
       world.setVisibility({ fill: S.opts.fill, tracks: S.opts.routes, truth: S.opts.truth });
   $("vnote").hidden = !S.opts.fill;
       map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
+      updateLegend();
       render(true);
     };
   }
@@ -645,26 +699,48 @@ function applyInsets() {
   $("in-lidar").hidden = !S.run.hasLidar;
 }
 
-// After the Surveyor posts its ice find, hold on it a moment, then follow the
-// Prospector, once per play-through. A rover picked by hand in the hold wins.
-function rearmAutoB(t) {
-  const f = S.run.events.find((e) => e.type === "find");
-  if (f && t >= S.run.times[f.k]) return;
-  // The auto switch fired in this play-through: going back before the find returns to the Surveyor.
-  if (!S.autoB.armed && S.autoB.switched && S.rover === "B") setRover("A");
-  S.autoB = { armed: true, at: 0 };
+// When the Surveyor is finished (at rest after its last site, after it drives
+// clear of the find) the replay pauses; the view follows the Prospector the
+// moment Play is pressed, once per play-through (asked for: "when a is finished
+// it pauses and when i unpause it switches to b"). A rover picked by hand while
+// paused wins. If a checkpoint already paused on that step (today's log: the find
+// and the dispatch), that one pause does both.
+function aDoneT() {
+  const run = S.run;
+  const cp = ((run.log.mission || {}).checkpoints || []).find((c) => c.id === "done-A");
+  if (cp) return run.times[cp.step];
+  const f = run.events.find((e) => e.type === "find");
+  const k0 = f ? f.k : 0;
+  const k = run.steps.findIndex((s, i) => i >= k0 && (s.rovers.A || {}).phase === "done");
+  return k < 0 ? null : run.times[k];
 }
 
-function autoB(prevT, t, now) {
-  const f = S.run.events.find((e) => e.type === "find");
-  if (!f) return;
-  const ft = S.run.times[f.k];
-  if (S.autoB.armed && !S.autoB.at && prevT < ft && t >= ft) S.autoB = { armed: true, at: now + AUTO_B_HOLD_MS, rover: S.rover };
-  if (S.autoB.at && now >= S.autoB.at) {
-    const untouched = S.rover === S.autoB.rover;
-    S.autoB = { armed: false, at: 0, switched: untouched && S.rover !== "B" };
-    if (S.autoB.switched) { exitFocus(true); setRover("B"); }
-  }
+function rearmAutoB(t) {
+  const ta = aDoneT();
+  if (ta != null && t >= ta) return;
+  // The auto switch fired in this play-through: going back before the find returns to the Surveyor.
+  if (!S.autoB.armed && S.autoB.switched && S.rover === "B") setRover("A");
+  S.autoB = { armed: true, pending: false };
+}
+
+function autoB(prevT, t) {
+  const ta = aDoneT();
+  if (ta == null || !S.autoB.armed || S.autoB.pending || !(prevT < ta && t >= ta)) return;
+  S.autoB = { armed: true, pending: true, rover: S.rover };
+  const b = $("checkpoint"), hint = ` <span class="cp-hint">Play follows Prospector B.</span>`;
+  if (S.playing) {
+    // No checkpoint here in this log: pause on the Surveyor's last step.
+    S.t = ta; S.playing = false; setPlayIcon();
+    const st = stateAt("A", ta);
+    b.innerHTML = `<span class="cp-tag">Checkpoint</span> <b>Surveyor finished</b> · ${esc((st && st.objective) || "survey complete")}.` + hint;
+  } else if (!b.hidden && !b.innerHTML.includes("cp-hint") && !b.innerHTML.includes("Surveyor finished")) b.innerHTML += hint;
+  b.hidden = false;
+}
+
+function fireAutoB() {
+  const untouched = S.rover === S.autoB.rover;
+  S.autoB = { armed: false, pending: false, switched: untouched && S.rover !== "B" };
+  if (S.autoB.switched) { exitFocus(true); setRover("B"); }
 }
 
 function setChainBadge() {
@@ -681,6 +757,7 @@ function setChainBadge() {
 function stepBy(n) {
   const run = S.run;
   if (S.player.busy) return;
+  S.pauseAtT = 0;
   S.playing = false;
   setPlayIcon();
   const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(S.t) + n));
@@ -701,7 +778,8 @@ function togglePlay() {
   if (S.player && S.player.busy) return;   // a live chain post is in flight
   if (S.t >= S.run.tEnd) { S.t = 0; S.player.restart(); rearmAutoB(0); }
   S.playing = !S.playing;
-  if (S.playing && S.player && !(S.player.active && S.player.active.step === 0 && S.t === 0)) $("checkpoint").hidden = true;
+  if (S.playing && !S.player.busy) $("checkpoint").hidden = true;
+  if (S.playing && S.autoB.pending) fireAutoB();
   setPlayIcon();
 }
 
@@ -762,11 +840,26 @@ function closeUp(ev) {
   const [x, y, h] = S.run.poseAt(ev.agency, ev.t0);
   const c = Math.cos(h), s = Math.sin(h);
   const at = (fx, fy) => [x + fx * c - fy * s, y + fx * s + fy * c];
-  const [dx, dy] = at(1.55, -0.42);
-  const [ex, ey] = at(4.2, -4.6);
+  let [dx, dy] = at(1.55, -0.42);
+  let [ex, ey] = at(4.2, -4.6);
+  let eh = 2.8;
+  // At the final site the Surveyor is parked a few metres off: pull back and look
+  // across the line between them, so both rovers are in shot (the close-up alone
+  // framed only the Prospector).
+  const other = ev.agency === "B" ? "A" : null;
+  if (other && S.run.agencies.includes(other)) {
+    const [ox, oy] = S.run.poseAt(other, ev.t0);
+    const sep = Math.hypot(ox - dx, oy - dy);
+    if (sep > 1 && sep < BOTH_IN_SHOT_M) {
+      let nx = -(oy - dy) / sep, ny = (ox - dx) / sep;            // across the A-B line
+      if (nx * (ex - dx) + ny * (ey - dy) < 0) { nx = -nx; ny = -ny; }   // on the close-up's side
+      const mx = (dx + ox) / 2, my = (dy + oy) / 2, d = Math.max(6, 1.1 * sep + 3);
+      [dx, dy, ex, ey, eh] = [mx, my, mx + nx * d, my + ny * d, 2.8 + 0.3 * sep];
+    }
+  }
   world.follow = "none";
   world.controls.target.copy(world.groundL(dx, dy, 0.7));
-  world.camera.position.copy(world.groundL(ex, ey, 2.8));
+  world.camera.position.copy(world.groundL(ex, ey, eh));
   world.controls.update();
 }
 
@@ -804,7 +897,7 @@ function exitFocus(byUser = false) {
 }
 
 const focusSpeed = (ev) => Math.min(S.speed, Math.max(FOCUS_SPEED, (ev.t1 - ev.t0) / FOCUS_WALL_S));
-const activeSci = (t) => sci.find((e) => t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + FOCUS_TAIL_S);
+const activeSci = (t) => drill.find((e) => t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + FOCUS_TAIL_S);
 
 // -------------------------------------------------------------------- loop
 let last = performance.now(), lastPanelAt = 0;
@@ -816,15 +909,16 @@ function loop(now) {
     let adv = dt * (S.focusEv ? focusSpeed(S.focusEv) : S.speed);
     if (S.focus && !S.focusEv) {
       // Never jump over a science stop at high speed: stop at its start.
-      const next = sci.find((e) => e.t0 - FOCUS_LEAD_S > S.t && e.t0 - FOCUS_LEAD_S <= S.t + adv);
+      const next = drill.find((e) => e.t0 - FOCUS_LEAD_S > S.t && e.t0 - FOCUS_LEAD_S <= S.t + adv);
       if (next) adv = next.t0 - FOCUS_LEAD_S - S.t;
     }
     S.t = Math.min(S.run.tEnd, S.t + adv);
+    if (S.pauseAtT && S.t >= S.pauseAtT) { S.t = S.pauseAtT; S.pauseAtT = 0; S.playing = false; setPlayIcon(); }
     if (S.t >= S.run.tEnd) { S.playing = false; setPlayIcon(); }
     S.player.tick(prevT, S.t);   // a checkpoint or a live post pauses and sets S.t
   }
   if (S.run) {
-    autoB(prevT, S.t, now);
+    autoB(prevT, S.t);
     const ev = S.focus ? activeSci(S.t) : null;
     if (ev && ev !== S.focusEv && ev !== S.dismissed) enterFocus(ev);
     if (!ev && S.focusEv) exitFocus();
@@ -836,10 +930,38 @@ function loop(now) {
 }
 
 // ------------------------------------------------------------------ render
+// A very dim rim light on both rover models (asked for: "a very dim rover rim light
+// would be good"): a glow at grazing view angles, added in each rover material's
+// own shader, so it lights the rover silhouettes and nothing else. Viewer only:
+// the rover camera images are rendered offline and never see it.
+const ROVER_RIM_RGB = [0.11, 0.13, 0.16], ROVER_RIM_POW = 2.5;   // assumed, display only
+function addRoverRim(a) {
+  const g = (world.rovers[a] || {}).g;
+  if (!g) return;
+  let n = 0;
+  g.traverse((o) => { if (o.isMesh) n++; });
+  if (g.userData.rimN === n) return;   // models can arrive late: patch what is new
+  g.userData.rimN = n;
+  g.traverse((o) => {
+    const m = o.isMesh && o.material;
+    if (!m || Array.isArray(m) || m.userData.rim || !(m.isMeshStandardMaterial || m.isMeshPhongMaterial || m.isMeshLambertMaterial)) return;
+    const r = (o.material = m.clone());
+    r.userData.rim = true;
+    r.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+        { float rimF = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
+          totalEmissiveRadiance += vec3(${ROVER_RIM_RGB.map((v) => v.toFixed(3)).join(", ")}) * pow(rimF, ${ROVER_RIM_POW.toFixed(1)}); }`);
+    };
+    r.customProgramCacheKey = () => "lantern-rover-rim";
+    r.needsUpdate = true;
+  });
+}
+
 function render(panels) {
   const run = S.run, t = S.t;
   if (!run) return;
   world.currentT = t;
+  for (const a of run.agencies) addRoverRim(a);
   world.update(t, { tracks: S.opts.routes, particles: S.opts.particles });
   updateSteepShade(t);
   updatePlan3D(t);
@@ -854,9 +976,8 @@ function render(panels) {
       const busy = ev && !["idle", "done", "park"].includes(rig.phaseAt(t).name);
       rig.mount.visible = !!busy || (ev && rig.phaseAt(t).name === "done" && t < ev.t1 + 1);
     }
-    // Name tag: what the instrument is doing right now.
+    // What the instrument is doing right now lights its sensors.
     const txt = instrumentNow(a, t, ev);
-    if (tagEls[a] && tagEls[a].textContent !== txt) tagEls[a].textContent = txt;
     const ph = ev ? (phaseOf(ev, t) || {}).name : "idle";
     const on = txt === "neutron survey" || txt === "NEUTRON DWELL" || ph === "nir_scan";
     for (const m of (extras[a] || {}).sensors || []) m.material.emissive.setHex(on ? (a === "A" ? 0x33aa66 : 0x7744ff) : 0);
@@ -986,7 +1107,12 @@ function drawFpOverlay(fr, cv, small) {
   const k = small ? 2 : 1;
   const font = (px) => `600 ${px * k}px Barlow, Helvetica, Arial, sans-serif`;
   const a = S.rover, run = S.run, tf = run.times[fr.k];
-  const pose = run.steps[fr.k].rovers[a].true_pose;
+  // The step's logged pose places what the step logged (rims); the shown image's
+  // own pose (a display sub-frame sits fr.f of the way to the next step) projects
+  // everything, so marks stay put on the ground between steps.
+  const stepPose = run.steps[fr.k].rovers[a].true_pose;
+  const kNext = Math.min(fr.k + 1, run.steps.length - 1);
+  const pose = fr.sub ? run.poseAt(a, run.times[fr.k] + fr.f * (run.times[kNext] - run.times[fr.k])) : stepPose;
   const camZ = terrain.heightAt(pose[0], pose[1]) + FP.camH;
   const P = (x, y, lift = 0.05) => project(pose, camZ, x, y, terrain.heightAt(x, y) + lift);
   const col = a === "A" ? "#5aa7ff" : "#f2994a";
@@ -1074,21 +1200,26 @@ function drawFpOverlay(fr, cv, small) {
     c.lineWidth = 3 * k; c.strokeStyle = "#ff5d5d"; c.fillStyle = "rgba(255,93,93,.18)"; c.fill(); c.stroke();
     if (top) { c.fillStyle = "#ff5d5d"; c.font = font(13); c.fillText(h.hazard_id ? `FLAGGED ${h.hazard_id} · KEEP CLEAR` : "OBSTACLE", top[0] - 34 * k, top[1] - 8); }
   }
-  // Rim points the navigation used at this step (sensor frames only; display frames sit between steps).
+  // Rim points the navigation used at this step: rover frame at the step's pose
+  // into the world, then onto the shown image. On a display sub-frame they stay
+  // (asked for: "the crater points keep blinking on and off"), a little fainter.
   const rr = run.steps[fr.k].rovers[a];
-  if (S.opts.rims && !fr.sub && rr && rr.rims) {
+  if (S.opts.rims && rr && rr.rims) {
     c.fillStyle = col;
+    c.globalAlpha = fr.sub ? 0.7 : 1;
+    const cs = Math.cos(stepPose[2]), sn = Math.sin(stepPose[2]);
     for (const [f, l] of rr.rims) {
-      const wx = pose[0] + f * Math.cos(pose[2]) - l * Math.sin(pose[2]), wy = pose[1] + f * Math.sin(pose[2]) + l * Math.cos(pose[2]);
+      const wx = stepPose[0] + f * cs - l * sn, wy = stepPose[1] + f * sn + l * cs;
       const q = P(wx, wy, 0);
       if (q) c.fillRect(q[0] - 3 * k, q[1] - 3 * k, 6 * k, 6 * k);
     }
+    c.globalAlpha = 1;
   }
   const sites = registryAt(tf);
   for (const s of run.log.satellite_sites || []) {
     const r = [...sites.values()].find((v) => v.target === s.id);
     const ice = (r && (r.surveyor === "Positive" || r.prospector === "Positive")) || siteVerdict(s.id, tf) === "ice";
-    const color = ice ? ICE_CSS : r ? "#9aa7b8" : "#e0a83a";
+    const color = ice ? ICE_CSS : r ? "#9aa7b8" : SITE_CSS;
     const base = P(s.x, s.y), tip = P(s.x, s.y, 6);
     if (!base || !tip || base[2] > 250) continue;
     c.strokeStyle = color; c.lineWidth = 2 * k;
@@ -1102,7 +1233,7 @@ function drawFpOverlay(fr, cv, small) {
 // Each rover's logged plan for the shown step ("plan", world xy, out to ~20 m,
 // re-planned every step) draped on the ground as amber dashes, the same line
 // the rover camera and the satellite map draw. Rebuilt when the step changes.
-const PLAN_HEX = 0xffc83c;   // the camera's plan colour, rgba(255, 200, 60) (map.js PLAN_CSS)
+const PLAN_HEX = 0xffc83c;   // amber is the planned route only; sites are SITE_HEX green   // the camera's plan colour, rgba(255, 200, 60) (map.js PLAN_CSS)
 const plan3d = {};
 function updatePlan3D(t) {
   const run = S.run, k = run.stepAt(t);
@@ -1134,7 +1265,7 @@ function updatePlan3D(t) {
 // ground near the rover being followed. One draped grid, rebuilt when the
 // rover has moved STEEP_STEP_M. Unlit, so it reads in the dark.
 const STEEP_HALF_M = 120, STEEP_CELL_M = 0.5, STEEP_STEP_M = 40, STEEP_LIFT_M = 0.06;   // assumed, display only
-const STEEP_OPACITY = 0.55;
+const STEEP_OPACITY = 0.72;   // asked for: "a bit more opaque" (was 0.55)
 let steepMesh = null, steepAt = null, steepTex = null;
 function updateSteepShade(t) {
   const m = terrain.meta;
@@ -1224,9 +1355,12 @@ function updateOverlay(t) {
   // During a close-up, clear the markers that would stand in front of the drill.
   const fa = S.focusEv ? S.focusEv.agency : null;
   for (const o of siteObjs.values()) o.beam.visible = !fa;
+  // A science close-up shows the rovers themselves: no estimate dots, rings or
+  // particle clouds on either (at the final site they hid the parked Surveyor).
   for (const ag of S.run.agencies) {
-    if (world.estDots[ag]) world.estDots[ag].visible = S.opts.routes && ag !== fa;
-    if (world.sigmaRings[ag]) world.sigmaRings[ag].visible = S.opts.routes && ag !== fa;
+    if (world.estDots[ag]) world.estDots[ag].visible = S.opts.routes && !fa;
+    if (world.sigmaRings[ag]) world.sigmaRings[ag].visible = S.opts.routes && !fa;
+    if (fa && world.particles && world.particles[ag]) world.particles[ag].visible = false;
   }
   const done = new Set([...sites.values()].map((s) => s.target));
   for (const o of satObjs) o.g.visible = !done.has(o.id);
@@ -1262,7 +1396,7 @@ class MissionMap extends MapView {
     c.lineWidth = 1.5;
     for (const o of S.run.log.satellite_sites || []) {
       if (done.has(o.id)) continue;
-      c.setLineDash([3, 3]); c.strokeStyle = "#e0a83a";
+      c.setLineDash([3, 3]); c.strokeStyle = SITE_CSS;
       c.beginPath(); c.arc(X(o.x), Y(o.y), 5, 0, Math.PI * 2); c.stroke();
     }
     c.setLineDash([]);
@@ -1386,14 +1520,15 @@ function story(run, k, finds) {
   const f = finds[0];
   if (!f) return missionStory(run, k);
   const other = run.agencies.find((x) => x !== f.agency);
-  const nm = (ag) => `The ${ROLE[ag] || "rover"} (${ag})`;
-  if (f.status === "reported") return `${nm(f.agency)} posted a find at <b>±${f.sigma.toFixed(1)} m</b>. ${nm(other)}, from another agency, reads it from the chain and drives there to check.`;
+  // Short enough for two lines in the top bar at 1366 px (asked for: the story sits left of the rover picker).
+  const nm = (ag) => `${ROLE[ag] || "Rover"} ${ag}`;
+  if (f.status === "reported") return `${nm(f.agency)} posted a find at <b>±${f.sigma.toFixed(1)} m</b>. ${nm(other)}, another agency, reads it on chain and goes to check.`;
   if (f.status === "confirmed") return `${nm(other)} measured ice at the reported spot. The find is <b>confirmed</b> on chain.`;
-  return `${nm(other)} found no ice at the reported spot: ${f.agency}'s position was off by more than the ice patch. The find stays on the record, <b>disputed</b>.`;
+  return `${nm(other)} found no ice there: ${f.agency}'s position was off. The find stays on record, <b>disputed</b>.`;
 }
 
 function missionStory(run, k) {
-  const name = (ag) => `The ${ROLE[ag] || "rover"} (${ag})`;
+  const name = (ag) => `${ROLE[ag] || "Rover"} ${ag}`;
   const [sv, pr] = ["A", "B"].map((ag) => (run.agencies.includes(ag) ? ag : run.agencies[0]));
   const phase = run.rover(sv, k).phase || "";
   const m = /^(to|survey) (\S+)/.exec(phase);

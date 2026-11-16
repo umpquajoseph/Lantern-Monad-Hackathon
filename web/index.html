@@ -62,7 +62,7 @@
   <div class="pop-wrap">
     <button class="ib" id="layers-btn" aria-label="Layers" aria-expanded="false" title="Layers"><svg><use href="#i-layers"/></svg></button>
     <div class="pop" id="layers" hidden>
-      <label class="ck" title="F"><input type="checkbox" id="opt-fill" checked> Fill light <span class="hint">(F)</span></label>
+      <label class="ck" title="F"><input type="checkbox" id="opt-fill"> Fill light <span class="hint">(F)</span></label>
       <label class="ck"><input type="checkbox" id="opt-routes" checked> Routes</label>
       <label class="ck"><input type="checkbox" id="opt-hazards" checked> Obstacles</label>
       <label class="ck"><input type="checkbox" id="opt-nogo" checked> Steep ground <span class="hint">(over 15&deg;, no-go)</span></label>
@@ -75,7 +75,7 @@
   <button class="ib" id="full-btn" aria-label="Full screen" title="Full screen"><svg><use href="#i-full"/></svg></button>
 </div>
 
-<aside class="panel" id="panel">
+<aside class="panel closed" id="panel">
   <nav class="rail" role="tablist" aria-label="Panels">
     <button data-tab="rover" aria-selected="true" title="Rover"><svg><use href="#i-rover"/></svg></button>
     <button data-tab="science" title="Science"><svg><use href="#i-drill"/></svg></button>
@@ -108,8 +108,22 @@
       <ol class="txs" id="txs"></ol>
     </section>
   </div>
-  <button class="collapse" id="collapse" aria-label="Hide panel" title="Hide panel"><svg><use href="#i-chev"/></svg></button>
+  <button class="collapse" id="collapse" aria-label="Show panel" title="Show panel" aria-expanded="false"><svg><use href="#i-chev"/></svg></button>
 </aside>
+<div class="keybox" id="legend" aria-label="Key">
+  <button class="key-btn" id="key-btn" aria-expanded="false" aria-controls="lg-rows">Key</button>
+  <ul class="lg-rows" id="lg-rows">
+    <li><i class="kw dot" style="background:#5aa7ff"></i>Surveyor A <i class="kw dot" style="background:#f2994a;margin-left:8px"></i>Prospector B</li>
+    <li data-on="routes"><span class="kws"><i class="kw ln" style="background:#e9ecef"></i></span>True path, where it really drove</li>
+    <li data-on="routes"><span class="kws"><i class="kw ln est"></i><i class="kw ring"></i></span>Estimate, where it thinks it is, ±σ</li>
+    <li data-on="routes"><span class="kws"><i class="kw ln dash" style="--c:#ffc83c"></i></span>Planned route</li>
+    <li data-on="nogo"><span class="kws"><i class="kw blk" style="background:rgba(229,87,79,.75)"></i></span>Steep ground, over 15°, no-go</li>
+    <li data-on="hazards"><span class="kws"><i class="kw ring dash" style="--c:#ff5d5d"></i></span>Obstacle the lidar found</li>
+    <li data-on="sat"><span class="kws"><i class="kw ring dash" style="--c:#7ddc7a"></i></span>Candidate site from orbit</li>
+    <li data-on="find"><span class="kws"><i class="kw blk frost"></i></span>Frost: ice the Surveyor found</li>
+    <li data-on="truth"><span class="kws"><i class="kw ring dash" style="--c:#d8f3ff"></i></span>Hidden ice, rovers can't see it</li>
+  </ul>
+</div>
 
 <div class="insets" id="insets">
   <figure class="inset" id="in-fp">
@@ -128,7 +142,7 @@
 <button class="back-chip" id="back-chip" hidden>Back to rover view</button>
 
 <div class="toast" id="toast" hidden></div>
-<div class="topline"><div class="story" id="story"></div><div class="vnote" id="vnote">Fill light added so you can see the ground. The rovers see only their lamps.</div></div>
+<div class="topline"><div class="story" id="story"></div><div class="vnote" id="vnote" hidden>Fill light added so you can see the ground. The rovers see only their lamps.</div></div>
 <div class="checkpoint cp-float" id="checkpoint" hidden></div>
 
 <footer class="playbar">
@@ -143,7 +157,6 @@
     <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Mission time">
   </div>
   <div class="pb-group">
-    <label class="ck sci-ck" title="Slow down and zoom in when a rover drills"><input type="checkbox" id="focus" checked><span class="lg">Slow for science</span><span class="sh">Slow-mo</span></label>
     <select id="speed" aria-label="Speed" title="Speed">
       <option value="10">10×</option>
       <option value="60">60×</option>
@@ -185,7 +198,7 @@
   <section>
     <h3>On the ground</h3>
     <ul class="legend">
-      <li><i class="sw ring" style="--c:#e0a83a"></i><b>Amber ring</b><span>A candidate site from orbit, S1 or S2</span></li>
+      <li><i class="sw ring" style="--c:#7ddc7a"></i><b>Green ring</b><span>A candidate site from orbit, S1 or S2</span></li>
       <li><i class="sw" style="--c:#cfeeff"></i><b>Frost patch</b><span>Ice the Surveyor measured at a site</span></li>
       <li><i class="sw" style="--c:#e5574f"></i><b>Red ground</b><span>Steeper than 15&deg; across 2 m: the route planner will not cross it. The same layer as on the satellite map. Toggle it under Layers</span></li>
       <li><i class="sw line" style="--c:#5aa7ff"></i><b>Coloured line</b><span>The route a rover drove</span></li>

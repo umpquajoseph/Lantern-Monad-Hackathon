@@ -1,129 +1,106 @@
 # Lantern
 
-A shared map of lunar ice that rovers write themselves, built at Monad Blitz
-Oregon, 15 November 2026. Simulated rovers from two agencies drive a dark
-crater at the lunar south pole. They find their position by matching lamp-lit
-crater rims to an orbital map, after JPL's ShadowNav. They post ice finds,
-with their position uncertainty, to a contract on Monad testnet, and check
-each other's finds. The contract refuses a check from the finder's own
-agency or from too far away, and marks a find confirmed or disputed.
+**A shared map of lunar ice that rovers write themselves, and check for each other.**
 
-**Live site: https://lantern-teal.vercel.app**
+**See it live: https://lantern-teal.vercel.app**
 
-## The demo mission
+![Mission Control: the Prospector drills at the Surveyor's ice find, with the Surveyor parked beside it](docs/img/readme/hero-prospector-drills-the-find.jpg)
 
-One run of `run_mission.py`, two rovers, replayed by the site with pauses at
-its checkpoints:
+## The problem
 
-1. The Surveyor (agency A) plans a route to two candidate sites from the
-   orbital map, which is too coarse to show small craters. Its lidar finds
-   them on the way and the route bends around them.
-2. At S1 it stops and surveys with its neutron sensor. S1 is dry, so nothing
-   goes on chain.
-3. At S2 it finds ice and posts the find, with its position uncertainty, to
-   the Lantern contract.
-4. The Prospector (agency B) reads the contract, sees a find from another
-   agency, drives there and runs its own instruments. Its check agrees, and
-   the contract marks the find confirmed.
+Water ice at the Moon's south pole is the resource every lunar plan depends
+on. NASA's LCROSS impact measured water in a crater there. But that ice sits
+in craters that never see sunlight. Rover missions need to know their
+position to within 10 m of the orbital map. A rover tracking itself by its
+own wheels and cameras drifts about 2%, so after 500 m it can be off by more
+than that (JPL, ShadowNav, 2023).
 
-Both rovers navigate with the particle filter on rims seen by their cameras
-(`sim/vision.py`), and plan around steep ground and lidar hazards under a
-15 deg slope limit. What is still a stand-in is listed in the run log under
-`standins`.
+Rovers will also come from different agencies and companies. The Artemis
+Accords ask nations to share science data, but they do not require anyone to
+report a find. Lantern gives agencies a voluntary way to report finds and to
+check each other's.
 
-The site opens on the mission. Opened as `/?key=<DEMO_KEY>`, each
-play-through posts the find and the check to Monad testnet for real, through
-`web/api/chain.js`; without the key it replays the recorded hashes. Every
-transaction opens on Monadscan in a new window. `/chain.html` reads the
-contract live. The earlier two-run demo is still in the run list.
+## What Lantern does
 
-Contract: Lantern at `0x67f9Bedb42C845307cB1Fd6551D07Df64bd3CE98`, Monad
-testnet (chain 10143), verified on Sourcify. Details in
-`sim/lantern_deployment.json`.
+- **Rovers find their way in the dark.** A lamp under the camera makes each
+  crater rim throw a shadow line. Matching those rims to the orbital map
+  fixes the rover's position, the method from JPL's ShadowNav.
+- **A Surveyor posts what it finds.** When it measures ice, it sends the find
+  to a contract on Monad, together with how sure it is of its position.
+- **A Prospector from another agency checks it.** It reads the find from the
+  chain, drives there on its own navigation and measures again. The contract
+  accepts a check only from a different agency, and only from close enough.
+- **The record is public and tamper-evident.** Every find and every check is
+  a transaction. Agreements and disagreements both stay on the record.
 
-## Run it
+## The mission
 
-Python 3.11 or newer:
+Mission Control replays one complete mission, with two rovers and two candidate
+sites picked from orbit. The replay pauses at each key moment, and you press
+Play to go on.
 
-```bash
-pip install numpy scipy tifffile opencv-python matplotlib web3 python-dotenv vtk
-```
+**1. Two candidate sites from orbit.** The Surveyor (blue) sets out for S1.
+The Prospector (orange) waits for a find to appear on chain.
 
-| To do this | Run | Then |
-|---|---|---|
-| The demo site | `python app.py` | builds what is missing, opens http://localhost:8000 |
-| Rerun the demo mission | `python run_mission.py --stamp demo` | writes `data/runs/mission-demo`; posts for real when `.env` has the keys, `--no-chain` to use the stand-in, `--no-vision` for stand-in rims |
-| Rerun the two earlier demo runs | `python run_demo.py` | runs land in `data/runs/` |
-| Read the chain record | `python sim/chain.py finds` | needs no keys |
-| Publish the site | `python web/publish.py vercel` | see `docs/hosting.md` |
+![Mission overview at the start](docs/img/readme/1-mission-overview.jpg)
 
-Data lives in `LANTERN_DATA` if set, else `C:\Monad-Hackathon-Project\data`,
-else `./data` (`sim/terrain.py`). To skip the terrain build, set
-`LANTERN_DATA=lantern_data`, the committed copy.
+**2. A crater the map missed.** The orbital map is too coarse to show small
+craters. The planned route (amber) runs straight at one. Red marks ground
+too steep to drive.
 
-**The chain.** With no keys, runs post to a stand-in and the site says the
-hashes are stand-ins. To post for real, copy `.env.example` to `.env` and fill in
-`MONAD_RPC_URL` and two throwaway testnet keys, `AGENCY_A_PRIVATE_KEY` and
-`AGENCY_B_PRIVATE_KEY`, funded from the Monad faucet. Never commit `.env`.
-The hosted page's live posting keeps its keys in
-the Vercel project's environment, never in git (`docs/hosting.md`, "The demo
-mission and the live uplink").
+![The Surveyor about to meet a crater the orbital map does not show](docs/img/readme/2-crater-the-map-missed.jpg)
 
-## Where things are
+**3. Around it.** The rover's lidar sees the crater, and the route bends
+around it.
 
-| Path | What it is |
+![The planned route bends around the crater](docs/img/readme/3-route-bends-around-it.jpg)
+
+**4. A find, posted on chain.** S1 is dry. At S2 the Surveyor measures ice and
+posts the find with its position, ±0.6 m. The Prospector reads it from the
+chain, not from the Surveyor, and sets off.
+
+![The Surveyor's ice find at S2, posted on chain](docs/img/readme/4-find-posted-fill-off.jpg)
+
+**5. The check.** The Prospector drives to the find, drills, cores and
+analyses. The Surveyor has parked a few metres aside.
+
+![The Prospector drilling at the find](docs/img/readme/5-prospector-drills.jpg)
+
+**6. Confirmed.** The Prospector's reading agrees, so the find is confirmed.
+Both transactions sit in the record.
+
+![The record: the find and the check, confirmed](docs/img/readme/6-record-confirmed.jpg)
+
+## Fill light on and off
+
+The rovers see only what their own lamps light. Mission Control can add a
+fill light for viewers, so you can see the ground. Here is the same moment
+both ways.
+
+| What the rovers see: only their lamps | Fill light added for viewers |
 |---|---|
-| `app.py` | One command: terrain, display layer, web assets, runs, viewer |
-| `run_mission.py` | The demo mission: Surveyor surveys S1 and S2, posts the find, Prospector checks it |
-| `run_demo.py` | The two earlier demo runs, and the render and camera code the mission uses |
-| `sim/terrain.py`, `sim/terrain_display.py`, `sim/terrain_look.py` | Height grid and crater list from NASA LOLA; display-only surface detail |
-| `sim/nav.py` | Particle filter on rim points (ParticleNav) |
-| `sim/rover.py`, `sim/ice.py` | Planner under the 15 deg slope limit; hidden ice and the neutron sensor |
-| `sim/lidar.py`, `sim/vision.py` | Lidar hazards (top-down and first-person views); crater rims from camera frames |
-| `sim/scene.py` | 3D render: first-person lamp camera with depth, chase view |
-| `sim/chain.py` | Python client for the Lantern contract |
-| `sim/roles.py`, `sim/mission*.py`, `sim/registry_client.py`, `sim/evidence.py`, `sim/science.py` | An earlier 8-site mission on the registry contract. Not used by the demo |
-| `sim/results.py`, `sim/survey.py` | Per-run results ledger and its contract client |
-| `contracts/` | **Lantern**, the demo's contract: finds, checks, safety zones. Foundry |
-| `registry/` | LunarDiscoveryRegistry, the mission's site registry. Not used by the demo |
-| `survey/` | LanternSurvey, the results ledger beside Lantern. Optional |
-| `web/` | The static site: `index.html` (the mission), `chain.html` (the contract), `api/chain.js` (live posting on Vercel) |
-| `web/chain/` | Copies of `sim/lantern_*.json` for the site, made by `web/collect_chain.py` |
-| `lantern_data/` | Committed terrain, so a fresh clone runs without building |
-| `science/` | Mission Control's science preview and a sample record |
-| `docs/` | Spec, hand-offs, architecture, demo script, sources (below) |
-| `ops/` | Coordination between the build sessions |
+| ![Fill light off](docs/img/readme/4-find-posted-fill-off.jpg) | ![Fill light on](docs/img/readme/4-find-posted-fill-on.jpg) |
 
-## Docs
+## Built on
 
-- `docs/spec.html`: the goal, the demo and the six build steps.
-- `docs/handoffs.md`: the data each step passes to the next.
-- `docs/ARCHITECTURE.md`, `docs/storage.md`, `docs/science.md`: the mission.
-- `docs/DEMO_SCRIPT.md`: the pitch, step by step.
-- `docs/hosting.md`: the Vercel site and how to republish it.
-- `docs/WORKING.md`: who built what, on which branch.
-- `docs/CHANGES-chain.md`, `docs/CHANGES-ritvik.md`: notes from the merge.
-- `docs/moon-ledger-spec.md`: the first spec, from the night before.
-- `contracts/README.md`: deploy, verify, and redeploy before the demo.
+- **ShadowNav (NASA JPL):** finding a rover's position in the dark from
+  lamp-lit crater rims (Cauligi et al., 2023; Atha et al., 2024).
+- **NASA LOLA terrain:** laser elevation maps of the lunar south pole, near
+  Shoemaker crater, from the Lunar Reconnaissance Orbiter.
+- **NASA 3D rover models:** Opportunity and Perseverance, Mars rovers standing
+  in for lunar ones.
+- **Monad:** the Lantern contract is deployed on Monad testnet and its source
+  is verified, with 25 tests on its checking rules.
 
-## Tests
+Every source, and what each one contributed, is listed in
+[docs/SOURCES.md](docs/SOURCES.md).
 
-```bash
-cd contracts && forge test
-cd registry && forge test
-cd survey && forge test
-```
+**Simulated:** the ice deposits and every instrument reading are simulated,
+not NASA data. The screenshots show a recorded replay, whose transactions are
+marked "stand-in" in the record.
 
-Foundry is at https://getfoundry.sh. `contracts/lib/` is git-ignored;
-restore it with `forge install foundry-rs/forge-std --no-git` in `contracts/`.
+## Team
 
-## Sources
+Calvin, Joseph, Kellen and Ritvik, at Monad Blitz Oregon, 15 November 2026.
 
-- Cauligi et al., ShadowNav, JPL, 2023: https://arxiv.org/abs/2301.04630
-  (copy and text in `docs/sources/`)
-- PROSPECT Team Brief, RASC-AL 2027 Theme 3-1, in `docs/sources/`
-- LOLA south pole elevation maps, NASA Goddard PGDA:
-  https://pgda.gsfc.nasa.gov/products/90
-- Rover models: NASA 3D Resources, https://github.com/nasa/NASA-3D-Resources
-  (Mars rovers standing in for lunar ones)
-- Monad documentation: https://docs.monad.xyz
+How to run it, the code layout and the tests are in [docs/TECHNICAL.md](docs/TECHNICAL.md).

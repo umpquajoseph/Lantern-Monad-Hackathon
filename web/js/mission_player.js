@@ -2,8 +2,9 @@
 // "Mission log"). The player owns two things the plain replay does not:
 //
 //  1. Checkpoints: while playing, crossing a checkpoint step with pause=true
-//     stops the clock there and shows the checkpoint's label and line. Play
-//     goes on. Jumping backwards re-arms the checkpoints after the new time,
+//     pauses there at once and shows the checkpoint's label and line until
+//     Play goes on (asked for: "when it reaches a checkpoint it hits the pause
+//     button and doesnt wait at all"). Jumping backwards re-arms the checkpoints after the new time,
 //     so a second pass through pauses again.
 //  2. Live chain: with ?key=... in the URL, crossing a step that holds a chain
 //     event (find, check) pauses, posts that call for real through the site's
@@ -19,7 +20,7 @@ import { LiveChain } from "./live_chain.js";
 export class MissionPlayer {
   constructor(run, hooks) {
     this.run = run;
-    this.hooks = hooks;          // { pause(), resume(), note(html|null), rerender() }
+    this.hooks = hooks;          // { pause(), resume(), note(html|null), rerender(), checkpoint()? }
     const m = run.log.mission || {};
     this.checkpoints = (m.checkpoints || []).filter((c) => c.pause).sort((a, b) => a.step - b.step);
     this.live = new LiveChain();
@@ -77,8 +78,12 @@ export class MissionPlayer {
       if (this.armed.has(c.id) && c.step > k0 && c.step <= k1) {
         this.armed.delete(c.id);
         this.active = c;
-        this.hooks.pause(this.run.times[c.step]);
-        this.hooks.note(`<span class="cp-tag">Checkpoint</span> <b>${esc(c.label)}</b> · ${esc(c.say)} <span class="cp-hint">Play to go on.</span>`);
+        const at = this.run.times[c.step];
+        // Pause here and wait for Play. A page may decide where to pause (the
+        // mission page lets the final-site drill play out first).
+        if (this.hooks.checkpoint) this.hooks.checkpoint(at);
+        else this.hooks.pause(at);
+        this.hooks.note(`<span class="cp-tag">Checkpoint</span> <b>${esc(c.label)}</b> · ${esc(c.say)}`);
         return true;
       }
     }

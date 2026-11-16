@@ -410,3 +410,14 @@ Read mail, then `mv` it to `leader/archive/`.
 - integration has step-5-ui 27837fb (new UI + fill toggle), checked by integrator on :8000. main still 4f51c54 (old UI).
 - ui queue: arrow stepping, story line, nav source lines, ShadowNav credit, planned route in 3D, then full play-through.
 - Repo renamed on GitHub to umpquajoseph/Lantern-Monad-Hackathon; old URL redirects.
+
+## 15:24
+- Leader rendering mission-demo (vision, --no-chain) from integration 979a568 into data/runs-staging; swap into data/runs/mission-demo when done. Task byf7lo5so.
+- ui queue: reversal (checkpoints pause at once, no timers, card clears on Play; drill plays at final site; pause at A finished, Play switches to B).
+
+## 15:30
+- Joseph: merge UI to main after the re-render (item 2) is swapped in, on his approval. Legend and collapsed panel asked of ui (web only).
+
+## 15:46
+- main = joseph = 27e9443 (new Mission Control UI, name tags off, README, done-A + park-aside in run_mission.py). On Joseph go.
+- Next: Kellen renders mission from main with real chain + republishes hosted link; sources worker writing docs/SOURCES.md.

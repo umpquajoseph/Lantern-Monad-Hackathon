@@ -228,6 +228,60 @@ def descent_route_cached(z, slope, floor, x0, y0, cell, dock, limit_deg):
     return route
 
 
+def _slope_graph(slope, cell, limit_deg, force=None):
+    """8-neighbour grid graph over cells under the slope limit (CSR)."""
+    from scipy.sparse import coo_matrix
+    h, w = slope.shape
+    ok = np.nan_to_num(slope, nan=90.0) < limit_deg
+    if force is not None:
+        ok[force] = True
+    idx = np.arange(h * w).reshape(h, w)
+    rows, cols, wts = [], [], []
+    for oi, oj in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        a = idx[max(0, -oi):h - max(0, oi), max(0, -oj):w - max(0, oj)]
+        bb = idx[max(0, oi):h - max(0, -oi) if oi <= 0 else h, max(0, oj):w - max(0, -oj) if oj <= 0 else w]
+        a_ok = ok[max(0, -oi):h - max(0, oi), max(0, -oj):w - max(0, oj)]
+        b_ok = ok.ravel()[bb.ravel()].reshape(bb.shape)
+        m = a_ok & b_ok
+        rows.append(a[m]); cols.append(bb[m])
+        wts.append(np.full(m.sum(), cell * math.hypot(oi, oj)))
+    r = np.concatenate(rows).astype(np.int32); c = np.concatenate(cols).astype(np.int32)
+    wt = np.concatenate(wts).astype(np.float32)
+    del rows, cols, wts
+    return coo_matrix((wt, (r, c)), shape=(h * w, h * w)).tocsr()
+
+
+def entry_tree_cached(slope, x0, y0, cell, entry, limit_deg):
+    """Driving distance (m) and shortest-path predecessor of every cell from
+    the floor entry, under the slope limit. Cached on disk like the route."""
+    import hashlib
+    from scipy.sparse.csgraph import dijkstra
+    hs = hashlib.sha1(np.ascontiguousarray(slope).tobytes())
+    hs.update(json.dumps(["entry_tree", float(x0), float(y0), float(cell), list(map(float, entry)),
+                          float(limit_deg)]).encode())
+    key = hs.hexdigest()[:16]
+    if key in _ROUTE_CACHE:
+        return _ROUTE_CACHE[key]
+    path = CAMPAIGN_DIR / "_routes" / f"{key}_entry.npz"
+    if path.exists():
+        d = np.load(path)
+        out = (d["dist"], d["pred"])
+    else:
+        h, w = slope.shape
+        ei = min(max(int(round((entry[1] - y0) / cell)), 0), h - 1)
+        ej = min(max(int(round((entry[0] - x0) / cell)), 0), w - 1)
+        g = _slope_graph(slope, cell, limit_deg, force=(ei, ej))
+        dist, pred = dijkstra(g, directed=False, indices=ei * w + ej, return_predecessors=True)
+        del g
+        out = (dist.astype(np.float32).reshape(h, w), pred.astype(np.int32))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{key}_entry.{os.getpid()}.tmp.npz")
+        np.savez(tmp, dist=out[0], pred=out[1])
+        os.replace(tmp, path)
+    _ROUTE_CACHE[key] = out
+    return out
+
+
 def descent_route(slope, floor, x0, y0, cell, dock, limit_deg):
     """Shortest path on the 5 m grid from the dock to the nearest floor cell,
     through cells under the slope limit (8-neighbour Dijkstra). Returns the
@@ -395,6 +449,8 @@ class Sortie:
         self.turn_reason = None
         self.lost = False
         self.survey_used = 0.0
+        self.transit = False
+        self.transit_m = 0.0
         self.time = {"drive": 0.0, "check": 0.0, "reading": 0.0, "drill": 0.0, "wait": 0.0}
         self.rows: list = []
         self.events: list = []
@@ -507,8 +563,10 @@ class Sortie:
         self.t += dt
         self.energy -= self.em["p_drive_w"] * dt / 3.6e6
         self.time["drive"] += dt
-        if self.act in (ACT["survey"], ACT["search"]):
+        if self.act in (ACT["survey"], ACT["search"]) and not self.transit:
             self.survey_used += ds
+        elif self.transit:
+            self.transit_m += ds
         if self.d_log >= s.log_spacing_m:
             self.d_log = 0.0
             self.row()
@@ -525,10 +583,11 @@ class Sortie:
             self.reading()
         if self.nav_ok and self._check_due() and self._map_predicts():
             self.check("schedule")
-        if not self.returning and self._must_turn_back():
+        why = None if self.returning else self._must_turn_back()
+        if why:
             self.returning = True
-            self.turn_reason = "energy"
-            self.event("turn_back", reason="energy")
+            self.turn_reason = why
+            self.event("turn_back", reason=why)
 
     def _fault(self, mod):
         self.faults.append(mod)
@@ -542,15 +601,29 @@ class Sortie:
         else:
             self.neutron_ok = False
 
+    def _return_dist(self):
+        d = self.c.drive_dist(self.ex, self.ey)
+        if not math.isfinite(d):
+            d = math.hypot(self.ex - self.c.entry[0], self.ey - self.c.entry[1])
+        return d + self.c.corridor_len
+
     def _return_energy(self):
-        d = math.hypot(self.ex - self.c.entry[0], self.ey - self.c.entry[1]) + self.c.corridor_len
+        d = self._return_dist()
         e = d / self.v * self.em["p_drive_w"] / 3.6e6
         if self.nav_ok:
             e += d / self.spacing_nominal * self.s.check_stop_s * self.em["p_stop_w"] / 3.6e6
         return e
 
     def _must_turn_back(self):
-        return self.energy - self.s.reserve_frac * self.s.battery_kwh <= self._return_energy()
+        """'energy' or 'time' when the Scout must head home, else None."""
+        s = self.s
+        if self.energy - s.reserve_frac * s.battery_kwh <= self._return_energy():
+            return "energy"
+        d = self._return_dist()
+        t_back = d / self.v + (d / self.spacing_nominal * s.check_stop_s if self.nav_ok else 0.0)
+        if self.t - self.t_launch + t_back >= s.sortie_h * 3600:
+            return "time"
+        return None
 
     # ------------------------------------------------------------ checks
     def _check_due(self):
@@ -746,6 +819,17 @@ class Sortie:
         self.drilled.append(f["find_id"])
         return True
 
+    def transit_to(self, pts) -> bool:
+        """Drive waypoints as transit: survey mode, not counted in survey_m."""
+        self.transit = True
+        try:
+            for x, y in pts:
+                if not self.drive_to(x, y, ACT["survey"]):
+                    return False
+            return True
+        finally:
+            self.transit = False
+
     def lane(self, ln) -> bool:
         (ax, ay), (bx, by) = ln["a"], ln["b"]
         if math.hypot(bx - self.ex, by - self.ey) < math.hypot(ax - self.ex, ay - self.ey):
@@ -760,6 +844,7 @@ class Sortie:
     # ------------------------------------------------------------ the sortie
     def run(self, searches, drills, lanes):
         s, c = self.s, self.c
+        self.t_launch = self.t
         self.row(ACT["descent"])
         self.event("launch", energy_kwh=rnd(self.energy, 4))
         for wx, wy in c.corridor[1:]:
@@ -771,7 +856,9 @@ class Sortie:
             k = min(range(len(items)), key=lambda i: math.hypot(items[i][1]["est"][0] - self.ex,
                                                                  items[i][1]["est"][1] - self.ey))
             kind, f = items.pop(k)
-            if self.survey_used + math.hypot(f["est"][0] - c.entry[0], f["est"][1] - c.entry[1]) >= s.survey_m:
+            if self.survey_used >= s.survey_m:
+                break
+            if not self.transit_to(c.route((self.ex, self.ey), f["est"])[:-1]):
                 break
             if kind == "search":
                 self.search(f)
@@ -784,14 +871,20 @@ class Sortie:
             (ax, ay), (bx, by) = ln["a"], ln["b"]
             da, db = math.hypot(ax - self.ex, ay - self.ey), math.hypot(bx - self.ex, by - self.ey)
             fx, fy = (bx, by) if da <= db else (ax, ay)
-            need = min(da, db) + s.lane_segment_m + math.hypot(fx - ex, fy - ey)
-            if i and self.survey_used + need > s.survey_m:
+            if i and self.survey_used + min(da, db) + s.lane_segment_m > s.survey_m:
                 break
+            if i == 0:
+                # Transit to the first lane: driven, not counted as survey.
+                sx, sy = (ax, ay) if da <= db else (bx, by)
+                if not self.transit_to(c.route((self.ex, self.ey), (sx, sy))):
+                    break
             self.lane(ln)
         self.survey_back = math.hypot(self.ex - ex, self.ey - ey)
         if not self.lost:
             self.returning = True
-            self.drive_to(c.entry[0], c.entry[1], ACT["return"])
+            for wx, wy in c.route((self.ex, self.ey), c.entry):
+                if not self.drive_to(wx, wy, ACT["return"]):
+                    break
         for wx, wy in c.corridor[::-1][1:]:
             if self.lost:
                 break
@@ -846,6 +939,9 @@ class Campaign:
         self.entry = self.corridor[-1]
         self.corridor_len = float(sum(math.hypot(b[0] - a[0], b[1] - a[1])
                                       for a, b in zip(self.corridor, self.corridor[1:])))
+        self.entry_dist, self.entry_pred = entry_tree_cached(w.slope, w.x0, w.y0, w.cell, self.entry,
+                                                             s.slope_limit_deg)
+        self._drivable = np.nan_to_num(w.slope, nan=90.0) < s.slope_limit_deg
         self.true_tree = cKDTree(w.craters[:, :2]) if len(w.craters) else None
         # True craters absent from the starting map (crossing.score_added indexes these).
         if len(w.craters) and len(w.map_start):
@@ -878,13 +974,60 @@ class Campaign:
         self._fid += 1
         return self._fid
 
+    # ------------------------------------------------------------ routing
+    def _cell(self, x, y):
+        w = self.world
+        h, wd = w.floor.shape
+        i = min(max(int(round((y - w.y0) / w.cell)), 0), h - 1)
+        j = min(max(int(round((x - w.x0) / w.cell)), 0), wd - 1)
+        return i, j
+
+    def drive_dist(self, x, y) -> float:
+        """Driving distance from the floor entry under the slope limit (inf if none)."""
+        return float(self.entry_dist[self._cell(x, y)])
+
+    def straight_ok(self, a, b) -> bool:
+        w = self.world
+        n = max(int(math.hypot(b[0] - a[0], b[1] - a[1]) / w.cell), 1)
+        cells = [self._cell(a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])) for f in np.linspace(0.0, 1.0, n + 1)]
+        ii = [c[0] for c in cells]
+        jj = [c[1] for c in cells]
+        return bool(self._drivable[ii, jj].all())
+
+    def route(self, a, b):
+        """Waypoints from a to b: straight if that line stays under the slope
+        limit, else along the shortest-path tree from the floor entry (up
+        from a to the first shared node, down to b). Ends at b."""
+        b = (float(b[0]), float(b[1]))
+        if self.straight_ok(a, b):
+            return [b]
+        w = self.world
+        wd = w.floor.shape[1]
+        ia, ib = self._cell(*a), self._cell(*b)
+        if not (np.isfinite(self.entry_dist[ia]) and np.isfinite(self.entry_dist[ib])):
+            return [b]
+
+        def up(node):
+            out = [node]
+            while self.entry_pred[out[-1]] >= 0:
+                out.append(int(self.entry_pred[out[-1]]))
+            return out
+        pa, pb = up(ia[0] * wd + ia[1]), up(ib[0] * wd + ib[1])
+        sb = {n: k for k, n in enumerate(pb)}
+        ka = next(k for k, n in enumerate(pa) if n in sb)
+        nodes = pa[:ka + 1] + pb[:sb[pa[ka]]][::-1]
+        pts = [(float(w.x0 + (n % wd) * w.cell), float(w.y0 + (n // wd) * w.cell)) for n in nodes[::5]]
+        return pts[1:] + [b]
+
     def _plan_lanes(self):
         s, w = self.s, self.world
         ex, ey = self.entry
         sp, L = s.survey_line_spacing_m, s.lane_segment_m
-        reach = s.survey_reach_m
+        reach = s.lane_reach_m
         h, wd = w.floor.shape
-        good = w.floor & (np.nan_to_num(w.slope, nan=90.0) < s.slope_limit_deg)
+        drivable = np.nan_to_num(w.slope, nan=90.0) < s.slope_limit_deg
+        good = w.floor & drivable
+
         lanes = []
         ks = range(-int(reach // sp), int(reach // sp) + 1)
         for k in ks:
@@ -899,14 +1042,18 @@ class Campaign:
                 ii = int(round((y - w.y0) / w.cell))
                 if ii < 0 or ii >= h or jj.min() < 0 or jj.max() >= wd or not good[ii, jj].all():
                     continue
+                if not self.drive_dist(xm, y) <= reach:
+                    continue
                 lanes.append({"id": len(lanes), "a": (xa, y), "b": (xb, y),
                               "dist_entry": math.hypot(xm - ex, y - ey)})
         return lanes
 
     def _reserve_lanes(self, start_xy, budget):
-        """Greedy chain of pending lanes, nearest first. The survey budget
-        includes the drive back to the descent end, so a planned sortie is
-        descent_m + survey_m + descent_m (brief p.6: 1.5 + 4 km + return)."""
+        """Greedy chain of pending lanes, nearest first. survey_m counts the
+        lanes and the drives between them; the approach from the descent end
+        to the first lane and the drive back are transit, charged to energy
+        and time but not to the survey, so once the floor near the descent
+        end is surveyed, sorties drive farther to keep surveying survey_m."""
         out, used = [], 0.0
         x, y = start_xy
         ex, ey = self.entry
@@ -918,8 +1065,8 @@ class Campaign:
             da = math.hypot(ln["a"][0] - x, ln["a"][1] - y)
             db = math.hypot(ln["b"][0] - x, ln["b"][1] - y)
             nx, ny = ln["a"] if da > db else ln["b"]
-            step = min(da, db) + self.s.lane_segment_m
-            if out and used + step + math.hypot(nx - ex, ny - ey) > budget:
+            step = (min(da, db) if out else 0.0) + self.s.lane_segment_m
+            if out and used + step > budget:
                 break
             pending.pop(k)
             used += step
@@ -1069,7 +1216,7 @@ class Campaign:
                "time_s": {k: rnd(v, 1) for k, v in so.time.items()},
                "energy_end_kwh": rnd(so.energy, 4), "distance_m": rnd(so.d_total, 1),
                "checks": so.n_checks, "fixes": so.n_fixes, "wrong_matches": so.n_wrong,
-               "survey_m": rnd(so.survey_used, 1), "map_craters": len(self.map_rows),
+               "survey_m": rnd(so.survey_used, 1), "transit_m": rnd(so.transit_m + so.survey_back, 1), "map_craters": len(self.map_rows),
                "turn_back": so.turn_reason}
         rec.update(self._completion(so))
         self.sorties.append(rec)
@@ -1089,9 +1236,7 @@ class Campaign:
         before any find is confirmed.
         """
         s = self.s
-        back = getattr(so, "survey_back", 0.0)
-        survey_done = so.survey_used + back >= s.survey_m - s.lane_segment_m or (
-            set(so.planned_lanes) <= set(so.lanes_done))
+        survey_done = so.survey_used >= s.survey_m - s.lane_segment_m
         n_drill = len(so.drilled)
         slots = max(s.drill_sites_max - n_drill, 0)
         dur_h = (so.t - so.rows[0][0]) / 3600.0

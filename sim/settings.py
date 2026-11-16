@@ -47,7 +47,7 @@ C23_TRAJ3 = (1.68, 0.70)
 class Settings:
     # ----------------------------------------------------------------- site
     site: str = S("s89_134e", "sim/psr_sites.py SITES: 'haynes', 's89_014e', 's89_134e' (real LOLA 5 m PSR "
-                              "windows, docs/handoffs.md Part 3), or 'shoemaker' (engine stand-in, not PSR "
+                              "windows), 'nobile' (LOLA 10 m, 84.5-87 S; docs/handoffs.md Part 3), or 'shoemaker' (engine stand-in, not PSR "
                               "floor). Swept for the site table (spec 5.3). Default: the site with 100% of "
                               "survey poses on PSR floor (terrain fyi 20261116-145039)")
 
@@ -211,7 +211,11 @@ class Settings:
                                                      "conservative); 'along_track': scale error along travel")
     reading_stop_s: float = S(0.0, ASSUMED + "; neutron readings taken while driving")
     searches_per_sortie_max: int = S(4, ASSUMED)
-    survey_reach_m: float = S(1500.0, ASSUMED + "; survey lanes within this of the descent end")
+    survey_reach_m: float = S(1500.0, ASSUMED + "; stand-in world only: deposits within this of the descent end")
+    lane_reach_m: float = S(3000.0, ASSUMED + "; survey lanes on PSR floor within this straight-line distance of "
+                                    "the descent end, on an approach under the slope limit. Nearest lanes go "
+                                    "first; this only matters once nearer floor is surveyed (Nobile: 6.0 km2 of "
+                                    "floor within 3 km driving, terrain fyi 20261116-151941)")
     lane_segment_m: float = S(200.0, ASSUMED + "; lanes are planned in pieces this long")
     find_sep_m: float = S(25.0, ASSUMED + "; a reading this close to a known find adds to it, not a new find")
     # Stand-in world, used until part 3's campaign_world lands (spec 11.1).

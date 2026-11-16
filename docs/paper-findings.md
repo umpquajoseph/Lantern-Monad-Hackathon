@@ -100,3 +100,17 @@ the target choice (brief p.7). Nothing here says these PSRs hold ice.
 Not yet screened: 85 to 87 S, which includes Cabeus (the LCROSS site the
 brief cites) and Nobile. Also corrects spec 11.1: the Haworth tile does
 overlap western Haworth by about 10 km. (terrain report 20261116-150109)
+
+### 6a. Qualifier, 85 to 87 S (terrain report 20261116-151941)
+
+- Cabeus fails. None of its 8 large floor PSRs (13 to 127 km2) has ground
+  lit 30% of the time within 1.5 km; the best is 3 to 24%. Only five small
+  edge PSRs pass. The LCROSS crater the brief cites is not reachable this
+  way.
+- Nobile passes. A sunlit rise on Nobile's own floor (85.428 S 53.64 E,
+  sun 0.34) reaches 6.0 km2 of a 138 km2 floor PSR within 3 km. It is now
+  a fourth site, `nobile`.
+- So a large named floor can work when a sunlit rise stands on the floor
+  itself. Finding 6 holds for every other large crater screened. Not yet
+  screened: Cabeus north of 84.5 S. The 85 to 87 S sun map is 120 m, so a
+  small lit rise could be missed.

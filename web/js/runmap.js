@@ -3,7 +3,7 @@
 // Everything drawn comes from the run record and its poses (docs/handoffs.md).
 import {
   CampaignRun, SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, OUTCOME_WORD, OUTCOME_SHORT, TIME_KINDS,
-  fmtNum, fmtDay, fmtHM, timeBar, timeLegend, standinBanner, esc,
+  fmtNum, fmtDay, fmtHM, timeBar, timeLegend, standinBanner, standinOf, windowFor, esc,
 } from "./campaign.js";
 import { Terrain } from "./data.js";
 
@@ -32,7 +32,8 @@ async function main() {
   const rec = run.rec;
   $("run-title").textContent = rec.run_id;
   document.title = `Lantern · ${rec.run_id}`;
-  if (rec.standin) { $("standin-slot").innerHTML = standinBanner(rec.standin); $("page").classList.add("has-banner"); }
+  const si = standinOf(rec);
+  if (si) { $("standin-slot").innerHTML = standinBanner(si); $("page").classList.add("has-banner"); }
 
   for (const s of rec.sorties) {
     const rows = run.rows(s.sortie_id), c = run.col;
@@ -64,8 +65,12 @@ async function loadShade(rec) {
   if (!/shoemaker/i.test(T.meta.source || "")) return;
   const far = await T.loadBackdrop("backdrop");
   const near = await T.loadBackdrop("backdrop_near");
-  for (const g of [far, near, T.coarse]) if (g) shade.push(hillshade(g));
-  $("mapnote").textContent = "Ground: LOLA elevation, 20 m and 5 m (real). Inside the 1 km drive area, 1 m with made-up small craters.";
+  const win = await windowFor(rec);
+  let wgrid = null;
+  if (win) { T.meta.window = win; wgrid = await T.loadBackdrop("window"); }
+  for (const g of [far, near, wgrid, T.coarse]) if (g) shade.push(hillshade(g));
+  $("mapnote").textContent = "Ground: LOLA elevation, 20 m and 5 m (real). Inside the 1 km drive area, 1 m with made-up small craters." +
+    (rec.crater_map.scope ? ` Craters: ${rec.crater_map.scope}.` : "");
 }
 
 function hillshade(g) {
@@ -272,7 +277,7 @@ function draw() {
   }
 
   // Ice map: each find as a circle of its 95% position bound, coloured by status.
-  const finds = run.findsFrom(run.eventsKnown(k));
+  const finds = run.findsFrom(run.eventsKnown(k, run.iceEvents));
   state.finds = finds;
   for (const f of finds) {
     const col = STATUS_COLOR[f.status] || "#fff";
@@ -428,7 +433,7 @@ function drawSide() {
   }
 
   // Maps after k sorties.
-  const finds = run.findsFrom(run.eventsKnown(k));
+  const finds = run.findsFrom(run.eventsKnown(k, run.iceEvents));
   const by = (st) => finds.filter((f) => f.status === st).length;
   const addedList = run.addedAfter(k), added = addedList.length;
   const misplaced = addedList.filter((c) => c.misplaced).length;

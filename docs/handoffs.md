@@ -464,14 +464,22 @@ Records and `summary.csv` only. For the 3D replay it converts one sortie to
 the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
 `web/js/world.js` replays it unchanged.
 
-- `web/collect_campaigns.py` copies each hosted run to
-  `web/campaigns/<batch_id>/<run_id>/`: `record.json` as is, and `poses.npz`
-  as `poses.bin` (float32, rows back to back) plus `poses.json`
-  (`{"columns": [...], "sorties": {sortie_id: [first_row, n_rows]}}`).
-  `web/campaigns/index.json` lists the batches with their summary rows.
-- Optional top-level `standin` (string), written only by
-  `web/make_standin_campaign.py`: the site shows it as a banner. The engine
-  never writes it.
+- `web/collect_campaigns.py` writes `web/campaigns/index.json`: the batches
+  with their summary rows, from `summary.csv` when the batch has one, else
+  from each `record.json` `summary` (so a batch still writing is listed).
+  Only runs with `record.json` and `poses.npz` are listed.
+- Locally `web/serve.py` answers `campaigns/<batch_id>/<run_id>/record.json`
+  from the data folder and converts `poses.npz` on first request to
+  `poses.bin` (float32, rows back to back) plus `poses.json`
+  (`{"columns": [...], "sorties": {sortie_id: [first_row, n_rows]}}`),
+  cached in `web/campaigns/`. `--copy` (and `python app.py --site`) copies
+  every run there instead, for a static host.
+- `web/build_windows.py` cuts each distinct `terrain` window (site
+  `shoemaker`, cell 5 m) from the LOLA tile the engine reads, for the 3D
+  ground and the map's hillshade. Display only.
+- Banner: the record's `standins` list, plus an optional top-level `standin`
+  string written only by `web/make_standin_campaign.py`.
 - The site reads event `x`, `y` as the Scout's true position (hidden truth
-  only), `crater_map.added[].true_crater` as an index into
-  `truth.craters_missing`, and fits the map to `terrain.bounds`.
+  only), `crater_map.added[].true_crater` as an index into the cut
+  `truth.craters_missing`, and fits the map to `terrain.bounds`
+  (all three confirmed by the engine, 16 Nov).

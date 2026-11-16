@@ -48,6 +48,8 @@ export class CampaignRun {
     this.sorties = rec.sorties.slice().sort((a, b) => a.t_end - b.t_end || a.sortie_id.localeCompare(b.sortie_id));
     this.sortieById = Object.fromEntries(rec.sorties.map((s) => [s.sortie_id, s]));
     this.events = rec.events.slice().sort((a, b) => a.t - b.t);
+    // The ice map's events only: a record can hold tens of thousands of sightings and checks.
+    this.iceEvents = this.events.filter((e) => e.type === "find" || e.type === "search_end" || e.type === "drill" || e.type === "search_start");
     this.addedBy = {};
     for (const c of rec.crater_map.added || []) (this.addedBy[c.after_sortie] ||= []).push(c);
   }
@@ -64,9 +66,9 @@ export class CampaignRun {
   // added) carry the sortie just ended. Campaign-wide events go by time.
   doneSet(k) { return new Set(this.sorties.slice(0, k).map((s) => s.sortie_id)); }
   timeAfter(k) { return k > 0 ? this.sorties[k - 1].t_end : 0; }
-  eventsKnown(k) {
+  eventsKnown(k, events = this.events) {
     const done = this.doneSet(k), T = this.timeAfter(k);
-    return this.events.filter((e) => (e.sortie_id ? done.has(e.sortie_id) : e.t <= T));
+    return events.filter((e) => (e.sortie_id ? done.has(e.sortie_id) : e.t <= T));
   }
 
   // The ice map: every find with its status, from find / search_end / drill.
@@ -134,6 +136,27 @@ export function timeBar(time_s, scale, big = false) {
 export function timeLegend(time_s) {
   return `<div class="tlegend">${TIME_KINDS.map(([k, word, c]) =>
     `<span><i class="sw sq" style="--c:${c}"></i>${word} <b>${(((time_s && time_s[k]) || 0) / 3600).toFixed(1)} h</b></span>`).join("")}</div>`;
+}
+
+// What a record says is not real yet: this site's stand-in sentence and the
+// engine's `standins` list (docs/handoffs.md), in one line.
+export function standinOf(rec) {
+  const parts = [];
+  if (rec.standin) parts.push(String(rec.standin));
+  const si = rec.standins;
+  if (Array.isArray(si)) parts.push(...si.map(String));
+  else if (si && typeof si === "object") parts.push(...Object.entries(si).map(([k, v]) => `${k}: ${v}`));
+  return parts.join(" ") || null;
+}
+
+// The 5 m terrain window under a run (web/build_windows.py), if the site has one.
+export async function windowFor(rec, base = "assets/terrain/") {
+  try {
+    const list = await (await fetch(base + "windows.json")).json();
+    const [x0, y0, x1, y1] = rec.terrain.bounds;
+    return list.find((w) => w.x0 - w.cell <= x0 && w.y0 - w.cell <= y0 &&
+      w.x0 + w.cols * w.cell >= x1 && w.y0 + w.rows * w.cell >= y1) || null;
+  } catch { return null; }
 }
 
 export function standinBanner(text) {

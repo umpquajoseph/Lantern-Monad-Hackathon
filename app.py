@@ -18,7 +18,7 @@ Pieces, in order:
     3. web assets    web/build_assets.py            -> web/assets/terrain/
     4. campaigns     the campaign engine            -> data/campaigns/<batch_id>/
                      (none yet: web/make_standin_campaign.py writes a labelled stand-in)
-    5. site runs     web/collect_campaigns.py       -> web/campaigns/
+    5. site index    web/collect_campaigns.py       -> web/campaigns/index.json (+ terrain windows)
     6. site          web/serve.py                   -> http://localhost:<port>
 
 Data lives where sim/terrain.py says: LANTERN_DATA if set, else the main
@@ -96,10 +96,11 @@ def build(standin: bool):
         say(f"campaigns: {', '.join(p.parent.name for p in sorted(CAMPAIGNS.glob('*/summary.csv')))}")
 
 
-def sync_runs(max_runs):
+def sync_runs(max_runs, copy=False):
+    """Index the batches. Locally web/serve.py reads the runs from DATA; --site copies them."""
     sys.path.insert(0, str(WEB))
     from collect_campaigns import collect  # noqa: E402  web/collect_campaigns.py
-    collect(max_runs, say=say)
+    collect(max_runs, copy=copy, say=say)
 
 
 def export_site(dest: Path):
@@ -141,7 +142,7 @@ def main():
     a = ap.parse_args()
 
     build(a.standin)
-    sync_runs(a.max_runs)
+    sync_runs(a.max_runs, copy=bool(a.site))
     if a.site:
         export_site(a.site)
     if not a.no_serve:

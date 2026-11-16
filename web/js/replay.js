@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { Terrain, Run } from "./data.js";
 import { World, COLORS } from "./world.js";
-import { CampaignRun, SCOUT_COLOR, STATUS_COLOR, ACTIVITY, OUTCOME_WORD, fmtNum, fmtDay, standinBanner } from "./campaign.js";
+import { CampaignRun, SCOUT_COLOR, STATUS_COLOR, ACTIVITY, OUTCOME_WORD, fmtNum, fmtDay, standinBanner, standinOf, windowFor } from "./campaign.js";
 
 const $ = (id) => document.getElementById(id);
 const P = new URLSearchParams(location.search);
@@ -95,7 +95,7 @@ class FleetRun extends Run {
   findsAt(k) {
     if (this._finds.has(k)) return this._finds.get(k);
     const T = this.times[k];
-    const list = this.cr.findsFrom(this.cr.events.filter((e) => e.t <= T)).map((f) => ({
+    const list = this.cr.findsFrom(this.cr.iceEvents.filter((e) => e.t <= T)).map((f) => ({
       find_id: f.find_id, agency: f.scout, x: f.est[0], y: f.est[1], sigma: f.bound95, status: f.status, checks: [],
     }));
     this._finds.set(k, list);
@@ -114,7 +114,8 @@ async function main() {
     $("loading").textContent = String(e.message).includes("assets") ? "Terrain assets missing. Run python app.py." : "Run not found.";
     throw e;
   }
-  if (cr.rec.standin) { $("standin-slot").innerHTML = standinBanner(cr.rec.standin); $("page").classList.add("has-banner"); }
+  const si = standinOf(cr.rec);
+  if (si) { $("standin-slot").innerHTML = standinBanner(si); $("page").classList.add("has-banner"); }
   const want = P.get("sortie");
   sortie = cr.sorties.find((s) => s.sortie_id === want) || cr.sorties[0];
   $("sortie-pick").innerHTML = cr.sorties.map((s) => `<option value="${s.sortie_id}">${s.sortie_id}</option>`).join("");
@@ -177,6 +178,15 @@ async function main() {
 // (buildBackdrop: 0.5 m plus r^2 / 2R), so the Scouts sit on the drawn ground.
 async function groundEverywhere() {
   const m = terrain.meta;
+  // A run on a 5 m window outside the near backdrop: the window takes the near
+  // backdrop's place (world.js buildBackdrop draws it, with the 20 m one round it).
+  const win = await windowFor(cr.rec);
+  if (win) {
+    const n = m.backdrop_near;
+    const inside = n && win.x0 >= n.x0 && win.y0 >= n.y0 && win.x0 + win.cols * win.cell <= n.x0 + n.cols * n.cell &&
+      win.y0 + win.rows * win.cell <= n.y0 + n.rows * n.cell;
+    if (!inside) m.backdrop_near = win;
+  }
   const near = await terrain.loadBackdrop("backdrop_near"), far = await terrain.loadBackdrop("backdrop");
   const ox = m.x0 + 0.5 * (m.cols - 1) * m.cell, oy = m.y0 + 0.5 * (m.rows - 1) * m.cell;
   const R = (m.display && m.display.moon_radius_m) || 1737400;
@@ -212,10 +222,10 @@ function dock() {
 // and for a while after with its result. This is the cross-check.
 function searchMarks() {
   const T0 = run.times[0], T1 = run.tEnd;
-  const findEv = new Map(cr.events.filter((e) => e.type === "find").map((e) => [e.find_id, e]));
-  for (const e of cr.events) {
+  const findEv = new Map(cr.iceEvents.filter((e) => e.type === "find").map((e) => [e.find_id, e]));
+  for (const e of cr.iceEvents) {
     if (e.type !== "search_start" || e.t > T1) continue;
-    const end = cr.events.find((x) => x.type === "search_end" && x.find_id === e.find_id && x.sortie_id === e.sortie_id && x.t >= e.t);
+    const end = cr.iceEvents.find((x) => x.type === "search_end" && x.find_id === e.find_id && x.sortie_id === e.sortie_id && x.t >= e.t);
     if ((end ? end.t : e.t) + SEARCH_LABEL_AFTER_S < T0) continue;
     const f = findEv.get(e.find_id);
     if (!f || !run.agencies.includes(e.scout)) continue;
@@ -256,7 +266,7 @@ function acts() {
     if (w > 0) html += `<i style="width:${w}%;background:${ACT_COLOR[act] || "#333"}" title="${a}: ${ACTIVITY[act]}"></i>`;
   }
   $("acts").innerHTML = html;
-  const marks = cr.events.filter((e) => e.t >= T0 && e.t <= run.tEnd && ["find", "search_start", "drill"].includes(e.type) && run.agencies.includes(e.scout));
+  const marks = cr.iceEvents.filter((e) => e.t >= T0 && e.t <= run.tEnd && ["find", "search_start", "drill"].includes(e.type) && run.agencies.includes(e.scout));
   $("evmarks").innerHTML = marks.map((e) => {
     const col = e.type === "find" ? STATUS_COLOR.find : e.type === "drill" ? STATUS_COLOR.drilled : SCOUT_COLOR[e.scout];
     return `<b class="${e.type}" style="left:${(100 * (e.t - T0)) / span}%;background:${col}" title="${fmtDay(e.t)}: ${esc(sentence(e))}"></b>`;
@@ -327,7 +337,7 @@ function render() {
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
 
 function sentence(e) {
-  const finder = (id) => { const f = cr.events.find((x) => x.type === "find" && x.find_id === id); return f ? f.scout : "?"; };
+  const finder = (id) => { const f = cr.iceEvents.find((x) => x.type === "find" && x.find_id === id); return f ? f.scout : "?"; };
   switch (e.type) {
     case "launch": return `${e.scout} launched (${e.sortie_id})`;
     case "dock_arrive": return `${e.scout} home at the dock`;
@@ -354,7 +364,7 @@ function checkNow() {
 
 const FEED_TYPES = new Set(["launch", "dock_arrive", "find", "search_start", "search_end", "drill", "fault", "turn_back"]);
 
-let hudAt = 0;
+let hudAt = 0, feedEvents = null;
 function hud() {
   // Rebuilt at most 5 times a second while playing, so a click on a Scout row lands.
   const now = performance.now();
@@ -380,7 +390,8 @@ function hud() {
       <span>${i.act === DOCKED ? "at the dock" : ACTIVITY[i.act]}</span>
       <span class="num">${i.act === DOCKED ? "" : `±${fmtNum(rb.sigma, 1)} m`}</span></li>`;
   }).join("");
-  const feed = cr.events.filter((e) => e.t <= state.t && e.t >= run.times[0] - 1 && FEED_TYPES.has(e.type) && run.agencies.includes(e.scout))
+  feedEvents ||= cr.events.filter((e) => FEED_TYPES.has(e.type) && run.agencies.includes(e.scout));
+  const feed = feedEvents.filter((e) => e.t <= state.t && e.t >= run.times[0] - 1)
     .slice(-5).reverse().map((e) => `<li><span class="num">${fmtDay(e.t).replace("day ", "d")}</span> ${esc(sentence(e))}</li>`).join("");
   $("hud").innerHTML = `<h3><i class="sdot" style="background:${SCOUT_COLOR[a]}"></i>${state.follow === "site" ? "Whole sortie" : `Following ${a}`}
       ${so ? `<span class="dim" style="font-weight:400">${so.sortie_id}</span>` : ""}

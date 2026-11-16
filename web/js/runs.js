@@ -40,9 +40,11 @@ async function main() {
   }
   const p = new URLSearchParams(location.search);
   const bsel = $("batch");
-  bsel.innerHTML = state.batches.map((b) => `<option value="${esc(b.batch_id)}">${esc(b.batch_id)} (${b.runs.length} runs)${b.standin ? " · stand-in" : ""}</option>`).join("");
+  bsel.innerHTML = state.batches.map((b) => `<option value="${esc(b.batch_id)}">${esc(b.batch_id)} (${b.runs.length} runs)${b.batch_id === "standin" ? " · site stand-in" : ""}</option>`).join("");
   const want = p.get("batch");
-  state.batch = state.batches.find((b) => b.batch_id === want) || state.batches.find((b) => !b.standin) || state.batches[0];
+  // Default: the biggest batch the engine wrote, not the site's own stand-in.
+  const real = state.batches.filter((b) => b.batch_id !== "standin").sort((x, y) => y.runs.length - x.runs.length);
+  state.batch = state.batches.find((b) => b.batch_id === want) || real[0] || state.batches[0];
   if (!state.batch) {
     $("body").innerHTML = `<div class="empty">No campaign batches found. The campaign engine writes them to <code>data/campaigns/</code>; <code>python web/make_standin_campaign.py</code> makes a labelled stand-in.</div>`;
     return;

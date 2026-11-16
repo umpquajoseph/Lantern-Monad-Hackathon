@@ -495,6 +495,108 @@ def look(path, outdir=None):
     return outdir / f"{stem}_map.png", outdir / f"{stem}_closeup.png"
 
 
+# --------------------------------------------------------------------------
+# Campaign worlds (docs/handoffs.md "Part 3 gives part 1").
+# --------------------------------------------------------------------------
+
+@dataclass
+class CampaignWorld:
+    """The fields of sim/campaign.py World, in the same order and units."""
+    site: str
+    file: str
+    x0: float               # centre of cell [0, 0], rows run north
+    y0: float
+    cell: float             # 5 m, native LOLA (PGDA product 81)
+    height: np.ndarray      # (H, W) float32 m, LOLA ldem, no craters stamped in
+    slope: np.ndarray       # (H, W) float32 deg, LOLA ldsm at the native 5 m spacing
+    floor: np.ndarray       # (H, W) bool, permanent shadow (Barker 2023 LPSR, 20 m, sampled to 5 m)
+    craters: np.ndarray     # (N, 3) true craters [x, y, d], d in WorldRanges.crater_d_m
+    map_start: np.ndarray   # (M, 3) the Scouts' starting map, a subset of craters
+    dock: tuple             # true dock position, on sunlit rim ground
+    draws: dict             # every WorldRanges draw, plus dock_reg_err
+    ice: list               # hidden deposits [{x, y, radius, peak}]
+    standin: str | None = None
+
+
+def _world_rng(seed: int, *key: int):
+    # Same keying as sim/campaign.py rng_for(seed, 0), so a world drawn here
+    # equals the engine's stand-in draws for the same seed.
+    return np.random.default_rng(np.random.SeedSequence([int(seed), *map(int, key)]))
+
+
+def draw_world_values(seed: int, ranges, rng) -> dict:
+    """Every WorldRanges draw for this seed, in a fixed order (keys as sim/campaign.py)."""
+    import math
+    lo, hi = ranges.crater_n_ge10_per_km2
+    d = {
+        "crater_n_ge10_per_km2": float(math.exp(rng.uniform(math.log(lo), math.log(hi)))),
+        "orbital_map_min_d_m": float(ranges.orbital_map_min_d_m),
+        "missing_share_large": float(rng.uniform(*ranges.missing_share_large)),
+        "n_deposits": int(rng.integers(ranges.n_deposits[0], ranges.n_deposits[1] + 1)),
+        "drift_frac": float(rng.uniform(*ranges.drift_frac)),
+        "dock_reg_sigma_m": float(rng.uniform(*ranges.dock_reg_sigma_m)),
+    }
+    d["dock_reg_err"] = [float(v) for v in rng.normal(0.0, d["dock_reg_sigma_m"], 2)]
+    return d
+
+
+_SITE_CACHE: dict = {}
+
+
+def campaign_world(site: str, seed: int, ranges=None) -> CampaignWorld:
+    """One random world on a candidate PSR window (sim/psr_sites.py SITES).
+
+    Terrain, dock and PSR mask are fixed per site. The seed draws the crater
+    density, the true craters (uniform over the window, truncated power law
+    over ranges.crater_d_m), which of them the Scouts' starting map holds
+    (every crater under orbital_map_min_d_m is missing, plus a random share
+    missing_share_large of the rest), and the hidden ice (uniform over PSR
+    floor under the slope limit within ice_reach_m driving of the dock).
+    """
+    from sim.psr_sites import SITES, load_site
+    from sim.settings import SiteBuild, WorldRanges
+    ranges = ranges or WorldRanges()
+    if site not in SITES:
+        raise ValueError(f"unknown site {site!r}; built PSR sites: {sorted(SITES)} "
+                         f"(the Shoemaker tile is not PSR floor, spec 11.1; use sim/campaign.py standin_world)")
+    if site not in _SITE_CACHE:
+        _SITE_CACHE[site] = load_site(site)
+    t = _SITE_CACHE[site]
+    x0, y0, cell = t["x0"], t["y0"], t["cell"]
+    h, w = t["height"].shape
+    rng = _world_rng(seed, 0)
+    draws = draw_world_values(seed, ranges, rng)
+
+    dmin, dmax = ranges.crater_d_m
+    b = ranges.crater_sfd_b
+    area_km2 = (h * cell / 1000.0) * (w * cell / 1000.0)
+    n_tot = draws["crater_n_ge10_per_km2"] * area_km2 * ((dmin / 10) ** -b - (dmax / 10) ** -b)
+    nc = int(rng.poisson(n_tot))
+    u = rng.random(nc)
+    a_, b_ = dmin ** -b, dmax ** -b
+    d = (a_ - u * (a_ - b_)) ** (-1.0 / b)
+    xy = rng.uniform(0, 1, (nc, 2)) * [w * cell, h * cell] + [x0 - cell / 2, y0 - cell / 2]
+    craters = np.column_stack([xy, d])
+    in_map = (d >= draws["orbital_map_min_d_m"]) & (rng.random(nc) >= draws["missing_share_large"])
+    map_start = craters[in_map]
+
+    dist = t["dist_dock"]
+    good = t["psr"] & (t["slope"] < SiteBuild().slope_limit_deg) & (np.nan_to_num(dist, nan=np.inf) <= ranges.ice_reach_m)
+    cells = np.flatnonzero(good)
+    ice = []
+    if len(cells):
+        pick = rng.choice(cells, draws["n_deposits"], replace=len(cells) < draws["n_deposits"])
+        for k in pick:
+            i, j = divmod(int(k), w)
+            ice.append({"x": float(x0 + (j + rng.uniform(-.5, .5)) * cell),
+                        "y": float(y0 + (i + rng.uniform(-.5, .5)) * cell),
+                        "radius": float(rng.uniform(*ranges.deposit_radius_m)),
+                        "peak": float(rng.uniform(*ranges.deposit_peak_wt))})
+    return CampaignWorld(site=site, file=f"psr_sites/{site}.npz", x0=x0, y0=y0, cell=cell,
+                         height=t["height"], slope=t["slope"], floor=t["psr"], craters=craters,
+                         map_start=map_start, dock=t["dock"], draws=draws, ice=ice)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)

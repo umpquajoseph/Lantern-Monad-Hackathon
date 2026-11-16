@@ -530,10 +530,21 @@ A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_
 
 ### Part 3 gives part 1 (`sim/terrain.py`)
 
-- `campaign_world(site, seed, ranges: WorldRanges) -> World`: 5 m height
-  grid, true crater list `(N, 3)`, the Scouts' starting map `(M, 3)`, dock
-  position on the rim, PSR floor mask, and the draws it made. Until the PSR
-  windows exist (spec 11.1), `site="shoemaker"` on the existing tile.
+- `campaign_world(site, seed, ranges: WorldRanges) -> CampaignWorld`: the
+  fields of `sim/campaign.py` `World`, same names and units: `site`, `file`,
+  `x0`, `y0`, `cell` (5 m), `height`, `slope` (LOLA `ldsm`, native 5 m),
+  `floor` (PSR patches of at least `SiteBuild.psr_min_km2`), `craters` `(N, 3)`
+  (sizes `WorldRanges.crater_d_m`), `map_start` `(M, 3)`, `dock` (sunlit rim
+  ground), `draws` (every `WorldRanges` draw plus `dock_reg_err`, keys as
+  `campaign.draw_world_values`), `ice` (on floor within
+  `WorldRanges.ice_reach_m` driving of the dock), `standin=None`.
+- Sites (`sim/psr_sites.py` `SITES`): `haynes`, `s89_014e`, `s89_134e`.
+  Built windows live in `DATA/terrain/psr_sites/<site>.npz`
+  (`python -m sim.psr_sites build`). `site="shoemaker"` raises: that tile is
+  not PSR floor; `sim/campaign.py` `standin_world` still serves it.
+- The site is not a `Settings` field, so a run id `w<seed>-<key>` does not
+  name it. Runs on different sites need different batch ids until the site
+  enters the run id.
 
 ### Part 4 reads (`web/`)
 

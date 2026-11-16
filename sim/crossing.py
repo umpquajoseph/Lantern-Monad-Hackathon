@@ -300,6 +300,12 @@ def crater_view(true_xy, true_craters, map_craters, s: Settings) -> dict:
     - share_bad = (missing + misplaced) / (in_view + misplaced): the share of
       nearby craters absent from, or wrong in, the map. Part 1 uses it as
       the share in p_wrong = clip(p_wrong_base + p_wrong_per_missing * share).
+    - matched: rows of map_craters the check matches (in view, true crater
+      within `map_match_tol_m`).
+    - fix_bias [dx, dy]: mean map-minus-true offset of the matched craters.
+      Part 1 adds it to the Scout's error after the check, on top of the
+      sampled C23 error. It is nonzero only when added craters are matched,
+      and the Scout never sees it.
     """
     p = _xy(true_xy)
     tc = np.asarray(true_craters, dtype=np.float64).reshape(-1, 3)
@@ -316,8 +322,29 @@ def crater_view(true_xy, true_craters, map_craters, s: Settings) -> dict:
     misplaced = mv[~_has_partner(mc[mv], tc[ti], s)]
     den = len(tv) + len(misplaced)
     share = (len(missing) + len(misplaced)) / den if den else 0.0
+
+    # Matched map craters and the error they put into the fix (draft 4.3:
+    # an added crater "inherits the position error of the Scouts that
+    # observed it", and the model includes it). The filter places the Scout
+    # where the seen rims line up with their mapped positions. A map crater
+    # at true + o therefore shifts the fix by +o, and several matched
+    # craters shift it by their mean offset. Start-map craters are the
+    # orbital map, taken as truth (offset 0); misplaced ones (offset beyond
+    # map_match_tol_m) act through p_wrong instead, not here.
+    matched, offs = [], []
+    good = mv[_has_partner(mc[mv], tc[ti], s)]
+    if len(good) and len(ti):
+        a, b = mc[good], tc[ti]
+        dist = np.hypot(a[:, None, 0] - b[None, :, 0], a[:, None, 1] - b[None, :, 1])
+        size = np.abs(a[:, None, 2] - b[None, :, 2]) <= s.merge_size_tol_frac * np.maximum(a[:, None, 2], b[None, :, 2])
+        dist = np.where(size, dist, np.inf)
+        j = dist.argmin(1)
+        matched = good.tolist()
+        offs = a[:, :2] - b[j, :2]
+    bias = np.mean(offs, axis=0) if len(matched) else np.zeros(2)
     return {"in_view": tv.tolist(), "missing": missing.tolist(), "misplaced": misplaced.tolist(),
-            "share_bad": share}
+            "share_bad": share, "matched": matched,
+            "fix_bias": [round(float(bias[0]), 3), round(float(bias[1]), 3)]}
 
 
 def wrong_match_cause(view: dict, s: Settings, rng: np.random.Generator) -> str:

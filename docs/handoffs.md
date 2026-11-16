@@ -469,7 +469,11 @@ World side; takes truth, for part 1's world model and scoring only:
 
 - `crater_view(true_xy, true_craters, map_craters, s)`: `in_view`,
   `missing` (make a sighting of each), `misplaced` (map rows), `share_bad`,
-  the share used in `p_wrong`.
+  the share used in `p_wrong`, `matched` (map rows), and `fix_bias` `[dx, dy]`,
+  the mean map-minus-true offset of the matched craters. Add `fix_bias` to
+  the Scout's error after every check, on top of the sampled error: a fix
+  on an added crater inherits its error (draft 4.3). The Scout's believed
+  `bound95` does not see it.
 - `wrong_match_cause(view, s, rng)`, `make_sighting(true_crater,
   scout_true_xy, scout_err_xy, scout_bound95, anchor, rng, s)`.
 - `deposit_at`, `score_search` (`truth_has_deposit`, `false_confirmed`,

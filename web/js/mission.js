@@ -1697,8 +1697,8 @@ function txLink(e) {
 function chainHtml(e) {
   const unit = S.run.unit || "";
   const head = e.type === "find"
-    ? `postFind #${e.find_id} · ${esc(e.site_id || "")}`
-    : `checkFind #${e.find_id} · ${esc(e.site_id || "")} <span class="res ${e.agrees ? "Positive" : "Negative"}">${e.agrees ? "agrees" : "disagrees"}</span>`;
+    ? `postFind #${e.live ? e.live_find_id : e.find_id} · ${esc(e.site_id || "")}`
+    : `checkFind #${e.live ? e.live_find_id : e.find_id} · ${esc(e.site_id || "")} <span class="res ${e.agrees ? "Positive" : "Negative"}">${e.agrees ? "agrees" : "disagrees"}</span>`;
   return `<div class="chain-item${e.live ? " live" : ""}">
     <div class="what"><i class="dot ${e.agency}"></i> ${ROLE[e.agency]} ${e.agency} · ${head}${e.live ? `<span class="tag monad" style="margin-left:auto">Live</span>` : ""}</div>
     <div class="split"><div><span class="k">Position</span>${e.x.toFixed(1)}, ${e.y.toFixed(1)} ± ${e.sigma.toFixed(2)} m</div><div><span class="k">Reading</span>${e.reading.toFixed(2)}${esc(unit)}</div></div>

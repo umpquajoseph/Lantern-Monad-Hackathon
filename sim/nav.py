@@ -33,18 +33,25 @@ from scipy.spatial import cKDTree
 # Cauligi et al. 2023, sec. 6B: "Ns = 100 particles ... Neff,thresh = 50".
 N_PARTICLES = 100
 NEFF_THRESH = 50
-# Cauligi et al. 2023, sec. 1 and 6B: 2% odometry drift. Modelled as a fixed
+# The filter's noise model is its own (sim/settings.py pf_*), never the
+# truth's odometry model (odom_* and drift_frac, used by sim/rover.py).
+try:
+    from sim.settings import Settings as _Settings
+except ImportError:  # run as a script from sim/
+    from settings import Settings as _Settings
+_S = _Settings()
+# Cauligi et al. 2023, sec. 6B: "2% odometry noise". Modelled as a fixed
 # scale error per particle, so the spread grows with distance (~20 m after
 # 1 km), as the drift of a biased odometer does.
-ODOM_DRIFT = 0.02
+ODOM_DRIFT = _S.pf_drift_sigma
 # Cauligi et al. 2023, sec. 1: "initial 3-sigma uncertainty of 3 m" -> 1 m.
 # (Sec. 6B writes sigma_0 = 3 m; this follows sec. 1 and sim/standins.py.)
 SIGMA0_M = 1.0
 # Alg. 1 line 1: a negligibly small positive value to avoid divide-by-zero.
 Q_EPS = 1e-6
 
-STEP_NOISE_FRAC = 0.005     # assumed: white distance noise per step, fraction of the step (as sim/rover.py's odometry)
-HEADING_WALK_RAD = 0.0005   # assumed: heading random walk per step (as sim/rover.py's odometry)
+STEP_NOISE_FRAC = _S.pf_step_noise_frac     # assumed: filter's distance noise per step, fraction of the step
+HEADING_WALK_RAD = _S.pf_heading_walk_rad    # assumed: filter's heading random walk per step
 SCALE_WALK = 0.001          # assumed: per-step jitter of each particle's scale error, so resampled copies spread again
 CRATER_NEIGHBOURS = 6       # assumed: nearest mapped craters checked per rim point (enough within 15 m)
 

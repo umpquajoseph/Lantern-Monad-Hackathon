@@ -27,7 +27,11 @@ import cv2
 # --- mounting and scan pattern (ASSUMED: a forward-looking solid-state
 # lidar, like the wedge scanners used on planetary rover testbeds)
 LIDAR_RIGHT_OF_CAMERA_M = 0.25   # beside the camera on the mast head
-LIDAR_HEIGHT_M = 2.5             # same height as the camera (sim/scene.py CAMERA_HEIGHT_M)
+try:
+    from sim.settings import Settings as _Settings
+except ImportError:  # run as a script from sim/
+    from settings import Settings as _Settings
+LIDAR_HEIGHT_M = _Settings().camera_height_m  # on the mast with the camera (sim/settings.py camera_height_m)
 H_FOV_DEG = 120.0                # horizontal field of view
 H_STEP_DEG = 0.5                 # horizontal resolution
 V_ANGLES_DEG = np.linspace(-35.0, -2.0, 40)  # beam elevations, below level

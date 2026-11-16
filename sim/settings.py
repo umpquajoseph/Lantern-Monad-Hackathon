@@ -164,6 +164,22 @@ class Settings:
     p_fail_neutron: float = S(0.01, ASSUMED)
     swap_downtime_h: float = S(24.0, ASSUMED)
 
+    # ------------------------------------- camera navigation (showcase only)
+    # Batch runs sample navigation (above) and never read these.
+    camera_height_m: float = S(1.6, "brief p.6 '1.6 m mast'; draft item 24. Camera assumed at the mast top. "
+                                    "A24 sec. IV tested 1.5, 2.5 and 3 m")
+    lamp_below_camera_m: float = S(0.2, "A24 sec. IV 'Light offsets of 0.2 m below the camera'")
+    # The truth: how the odometer errs (sim/rover.py, sim/mission.py). The
+    # bias is drift_frac above.
+    odom_noise_frac: float = S(0.005, ASSUMED + "; white distance noise per step, share of the step")
+    odom_heading_noise_rad: float = S(0.0005, ASSUMED + "; heading noise per step (~0.7 deg after 1 km)")
+    # The filter's own model (sim/nav.py), set without reference to the
+    # truth above, as a real filter is tuned without knowing it.
+    pf_drift_sigma: float = S(0.02, "C23 sec. 6B 'utilizing 2% odometry noise'")
+    pf_step_noise_frac: float = S(0.01, ASSUMED + "; filter's process noise, not the truth's odom_noise_frac")
+    pf_heading_walk_rad: float = S(0.001, ASSUMED + "; filter's process noise, not the truth's "
+                                                     "odom_heading_noise_rad")
+
     # -------------------------------------------------------------- logging
     log_spacing_m: float = S(10.0, ASSUMED + " (record size, not physics)")
     plan_cell_m: float = S(5.0, "LOLA 5 m spacing (code sim/terrain.py:57)")

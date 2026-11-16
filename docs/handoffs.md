@@ -74,9 +74,10 @@ img = scene.third_person(agency, overlays)    # (h, w, 3) uint8
 - Also: `scene.camera_model()` gives the intrinsics and pitch, and
   `scene.depth_to_rover(depth)` turns depth into rover-frame points
   `[x_fwd, y_left, z_up]` for the vision step.
-- The first-person camera and lamp follow ShadowNav: camera 2.5 m above the
-  ground, lamp 0.2 m below it, 60° horizontal field of view (Atha et al. 2024,
-  sections IV and V).
+- The first-person camera sits on the Scout's mast, `Settings.camera_height_m`
+  (1.6 m, brief p.6); the lamp is `Settings.lamp_below_camera_m` (0.2 m) below
+  it, 60° horizontal field of view (Atha et al. 2024, sections IV and V).
+  ShadowNav's own camera was 2.5 m up.
 
 ## Run log (`run_demo.py` writes it, the web viewer replays it)
 
@@ -537,13 +538,15 @@ A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_
 
 - `campaign_world(site, seed, ranges: WorldRanges) -> CampaignWorld`: the
   fields of `sim/campaign.py` `World`, same names and units: `site`, `file`,
-  `x0`, `y0`, `cell` (5 m), `height`, `slope` (LOLA `ldsm`, native 5 m),
+  `x0`, `y0`, `cell` (5 m, or 10 m for `nobile`), `height`, `slope` (LOLA
+  slope product at the native cell),
   `floor` (PSR patches of at least `SiteBuild.psr_min_km2`), `craters` `(N, 3)`
   (sizes `WorldRanges.crater_d_m`), `map_start` `(M, 3)`, `dock` (sunlit rim
   ground), `draws` (every `WorldRanges` draw plus `dock_reg_err`, keys as
   `campaign.draw_world_values`), `ice` (on floor within
   `WorldRanges.ice_reach_m` driving of the dock), `standin=None`.
-- Sites (`sim/psr_sites.py` `SITES`): `haynes`, `s89_014e`, `s89_134e`.
+- Sites (`sim/psr_sites.py` `SITES`): `haynes`, `s89_014e`, `s89_134e`
+  (87-90 S, 5 m mosaic) and `nobile` (84.5-87 S, 10 m 83 S product).
   Built windows live in `DATA/terrain/psr_sites/<site>.npz`
   (`python -m sim.psr_sites build`). `site="shoemaker"` raises: that tile is
   not PSR floor; `sim/campaign.py` `standin_world` still serves it.

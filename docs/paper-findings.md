@@ -65,3 +65,13 @@ complete, 6 fail on time, 2 on a short survey. (engine reply
   8.41 m; the draft's 80 m comes from the rounded 8.4 m.
 - The battery-limited load is 269.3 W (7.9 kWh x 0.75 / 22 h); the draft
   writes 270 W.
+
+## 5. On real PSR terrain the descent is shorter than the brief's 1.5 km
+
+On the three PSR sites built from LOLA 5 m terrain (haynes, s89_014e,
+s89_134e), the shortest route under 15 degrees from a sunlit dock to PSR
+floor is 0.86 to 1.10 km. Sorties come out at 5.5 to 6.1 km, not the
+brief's 7 km, so the stop budget is looser than draft 4.1 assumes. The
+simulator keeps the real routes. Whether these sites are the large crater
+floor the brief pictures or small shadows near landing sites is being
+checked. (engine fyi 20261116-145247, batch "sitecheck", seed 42)

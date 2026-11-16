@@ -416,17 +416,45 @@ Event `type`s and their extra fields:
 | type | fields |
 |---|---|
 | `launch`, `dock_arrive` | `energy_kwh` |
-| `check` | `est`, `bound95`, `wrong_match`, `craters_in_view`; when `wrong_match`, `wrong_match_cause`: `base` / `missing` / `misplaced:<crater_id or start-map row>` |
+| `check` | `est`, `bound95`, `wrong_match`, `craters_in_view` (detectable true rims in view), `matched` (map craters matched), `fixed` (false: under `fix_min_craters` matched, no fix), `reason` (`schedule` / `find` / `search` / `drill`), truth: `true_err_before_m`, `true_err_m`; `wrong_match_cause` (null unless `wrong_match`): `base` / `missing` / `misplaced:<crater_id or start-map row>` |
 | `reading` | only above `find_threshold_wt`, else counted in `time_s`: `reading_wt`, `est`, `bound95`, `anchor` |
 | `find` | `find_id`, `est`, `bound95`, `reading_wt`, `anchor` |
-| `search_start`, `search_end` | `find_id`, `radius_m`; end adds `result`: `confirmed` / `unconfirmed`, `reason`: `match` / `no_readings` / `no_match` / `bound_too_large`, `truth_has_deposit` |
-| `drill` | `find_id`, `est`, `true_err_m` |
+| `search_start`, `search_end` | `find_id`, `radius_m`; end adds `result`: `confirmed` / `unconfirmed`, `reason`: `match` / `no_readings` / `no_match` / `bound_too_large`, `truth_has_deposit`, `false_confirmed`, `missed` |
+| `drill` | `find_id`, `est`, `true_err_m` (the Scout's position error), truth: `miss_m` (to the find's true reading point), `hit` (a deposit under the drill) |
 | `sighting` | `est`, `d_est`, `bound95`, `anchor` (a rim seen but not matched) |
 | `crater_added` | `crater_id` (at the dock, `sortie_id` = the sortie just ended) |
 | `turn_back` | `reason`: `energy` / `fault` |
 | `fault` | `module`: `camera` / `lamp` / `neutron` |
 | `swap` | `module`, `downtime_h` |
-| `contact_lost`, `contact_regained` | none |
+| `contact_lost`, `contact_regained` | none; `sortie_id` and `scout` are null |
+| `lost` | `energy_kwh` (0): battery empty before the dock |
+
+Part 1 also writes (2026-11-16, additive):
+
+- Top level: `world_ranges` (the ranges the world was drawn from; a single
+  run uses a zero-width drift range at `Settings.drift_frac`), `corridor`
+  (descent waypoints, map frame, from the dock's registered position),
+  `energy` (the per-activity draws after scaling to `avg_load_w`),
+  `standins` (parts still stand-ins), `finds` (every find as the dock
+  holds it at the end: the find dict plus `history` [[sortie_id, status]]
+  and `confirm_est` when confirmed).
+- Sorties: `fixes`, `survey_m`, `map_craters` (dock map size after this
+  sortie's merge), `turn_back` (`energy` / `fault` / null). Sorties are
+  ordered by `t_start`.
+- Sightings are made only at checks (crossing's rule), of rims in view
+  with no map partner.
+- `crater_map.start` and `truth.craters_missing` list only craters within
+  `fix_range_m + 10` m of a driven pose (`crater_map.scope` says so), plus
+  every crater an added one points at; `true_crater` indexes that cut
+  list. The full lists are regenerated from the seed.
+- `truth.ice_profile`: the field readings and `crossing.deposit_at` use
+  (sim/ice.py's profile).
+- `poses.npz`: after `dock_arrive`, rows with activity 8 (waiting) while
+  the dock is busy and 7 (docked) from charge start to charge end, the last
+  with a full battery.
+- `terrain` (stand-in world): the 5 m Shoemaker window; `bounds` covers the
+  dock and every pose.
+
 
 ### Summary row (part 1)
 
@@ -438,6 +466,20 @@ every swept Settings field, every world draw, then
 `h_drive`, `h_check`, `h_reading`, `h_drill`, `h_wait`. By-sortie-number
 series for Figure 1b go in `by_sortie.csv`: `run_id`, `sortie_n`,
 `checks`, `wrong_matches`, `map_craters`.
+
+As built (part 1, 2026-11-16): `deposits_missed` counts searches that came
+back unconfirmed over a real deposit (`crossing.score_search` `missed`).
+`checks_per_sortie` counts every check stop, fixed or not. Added columns:
+`dock_reg_err_m` (length of the hidden draw), `fixes`, `drills`,
+`drill_hit_rate`, `survey_err_p95_m` (95th-pct true error over survey and
+search poses), `deposits_in_area`, `deposits_unfound` (deposits inside the
+surveyed area that no find landed in), `added_misplaced`, `craters_added`,
+`campaign_days`. `by_sortie.csv` sums over the fleet's n-th sorties and
+adds `fixes` and `sorties`; `map_craters` is the largest dock map after
+any of them. A batch also writes `drills.csv` (`run_id`, `sortie_id`,
+`true_err_m`, `miss_m`, `hit`), `report.md` (hand checks, timings,
+stand-ins), `batch.json`, `fig1a.png`, `fig1b.png`. Command:
+`python -m sim.batch --batch-id <id> --worlds N --sweep name=v1,v2 ...`.
 
 ### Part 2 gives part 1 (`sim/crossing.py`, pure functions, no I/O)
 

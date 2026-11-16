@@ -19,6 +19,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 import numpy as np
 
 # Categorical slots 1-4 in fixed order (dataviz reference palette, validated
@@ -64,9 +65,10 @@ def fig1a(bdir: Path, runs, drills):
     mids = np.sqrt(edges[:-1] * edges[1:])
     by_run = {r["run_id"]: r for r in sel}
     lim = float(sel[0]["drill_limit_m"]) if sel else 10.0
-    fig, (a1, a2) = plt.subplots(2, 1, figsize=(7.2, 6.4), sharex=True, constrained_layout=True)
+    fig, (a1, a3, a2) = plt.subplots(3, 1, figsize=(7.2, 8.6), sharex=True, constrained_layout=True)
     for k, pol in enumerate(pols):
         rs = [r for r in sel if r["check_policy"] == pol]
+        sv = np.full(len(mids), np.nan)
         ok = np.full(len(mids), np.nan)
         err = np.full(len(mids), np.nan)
         nd = np.zeros(len(mids), int)
@@ -74,6 +76,9 @@ def fig1a(bdir: Path, runs, drills):
             inb = [r for r in rs if edges[b] <= float(r["crater_n_ge10_per_km2"]) < edges[b + 1]]
             if inb:
                 ok[b] = sum(int(r["sorties_ok"]) for r in inb) / sum(int(r["sorties"]) for r in inb)
+            e_sv = [float(r["survey_err_p95_m"]) for r in inb if r.get("survey_err_p95_m")]
+            if e_sv:
+                sv[b] = np.median(e_sv)
             ids = {r["run_id"] for r in inb}
             e = [float(d["true_err_m"]) for d in drills if d["run_id"] in ids]
             nd[b] = len(e)
@@ -85,20 +90,31 @@ def fig1a(bdir: Path, runs, drills):
         full = nd >= MIN_DRILLS
         a2.plot(mids[full], err[full], ls="none", marker=m, ms=7, color=c, mec="white", mew=1.2)
         a2.plot(mids[~full], err[~full], ls="none", marker=m, ms=7, mfc="white", mec=c, mew=1.5)
+        a3.plot(mids, sv, color=c, lw=2, marker=m, ms=7, mec="white", mew=1.2, label=pol)
+        _label_end(a3, mids, sv, pol, c)
         _label_end(a1, mids, ok, pol, c)
         _label_end(a2, mids, err, pol, c)
-    a2.axhline(lim, color=INK2, lw=1, ls=(0, (4, 3)))
-    a2.annotate(f"drill-site limit {lim:g} m", (edges[0], lim), xytext=(2, 4), textcoords="offset points",
-                fontsize=8.5, color=INK2)
-    for ax in (a1, a2):
+    for ax in (a2, a3):
+        ax.axhline(lim, color=INK2, lw=1, ls=(0, (4, 3)))
+        ax.annotate(f"drill-site limit {lim:g} m", (edges[0], lim), xytext=(2, 4), textcoords="offset points",
+                    fontsize=8.5, color=INK2)
+        ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+        ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+    a3.set_ylabel("Error while surveying, 95th pct (m)
+(median over runs)", color=INK, fontsize=9.5)
+    if not drills:
+        a2.text(0.5, 0.5, "no drills in this batch (no find was confirmed)", transform=a2.transAxes,
+                ha="center", va="center", fontsize=9, color=INK2)
+    for ax in (a1, a2, a3):
         _style(ax)
         ax.set_xscale("log")
         ax.set_xlim(edges[0], edges[-1] * 1.6)
     a1.set_ylabel("Share of sorties home with the 25% reserve", color=INK, fontsize=9.5)
     a1.set_ylim(min(0.0, np.nanmin([a1.get_ylim()[0]])), 1.02)
-    a2.set_ylabel("95th-percentile drill-site error (m)", color=INK, fontsize=9.5)
+    a2.set_ylabel("Drill-site error, 95th pct (m)
+(pooled drills)", color=INK, fontsize=9.5)
     a2.set_xlabel("Craters ≥ 10 m per km² (world draw, log bins)", color=INK, fontsize=9.5)
-    a2.set_yscale("log")
     a1.legend(frameon=False, fontsize=8.5, loc="lower right", title="check policy", title_fontsize=8.5)
     fig.suptitle(f"Figure 1a. {len(sel)} runs, fleets of 2+ with refinement; hollow marker = under "
                  f"{MIN_DRILLS} drills in the bin", fontsize=9.5, color=INK2)
@@ -138,7 +154,7 @@ def fig1b(bdir: Path, runs, bys):
         axes[1, j].set_xlabel("Sortie number (per Scout)", color=INK, fontsize=9.5)
         for i in range(2):
             _style(axes[i, j])
-            axes[i, j].set_xlim(0.5, axes[i, j].get_xlim()[1] + 2)
+            axes[i, j].set_xlim(0.5, max(int(b["sortie_n"]) for b in bys) + 2.5)
     axes[0, 0].set_ylabel("Wrong-match rate (wrong / fixes)", color=INK, fontsize=9.5)
     axes[1, 0].set_ylabel("Checks per sortie", color=INK, fontsize=9.5)
     axes[0, 0].legend(frameon=False, fontsize=8.5, loc="upper right")

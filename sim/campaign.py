@@ -47,12 +47,7 @@ from scipy.stats import norm
 
 from sim.settings import Settings, WorldRanges, sources
 
-try:
-    from sim import crossing as X          # part 2
-    CROSSING = "sim/crossing.py (part 2)"
-except ImportError:
-    from sim import crossing_standin as X  # until part 2 lands
-    CROSSING = X.NAME
+from sim import crossing as X              # part 2: cross-checks and crater merging
 
 try:
     from sim.terrain import campaign_world  # part 3
@@ -312,26 +307,21 @@ def energy_model(s: Settings) -> dict:
                     "baseline sortie averages avg_load_w"}
 
 
-def concentration(x, y, ice) -> float:
-    """sim/ice.py profile (equals the threshold at `radius`), cut to zero beyond
-    `radius` so a deposit whose peak is near the threshold has no wide halo."""
+def concentration(x, y, ice, threshold) -> float:
+    """sim/ice.py field: each deposit is peak * (threshold/peak)^(r^2/R^2),
+    equal to the threshold at its radius R. The same field crossing.deposit_at
+    scores against."""
     c = 0.0
     for d in ice:
         r2 = ((x - d["x"]) ** 2 + (y - d["y"]) ** 2) / d["radius"] ** 2
-        if r2 <= 1.0:
-            c += d["peak"] * (1.0 / d["peak"]) ** r2 if d["peak"] > 0 else 0.0
+        c += d["peak"] * (threshold / d["peak"]) ** r2
     return c
 
 
-def part2_setting(s, name):
-    """A field part 2 adds to Settings; the stand-in's fallback until it lands."""
-    if hasattr(s, name):
-        return getattr(s, name)
-    from sim import crossing_standin
-    return crossing_standin.setting(s, name)
-
-
-_FOOT = [(0.0, 0.0)] + [(0.5 * math.cos(a), 0.5 * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 6, endpoint=False)]
+def footprint(s):
+    """sim/ice.py IceSensor: the centre plus six points at half the footprint radius."""
+    r = s.footprint_radius_m / 2
+    return [(0.0, 0.0)] + [(r * math.cos(a), r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 6, endpoint=False)]
 
 
 # ===================================================================== sortie
@@ -365,7 +355,7 @@ class Sortie:
         self.errx, self.erry = float(reg[0]), float(reg[1])
         self.ex, self.ey = camp.dock_reg
         self.heading = 0.0
-        self.b_fix = part2_setting(s, "dock_reg_bound95_m")
+        self.b_fix = s.dock_reg_bound95_m
         self.d_fix = self.d_chk = self.d_total = self.d_log = self.d_read = 0.0
         self.t_fix = t0
         self._new_drift_dir()
@@ -557,26 +547,33 @@ class Sortie:
         self.d_chk = 0.0
         tx, ty = self.tx, self.ty
         err_before = math.hypot(self.errx, self.erry)
-        ti = c.true_tree.query_ball_point((tx, ty), s.fix_range_m) if c.true_tree is not None else []
-        mi = c.map_tree.query_ball_point((tx, ty), s.fix_range_m) if c.map_tree is not None else []
+        reach = s.fix_range_m + s.rim_detect_d_max_m / 2 + s.map_match_tol_m   # crater_view's own box
+        ti = c.true_tree.query_ball_point((tx, ty), reach) if c.true_tree is not None else []
+        mi = c.map_tree.query_ball_point((tx, ty), reach) if c.map_tree is not None else []
         ti, mi = sorted(ti), sorted(mi)
         tc, mc = c.world.craters[ti], c.map_arr[mi]
         view = X.crater_view((tx, ty), tc, mc, s)
         # What the Scout itself observes: rims it saw and could not match, and
         # mapped craters it expected and did not see.
         miss = set(view["missing"])
-        for k in view["seen"]:
+        for k in view["in_view"]:
             self.rims.append(1 if k in miss else 0)
         for _ in view["misplaced"]:
             self.rims.append(1)
         n_view = len(view["in_view"])
-        fixed = n_view >= s.fix_min_craters
+        n_match = len(view["matched"])
+        fixed = n_match >= s.fix_min_craters
         wrong, cause = False, None
         if fixed:
             p = min(max(s.p_wrong_base + s.p_wrong_per_missing * view["share_bad"], 0.0), 1.0)
             wrong = bool(self.rng.random() < p)
             if wrong:
                 cause = X.wrong_match_cause(view, s, self.rng)
+                if cause.startswith("misplaced:"):
+                    # crossing names a row of the local map cut; name the crater instead.
+                    row = mi[int(cause.split(":")[1])]
+                    n0 = len(c.world.map_start)
+                    cause = "misplaced:" + (c.added[row - n0]["crater_id"] if row >= n0 else str(row))
                 m, sd = s.fix_err_wrong_match
                 sm, ssd = s.fix_sigma_wrong_match
             else:
@@ -587,10 +584,9 @@ class Sortie:
             sig = abs(self.rng.normal(sm, ssd))
             a = self.rng.uniform(0, 2 * math.pi)
             ox, oy = mag * math.cos(a), mag * math.sin(a)
-            # Added craters carry the error of the Scouts that saw them (spec 3.5).
-            if n_view:
-                off = c.map_off[[mi[j] for j in view["in_view"]]].mean(axis=0)
-                ox += float(off[0]); oy += float(off[1])
+            # Added craters carry the error of the Scouts that saw them (draft
+            # 4.3): crossing.crater_view gives the matched craters' mean offset.
+            ox += float(view["fix_bias"][0]); oy += float(view["fix_bias"][1])
             self.errx, self.erry = ox, oy
             self.ex, self.ey = tx + ox, ty + oy
             self.b_fix = K95_2D * sig if s.check_policy == "filter" else e95_mix(self.p_est(), s)
@@ -604,7 +600,7 @@ class Sortie:
             if s.check_policy in ("p95", "before_work"):
                 self.spacing_nominal = self._nominal_spacing()
         self.event("check", est=[rnd(self.ex, 2), rnd(self.ey, 2)], bound95=rnd(self.bound, 2),
-                   wrong_match=wrong, wrong_match_cause=cause, craters_in_view=n_view, fixed=fixed,
+                   wrong_match=wrong, wrong_match_cause=cause, craters_in_view=n_view, matched=n_match, fixed=fixed,
                    reason=why, true_err_before_m=rnd(err_before, 3), true_err_m=rnd(math.hypot(self.errx, self.erry), 3))
         for k in view["missing"]:
             sg = X.make_sighting(tc[k], (tx, ty), (self.errx, self.erry), self.bound, self.anchor, self.rng, s)
@@ -612,16 +608,18 @@ class Sortie:
                             bound95=rnd(sg["bound95"], 2), anchor=sg["anchor"])
             self.sightings.append(ev)
 
-    def work_check(self, why):
-        """'before_work' fixes before a find is logged, a search and a drill."""
-        if self.s.check_policy == "before_work" and self.nav_ok and self._map_predicts() \
+    def work_check(self, why, force=False):
+        """'before_work' fixes before a find is logged, a search and a drill;
+        `force` asks for one under any policy."""
+        if (force or self.s.check_policy == "before_work") and self.nav_ok and self._map_predicts() \
                 and self.d_chk >= self.s.check_min_spacing_m:
             self.check(why)
 
     # ------------------------------------------------------------ ice
     def read_here(self):
         x, y = self.tx, self.ty
-        c = sum(concentration(x + ox, y + oy, self.w.ice) for ox, oy in _FOOT) / len(_FOOT)
+        foot = self.c.foot
+        c = sum(concentration(x + ox, y + oy, self.w.ice, self.s.find_threshold_wt) for ox, oy in foot) / len(foot)
         wt = max(0.0, c + self.rng_ice.normal(0.0, self.s.sensor_noise_wt))
         if self.s.reading_stop_s:
             self.stop(self.s.reading_stop_s, "reading", self.em["p_stop_w"], ACT["reading"])
@@ -669,10 +667,13 @@ class Sortie:
         if not self.drive_to(f["est"][0], f["est"][1], ACT["survey"]):
             return False
         self.work_check("search")
+        if self.anchor == "dock":
+            # crossing brief: a search is fix-anchored, never on the dock's error alone.
+            self.work_check("search", force=True)
         radius = X.search_area(f, self.bound, s)
         pts = X.search_points(f, radius, s)
         self.event("search_start", find_id=f["find_id"], radius_m=rnd(radius, 2))
-        readings = []
+        readings, true_xy = [], []
         for px, py in pts:
             if not self.drive_to(float(px), float(py), ACT["search"]):
                 return False
@@ -680,16 +681,16 @@ class Sortie:
                 return False
             wt = self.read_here()
             readings.append((self.ex, self.ey, self.bound, wt, self.anchor))
+            true_xy.append((self.tx, self.ty))
             if wt >= s.find_threshold_wt:
                 self.event("reading", reading_wt=rnd(wt, 3), est=[rnd(self.ex, 2), rnd(self.ey, 2)],
                            bound95=rnd(self.bound, 2), anchor=self.anchor)
-        if hasattr(X, "judge_search_detail"):
-            det = X.judge_search_detail(f, readings, s)
-        else:
-            det = {"result": X.judge_search(f, readings, s), "reason": None}
-        truth = X.deposit_at(self.true_find_xy[f["find_id"]], self.w.ice, s)
+        det = X.judge_search_detail(f, readings, s)
+        match_xy = true_xy[det["match"]] if det.get("match") is not None else None
+        sc = X.score_search(self.true_find_xy[f["find_id"]], det["result"], self.w.ice, s, match_xy)
         self.event("search_end", find_id=f["find_id"], radius_m=rnd(radius, 2), result=det["result"],
-                   reason=det.get("reason"), truth_has_deposit=bool(truth))
+                   reason=det.get("reason"), truth_has_deposit=bool(sc["truth_has_deposit"]),
+                   false_confirmed=bool(sc["false_confirmed"]), missed=bool(sc["missed"]))
         self.search_results.append((f["find_id"], det["result"], det))
         if det["result"] == "confirmed" and self.drills_left > 0:
             tgt = det.get("est") or f["est"]
@@ -706,7 +707,7 @@ class Sortie:
         self.event("drill", find_id=f["find_id"], est=[rnd(self.ex, 2), rnd(self.ey, 2)],
                    true_err_m=rnd(math.hypot(self.errx, self.erry), 3),
                    miss_m=rnd(math.hypot(self.tx - tfx, self.ty - tfy), 3),
-                   hit=bool(X.deposit_at((self.tx, self.ty), self.w.ice, s)))
+                   hit=X.deposit_at((self.tx, self.ty), self.w.ice, s) is not None)
         self.drills_left -= 1
         self.drilled.append(f["find_id"])
         return True
@@ -804,8 +805,14 @@ class Campaign:
         self.corridor_len = float(sum(math.hypot(b[0] - a[0], b[1] - a[1])
                                       for a, b in zip(self.corridor, self.corridor[1:])))
         self.true_tree = cKDTree(w.craters[:, :2]) if len(w.craters) else None
+        # True craters absent from the starting map (crossing.score_added indexes these).
+        if len(w.craters) and len(w.map_start):
+            dm, _ = cKDTree(w.map_start[:, :2]).query(w.craters[:, :2])
+            self.craters_missing = w.craters[dm > 1e-6]
+        else:
+            self.craters_missing = w.craters
+        self.foot = footprint(s)
         self.map_rows = [list(map(float, r)) for r in w.map_start]
-        self.map_off_rows = [[0.0, 0.0] for _ in self.map_rows]
         self._rebuild_map()
         self.added: list = []
         self.pool: list = []
@@ -823,7 +830,6 @@ class Campaign:
     # ------------------------------------------------------------ helpers
     def _rebuild_map(self):
         self.map_arr = np.array(self.map_rows, float).reshape(-1, 3)
-        self.map_off = np.array(self.map_off_rows, float).reshape(-1, 2)
         self.map_tree = cKDTree(self.map_arr[:, :2]) if len(self.map_arr) else None
 
     def next_find_id(self):
@@ -983,23 +989,19 @@ class Campaign:
         if s.map_refinement and self.pool and t_arr is not None:
             added = X.merge_sightings(self.pool, self.map_arr, s, len(self.added) + 1)
             if added:
-                scores = X.score_added(added, self.world.craters, s)
                 drop = set()
-                for a, (tc, off) in zip(added, scores):
+                for a in added:
                     drop.update(a["members"])
-                    if tc is not None:
-                        vx = a["x"] - self.world.craters[tc, 0]
-                        vy = a["y"] - self.world.craters[tc, 1]
-                    else:
-                        vx = vy = 0.0
+                    # true_crater indexes self.craters_missing here; record()
+                    # re-indexes it into the record's truth.craters_missing.
+                    sc = X.score_added(a, self.craters_missing, s)
                     rec = {"crater_id": a["crater_id"], "x": rnd(a["x"], 2), "y": rnd(a["y"], 2),
                            "d": rnd(a["d"], 2), "after_sortie": so.sid, "sightings": a["sightings"],
-                           "bound95": rnd(a.get("bound95"), 2), "true_crater": tc,
-                           "true_offset_m": rnd(math.hypot(vx, vy), 3) if tc is not None else None,
+                           "bound95": rnd(a.get("bound95"), 2), "true_crater": sc["true_crater"],
+                           "true_offset_m": sc["true_offset_m"], "misplaced": sc["misplaced"],
                            "scouts": a.get("scouts"), "sorties": a.get("sorties")}
                     self.added.append(rec)
                     self.map_rows.append([a["x"], a["y"], a["d"]])
-                    self.map_off_rows.append([vx, vy])
                     self.events.append({"t": rnd(t_arr, 1), "sortie_id": so.sid, "scout": so.scout,
                                         "type": "crater_added", "x": rnd(a["x"], 2), "y": rnd(a["y"], 2),
                                         "crater_id": a["crater_id"]})
@@ -1072,8 +1074,8 @@ class Campaign:
             "wrong_match_rate": rnd(wrong / fixes, 4) if fixes else None,
             "finds": len(self.finds),
             "confirmed": sum(e["result"] == "confirmed" for e in ends),
-            "false_confirmed": sum(e["result"] == "confirmed" and not e["truth_has_deposit"] for e in ends),
-            "deposits_missed": sum(1 for k in in_area if k not in hit),
+            "false_confirmed": sum(bool(e.get("false_confirmed")) for e in ends),
+            "deposits_missed": sum(bool(e.get("missed")) for e in ends),
             "area_km2": rnd(len(cov_set) * cell * cell / 1e6, 4),
             "h_drive": rnd(sum(r["time_s"]["drive"] for r in sr) / 3600, 2),
             "h_check": rnd(sum(r["time_s"]["check"] for r in sr) / 3600, 2),
@@ -1084,7 +1086,10 @@ class Campaign:
             "fixes": fixes,
             "drills": len(drills),
             "drill_hit_rate": rnd(np.mean([e["hit"] for e in drills]), 3) if drills else None,
+            "survey_err_p95_m": self._survey_err_p95(),
             "deposits_in_area": len(in_area),
+            "deposits_unfound": sum(1 for k in in_area if k not in hit),
+            "added_misplaced": sum(bool(a.get("misplaced")) for a in self.added),
             "craters_added": len(self.added),
             "campaign_days": rnd(self.t_end / 86400, 2),
         })
@@ -1101,6 +1106,17 @@ class Campaign:
                         "map_craters": max(r["map_craters"] for r in rs),
                         "fixes": sum(r["fixes"] for r in rs), "sorties": len(rs)})
         return out
+
+    def _survey_err_p95(self):
+        """95th percentile of the true position error over pose rows logged
+        while surveying or searching: the error finds and drills inherit."""
+        errs = []
+        for rows in self.poses.values():
+            a = np.asarray(rows, float)
+            a = a[np.isin(a[:, 8], (ACT["survey"], ACT["search"]))]
+            if len(a):
+                errs.append(np.hypot(a[:, 1] - a[:, 4], a[:, 2] - a[:, 5]))
+        return rnd(np.percentile(np.concatenate(errs), 95), 3) if errs else None
 
     def _covered_cells(self):
         """5 m cells within half a lane spacing of the true survey path."""
@@ -1143,16 +1159,22 @@ class Campaign:
             d, _ = ptree.query(arr[:, :2], distance_upper_bound=near)
             return [[rnd(x, 2), rnd(y, 2), rnd(dd, 2)] for x, y, dd in arr[np.isfinite(d)]]
 
-        if len(w.craters) and len(w.map_start):
-            mt = cKDTree(w.map_start[:, :2])
-            dm, _ = mt.query(w.craters[:, :2])
-            missing = w.craters[dm > 1e-6]
-        else:
-            missing = w.craters
-        standins = [CROSSING] if CROSSING != "sim/crossing.py (part 2)" else []
-        if w.standin:
-            standins.append(w.standin)
-        fb = X.fallbacks_used(s) if hasattr(X, "fallbacks_used") else {}
+        # truth.craters_missing: cut to the driven neighbourhood, always keeping
+        # every crater an added one points at; true_crater is re-indexed into it.
+        cm = self.craters_missing
+        keep = np.zeros(len(cm), bool)
+        if ptree is not None and len(cm):
+            d, _ = ptree.query(cm[:, :2], distance_upper_bound=near)
+            keep = np.isfinite(d)
+        for a in self.added:
+            if a["true_crater"] is not None:
+                keep[a["true_crater"]] = True
+        new_idx = -np.ones(len(cm), int)
+        new_idx[keep] = np.arange(int(keep.sum()))
+        added = [dict(a, true_crater=(int(new_idx[a["true_crater"]]) if a["true_crater"] is not None else None))
+                 for a in self.added]
+        missing_rec = [[rnd(x, 2), rnd(y, 2), rnd(dd, 2)] for x, y, dd in cm[keep]]
+        standins = [] if campaign_world is not None else [w.standin]
         finds = []
         for f in self.finds:
             g = {k: v for k, v in f.items() if not k.startswith("_")}
@@ -1172,8 +1194,7 @@ class Campaign:
             "energy": {k: (rnd(v, 4) if isinstance(v, float) else v) for k, v in self.energy.items()},
             "scouts": self.scouts,
             "standins": standins,
-            "standin_settings": fb,
-            "crater_map": {"start": cut(w.map_start), "added": self.added,
+            "crater_map": {"start": cut(w.map_start), "added": added,
                            "scope": f"start and truth.craters_missing list only craters within {near:g} m of a "
                                     f"driven path; the world holds {len(w.craters)} detectable craters"},
             "finds": finds,
@@ -1181,8 +1202,8 @@ class Campaign:
             "events": self.events,
             "truth": {"label": "hidden truth",
                       "ice": [{k: rnd(v, 3) for k, v in d.items()} for d in w.ice],
-                      "craters_missing": cut(missing),
-                      "ice_profile": "sim/ice.py profile: peak * (threshold/peak)^(r^2/R^2), zero beyond R"},
+                      "craters_missing": missing_rec,
+                      "ice_profile": "sim/ice.py: peak * (threshold/peak)^(r^2/R^2), summed over deposits"},
             "summary": self.summary(),
         }
 

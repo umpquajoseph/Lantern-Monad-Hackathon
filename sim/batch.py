@@ -216,7 +216,7 @@ def main():
     from sim import figures
     figs = figures.make(bdir)
 
-    standins = ([C.CROSSING] if C.CROSSING != "sim/crossing.py (part 2)" else []) +         (["world: Shoemaker 5 m window (sim/campaign.py standin_world)"] if C.campaign_world is None else [])
+    standins = ["world: Shoemaker 5 m window (sim/campaign.py standin_world)"] if C.campaign_world is None else []
     lines = [f"# Batch {a.batch_id}", "",
              f"{len(jobs)} runs: worlds {a.seed0}..{a.seed0 + a.worlds - 1}, sweeps "
              + (", ".join(f"{k} = {vs}" for k, vs in axes) or "none")

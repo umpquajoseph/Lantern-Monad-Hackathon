@@ -34,6 +34,7 @@ import argparse
 import heapq
 import json
 import math
+import os
 import time
 from collections import deque
 from dataclasses import asdict, dataclass, fields
@@ -200,10 +201,28 @@ _ROUTE_CACHE: dict = {}
 
 
 def descent_route_cached(z, slope, floor, x0, y0, cell, dock, limit_deg):
-    key = (float(x0), float(y0), z.shape, tuple(map(float, dock)), float(limit_deg), int(floor.sum()))
-    if key not in _ROUTE_CACHE:
-        _ROUTE_CACHE[key] = descent_route(slope, floor, x0, y0, cell, dock, limit_deg)
-    return _ROUTE_CACHE[key]
+    """Route per (terrain, dock), cached in memory and on disk so batch
+    workers load it instead of each building the grid graph (a few hundred
+    MB at its peak on a 6 km window)."""
+    import hashlib
+    h = hashlib.sha1()
+    for arr in (slope, floor):
+        h.update(np.ascontiguousarray(arr).tobytes())
+    h.update(json.dumps([float(x0), float(y0), float(cell), list(map(float, dock)), float(limit_deg)]).encode())
+    key = h.hexdigest()[:16]
+    if key in _ROUTE_CACHE:
+        return _ROUTE_CACHE[key]
+    path = CAMPAIGN_DIR / "_routes" / f"{key}.json"
+    if path.exists():
+        route = [tuple(p) for p in json.loads(path.read_text(encoding="utf-8"))]
+    else:
+        route = descent_route(slope, floor, x0, y0, cell, dock, limit_deg)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(route), encoding="utf-8")
+        os.replace(tmp, path)
+    _ROUTE_CACHE[key] = route
+    return route
 
 
 def descent_route(slope, floor, x0, y0, cell, dock, limit_deg):
@@ -226,10 +245,13 @@ def descent_route(slope, floor, x0, y0, cell, dock, limit_deg):
         m = a_ok & b_ok
         rows.append(a[m]); cols.append(bb[m])
         wts.append(np.full(m.sum(), cell * math.hypot(oi, oj)))
-    r = np.concatenate(rows); c = np.concatenate(cols); wt = np.concatenate(wts)
-    g = coo_matrix((np.concatenate([wt, wt]), (np.concatenate([r, c]), np.concatenate([c, r]))),
-                   shape=(h * w, h * w)).tocsr()
-    dist, pred = dijkstra(g, indices=idx[di, dj], return_predecessors=True)
+    r = np.concatenate(rows).astype(np.int32); c = np.concatenate(cols).astype(np.int32)
+    wt = np.concatenate(wts).astype(np.float32)
+    del rows, cols, wts
+    g = coo_matrix((wt, (r, c)), shape=(h * w, h * w)).tocsr()
+    del r, c, wt
+    dist, pred = dijkstra(g, directed=False, indices=idx[di, dj], return_predecessors=True)
+    del g
     dist_f = np.where(floor.ravel() & np.isfinite(dist), dist, np.inf)
     end = int(np.argmin(dist_f))
     if not np.isfinite(dist_f[end]):

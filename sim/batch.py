@@ -48,7 +48,14 @@ def parse_sweeps(items):
     return axes
 
 
+def _row_path(out_root, batch_id, seed, overrides):
+    return Path(out_root) / batch_id / f"w{seed:05d}-{Settings(**overrides).key()}" / "row.json"
+
+
 def _run_one(job):
+    """One run. Writes record.json, poses.npz (unless --no-records) and
+    row.json (its summary row, by-sortie rows and drills), so a batch that is
+    stopped keeps every finished run and a re-run skips them."""
     seed, overrides, batch_id, out_root, keep = job
     s = Settings(**overrides)
     t0 = time.perf_counter()
@@ -58,7 +65,11 @@ def _run_one(job):
         c.save(batch_id, out_root)
     drills = [{"run_id": c.run_id, "sortie_id": e["sortie_id"], "true_err_m": e["true_err_m"],
                "miss_m": e["miss_m"], "hit": e["hit"]} for e in c.events if e["type"] == "drill"]
-    return c.summary(), c.by_sortie(), drills, t_sim, time.perf_counter() - t0
+    out = {"summary": c.summary(), "by_sortie": c.by_sortie(), "drills": drills, "t_sim": t_sim}
+    rp = _row_path(out_root, batch_id, seed, overrides)
+    rp.parent.mkdir(parents=True, exist_ok=True)
+    rp.write_text(json.dumps(out, default=str), encoding="utf-8")
+    return t_sim
 
 
 def write_csv(path, rows):
@@ -174,7 +185,8 @@ def main():
     ap.add_argument("--seed0", type=int, default=1)
     ap.add_argument("--sweep", action="append", default=[], help="name=v1,v2,...  (repeatable)")
     ap.add_argument("--set", nargs="*", default=[], help="fixed overrides name=value for every run")
-    ap.add_argument("--jobs", type=int, default=0, help="worker processes (0 = all cores)")
+    ap.add_argument("--jobs", type=int, default=0, help="worker processes (0 = half the cores; each "
+                                                       "holds one world in memory)")
     ap.add_argument("--no-records", action="store_true", help="skip per-run record.json / poses.npz")
     ap.add_argument("--out", default=None, help="root folder (default data/campaigns)")
     a = ap.parse_args()
@@ -194,17 +206,27 @@ def main():
             kw = {k: (tuple(map(tuple, v)) if isinstance(v, list) and v and isinstance(v[0], list)
                       else tuple(v) if isinstance(v, list) else v) for k, v in kw.items()}
             jobs.append((seed, kw, a.batch_id, out_root, not a.no_records))
-    n_jobs = a.jobs or os.cpu_count()
-    print(f"{len(jobs)} runs ({a.worlds} worlds x {len(combos)} design choices) on {n_jobs} processes -> {bdir}")
+    n_jobs = a.jobs or max(1, (os.cpu_count() or 2) // 2)
+    todo = [j for j in jobs if not _row_path(out_root, a.batch_id, j[0], j[1]).exists()]
+    print(f"{len(jobs)} runs ({a.worlds} worlds x {len(combos)} design choices), {len(jobs) - len(todo)} "
+          f"already done, on {n_jobs} processes -> {bdir}")
+    # Build the shared descent route once, here, so workers load it from disk.
+    C.Campaign(a.seed0, base, WorldRanges())
     t0 = time.perf_counter()
-    summaries, bys, drills, t_sims = [], [], [], []
-    with Pool(n_jobs) as pool:
-        for i, (sm, by, dr, t_sim, t_all) in enumerate(pool.imap_unordered(_run_one, jobs, chunksize=1)):
-            summaries.append(sm); bys.extend(by); drills.extend(dr); t_sims.append(t_sim)
-            if (i + 1) % max(1, len(jobs) // 20) == 0 or i + 1 == len(jobs):
-                el = time.perf_counter() - t0
-                print(f"  {i + 1}/{len(jobs)} runs, {el / 60:.1f} min", flush=True)
+    t_sims = []
+    if todo:
+        with Pool(n_jobs, maxtasksperchild=20) as pool:
+            for i, t_sim in enumerate(pool.imap_unordered(_run_one, todo, chunksize=1)):
+                t_sims.append(t_sim)
+                if (i + 1) % max(1, len(todo) // 20) == 0 or i + 1 == len(todo):
+                    print(f"  {i + 1}/{len(todo)} runs, {(time.perf_counter() - t0) / 60:.1f} min", flush=True)
     wall = time.perf_counter() - t0
+    summaries, bys, drills = [], [], []
+    for j in jobs:
+        r = json.loads(_row_path(out_root, a.batch_id, j[0], j[1]).read_text(encoding="utf-8"))
+        summaries.append(r["summary"]); bys.extend(r["by_sortie"]); drills.extend(r["drills"])
+        if not todo:
+            t_sims.append(r["t_sim"])
     summaries.sort(key=lambda r: r["run_id"])
     bys.sort(key=lambda r: (r["run_id"], r["sortie_n"]))
     drills.sort(key=lambda r: (r["run_id"], r["sortie_id"]))
@@ -221,7 +243,7 @@ def main():
              f"{len(jobs)} runs: worlds {a.seed0}..{a.seed0 + a.worlds - 1}, sweeps "
              + (", ".join(f"{k} = {vs}" for k, vs in axes) or "none")
              + f", overrides {a.set or 'none'}.", "",
-             f"Wall time {wall / 60:.1f} min on {n_jobs} processes; per run {np.median(t_sims):.1f} s median, "
+             f"Wall time {wall / 60:.1f} min on {n_jobs} processes for {len(todo)} new runs; per run {np.median(t_sims):.1f} s median, "
              f"{np.max(t_sims):.1f} s max (simulation only, one process each, cores shared).", "",
              "Stand-ins in these runs: " + ("; ".join(standins) or "none"), "",
              hc_text, "",

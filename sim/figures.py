@@ -101,8 +101,7 @@ def fig1a(bdir: Path, runs, drills):
         ax.set_yscale("log")
         ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
         ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-    a3.set_ylabel("Error while surveying, 95th pct (m)
-(median over runs)", color=INK, fontsize=9.5)
+    a3.set_ylabel("Error while surveying, 95th pct (m)\n(median over runs)", color=INK, fontsize=9.5)
     if not drills:
         a2.text(0.5, 0.5, "no drills in this batch (no find was confirmed)", transform=a2.transAxes,
                 ha="center", va="center", fontsize=9, color=INK2)
@@ -112,8 +111,7 @@ def fig1a(bdir: Path, runs, drills):
         ax.set_xlim(edges[0], edges[-1] * 1.6)
     a1.set_ylabel("Share of sorties home with the 25% reserve", color=INK, fontsize=9.5)
     a1.set_ylim(min(0.0, np.nanmin([a1.get_ylim()[0]])), 1.02)
-    a2.set_ylabel("Drill-site error, 95th pct (m)
-(pooled drills)", color=INK, fontsize=9.5)
+    a2.set_ylabel("Drill-site error, 95th pct (m)\n(pooled drills)", color=INK, fontsize=9.5)
     a2.set_xlabel("Craters ≥ 10 m per km² (world draw, log bins)", color=INK, fontsize=9.5)
     a1.legend(frameon=False, fontsize=8.5, loc="lower right", title="check policy", title_fontsize=8.5)
     fig.suptitle(f"Figure 1a. {len(sel)} runs, fleets of 2+ with refinement; hollow marker = under "

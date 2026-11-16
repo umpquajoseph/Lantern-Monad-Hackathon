@@ -461,6 +461,89 @@ Part 1 also writes (2026-11-16, additive):
 - `terrain` (stand-in world): the 5 m Shoemaker window; `bounds` covers the
   dock and every pose.
 
+#### Camera navigation (`nav: "camera"`, the default; worker live-nav, 16 Nov 2026)
+
+`Settings.nav` is `"camera"` (default) or `"sampled"` (the paper's
+comparison column, the engine above). It is a Settings field, so it is
+part of the run id and a summary.csv column. With `"camera"` every Scout,
+at every step (`sim/rover.py` `STEP_M`, 2 m driven or one turn in place),
+renders its lamp view (`sim/scene.py`), finds rims (`sim/vision.py`),
+updates its particle filter (`sim/nav.py` `ParticleNav`, on the dock's
+current crater map), scans with the lidar (`sim/lidar.py`) and plans on
+its estimate and the lidar's hazards (`sim/rover.py`). Frames are never
+written to disk. Sorties are simulated one at a time, so a Scout's view
+never shows another Scout.
+
+Record changes (additive unless marked):
+
+- Top level `nav`: `"camera"` or `"sampled"`. `pipeline`: one string per
+  part (`nav`, `vision`, `lidar`, `planner`, `scene`), each part's `NAME`.
+- Top level `ground`: the fine ground the camera saw, built by
+  `sim/site_ground.py build_ground` before the run over the dock, the
+  corridor and every lane the run could reserve, plus a margin:
+  `{"file": "run_ground/<run_id>.npz", "x0", "y0", "cell" (1.0),
+  "bounds": [xmin, ymin, xmax, ymax], "display": "off"}`. `file` is
+  relative to `DATA/terrain/`. A viewer that wants the ground the camera
+  saw loads this file; `site_ground.from_run` would build a different box
+  with different roughness. A Scout's planner never drives within
+  `sim/rover.py` `MAP_MARGIN_M` of its edge, so a sortie cannot leave fine
+  ground: a waypoint off it is skipped (event `waypoint_skipped`).
+- Events, camera only:
+  - `check` is one **crater pass**: consecutive steps whose rims matched
+    mapped craters, ended by `Settings.cam_pass_gap_steps` steps without.
+    The filter itself corrects at every step with rims; a pass groups
+    those steps for the timeline and the counts. Fields as above, with:
+    `reason: "camera"`; `matched` (distinct map craters matched in the
+    pass); `craters_in_view` (distinct true craters the pass's rim points
+    lie on); `fixed` (true when `matched` >= 1: the filter corrected on
+    the map; `fix_min_craters` is not used); `wrong_match` (more than half
+    of the pass's matched rim points paired with the wrong map crater,
+    against the truth); `wrong_match_cause` (`missing`: the true crater is
+    not in the map; `misplaced:<crater_id>`: paired with an added crater
+    that is not where its true crater is; `base`: paired with another
+    mapped crater, or the point lies on no crater); `points`,
+    `wrong_points`, `steps` (first and last step index of the pass in
+    `steps.npz`); truth `true_err_before_m` (at the pass's first step,
+    before its correction), `true_err_m` (after its last).
+  - `sighting`: an unmatched rim arc fitted with a circle (Kasa fit) at the
+    end of a pass, in the Scout's estimated frame: `est`, `d_est`,
+    `bound95`, `anchor` as above, plus `points`, `fit_rms_m`.
+  - `waypoint_skipped`: `reason` `blocked` (no progress for
+    `Settings.cam_stuck_steps` steps) or `off_ground`; `goal` (map frame).
+- `time_s.check` is 0: a camera Scout does not stop to fix.
+  `Settings.check_policy`, `check_stop_s`, `drift_mode` and the sampled
+  fix-error fields are not used. The truth's odometer is a scale error of
+  the world's `drift_frac` plus `odom_noise_frac` and
+  `odom_heading_noise_rad` (sim/rover.py's model); the filter has its own
+  (`pf_*`). The filter starts at the dock's registered position with its
+  particles spread to `dock_reg_bound95_m`.
+- `bound95` everywhere is `K95_2D * sigma`, sigma the filter's per-axis
+  spread (sim/nav.py `belief`).
+- Sorties add `steps` (camera steps), `point_turns`, `waypoints_skipped`.
+- Summary adds `nav`, `steps`, `s_per_step` (wall seconds per Scout-step),
+  `rim_points`, `rim_wrong_share` (wrong-paired share of matched rim
+  points).
+
+`steps.npz` (camera runs only), next to `poses.npz`: every Scout-step the
+pipeline ran, per sortie. Keys are `<sortie_id>.<name>`; ragged lists use
+an offset array `o` of length K+1 (step k owns rows `o[k]:o[k+1]`).
+
+| key | dtype, shape | meaning |
+|---|---|---|
+| `<sid>.step` | float32 (K, 12) | `t, true_x, true_y, true_heading, est_x, est_y, est_heading, bound95, energy_kwh, activity, goal_x, goal_y`. Activity codes as poses.npz. Goal: the waypoint steered for, map frame. |
+| `<sid>.particles` | float16 (K, 100, 3) | each particle `dx, dy` from `est`, metres, and weight (sums to 1) |
+| `<sid>.rim_o` | int32 (K+1) | offsets into the rim rows |
+| `<sid>.rims` | float16 (R, 2) | rim points `[x_forward, y_left]`, metres, rover frame, as the filter got them |
+| `<sid>.rim_map` | int32 (R) | map crater the point pairs with under the estimate (nearest edge within `cam_match_tol_m`), row of `map_craters`; -1 none |
+| `<sid>.rim_true` | int32 (R) | true crater the point lies on (truth, nearest edge within `cam_match_tol_m` of the true pose's point), row of `true_craters`; -1 none |
+| `<sid>.rim_wrong` | uint8 (R) | 1: paired with a map crater that is not this point's true crater (truth) |
+| `<sid>.lidar` | uint16 (K, 20, 121) | range image, every other beam row and column of sim/lidar.py's 40 x 241 scan (elevations `lidar_el_deg`, azimuths `lidar_az_deg`), centimetres, 0 = no return |
+| `<sid>.haz_o`, `<sid>.haz`, `<sid>.haz_kind` | int32 (K+1), float16 (H, 2), uint8 (H) | lidar hazard cells `[x_forward, y_left]` from the lidar, kind 0 crater, 1 slope, 2 rock |
+| `<sid>.plan_o`, `<sid>.plan` | int32 (K+1), float32 (P, 2) | the route the Scout is about to drive, true frame world xy, from the Scout forward, about 20 m (sim/rover.py `planned_route`) |
+| `map_craters` | float32 (M, 3) | every map crater any rim paired with, `[x, y, d]` |
+| `true_craters` | float32 (N, 3) | every true crater any rim lay on, `[x, y, d]` |
+| `lidar_el_deg`, `lidar_az_deg` | float32 | beam angles of the stored range image |
+
 
 ### Summary row (part 1)
 

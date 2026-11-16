@@ -421,3 +421,10 @@ Read mail, then `mv` it to `leader/archive/`.
 ## 15:46
 - main = joseph = 27e9443 (new Mission Control UI, name tags off, README, done-A + park-aside in run_mission.py). On Joseph go.
 - Next: Kellen renders mission from main with real chain + republishes hosted link; sources worker writing docs/SOURCES.md.
+
+## 2026-11-16 14:02 PST Campaign build started (session monad-hackathon-project-50 [922a59])
+
+- Scope now: docs/campaign-spec.md (RASC-AL campaign simulator). Lantern produces the paper numbers; trust is the question (spec 4a).
+- main fast-forwarded to origin/main 51d136b, then d2be7f9 (spec draft, ignores). Base for parts: campaign-handoffs 9fa39e4.
+- Workers, Opus, own windows and worktrees: engine, crossing, terrain, viewer (C:\Monad-Hackathon-<part>, branch campaign-<part>). Briefs docs/briefs/campaign-*.md.
+- Hosting off until approved; new Vercel project later; never republish lantern-teal.

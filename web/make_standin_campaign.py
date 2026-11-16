@@ -120,6 +120,7 @@ class Sortie:
         self.efix95 = self.s.fix_err_good[0][0] + 1.645 * self.s.fix_err_good[0][1]
         self.heading = 0.0
         self.checks = self.wrong = 0
+        self.anchor = "dock"   # crossing: "dock" until the first check, then "<sortie_id>#<n>"
         self.fault = None
         self.sighted = set()
         self.surveyed = set()
@@ -192,6 +193,7 @@ class Sortie:
         share = miss / total if total else 0.0
         p_wrong = min(1.0, s.p_wrong_base + s.p_wrong_per_missing * share)
         wrong = bool(g.random() < p_wrong)
+        cause = ("missing" if g.random() < share else "base") if wrong else None
         if wrong:
             m, sd = s.fix_err_wrong_match
         else:
@@ -204,8 +206,10 @@ class Sortie:
         self.d_since = 0.0
         self.checks += 1
         self.wrong += wrong
+        self.anchor = f"{self.id}#{self.checks}"
+        kw = {"wrong_match_cause": cause} if wrong else {}
         self.ev("check", est=[rnd(v) for v in self.est], bound95=rnd(self.bound95()), wrong_match=wrong,
-                craters_in_view=in_view)
+                craters_in_view=in_view, **kw)
         self.row(act)
 
     def survey_step(self):
@@ -220,15 +224,15 @@ class Sortie:
                 est = [rnd(v) for v in self.est]
                 b = rnd(self.bound95())
                 self.row(4)
-                self.ev("reading", reading_wt=rnd(wt, 2), est=est, bound95=b)
+                self.ev("reading", reading_wt=rnd(wt, 2), est=est, bound95=b, anchor=self.anchor)
                 near = [f for f in [*self.c.finds.values(), *self.c.pending_finds]
                         if math.hypot(f["est"][0] - est[0], f["est"][1] - est[1]) < 15.0]
                 if not near:
                     fid = len(self.c.finds) + len(self.c.pending_finds) + 1
                     f = {"find_id": fid, "scout": self.scout, "sortie_id": self.id, "est": est, "bound95": b,
-                         "reading_wt": rnd(wt, 2), "status": "find", "_true": [tx, ty], "_t": self.t}
+                         "reading_wt": rnd(wt, 2), "status": "find", "anchor": self.anchor, "_true": [tx, ty], "_t": self.t}
                     self.c.pending_finds.append(f)
-                    self.ev("find", find_id=fid, est=est, bound95=b, reading_wt=rnd(wt, 2))
+                    self.ev("find", find_id=fid, est=est, bound95=b, reading_wt=rnd(wt, 2), anchor=self.anchor)
         if self.fault not in ("camera", "lamp"):
             d = np.hypot(w.sight_xy[:, 0] - tx, w.sight_xy[:, 1] - ty)
             for j in np.nonzero(d <= SIGHT_RANGE_M)[0]:
@@ -238,7 +242,7 @@ class Sortie:
                 self.sighted.add(i)
                 cx, cy, cd = w.missing[i]
                 e = self.ev("sighting", est=[rnd(cx + self.err[0] + g.normal(0, 0.5)), rnd(cy + self.err[1] + g.normal(0, 0.5))],
-                            d_est=rnd(cd * (1 + g.normal(0, 0.1)), 1), bound95=rnd(self.bound95()))
+                            d_est=rnd(cd * (1 + g.normal(0, 0.1)), 1), bound95=rnd(self.bound95()), anchor=self.anchor)
                 e["_true"] = i
                 self.c.sightings.append(e)
 
@@ -257,6 +261,7 @@ class Sortie:
         res = "confirmed" if best > s.find_threshold_wt else "unconfirmed"
         f["status"] = res
         self.ev("search_end", find_id=f["find_id"], radius_m=rnd(radius), result=res,
+                reason="match" if res == "confirmed" else "no_match",
                 truth_has_deposit=w.has_deposit(*f["_true"]))
         self.row(6)
 
@@ -304,9 +309,13 @@ class Campaign:
             if np.max(np.hypot(*(xy - xy.mean(0)).T)) > self.s.merge_tol_m:
                 continue
             cid = f"C{len(self.added) + 1}"
-            c = {"crater_id": cid, "x": rnd(xy[:, 0].mean()), "y": rnd(xy[:, 1].mean()),
+            cx, cy = xy[:, 0].mean(), xy[:, 1].mean()
+            off = float(np.hypot(cx - self.world.missing[i, 0], cy - self.world.missing[i, 1]))
+            tol = getattr(self.s, "map_match_tol_m", self.s.merge_tol_m)
+            c = {"crater_id": cid, "x": rnd(cx), "y": rnd(cy),
                  "d": rnd(np.mean([e["d_est"] for e in es]), 1), "after_sortie": sortie_id,
-                 "sightings": len(es), "true_crater": int(i)}
+                 "bound95": rnd(np.mean([e["bound95"] for e in es])),
+                 "sightings": len(es), "true_crater": int(i), "true_offset_m": rnd(off), "misplaced": off > tol}
             self.added.append(c)
             self.world.added_true.add(i)
             out.append({"t": rnd(t, 1), "sortie_id": sortie_id, "scout": sortie_id.split("-")[0],

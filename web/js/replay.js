@@ -1,6 +1,7 @@
-// 3D replay of one sortie: a time-lapse of its saved poses in the existing 3D
-// world (world.js). Nothing is re-simulated. The sortie is converted to the
-// "Run log" shape (docs/handoffs.md, "Part 4 reads") so world.js draws it as is.
+// 3D replay of one sortie's time window: a time-lapse of the saved poses of
+// every Scout out during it, in the existing 3D world (world.js, unchanged).
+// Nothing is re-simulated. The window is converted to the "Run log" shape
+// (docs/handoffs.md, "Part 4 reads"), one rover per Scout.
 import * as THREE from "three";
 import { Terrain, Run } from "./data.js";
 import { World, COLORS } from "./world.js";
@@ -14,48 +15,87 @@ for (const [k, v] of Object.entries(SCOUT_COLOR)) COLORS[k] = hexInt(v);
 for (const [k, v] of Object.entries(STATUS_COLOR)) COLORS[k] = hexInt(v);
 
 const ACT_COLOR = ["#4a6a8f", "#6f8fb3", "#4a6a8f", "#e0b84a", "#4fbf72", "#58c8ff", "#b58cff", "#3b4048", "#e5574f"];
-const state = { t: 0, playing: false, speed: 600, fill: true, truth: P.get("truth") === "1", follow: true };
-let world, terrain, cr, sortie, run;
+const DOCKED = 7;
+const PARK_M = 4;              // display only: Scouts at the dock are drawn this far apart, beside the pad
+const SEARCH_LABEL_AFTER_S = 1800;  // display only: a search's label stays this long after it ends, with its result
+const state = { t: 0, playing: false, speed: 600, fill: true, truth: P.get("truth") === "1", follow: null };
+let world, terrain, cr, sortie, run, searches = [];
 
-// A sortie as a Run: one rover, keyed by its Scout id; the 95% bound drawn as the ring.
-class SortieRun extends Run {
+function lerpPose(a, b, f) {
+  let dh = b[2] - a[2];
+  dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + dh * f];
+}
+
+// Every Scout out during the picked sortie, sampled on one shared timeline.
+// Between its own sorties a Scout is at the dock. world.js draws the rover
+// body at true_pose; until the truth is revealed it gets the pose the Scout
+// believed, and the true pose is kept aside.
+class FleetRun extends Run {
   constructor(cr, s) {
-    const rows = cr.rows(s.sortie_id), c = cr.col;
-    const steps = rows.map((r) => ({
-      t: r[c.t],
-      rovers: { [s.scout]: { true_pose: [r[c.true_x], r[c.true_y], r[c.true_heading]], estimate: [r[c.est_x], r[c.est_y]],
-        odom_pose: [r[c.est_x], r[c.est_y], r[c.true_heading]], sigma: r[c.bound95] } },
-      act: r[c.activity], energy: r[c.energy_kwh],
-    }));
+    const T0 = s.t_start, T1 = s.t_end, c = cr.col, d = cr.rec.dock;
+    const over = cr.rec.sorties.filter((x) => x.t_start < T1 && x.t_end > T0);
+    const scouts = [s.scout, ...[...new Set(over.map((x) => x.scout))].filter((a) => a !== s.scout).sort()];
+    const rowsOf = Object.fromEntries(over.map((x) => [x.sortie_id, cr.rows(x.sortie_id)]));
+    const tset = new Set([T0, T1]);
+    for (const rows of Object.values(rowsOf)) for (const r of rows) if (r[c.t] >= T0 && r[c.t] <= T1) tset.add(r[c.t]);
+    const times = [...tset].sort((a, b) => a - b);
+    const park = (i) => [d.x - PARK_M * (i + 1), d.y - PARK_M, 0];
+
+    const sample = (a, i, t) => {
+      const so = over.find((x) => x.scout === a && x.t_start <= t && t <= x.t_end);
+      const rows = so && rowsOf[so.sortie_id];
+      if (!rows || !rows.length) {
+        const p = park(i);
+        return { tru: p, est: p, b: 0.3, act: DOCKED, energy: null, sortie: null };
+      }
+      let lo = 0, hi = rows.length - 1;
+      if (t <= rows[0][c.t]) hi = 0;
+      else while (lo < hi) { const m = (lo + hi + 1) >> 1; if (rows[m][c.t] <= t) lo = m; else hi = m - 1; }
+      const r0 = rows[lo], r1 = rows[Math.min(lo + 1, rows.length - 1)];
+      const span = r1[c.t] - r0[c.t], f = span > 0 ? Math.min(1, Math.max(0, (t - r0[c.t]) / span)) : 0;
+      const tru = lerpPose([r0[c.true_x], r0[c.true_y], r0[c.true_heading]], [r1[c.true_x], r1[c.true_y], r1[c.true_heading]], f);
+      const est = lerpPose([r0[c.est_x], r0[c.est_y], r0[c.true_heading]], [r1[c.est_x], r1[c.est_y], r1[c.true_heading]], f);
+      return { tru, est, b: r0[c.bound95] + (r1[c.bound95] - r0[c.bound95]) * f, act: r1[c.activity], energy: r0[c.energy_kwh], sortie: so };
+    };
+
+    const poses = { truth: {}, believed: {} };
+    for (const a of scouts) { poses.truth[a] = []; poses.believed[a] = []; }
+    const steps = times.map((t) => {
+      const rovers = {}, info = {};
+      scouts.forEach((a, i) => {
+        const q = sample(a, i, t);
+        rovers[a] = { true_pose: q.tru, estimate: q.est.slice(0, 2), odom_pose: q.est, sigma: q.b };
+        info[a] = { act: q.act, energy: q.energy, sortie: q.sortie };
+        poses.truth[a].push(q.tru);
+        poses.believed[a].push(q.est);
+      });
+      return { t, rovers, info };
+    });
     super({ run_id: `${cr.rec.run_id}:${s.sortie_id}`, steps, truth: { ice: cr.rec.truth.ice } }, "");
-    this.agencies = [s.scout];
-    this.tracks = { [s.scout]: { truth: steps.map((x) => x.rovers[s.scout].true_pose.slice(0, 2)),
-      est: steps.map((x) => x.rovers[s.scout].estimate), odom: steps.map((x) => x.rovers[s.scout].estimate) } };
+    this.agencies = scouts;
+    this.tracks = {};
+    for (const a of scouts) this.tracks[a] = { truth: poses.truth[a].map((p) => p.slice(0, 2)),
+      est: poses.believed[a].map((p) => p.slice(0, 2)), odom: poses.believed[a].map((p) => p.slice(0, 2)) };
+    this.poses = poses;
     this.cr = cr;
     this.sortie = s;
-    // world.js puts the rover body at true_pose. Until the truth is revealed
-    // the body sits where the Scout believed it was; the true pose is kept aside.
-    this.poses = { truth: rows.map((r) => [r[c.true_x], r[c.true_y], r[c.true_heading]]),
-      believed: rows.map((r) => [r[c.est_x], r[c.est_y], r[c.true_heading]]) };
+    this.over = over;
     this.showTruth(false);
-    // What the dock knew at launch: every event of a sortie already home.
-    const home = new Set(cr.rec.sorties.filter((x) => x.t_end <= s.t_start).map((x) => x.sortie_id));
-    this.before = cr.events.filter((e) => e.sortie_id && home.has(e.sortie_id));
-    this.mine = cr.events.filter((e) => e.sortie_id === s.sortie_id);
     this._finds = new Map();
   }
 
   showTruth(on) {
-    const P = on ? this.poses.truth : this.poses.believed, a = this.sortie.scout;
-    this.steps.forEach((st, k) => { st.rovers[a].true_pose = P[k]; });
+    const P = on ? this.poses.truth : this.poses.believed;
+    for (const a of this.agencies) this.steps.forEach((st, k) => { st.rovers[a].true_pose = P[a][k]; });
   }
 
-  // The ice map as this Scout knows it at step k: world.js draws each find
-  // with its 95% bound, coloured by status.
+  // The ice map as the Scouts had logged it by step k, every Scout's finds
+  // with their status. world.js draws each with its 95% bound.
   findsAt(k) {
     if (this._finds.has(k)) return this._finds.get(k);
     const T = this.times[k];
-    const list = this.cr.findsFrom([...this.before, ...this.mine.filter((e) => e.t <= T)]).map((f) => ({
+    const list = this.cr.findsFrom(this.cr.events.filter((e) => e.t <= T)).map((f) => ({
       find_id: f.find_id, agency: f.scout, x: f.est[0], y: f.est[1], sigma: f.bound95, status: f.status, checks: [],
     }));
     this._finds.set(k, list);
@@ -82,6 +122,7 @@ async function main() {
   $("sortie-pick").onchange = (e) => {
     const q = new URLSearchParams(location.search);
     q.set("sortie", e.target.value);
+    q.delete("t"); q.delete("follow");
     location.search = q.toString();
   };
   $("sortie-title").textContent = sortie.sortie_id;
@@ -95,18 +136,19 @@ async function main() {
   world.loadRocks();
   world.initPatches();
 
-  run = new SortieRun(cr, sortie);
-  // Fine tiles under the track first, so the lines drape on the real ground.
-  const pts = run.tracks[sortie.scout].truth.filter((_, i) => i % 3 === 0);
+  run = new FleetRun(cr, sortie);
+  // Fine tiles under every track first, so the lines drape on the real ground.
+  const pts = run.agencies.flatMap((a) => run.tracks[a].truth.filter((_, i) => i % 3 === 0));
   const keys = [...terrain.keysNear(pts, 4)];
   let done = 0;
-  await Promise.all(keys.map((k) => terrain.loadTile(k).then(() => { $("loading").textContent = `Loading ground under the track, ${++done} of ${keys.length}`; })));
-  state.t = run.times[0];
+  await Promise.all(keys.map((k) => terrain.loadTile(k).then(() => { $("loading").textContent = `Loading ground under the tracks, ${++done} of ${keys.length}`; })));
+  state.follow = run.agencies.includes(P.get("follow")) ? P.get("follow") : sortie.scout;
+  state.t = Math.min(run.tEnd, Math.max(run.times[0], Number(P.get("t")) || run.times[0]));
   world.currentT = state.t;
-  world.follow = sortie.scout;   // world.js starts on rover "A"
+  world.follow = state.follow;   // world.js starts on rover "A"
   world.setRun(run);
-  world.rovers[sortie.scout].tag.innerHTML = `<span>Scout ${sortie.scout}</span>`;
   dock();
+  searchMarks();
   vis();
   acts();
   bind();
@@ -114,7 +156,7 @@ async function main() {
   $("scrub").max = run.tEnd;
   render();
   $("loading").hidden = true;
-  if (!P.has("paused")) toggle();
+  if (!P.has("paused") && !P.has("t")) toggle();
   let last = performance.now();
   const loop = (now) => {
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -132,7 +174,7 @@ async function main() {
 
 // A sortie runs kilometres past the 1 km drive area. Outside it, heights come
 // from the real LOLA backdrops, lowered exactly as world.js draws them
-// (buildBackdrop: 0.5 m plus r^2 / 2R), so the Scout sits on the drawn ground.
+// (buildBackdrop: 0.5 m plus r^2 / 2R), so the Scouts sit on the drawn ground.
 async function groundEverywhere() {
   const m = terrain.meta;
   const near = await terrain.loadBackdrop("backdrop_near"), far = await terrain.loadBackdrop("backdrop");
@@ -165,29 +207,60 @@ function dock() {
   world.scene.add(g);
 }
 
+// A Scout searching another Scout's find: a ring of the search radius round
+// the find, in the searcher's colour, with a label, while the search runs
+// and for a while after with its result. This is the cross-check.
+function searchMarks() {
+  const T0 = run.times[0], T1 = run.tEnd;
+  const findEv = new Map(cr.events.filter((e) => e.type === "find").map((e) => [e.find_id, e]));
+  for (const e of cr.events) {
+    if (e.type !== "search_start" || e.t > T1) continue;
+    const end = cr.events.find((x) => x.type === "search_end" && x.find_id === e.find_id && x.sortie_id === e.sortie_id && x.t >= e.t);
+    if ((end ? end.t : e.t) + SEARCH_LABEL_AFTER_S < T0) continue;
+    const f = findEv.get(e.find_id);
+    if (!f || !run.agencies.includes(e.scout)) continue;
+    const col = SCOUT_COLOR[e.scout];
+    const ring = world.ring(f.est[0], f.est[1], e.radius_m, world.lineMat(hexInt(col), 3, { dashed: true }));
+    const p = world.groundL(f.est[0], f.est[1]);
+    const lbl = world.label("", col);
+    // Low and to the left of the find's beam, whose own label sits above-right.
+    lbl.position.set(p.x, p.y, p.z + 3);
+    lbl.center.set(1, 0.5);
+    world.scene.add(ring, lbl);
+    searches.push({ start: e, end, find: f, ring, lbl });
+  }
+}
+
 function vis() {
   run.showTruth(state.truth);
   world.setVisibility({ fill: state.fill, tracks: true, truth: state.truth });
-  // world.js draws the true path with the tracks; here it is hidden truth, behind the reveal.
-  world.tracks[sortie.scout].truth.line.visible = state.truth;
+  // world.js draws the true paths with the tracks; here they are hidden truth, behind the reveal.
+  for (const a of run.agencies) world.tracks[a].truth.line.visible = state.truth;
   $("vnote").hidden = !state.fill;
   $("fill-btn").textContent = state.fill ? "Fill light on" : "Fill light off";
   $("fill-btn").classList.toggle("on", state.fill);
   $("truth-btn").textContent = state.truth ? "Hide hidden truth" : "Reveal hidden truth";
   $("truth-btn").classList.toggle("on", state.truth);
   $("truth-btn").setAttribute("aria-pressed", String(state.truth));
-  $("cam-btn").textContent = state.follow ? "Whole sortie" : `Follow ${sortie.scout}`;
+  $("cam-btn").textContent = state.follow === "site" ? `Follow ${sortie.scout}` : "Whole sortie";
 }
 
-// The activity strip over the time bar: where the sortie's time went, in order.
+// Over the time bar: the followed Scout's activity, in order, and the
+// moments that matter for the whole fleet (finds, searches, drilling).
 function acts() {
+  const a = state.follow === "site" ? sortie.scout : state.follow;
   const T0 = run.times[0], span = run.tEnd - T0 || 1;
   let html = "";
   for (let k = 0; k < run.steps.length - 1; k++) {
-    const w = (100 * (run.times[k + 1] - run.times[k])) / span;
-    if (w > 0) html += `<i style="width:${w}%;background:${ACT_COLOR[run.steps[k + 1].act] || "#333"}" title="${ACTIVITY[run.steps[k + 1].act]}"></i>`;
+    const w = (100 * (run.times[k + 1] - run.times[k])) / span, act = run.steps[k + 1].info[a].act;
+    if (w > 0) html += `<i style="width:${w}%;background:${ACT_COLOR[act] || "#333"}" title="${a}: ${ACTIVITY[act]}"></i>`;
   }
   $("acts").innerHTML = html;
+  const marks = cr.events.filter((e) => e.t >= T0 && e.t <= run.tEnd && ["find", "search_start", "drill"].includes(e.type) && run.agencies.includes(e.scout));
+  $("evmarks").innerHTML = marks.map((e) => {
+    const col = e.type === "find" ? STATUS_COLOR.find : e.type === "drill" ? STATUS_COLOR.drilled : SCOUT_COLOR[e.scout];
+    return `<b class="${e.type}" style="left:${(100 * (e.t - T0)) / span}%;background:${col}" title="${fmtDay(e.t)}: ${esc(sentence(e))}"></b>`;
+  }).join("");
 }
 
 function bind() {
@@ -195,13 +268,35 @@ function bind() {
   $("speed").onchange = (e) => { state.speed = Number(e.target.value); };
   $("scrub").oninput = (e) => { state.t = Number(e.target.value); render(); };
   $("fill-btn").onclick = () => { state.fill = !state.fill; vis(); };
-  $("truth-btn").onclick = () => { state.truth = !state.truth; vis(); render(); world.setFollow(state.follow ? sortie.scout : "site"); };
-  $("cam-btn").onclick = () => { state.follow = !state.follow; world.setFollow(state.follow ? sortie.scout : "site"); vis(); };
+  $("truth-btn").onclick = () => { state.truth = !state.truth; vis(); render(); world.setFollow(state.follow); };
+  $("cam-btn").onclick = () => follow(state.follow === "site" ? sortie.scout : "site");
+  $("next-search").onclick = nextSearch;
+  $("hud").addEventListener("click", (e) => { const li = e.target.closest(".fleet li[data-s]"); if (li) follow(li.dataset.s); });
   window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "SELECT") return;
     if (e.code === "Space") { toggle(); e.preventDefault(); }
     if (e.key === "f" || e.key === "F") { state.fill = !state.fill; vis(); }
   });
+}
+
+function follow(a) {
+  state.follow = a;
+  world.setFollow(a);
+  vis();
+  acts();
+  hudAt = 0;
+  hud();
+}
+
+// Jump to just before the next cross-check and follow the searching Scout.
+function nextSearch() {
+  const s = searches.map((x) => x.start).filter((e) => e.t > state.t + 60).sort((p, q) => p.t - q.t)[0]
+    || searches.map((x) => x.start).sort((p, q) => p.t - q.t)[0];
+  if (!s) return;
+  state.t = Math.max(run.times[0], s.t - 120);
+  follow(s.scout);
+  if (state.speed > 200) { state.speed = 200; $("speed").value = "200"; }
+  render();
 }
 
 function toggle(on = !state.playing) {
@@ -217,29 +312,92 @@ function render() {
   const T0 = run.times[0], dt = state.t - T0;
   const h = Math.floor(dt / 3600), m = Math.floor((dt % 3600) / 60);
   $("clock").textContent = `T+${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} · ${fmtDay(state.t)}`;
+  for (const s of searches) {
+    const t0 = s.start.t, t1 = s.end ? s.end.t : t0;
+    const on = state.t >= t0 && state.t <= t1 + SEARCH_LABEL_AFTER_S;
+    s.ring.visible = on && state.t <= t1;
+    s.lbl.visible = on;
+    s.lbl.element.style.display = on ? "" : "none";
+    const res = state.t > t1 && s.end ? ` · ${s.end.result === "confirmed" ? "confirmed" : "not confirmed"}` : "";
+    s.lbl.element.innerHTML = `<span>${s.start.scout} ${state.t <= t1 ? "searching" : "searched"} ${s.find.scout}'s find ${s.find.find_id}${res}</span>`;
+  }
   hud();
 }
 
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
+
+function sentence(e) {
+  const finder = (id) => { const f = cr.events.find((x) => x.type === "find" && x.find_id === id); return f ? f.scout : "?"; };
+  switch (e.type) {
+    case "launch": return `${e.scout} launched (${e.sortie_id})`;
+    case "dock_arrive": return `${e.scout} home at the dock`;
+    case "find": return `${e.scout} found ice: find ${e.find_id}, ${fmtNum(e.reading_wt, 1)} wt%`;
+    case "search_start": return `${e.scout} started searching ${finder(e.find_id)}'s find ${e.find_id}`;
+    case "search_end": return `${e.scout}: find ${e.find_id} ${e.result === "confirmed" ? "confirmed" : "not confirmed"}`;
+    case "drill": return `${e.scout} drilled find ${e.find_id}`;
+    case "fault": return `${e.scout}: ${e.module} fault`;
+    case "turn_back": return `${e.scout} turned back (${e.reason})`;
+    case "crater_added": return `dock: crater ${e.crater_id} added to the map`;
+    default: return `${e.scout || "dock"}: ${e.type}`;
+  }
+}
+
+// The cross-check running now, or just finished, in one line at the top of the HUD.
+function checkNow() {
+  const s = searches.filter((x) => state.t >= x.start.t && state.t <= (x.end ? x.end.t : x.start.t) + SEARCH_LABEL_AFTER_S)
+    .sort((p, q) => q.start.t - p.start.t)[0];   // the latest one: a running search over one just finished
+  if (!s) return "";
+  const done = s.end && state.t > s.end.t;
+  const res = done ? (s.end.result === "confirmed" ? " It is confirmed." : " It is not confirmed.") : "";
+  return `<div class="xcheck" style="border-color:${SCOUT_COLOR[s.start.scout]}">Cross-check: ${s.start.scout} ${done ? "searched" : "is searching"} around ${s.find.scout}'s find ${s.find.find_id}, within ${fmtNum(s.start.radius_m, 1)} m.${res}</div>`;
+}
+
+const FEED_TYPES = new Set(["launch", "dock_arrive", "find", "search_start", "search_end", "drill", "fault", "turn_back"]);
+
+let hudAt = 0;
 function hud() {
-  const k = run.stepAt(state.t), st = run.steps[Math.min(k + 1, run.steps.length - 1)], r = run.steps[k].rovers[sortie.scout];
-  const act = ACTIVITY[st.act] || "–";
-  const [x, y] = run.poseAt(sortie.scout, state.t);
-  const tp = run.poses.truth[k];
+  // Rebuilt at most 5 times a second while playing, so a click on a Scout row lands.
+  const now = performance.now();
+  if (state.playing && now - hudAt < 200) return;
+  hudAt = now;
+  const k = run.stepAt(state.t), nxt = run.steps[Math.min(k + 1, run.steps.length - 1)];
+  const a = state.follow === "site" ? sortie.scout : state.follow;
+  const r = run.steps[k].rovers[a], inf = nxt.info[a];
+  const tp = run.poses.truth[a][k];
   const err = Math.hypot(r.estimate[0] - tp[0], r.estimate[1] - tp[1]);
   const finds = run.findsAt(k);
   const counts = ["find", "confirmed", "unconfirmed", "drilled"].map((s) => [s, finds.filter((f) => f.status === s).length]).filter(([, n]) => n);
-  const dist = Math.hypot(x - cr.rec.dock.x, y - cr.rec.dock.y);
-  $("hud").innerHTML = `<h3><i class="sdot" style="background:${SCOUT_COLOR[sortie.scout]}"></i>Scout ${sortie.scout}, sortie ${sortie.n}
-      <span class="outcome ${sortie.outcome}">${OUTCOME_WORD[sortie.outcome] || sortie.outcome}</span></h3>
-    <div class="act">${act}</div>
-    <dl class="kv">
-      <dt>Battery</dt><dd>${fmtNum(st.energy, 2)} kWh</dd>
+  const so = inf.sortie;
+  const out = inf.act !== DOCKED;
+  for (const b of run.agencies) {
+    const tag = world.rovers[b] && world.rovers[b].tag;
+    if (tag) tag.innerHTML = `<span>${b}${nxt.info[b].act === DOCKED ? " · docked" : ""}</span>`;
+  }
+  const fleet = run.agencies.map((b) => {
+    const i = nxt.info[b], rb = run.steps[k].rovers[b];
+    return `<li data-s="${b}" class="${b === a && state.follow !== "site" ? "cur" : ""}" title="Follow ${b}">
+      <i class="sdot" style="background:${SCOUT_COLOR[b]}"></i><b>${b}</b>
+      <span>${i.act === DOCKED ? "at the dock" : ACTIVITY[i.act]}</span>
+      <span class="num">${i.act === DOCKED ? "" : `±${fmtNum(rb.sigma, 1)} m`}</span></li>`;
+  }).join("");
+  const feed = cr.events.filter((e) => e.t <= state.t && e.t >= run.times[0] - 1 && FEED_TYPES.has(e.type) && run.agencies.includes(e.scout))
+    .slice(-5).reverse().map((e) => `<li><span class="num">${fmtDay(e.t).replace("day ", "d")}</span> ${esc(sentence(e))}</li>`).join("");
+  $("hud").innerHTML = `<h3><i class="sdot" style="background:${SCOUT_COLOR[a]}"></i>${state.follow === "site" ? "Whole sortie" : `Following ${a}`}
+      ${so ? `<span class="dim" style="font-weight:400">${so.sortie_id}</span>` : ""}
+      ${so && so.sortie_id === sortie.sortie_id ? `<span class="outcome ${sortie.outcome}">${OUTCOME_WORD[sortie.outcome] || sortie.outcome}</span>` : ""}</h3>
+    <div class="act">${out ? ACTIVITY[inf.act] : "at the dock"}</div>
+    ${checkNow()}
+    ${out ? `<dl class="kv">
+      <dt>Battery</dt><dd>${fmtNum(inf.energy, 2)} kWh</dd>
       <dt>Position bound (95%)</dt><dd>±${fmtNum(r.sigma, 1)} m</dd>
       ${state.truth ? `<dt style="color:var(--truth)">True error (hidden)</dt><dd style="color:var(--truth)">${fmtNum(err, 1)} m</dd>` : ""}
-      <dt>From the dock</dt><dd>${fmtNum(dist / 1000, 2)} km</dd>
-      <dt>Ice map</dt><dd>${counts.map(([s, n]) => `<span style="color:${STATUS_COLOR[s]}">${n} ${s}</span>`).join(", ") || "empty"}</dd>
-    </dl>
-    <div class="note">${state.truth ? '<span style="color:var(--truth)">Hidden truth shown: the Scout is drawn where it really was. White line and dashed rings: where it really drove and the real ice.</span>' : "The Scout is drawn where it believed it was."} Coloured line: its estimated path. Ring: its 95% position bound. A time-lapse of the saved poses; nothing is re-simulated.</div>`;
+    </dl>` : ""}
+    <h4>Scouts out in this sortie's window</h4>
+    <ul class="fleet">${fleet}</ul>
+    <dl class="kv" style="margin-top:6px"><dt>Ice map</dt><dd>${counts.map(([s, n]) => `<span style="color:${STATUS_COLOR[s]}">${n} ${s}</span>`).join(", ") || "empty"}</dd></dl>
+    <h4>Just now</h4>
+    <ul class="feed">${feed || "<li class='dim'>Nothing yet</li>"}</ul>
+    <div class="note">${state.truth ? '<span style="color:var(--truth)">Hidden truth shown: Scouts are drawn where they really were. White lines and dashed rings: where they really drove and the real ice.</span>' : "Scouts are drawn where they believed they were."} Coloured lines: estimated paths. Rings: 95% position bounds; a dashed ring is a search around another Scout's find. Saved poses only; nothing is re-simulated.</div>`;
 }
 
 main();

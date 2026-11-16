@@ -223,7 +223,8 @@ function draw() {
 
   // Hidden truth, behind the reveal: craters missing from the map, the real ice, true paths.
   if (state.truth) {
-    const addedTrue = new Set(added.map((c) => c.true_crater));
+    // An added crater counts as found only if it is in the right place (crossing: `misplaced`).
+    const addedTrue = new Set(added.filter((c) => !c.misplaced && c.true_crater != null).map((c) => c.true_crater));
     ctx.setLineDash([3, 3]);
     ctx.strokeStyle = "rgba(255,122,107,.55)";
     ctx.lineWidth = 1;
@@ -235,6 +236,17 @@ function draw() {
       ctx.arc(sx(x), sy(y), r * view.s, 0, 2 * Math.PI);
     });
     ctx.stroke();
+    // Added in the wrong place: an orange cross over the Scouts' ring, a line to the real crater.
+    ctx.strokeStyle = css("--truth-miss");
+    ctx.lineWidth = 1.5;
+    for (const c of added) {
+      if (!c.misplaced) continue;
+      const X = sx(c.x), Y = sy(c.y), q = Math.max(3, c.d / 2 * view.s * 0.7);
+      ctx.beginPath(); ctx.moveTo(X - q, Y - q); ctx.lineTo(X + q, Y + q); ctx.moveTo(X + q, Y - q); ctx.lineTo(X - q, Y + q);
+      const t = c.true_crater != null && rec.truth.craters_missing[c.true_crater];
+      if (t) { ctx.moveTo(X, Y); ctx.lineTo(sx(t[0]), sy(t[1])); }
+      ctx.stroke();
+    }
     ctx.setLineDash([5, 4]);
     for (const d of rec.truth.ice) {
       ctx.strokeStyle = css("--truth");
@@ -383,6 +395,7 @@ function drawSide() {
     ${state.truth ? `<h3 style="color:var(--truth)">Hidden truth: the Scouts never see this</h3><ul>
     <li class="truthrow"><i class="sw ring dash" style="--c:var(--truth)"></i>Real ice deposit</li>
     <li class="truthrow"><i class="sw ring dash" style="--c:var(--truth-miss)"></i>Crater missing from their map</li>
+    <li class="truthrow"><span style="color:var(--truth-miss);width:14px;text-align:center;font-weight:600">✕</span>Added in the wrong place, line to the real crater</li>
     <li class="truthrow"><i class="sw line" style="--c:#fff"></i>Where this sortie really drove</li>
     <li class="truthrow"><i class="sw sq" style="--c:var(--truth)"></i>Where a find's reading really was</li></ul>` : ""}`;
 
@@ -410,13 +423,15 @@ function drawSide() {
       <p class="evlist" style="margin:10px 0 0">Finds <b>${cnt("find")}</b> · searches <b>${cnt("search_end")}</b>
         (${cnt("search_end", (e) => e.result === "confirmed")} confirmed) · drills <b>${cnt("drill")}</b> ·
         unmatched rims logged <b>${cnt("sighting")}</b> · craters added at the dock <b>${add}</b></p>
+      ${checksHtml(run, s)}
     </div>`;
   }
 
   // Maps after k sorties.
   const finds = run.findsFrom(run.eventsKnown(k));
   const by = (st) => finds.filter((f) => f.status === st).length;
-  const added = run.addedAfter(k).length;
+  const addedList = run.addedAfter(k), added = addedList.length;
+  const misplaced = addedList.filter((c) => c.misplaced).length;
   $("mapstate").innerHTML = `<div class="cards">
     <div class="card"><h3>Ice map</h3><dl class="kv">
       ${["find", "confirmed", "unconfirmed", "drilled"].map((st) => `<dt><i class="sdot" style="background:${STATUS_COLOR[st]}"></i> ${st}</dt><dd>${by(st)}</dd>`).join("")}
@@ -424,7 +439,8 @@ function drawSide() {
     <div class="card"><h3>Crater map</h3><dl class="kv">
       <dt>from orbit</dt><dd>${rec.crater_map.start.length}</dd>
       <dt>added</dt><dd>${added}</dd>
-      ${state.truth ? `<dt style="color:var(--truth)">still missing (truth)</dt><dd style="color:var(--truth)">${rec.truth.craters_missing.length - added}</dd>` : ""}
+      ${state.truth ? `<dt style="color:var(--truth)">added in the wrong place (truth)</dt><dd style="color:var(--truth)">${misplaced}</dd>
+      <dt style="color:var(--truth)">still missing (truth)</dt><dd style="color:var(--truth)">${rec.truth.craters_missing.length - (added - misplaced)}</dd>` : ""}
     </dl></div></div>`;
 
   // Every sortie with its time bar.
@@ -437,6 +453,23 @@ function drawSide() {
       ${timeBar(x.time_s, scale)}
       <a href="replay.html?batch=${encodeURIComponent(run.batch)}&run=${encodeURIComponent(rec.run_id)}&sortie=${encodeURIComponent(x.sortie_id)}" title="Replay ${x.sortie_id} in 3D">3D ›</a></li>`).join("");
   for (const li of document.querySelectorAll("#sorties li")) li.onclick = (e) => { if (e.target.tagName !== "A") { stop(); setK(Number(li.dataset.k)); } };
+}
+
+// Cross-checks in this sortie: this Scout searching another's find, or
+// another Scout searching one of this sortie's finds. Each opens the replay
+// just before the search, following the searcher.
+function checksHtml(run, s) {
+  const finds = new Map(run.events.filter((e) => e.type === "find").map((e) => [e.find_id, e]));
+  const rows = run.events.filter((e) => e.type === "search_end" &&
+    (e.sortie_id === s.sortie_id || (finds.get(e.find_id) || {}).sortie_id === s.sortie_id));
+  if (!rows.length) return "";
+  const li = rows.map((e) => {
+    const st = run.events.find((x) => x.type === "search_start" && x.find_id === e.find_id && x.sortie_id === e.sortie_id) || e;
+    const f = finds.get(e.find_id) || {};
+    const href = `replay.html?batch=${encodeURIComponent(run.batch)}&run=${encodeURIComponent(run.rec.run_id)}&sortie=${encodeURIComponent(e.sortie_id)}&t=${Math.round(st.t - 120)}&follow=${e.scout}`;
+    return `<li>${e.scout} searched ${f.scout}'s find ${e.find_id}: <span style="color:${STATUS_COLOR[e.result] || "#ccc"}">${e.result === "confirmed" ? "confirmed" : "not confirmed"}</span> · <a href="${href}">watch in 3D</a></li>`;
+  }).join("");
+  return `<ul class="evlist" style="margin:8px 0 0;padding-left:18px">${li}</ul>`;
 }
 
 function info() {

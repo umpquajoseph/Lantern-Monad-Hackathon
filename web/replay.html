@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lantern replay</title>
-<meta name="description" content="A time-lapse of one sortie from its saved poses, in 3D on the real terrain.">
+<meta name="description" content="A time-lapse of one sortie and every Scout out with it, from their saved poses, in 3D on the real terrain.">
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -34,8 +34,9 @@
     <button class="btn" id="truth-btn" aria-pressed="false" title="The real ice deposits. The Scouts never see them.">Reveal hidden truth</button>
     <button class="btn" id="fill-btn" aria-pressed="true" title="Fill light (F)">Fill light on</button>
     <button class="btn" id="cam-btn" title="Follow the Scout, or see the whole sortie">Whole sortie</button>
+    <button class="btn" id="next-search" title="Jump to just before the next time a Scout searches another Scout's find, and follow the searcher">Next cross-check ›</button>
   </div>
-  <div class="vnote" id="vnote">Fill light added so you can see the ground. The Scout sees only its lamp.</div>
+  <div class="vnote" id="vnote">Fill light added so you can see the ground. The Scouts see only their lamps.</div>
   <div class="loading" id="loading">Loading terrain</div>
   <footer class="playbar">
     <button class="btn" id="play" title="Play or pause (Space)">Play</button>
@@ -45,7 +46,7 @@
       <option value="600" selected>600×</option>
       <option value="2000">2000×</option>
     </select>
-    <div class="track"><div class="acts" id="acts"></div><input type="range" id="scrub" min="0" max="1" step="any" value="0" aria-label="Sortie time"></div>
+    <div class="track"><div class="evmarks" id="evmarks"></div><div class="acts" id="acts"></div><input type="range" id="scrub" min="0" max="1" step="any" value="0" aria-label="Sortie time"></div>
     <div class="clock" id="clock">T+00:00</div>
   </footer>
 </main>

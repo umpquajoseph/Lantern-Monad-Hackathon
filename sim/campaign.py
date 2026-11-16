@@ -1304,7 +1304,9 @@ class Campaign:
 
 # Design choices swept on purpose (spec sec. 4); every one goes in summary.csv.
 SWEPT = ["n_scouts", "check_policy", "map_refinement", "top_speed_mps", "check_stop_s", "drill_limit_m",
-         "avg_load_w", "sightings_to_add", "drift_mode", "star_tracker"]
+         "avg_load_w", "sightings_to_add", "drift_mode", "star_tracker",
+         # assumed inputs swept for sensitivity (spec 4a item 3)
+         "p_wrong_per_missing", "confirm_bound_max_m", "bound_model"]
 
 
 def parse_value(field_type, text):

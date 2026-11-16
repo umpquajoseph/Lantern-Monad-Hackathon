@@ -45,6 +45,12 @@ C23_TRAJ3 = (1.68, 0.70)
 
 @dataclass(frozen=True)
 class Settings:
+    # ----------------------------------------------------------------- site
+    site: str = S("s89_134e", "sim/psr_sites.py SITES: 'haynes', 's89_014e', 's89_134e' (real LOLA 5 m PSR "
+                              "windows, docs/handoffs.md Part 3), or 'shoemaker' (engine stand-in, not PSR "
+                              "floor). Swept for the site table (spec 5.3). Default: the site with 100% of "
+                              "survey poses on PSR floor (terrain fyi 20261116-145039)")
+
     # ---------------------------------------------------------------- fleet
     n_scouts: int = S(3, "brief p.5 baseline 'two to three Scouts sharing one charging dock'. "
                          "Sweep 1-5: 1 = brief p.6 2029 pathfinder; 4-5 is an extrapolation "

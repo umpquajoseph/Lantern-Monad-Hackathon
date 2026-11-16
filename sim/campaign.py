@@ -185,16 +185,19 @@ def standin_world(seed: int, s: Settings, ranges: WorldRanges) -> World:
                  height=z, slope=sl, floor=floor, craters=craters, map_start=map_start, dock=dock,
                  draws=draws, ice=ice,
                  standin="world: Shoemaker LOLA 5 m window, not PSR floor; seeded craters 7.5-20 m "
-                         "(sim/campaign.py standin_world), until part 3's campaign_world")
+                         "(sim/campaign.py standin_world, site 'shoemaker')")
 
 
-def make_world(seed: int, s: Settings, ranges: WorldRanges, site: str = "shoemaker") -> World:
+def make_world(seed: int, s: Settings, ranges: WorldRanges, site: str | None = None) -> World:
+    site = site or s.site
+    if site == "shoemaker":
+        return standin_world(seed, s, ranges)
     if campaign_world is not None:
         w = campaign_world(site, seed, ranges)
         if not isinstance(w, World):   # part 3's own type: copy the fields we read
             w = World(**{f.name: getattr(w, f.name) for f in fields(World) if hasattr(w, f.name)})
         return w
-    return standin_world(seed, s, ranges)
+    raise ValueError(f"site {site!r}: sim.terrain.campaign_world is missing")
 
 
 _ROUTE_CACHE: dict = {}
@@ -826,7 +829,7 @@ class Sortie:
 # =================================================================== campaign
 
 class Campaign:
-    def __init__(self, seed: int, s: Settings, ranges: WorldRanges | None = None, site="shoemaker"):
+    def __init__(self, seed: int, s: Settings, ranges: WorldRanges | None = None, site: str | None = None):
         self.seed, self.s = int(seed), s
         self.ranges = ranges or WorldRanges(drift_frac=(s.drift_frac, s.drift_frac))
         self.world = make_world(seed, s, self.ranges, site)
@@ -1259,7 +1262,7 @@ class Campaign:
         added = [dict(a, true_crater=(int(new_idx[a["true_crater"]]) if a["true_crater"] is not None else None))
                  for a in self.added]
         missing_rec = [[rnd(x, 2), rnd(y, 2), rnd(dd, 2)] for x, y, dd in cm[keep]]
-        standins = [] if campaign_world is not None else [w.standin]
+        standins = [w.standin] if w.standin else []
         finds = []
         for f in self.finds:
             g = {k: v for k, v in f.items() if not k.startswith("_")}
@@ -1303,7 +1306,7 @@ class Campaign:
 
 
 # Design choices swept on purpose (spec sec. 4); every one goes in summary.csv.
-SWEPT = ["n_scouts", "check_policy", "map_refinement", "top_speed_mps", "check_stop_s", "drill_limit_m",
+SWEPT = ["site", "n_scouts", "check_policy", "map_refinement", "top_speed_mps", "check_stop_s", "drill_limit_m",
          "avg_load_w", "sightings_to_add", "drift_mode", "star_tracker",
          # assumed inputs swept for sensitivity (spec 4a item 3)
          "p_wrong_per_missing", "confirm_bound_max_m", "bound_model"]

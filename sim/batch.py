@@ -220,8 +220,10 @@ def main():
     todo = [j for j in jobs if not _row_path(out_root, a.batch_id, j[0], j[1]).exists()]
     print(f"{len(jobs)} runs ({a.worlds} worlds x {len(combos)} design choices), {len(jobs) - len(todo)} "
           f"already done, on {n_jobs} processes -> {bdir}")
-    # Build the shared descent route once, here, so workers load it from disk.
-    C.Campaign(a.seed0, base, WorldRanges(**world_kw))
+    # Build each site's descent route once, here, so workers load it from disk.
+    sites = dict(axes).get("site", [base.site])
+    for site in sites:
+        C.Campaign(a.seed0, base.with_(site=site), WorldRanges(**world_kw))
     t0 = time.perf_counter()
     t_sims = []
     if todo:
@@ -248,7 +250,7 @@ def main():
     from sim import figures
     figs = figures.make(bdir)
 
-    standins = ["world: Shoemaker 5 m window (sim/campaign.py standin_world)"] if C.campaign_world is None else []
+    standins = ["world: Shoemaker 5 m window (sim/campaign.py standin_world)"] if "shoemaker" in sites else []
     lines = [f"# Batch {a.batch_id}", "",
              f"{len(jobs)} runs: worlds {a.seed0}..{a.seed0 + a.worlds - 1}, sweeps "
              + (", ".join(f"{k} = {vs}" for k, vs in axes) or "none")

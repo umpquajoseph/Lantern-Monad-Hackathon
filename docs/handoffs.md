@@ -353,6 +353,11 @@ must print `unlabelled: none`. A new constant is a new field there, never a
 literal in another file. `Settings.drift_frac` is used by a single run; a
 batch draws drift from `WorldRanges.drift_frac` per world.
 
+`Settings.site` picks the world: a PSR site from `sim/psr_sites.py`
+(`haynes`, `s89_014e`, `s89_134e`; default `s89_134e`) or `shoemaker`
+(engine stand-in, not PSR floor). It is part of `Settings.key()`, so runs
+on different sites never share a folder, and it is a summary.csv column.
+
 A run is named `w<seed:05d>-<Settings.key()>`. Same seed and same key give
 the same record, byte for byte apart from `made_at`.
 

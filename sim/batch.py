@@ -176,6 +176,24 @@ def hand_checks(s: Settings, seed: int, out_root, batch_id) -> tuple[str, dict]:
     return "\n".join(lines), {"one_scout_run": c.run_id, "one_scout_wall_s": c.wall_s}
 
 
+def stop_budget_assumptions(s: Settings) -> str:
+    """What the model does and does not count as stationary time (draft 4.1)."""
+    n_read = s.survey_m / s.reading_spacing_m
+    lines = ["## Stop-budget assumptions", "",
+             f"- Readings: `reading_stop_s` = {s.reading_stop_s:g} s (assumed). Neutron readings are taken on "
+             f"the move, so `h_reading` is {'0' if s.reading_stop_s == 0 else 'their stop time'}. "
+             f"A reading every {s.reading_spacing_m:g} m over the {s.survey_m / 1000:g} km survey is "
+             f"{n_read:.0f} readings per sortie, so each second of stop per reading would cost "
+             f"{n_read / 3600:.2f} h of the stop budget (10 s per reading: {10 * n_read / 3600:.1f} h). "
+             f"Not swept here; sweep `reading_stop_s` to test it.",
+             f"- Position checks: `check_stop_s` = {s.check_stop_s:g} s each (assumed, draft item 11).",
+             f"- Drilling: `drill_h` = {s.drill_h:g} h per site (assumed), {s.drill_sites_max} sites (brief p.6). "
+             f"`completed` charges unused drill slots.",
+             "- Not modelled: hazard stops and revisits, which the draft also counts against the budget, "
+             "and search stops (searches are driven at top speed with readings on the move).", ""]
+    return "\n".join(lines)
+
+
 # =================================================================== main
 
 def main():
@@ -259,6 +277,7 @@ def main():
              f"{np.max(t_sims):.1f} s max (simulation only, one process each, cores shared).", "",
              "Stand-ins in these runs: " + ("; ".join(standins) or "none"), "",
              hc_text, "",
+             stop_budget_assumptions(base), "",
              "## Figures", ""] + [f"- `{f.name}`" for f in figs]
     (bdir / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (bdir / "batch.json").write_text(json.dumps({"batch_id": a.batch_id, "worlds": a.worlds, "seed0": a.seed0,

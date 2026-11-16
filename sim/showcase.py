@@ -78,8 +78,11 @@ def scenario(site):
 
 def showcase_note(site):
     return ("Showcase run (sim/showcase.py): the Scouts navigate on their own lamp camera, with Lantern's "
-            "rim finder and particle filter. This is not how the paper's numbers are made, and none of them "
-            "come from it. Ground: " + SITES[site]["ground"])
+            "rim finder and particle filter, matched to the orbital crater map (craters 10 m and up). "
+            "This is not how the batch runs go, and none of the paper's numbers come from it. Here the only "
+            "wrong matches are the ones this filter happens to make, so the second Scout confirms the find "
+            "easily. The batch runs draw wrong matches at the assumed false-match rate, and there confirmations "
+            "are rare. Ground: " + SITES[site]["ground"])
 
 
 def bound95(sigma):

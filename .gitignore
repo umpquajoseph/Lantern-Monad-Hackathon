@@ -27,3 +27,7 @@ frames/
 ops/mailboxes/
 # vercel cli project link
 .vercel/
+
+# Local Claude Code launch config and worker screenshots
+.claude/
+ops/shots/

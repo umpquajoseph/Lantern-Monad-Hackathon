@@ -188,8 +188,8 @@ def check(site: Path) -> Report:
     if need(base + "meta.json", "Terrain.load('assets/terrain/') in js/main.js"):
         m = json.loads((site / base / "meta.json").read_text(encoding="utf8"))
         wanted = [m["coarse"]["file"], m["craters"], m["map"]["file"]] + [t["file"] for t in m["tiles"]]
-        for k in ("backdrop", "backdrop_near", "rocks", "albedo"):
-            if k in m:
+        for k in ("backdrop", "backdrop_near", "rocks", "albedo", "nogo", "lips"):
+            if isinstance(m.get(k), dict) and m[k].get("file"):
                 wanted.append(m[k]["file"])
         if "detail" in m:
             wanted += [m["detail"]["normal"], m["detail"]["albedo"]]

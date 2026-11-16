@@ -372,3 +372,6 @@ kbd { font: 500 12px var(--mono); background: rgba(255,255,255,.08); border: 1px
   .topline .story { text-align: right; max-width: 640px; font-size: 13px; line-height: 1.3; padding: 4px 10px; }
 }
 @media (min-width: 1101px) and (max-width: 1500px) { .topline .story { font-size: 12px; padding: 3px 8px; } }
+
+/* The key overlay is hidden on demo day (index.html); the About dialog carries the legend. */
+.keybox[hidden] { display: none !important; }

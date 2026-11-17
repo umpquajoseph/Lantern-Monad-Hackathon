@@ -1280,16 +1280,16 @@ function runInfo() {
       ["Navigation", esc(String(rec.nav || "").split(":")[0])]]) +
     `<div class="mini-h">Results</div>` + kv([["Sorties ok", sm.sorties != null ? `${sm.sorties_ok}/${sm.sorties}` : null], ["Scouts lost", sm.scouts_lost],
       ["Finds", sm.finds], ["Confirmed", sm.confirmed], ["False confirmations", sm.false_confirmed], ["Deposits missed", sm.deposits_missed],
-      // One wrong-match number, read from the run's summary. A camera run: the paper's
-      // false-match rate (draft sec. 4.2): of rim points the filter paired with a mapped
-      // crater, the share whose crater is not the rim's true one (summary rim_wrong_share,
-      // docs/handoffs.md), with the unpaired share beside it when the summary carries it.
+      // One wrong-match number, read from the run's summary (docs/handoffs.md, "False-match
+      // rate"). A camera run: of the rim points the filter paired with a mapped crater, the
+      // share paired with the wrong one (draft sec. 4.2), and the unpaired share beside it.
+      // A camera record from before that field says so rather than show an older count.
       // A sampled run: its share of position checks that matched the wrong crater.
-      ...(sm.rim_wrong_share != null
-        ? [[`<span title="Of the rim points the filter paired with a mapped crater, the share paired with the wrong one (a spurious rim that got paired counts as wrong). Unpaired rims are left out. From the run's summary.">False-match rate (paired rims)</span>`,
-          `${fmtNum(sm.rim_wrong_share * 100, 1)}%`],
-          ["Unpaired rims", sm.rim_unpaired_share != null ? `${fmtNum(sm.rim_unpaired_share * 100, 1)}% <span class="hint">of ${Number(sm.rim_points).toLocaleString("en")} rim points</span>`
-            : `<span class="hint">not in this run's summary</span>`]]
+      ...(String(rec.nav || "").startsWith("camera")
+        ? [[`<span title="Of the rim points the filter paired with a mapped crater, the share paired with the wrong one. A spurious rim, or one from a crater missing from the map, counts as wrong. Unpaired rims are left out. From the run's summary.">False-match rate (paired rims)</span>`,
+          sm.false_match_rate != null ? `${fmtNum(sm.false_match_rate * 100, 1)}% <span class="hint">of ${Number(sm.rim_points).toLocaleString("en")} paired rims</span>`
+            : `<span class="hint">not in this run's summary</span>`],
+          ["Unpaired rims", sm.unpaired_share != null ? `${fmtNum(sm.unpaired_share * 100, 1)}%` : null]]
         : [["Wrong-match rate", sm.wrong_match_rate != null ? `${fmtNum(sm.wrong_match_rate * 100, 1)}% <span class="hint">of position checks</span>` : null]]),
       ["Drill error p95", sm.drill_err_p95_m != null ? `${fmtNum(sm.drill_err_p95_m, 1)} m` : null], ["Area", sm.area_km2 != null ? `${fmtNum(sm.area_km2, 2)} km²` : null]]) +
     (notes.length ? `<div class="standin"><b>Not real yet:</b> ${notes.map(esc).join(" ")}</div>` : "") +
@@ -1348,7 +1348,7 @@ function openRuns() {
     $("dr-about").textContent = [b.standin, b.showcase].filter(Boolean).join(" ").slice(0, 400);
     $("dr-runs").innerHTML = b.runs.filter((r) => r.map).slice(0, 400).map((r) => `<tr data-b="${esc(b.batch_id)}" data-r="${esc(r.run_id)}" class="${b.batch_id === S.batch && r.run_id === S.cr.rec.run_id ? "cur" : ""}">
       <td class="mono">${esc(r.run_id)}</td><td>${esc(r.site || "")}</td><td>${r.n_scouts ?? "–"}</td><td>${r.sorties != null ? `${r.sorties_ok}/${r.sorties}` : "–"}</td>
-      <td>${r.finds ?? "–"}</td><td>${r.confirmed ?? "–"}</td><td>${r.rim_wrong_share != null ? `<span title="False-match rate (paired rims), from the run's summary">${fmtNum(r.rim_wrong_share * 100, 0)}% of paired rims</span>` : r.wrong_match_rate != null ? `<span title="Position checks that matched the wrong crater">${fmtNum(r.wrong_match_rate * 100, 0)}% of checks</span>` : "–"}</td>
+      <td>${r.finds ?? "–"}</td><td>${r.confirmed ?? "–"}</td><td>${r.pipeline === "camera" ? (r.false_match_rate != null && r.false_match_rate !== "" ? `<span title="False-match rate (paired rims), from the run's summary">${fmtNum(r.false_match_rate * 100, 0)}% of paired rims</span>` : `<span class="hint" title="This record predates the summary's false_match_rate">–</span>`) : r.wrong_match_rate != null ? `<span title="Position checks that matched the wrong crater">${fmtNum(r.wrong_match_rate * 100, 0)}% of checks</span>` : "–"}</td>
       <td>${r.pipeline === "camera" ? `<span class="tag" title="Navigated by camera vision; rim points, particles and lidar logged per step">camera vision</span>`
         : r.pipeline ? `<span class="tag" title="Sampled navigation; its rim points, particles and lidar are a labelled stand-in">sampled, stand-in views</span>`
         : `<span class="hint" title="Navigation sampled from ShadowNav's published errors; no per-step data, so 3D and map only">sampled navigation, comparison only</span>`}</td></tr>`).join("");

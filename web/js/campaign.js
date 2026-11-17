@@ -353,6 +353,7 @@ export async function loadPipeline(cr, sortieIds) {
   } catch { return {}; }
   const el = index.lidar_el_deg.map((d) => (d * Math.PI) / 180), az = index.lidar_az_deg.map((d) => (d * Math.PI) / 180);
   const g = { ...HAZ_GRID, el_deg: index.lidar_el_deg, az_deg: index.lidar_az_deg };
+  const tol = (cr.rec.settings && cr.rec.settings.cam_match_tol_m) ?? 1.0;   // sim/settings.py cam_match_tol_m
   const out = {};
   await Promise.all(sortieIds.filter((sid) => index.sorties.includes(sid)).map(async (sid) => {
     const [mr, br] = await Promise.all([fetch(`${cr.dir}steps/${encodeURIComponent(sid)}.json`), fetch(`${cr.dir}steps/${encodeURIComponent(sid)}.bin`)]);
@@ -371,8 +372,11 @@ export async function loadPipeline(cr, sortieIds) {
       for (let i = 0; i < NP; i++) { const o = (k * NP + i) * 3; particles.push([ex + A.particles.a[o], ey + A.particles.a[o + 1], A.particles.a[o + 2]]); }
       const rims = [];
       for (let i = A.rim_o.a[k]; i < A.rim_o.a[k + 1]; i++) {
-        const m = A.rim_map.a[i];
-        rims.push([A.rims.a[2 * i], A.rims.a[2 * i + 1], m >= 0 ? m : null, A.rim_wrong.a[i] === 1]);
+        // The filter pairs every rim with its nearest map crater (rim_map, no limit; live-nav
+        // 5fc6744). A rim counts as on a map crater when that edge is within cam_match_tol_m
+        // (rim_map_m), as the record's rim_matched does; older runs cut at the tolerance already.
+        const m = A.rim_map.a[i], on = m >= 0 && (!A.rim_map_m || A.rim_map_m.a[i] <= tol);
+        rims.push([A.rims.a[2 * i], A.rims.a[2 * i + 1], on ? m : null, A.rim_wrong.a[i] === 1]);
       }
       const plan = [];
       for (let i = A.plan_o.a[k]; i < A.plan_o.a[k + 1]; i++) plan.push([A.plan.a[2 * i], A.plan.a[2 * i + 1]]);

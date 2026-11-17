@@ -612,11 +612,12 @@ the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
   --run-ground <batch>/<run_id>` from `DATA/terrain/<ground.file>`; without
   it, the site's grid. It plays each `drill` event as the hackathon's drill
   rig over the `settings.drill_h` hours before the event's `t`.
-- Mission Control shows a camera run's summary `rim_wrong_share` as
-  "False-match rate (paired rims)" (draft sec. 4.2: of rim points paired
-  with a mapped crater, the share paired with the wrong one), and
-  `rim_unpaired_share` (share of all rim points left unpaired) beside it
-  when the summary has it. A sampled run shows `wrong_match_rate` (checks).
+- Mission Control shows a camera run's summary `false_match_rate` as
+  "False-match rate (paired rims)" and `unpaired_share` beside it (definition
+  under "False-match rate" on campaign-live-nav, 5fc6744); a camera record
+  without them says "not in this run's summary". A sampled run shows
+  `wrong_match_rate` (checks). In the first-person box a rim is drawn as on a
+  map crater when `rim_map_m` <= `cam_match_tol_m`, as `rim_matched` counts.
 - Until camera runs exist, `web/make_standin_pipeline.py` writes a
   stand-in `steps.npz` in exactly that format, with a top-level `standin`
   string, beside copies of `standin` records in the batch

@@ -6,8 +6,9 @@ every worktree shares, and they are git-ignored:
     C:\Monad-Hackathon-Project\ops\mailboxes\<handle>\inbox\
     C:\Monad-Hackathon-Project\ops\mailboxes\<handle>\archive\
 
-Handles (campaign build, 16 Nov 2026): `leader` (the lead session), `engine`,
-`crossing`, `terrain`, `viewer`, `joseph`.
+Handles (workflow build, from 17 Nov 2026): `leader` (the lead session),
+`workflow` (simulation), `control` (Mission Control), `joseph`. Every earlier
+handle is closed.
 
 ## First thing every session
 
@@ -31,10 +32,7 @@ One file: `mailboxes\<to>\inbox\<YYYYMMDD-HHMMSS>_<from>_<kind>.md`
     ---
 
 `kind` is one of `handoff`, `question`, `reply`, `report`, `fyi`. Keep every
-key. Then ring the doorbell if you have `SendMessage`: a one-line message to
-the recipient session naming the file. The lead session is
-`monad-hackathon-project-50 [922a59]`. The doorbell never carries
-content that is not already in a mail file.
+key. No doorbell this build: the recipient's inbox watcher picks the file up.
 
 ## Questions
 

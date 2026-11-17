@@ -693,7 +693,12 @@ A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_
   `WorldRanges.ice_reach_m` driving of the dock), `standin=None`,
   `map_index` `(M,)` (the `craters` row each `map_start` row stands for;
   `map_start` is `sim/orbital_map.py orbital_map()`, with orbital error,
-  so membership is by index, never by position).
+  so membership is by index, never by position). No crater's rim comes
+  within `WorldRanges.dock_clear_m` (10 m) of the dock: `sim/terrain.py
+  clear_dock` drops those craters and their map rows after every draw
+  (both `campaign_world` and `standin_world`), so the rest of the world is
+  what the seed drew. The run ground is rebuilt when a crater it carved is
+  no longer in the world.
 - Sites (`sim/psr_sites.py` `SITES`): `haynes`, `s89_014e`, `s89_134e`
   (87-90 S, 5 m mosaic) and `nobile` (84.5-87 S, 10 m 83 S product).
   Built windows live in `DATA/terrain/psr_sites/<site>.npz`

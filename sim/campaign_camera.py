@@ -161,8 +161,15 @@ class CameraRig:
             try:
                 with np.load(path) as f:
                     meta = json.loads(str(f["meta"]))
+                    carved = np.asarray(f["craters"])
                 same_world = (json.dumps(meta.get("world_draws"), sort_keys=True)
                               == json.dumps(json.loads(json.dumps(w.draws)), sort_keys=True))
+                # Every crater carved into the ground must still be in the world
+                # (WorldRanges is not in the run id; e.g. dock_clear_m drops craters).
+                if len(carved):
+                    from scipy.spatial import cKDTree
+                    dist, _ = cKDTree(w.craters).query(carved[:, :3])
+                    same_world = same_world and bool(np.all(dist < 1e-6))
                 if meta.get("box") == box and meta.get("seed") == camp.seed and meta.get("site") == w.site                         and same_world:
                     return path, box
             except Exception:

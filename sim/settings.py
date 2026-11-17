@@ -323,6 +323,11 @@ class WorldRanges:
     ice_reach_m: float = S(3000.0, ASSUMED + "; hidden deposits lie on PSR floor within this driving "
                                             "distance of the dock (1.5 km descent + half the 4 km survey, "
                                             "brief p.6)")
+    dock_clear_m: float = S(10.0, ASSUMED + "; the lander sets the dock down on ground clear of craters: no "
+                                           "seeded crater's rim comes this close to the dock (uniform draws "
+                                           "put one within 5 m on about 1 seed in 5, and a Scout docked in a "
+                                           "crater bowl cannot drive out). Applied after every draw, so the "
+                                           "other craters, the map cut and the ice are unchanged")
 
     @property
     def orbital_map_min_d_m(self) -> float:

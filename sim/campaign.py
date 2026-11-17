@@ -183,6 +183,8 @@ def standin_world(seed: int, s: Settings, ranges: WorldRanges) -> World:
             continue
         ice.append({"x": x, "y": y, "radius": float(rng.uniform(*ranges.deposit_radius_m)),
                     "peak": float(rng.uniform(*ranges.deposit_peak_wt))})
+    from sim.terrain import clear_dock
+    craters, map_start, in_map = clear_dock(craters, map_start, in_map, dock, ranges.dock_clear_m)
     return World(site="shoemaker", file="shoemaker_5m_window.npz", x0=x0, y0=y0, cell=cell,
                  height=z, slope=sl, floor=floor, craters=craters, map_start=map_start, dock=dock,
                  draws=draws, ice=ice, map_index=np.flatnonzero(in_map),

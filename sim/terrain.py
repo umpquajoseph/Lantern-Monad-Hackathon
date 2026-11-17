@@ -572,6 +572,16 @@ def _world_rng(seed: int, *key: int):
     return np.random.default_rng(np.random.SeedSequence([int(seed), *map(int, key)]))
 
 
+def clear_dock(craters, map_start, in_map, dock, clear_m):
+    """Drop the true craters whose rim comes within clear_m of the dock
+    (WorldRanges.dock_clear_m), and their rows of the starting map. Runs
+    after every draw, so the other craters, their map rows and errors, and
+    the ice are what the seed drew. Returns craters, map_start, in_map."""
+    keep = np.hypot(craters[:, 0] - dock[0], craters[:, 1] - dock[1]) - craters[:, 2] / 2 >= clear_m
+    rows = keep[np.flatnonzero(in_map)]          # map_start row k is crater flatnonzero(in_map)[k]
+    return craters[keep], map_start[rows], in_map[keep]
+
+
 def draw_world_values(seed: int, ranges, rng) -> dict:
     """Every WorldRanges draw for this seed, in a fixed order (keys as sim/campaign.py)."""
     import math
@@ -642,6 +652,7 @@ def campaign_world(site: str, seed: int, ranges=None) -> CampaignWorld:
                         "y": float(y0 + (i + rng.uniform(-.5, .5)) * cell),
                         "radius": float(rng.uniform(*ranges.deposit_radius_m)),
                         "peak": float(rng.uniform(*ranges.deposit_peak_wt))})
+    craters, map_start, in_map = clear_dock(craters, map_start, in_map, t["dock"], ranges.dock_clear_m)
     return CampaignWorld(site=site, file=f"psr_sites/{site}.npz", x0=x0, y0=y0, cell=cell,
                          height=t["height"], slope=t["slope"], floor=t["psr"], craters=craters,
                          map_start=map_start, dock=t["dock"], draws=draws, ice=ice,

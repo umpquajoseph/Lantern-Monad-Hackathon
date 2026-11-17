@@ -38,14 +38,22 @@ and only these:
   the runs do since ab141f1); a detected pixel is scored at its
   renderer-depth position, as before (the share asks which arc pixels vision
   found, not how well stereo placed them).
-- Held out: also more than HOLD_OUT_M from every crater and pose of
-  arcshare-1, so no frame repeats its ground. Seed 2027.
-- Same grid, crater sizes, ranges, slope and crater-floor rules, statistic
-  (the median) and threshold rule (median x the map cut). Whatever it gives
-  is the threshold the runs use (Settings.rim_arc_share_measured); the
-  head-on result stays as Settings.rim_arc_share_headon.
+- Held out: a grid of its own, never used by a traverse, a run or
+  arcshare-1: site s89_014e, terrain seed 2027, at the runs' equilibrium
+  density (336/km2), built by
+  `python -m sim.terrain build --site s89_014e --seed 2027 --out
+  data/terrain/s89_014e_s2027.npz` and its display layer
+  (sim/terrain_display.py build, display_s89_014e_s2027). Pose seed 2027.
+  (Amended before any frame was measured: the first version kept the
+  s89_134e grid and held out arcshare-1's craters by 60 m, which left 19
+  of its 168 craters of 10-12 m, 12 of them usable.)
+- Frames: every eligible crater of 10-12 m on that grid, at most 120.
+- Same crater sizes, ranges, slope and crater-floor rules, statistic (the
+  median) and threshold rule (median x the map cut). Whatever it gives is
+  the threshold the runs use (Settings.rim_arc_share_measured); the head-on
+  result stays as Settings.rim_arc_share_headon.
 
-    python -m sim.arc_share --rule route --batch arcshare-route --frames 120 --chunk 60
+    python -m sim.arc_share --rule route --batch arcshare-route --frames 120 --chunk 120
 
 Output: <data>/campaigns/calibration/<batch>/arc_share.json (every frame)
 and arc_share.md.
@@ -66,7 +74,7 @@ from sim.calibrate import DISPLAY_DIR, OUT, TERRAIN, _blocked
 from sim.rim_truth import TOL_M, rim_truth
 from sim.rover import SlopeMap
 from sim.settings import WorldRanges
-from sim.terrain import load_terrain
+from sim.terrain import DATA, load_terrain
 from sim.vision import Vision, rover_to_world
 
 HOLD_OUT_M = 60.0          # assumed: view range (20 m) + crater + margin, both from crater and camera
@@ -78,7 +86,9 @@ SEED = 2026
 # detection, and batches whose frames are held out.
 RULES = {
     "head-on": dict(aim_deg=AIM_JITTER_DEG, seed=SEED, noisy=False, hold_out_batches=()),
-    "route": dict(aim_deg=30.0, seed=2027, noisy=True, hold_out_batches=("arcshare-1",)),
+    "route": dict(aim_deg=30.0, seed=2027, noisy=True, hold_out_batches=(),
+                  terrain=DATA / "terrain" / "s89_014e_s2027.npz",
+                  display_dir=DATA / "terrain" / "display_s89_014e_s2027"),
 }
 
 
@@ -87,16 +97,20 @@ def measure(n_frames, routes_path, out_dir, chunk=None, rule="head-on"):
     Each crater draws its pose from its own stream (SEED, crater), so a resumed run measures
     the same frames as an unbroken one."""
     from sim.scene import Scene
-    terrain = load_terrain(TERRAIN)
-    height, craters, x0, y0, cell = terrain
-    slope = SlopeMap(height, x0, y0, cell)
-    blocked = _blocked(slope, craters)
-    routes = json.loads(Path(routes_path).read_text())
-    # Traverse poses: the planned routes through the saved waypoints, as sim/calibrate.py drives them.
-    from sim.calibrate import plan_route
-    tp = np.concatenate([plan_route(slope, blocked, w)[:, :2] for w in routes["waypoints"].values()])
     R = RULES[rule]
     seed = R["seed"]
+    own_grid = "terrain" in R              # a grid of its own: nothing on it to hold out from
+    terrain = load_terrain(R.get("terrain", TERRAIN))
+    height, craters, x0, y0, cell = terrain
+    slope = SlopeMap(height, x0, y0, cell)
+    if own_grid:
+        tp = np.array([[np.inf, np.inf]])
+    else:
+        blocked = _blocked(slope, craters)
+        routes = json.loads(Path(routes_path).read_text())
+        # Traverse poses: the planned routes through the saved waypoints, as sim/calibrate.py drives them.
+        from sim.calibrate import plan_route
+        tp = np.concatenate([plan_route(slope, blocked, w)[:, :2] for w in routes["waypoints"].values()])
     for b in R["hold_out_batches"]:            # earlier measurements' craters and poses
         prev = [json.loads(x) for x in (OUT / b / "frames.jsonl").read_text().splitlines()]
         tp = np.concatenate([tp, np.array([r["pose"][:2] for r in prev]),
@@ -113,7 +127,7 @@ def measure(n_frames, routes_path, out_dir, chunk=None, rule="head-on"):
     cand = np.flatnonzero((craters[:, 2] >= D_RANGE_M[0]) & (craters[:, 2] <= D_RANGE_M[1]))
     cand = cand[ttree.query(craters[cand, :2])[0] > HOLD_OUT_M]
     rng.shuffle(cand)
-    scene = Scene(height, craters, x0, y0, cell, display="full", display_dir=DISPLAY_DIR)
+    scene = Scene(height, craters, x0, y0, cell, display="full", display_dir=R.get("display_dir", DISPLAY_DIR))
     vis = Vision(scene, np.random.default_rng(seed + 1))
     big = craters[craters[:, 2] >= 5.0]
     btree = cKDTree(big[:, :2])
@@ -171,7 +185,8 @@ def measure(n_frames, routes_path, out_dir, chunk=None, rule="head-on"):
         if len(rows) % 20 == 0:
             print(f"  {len(rows)} frames, {time.perf_counter() - t:.0f} s, median so far "
                   f"{np.median([r['share'] for r in rows]):.3f}", flush=True)
-    return rows
+    exhausted = all(int(c) in {r["crater"] for r in rows} or int(c) in skipped for c in cand)
+    return rows, exhausted
 
 
 def main():
@@ -184,8 +199,8 @@ def main():
     a = ap.parse_args()
     out = OUT / a.batch
     out.mkdir(parents=True, exist_ok=True)
-    rows = measure(a.frames, a.routes, out, a.chunk, a.rule)
-    if len(rows) < a.frames:
+    rows, exhausted = measure(a.frames, a.routes, out, a.chunk, a.rule)
+    if len(rows) < a.frames and not exhausted:
         print(f"{len(rows)} of {a.frames} frames so far; run again to continue")
         return
     s = np.array([r["share"] for r in rows])

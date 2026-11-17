@@ -1,0 +1,10 @@
+{
+ "poses": 300,
+ "gpu_used": true,
+ "ranges_identical": 300,
+ "nan_pattern_identical": 300,
+ "hazards_identical": 300,
+ "range_maxdiff_m": 0.0,
+ "gpu_ms_median": 2.99,
+ "numpy_ms_median": 25.06
+}

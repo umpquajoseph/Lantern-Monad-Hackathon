@@ -1037,7 +1037,14 @@ class Scene:
     def _gpu_shader(self):
         """sim/scene_gpu.py's shader when it applies (GPU_SHADE on, CuPy and a GPU
         present, display "off", one agency in the scene), else None (numpy)."""
-        if not GPU_SHADE or self.display != "off" or self._tile is not None or len(self.poses) != 1:
+        if not GPU_SHADE or len(self.poses) != 1:
+            return None
+        return self.gpu()
+
+    def gpu(self):
+        """sim/scene_gpu.py's GpuShade over this scene's sim grid, or None: no
+        CuPy or GPU, or a display layer on (its fine squares are not on the GPU)."""
+        if self.display != "off" or self._tile is not None or self.surface.blocks:
             return None
         if getattr(self, "_gpu", None) is None:
             from sim import scene_gpu

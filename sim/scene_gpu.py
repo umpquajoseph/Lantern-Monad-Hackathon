@@ -157,6 +157,28 @@ __global__ void shade(const float* zb, int w, int h, const double* U, const doub
     float yl = al * e * inv_eref * lvl;
     y_out[q] = yl <= knee ? yl : knee + (1.0f - knee) * (1.0f - expf(-(yl - knee) / (1.0f - knee)));
 }
+
+// lidar: one thread per beam; march ts until the beam is at or under the ground, then 6 bisections
+// (sim/lidar.py Lidar.scan, same arithmetic; compiled without FMA contraction so ranges match numpy)
+__global__ void lidar_march(const float* h, int W, int H, double x0, double y0, double cell,
+                            const double* O, const double* dx, const double* dy, const double* dz, int n,
+                            const double* ts, int nts, double min_range, double* out) {
+    int q = blockDim.x * blockIdx.x + threadIdx.x;
+    if (q >= n) return;
+    int first = -1;
+    for (int s = 0; s < nts; s++) {
+        double px = O[0] + dx[q] * ts[s], py = O[1] + dy[q] * ts[s], pz = O[2] + dz[q] * ts[s];
+        if (pz <= (double)hbil(h, W, H, x0, y0, cell, px, py)) { first = s; break; }
+    }
+    if (first < 0) { out[q] = nan(""); return; }
+    double hi = ts[first], lo = first > 0 ? ts[first - 1] : min_range;
+    for (int k = 0; k < 6; k++) {
+        double mid = 0.5 * (lo + hi);
+        bool under = O[2] + dz[q] * mid <= (double)hbil(h, W, H, x0, y0, cell, O[0] + dx[q] * mid, O[1] + dy[q] * mid);
+        if (under) hi = mid; else lo = mid;
+    }
+    out[q] = hi;
+}
 }
 """
 _mod = None
@@ -175,7 +197,7 @@ class GpuShade:
         import cupy as cp
         global _mod
         if _mod is None:
-            _mod = cp.RawModule(code=SRC, options=("--std=c++14",))
+            _mod = cp.RawModule(code=SRC, options=("--std=c++14", "--fmad=false"))
         self.cp = cp
         self.k_hz, self.k_sh = _mod.get_function("horizons"), _mod.get_function("shade")
         self.sc = sc
@@ -240,3 +262,16 @@ class GpuShade:
             y = cp.clip((el + sd * cp.asarray(noise)) / cp.float32(S.SENSOR_FULL_WELL_E), 0.0, 1.0)
         grey = cp.asnumpy((y ** cp.float32(1.0 / S.DISPLAY_GAMMA) * cp.float32(255.0) + cp.float32(0.5)).astype(cp.uint8))
         return np.repeat(grey[..., None], 3, axis=2), cp.asnumpy(self.depth).reshape(h, w)
+
+    def lidar_ranges(self, O, dx, dy, dz, ts, min_range):
+        """sim/lidar.py's march and bisection for every beam at once: ranges (n,) float64, NaN = no return."""
+        cp, g = self.cp, self.g
+        n = len(dx)
+        out = cp.empty(n, cp.float64)
+        if not hasattr(self, "k_lid"):
+            self.k_lid = _mod.get_function("lidar_march")
+        self.k_lid(((n + 127) // 128,), (128,), (
+            self.hf, np.int32(g.W), np.int32(g.H), np.float64(g.x0), np.float64(g.y0), np.float64(g.cell),
+            cp.asarray(np.asarray(O, np.float64)), cp.asarray(dx), cp.asarray(dy), cp.asarray(dz), np.int32(n),
+            cp.asarray(ts), np.int32(len(ts)), np.float64(min_range), out))
+        return cp.asnumpy(out)

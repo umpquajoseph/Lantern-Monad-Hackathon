@@ -19,6 +19,7 @@ docs/sources/ specifies a lidar for this rover.
 from __future__ import annotations
 
 import math
+import os
 
 import numpy as np
 
@@ -40,6 +41,7 @@ MIN_RANGE_M = 1.0
 RANGE_NOISE_M = 0.02             # 1-sigma range noise
 MARCH_STEP_M = 0.25              # ray march step, then refined by bisection
 MARCH_BLOCK = 8                  # march steps sampled per height call (speed only; ranges do not depend on it)
+GPU_LIDAR = os.environ.get("LANTERN_GPU_LIDAR", "1") != "0"   # march on the GPU when the scene can (same ranges)
 
 # --- hazards (ASSUMED)
 HAZ_CELL_M = 0.5                 # hazard grid cell
@@ -93,6 +95,10 @@ class Lidar:
         # same arithmetic as a step-by-step march, so ranges are unchanged.
         ts = np.arange(MIN_RANGE_M + MARCH_STEP_M, MAX_RANGE_M + 1e-9, MARCH_STEP_M)
         fdx, fdy, fdz = dx.ravel(), dy.ravel(), dz.ravel()
+        gpu = self.scene.gpu() if GPU_LIDAR else None
+        if gpu is not None:   # sim/scene_gpu.py: the same march and bisection, one GPU thread per beam
+            rng = gpu.lidar_ranges(O, fdx, fdy, fdz, ts, MIN_RANGE_M).reshape(EL.shape)
+            return self._finish(rng, EL, AZ)
         rng = np.full(fdx.shape, np.nan)
         first = np.full(fdx.shape, -1)
         live = np.arange(len(fdx))
@@ -119,7 +125,10 @@ class Lidar:
                 hi_t = np.where(under, mid, hi_t)
                 lo_t = np.where(under, lo_t, mid)
             rng[hit] = hi_t
-        rng = rng.reshape(EL.shape)
+        return self._finish(rng.reshape(EL.shape), EL, AZ)
+
+    def _finish(self, rng, EL, AZ):
+        """Range noise and rover-frame points from the noiseless range image."""
         rng = rng + RANGE_NOISE_M * self.rng.standard_normal(rng.shape)
         ok = np.isfinite(rng)
         # Rover frame: x forward, y left, z up, origin at the lidar.

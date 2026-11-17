@@ -530,8 +530,10 @@ const SEARCH_WHY = { match: "a matching reading inside the search area", no_read
 // and `why` in words. Neither: still searching at the record's end.
 const STOP_WHY = { time: "turned back for time", energy: "turned back on energy", fault: "turned back on a fault", lost: "lost before the dock" };
 const PARTIAL_WHY = { no_readings: "no readings so far", no_match: "no reading matched so far", bound_too_large: "the combined position bound was too large to judge" };
-// event `lost` reason (docs/handoffs.md): a flat battery, or the route ended far from the dock.
-const LOST_WHY = { battery: "battery flat before the dock", stranded: "stranded, its route ended far from the dock" };
+// event `lost` reason (docs/handoffs.md): a flat battery, the route ended far
+// from the dock, or the battery ran flat while the Scout was held in place
+// (`stuck`, workflow fyi 20261117-142431; earlier records call those `battery`).
+const LOST_WHY = { battery: "battery flat before the dock", stranded: "stranded, its route ended far from the dock", stuck: "stuck in place until its battery ran flat" };
 const searchEnds = new Map();
 function searchEnd(start) {
   if (searchEnds.has(start)) return searchEnds.get(start);

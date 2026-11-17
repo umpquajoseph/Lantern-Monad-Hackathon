@@ -330,6 +330,7 @@ export class MapView {
 
     // Finds: circle of the finder's sigma, coloured by status.
     c.font = "600 11px Helvetica Neue, Helvetica, Arial, sans-serif";
+    const placed = [];   // label boxes drawn so far: a label that would overlap one is left off (its circle stays)
     for (const f of run.findsAt(k)) {
       const col = hex(COLORS[f.status]);
       const px = X(f.x), py = Y(f.y), r = Math.max(4, f.sigma * s);
@@ -347,6 +348,9 @@ export class MapView {
       const tw = c.measureText(text).width;
       // Put the label on whichever side has room.
       const lx = px + r + 4 + tw + 10 < W ? px + r + 4 : px - r - 4 - tw - 10;
+      const box = [lx, py - 9, lx + tw + 10, py + 8];
+      if (placed.some((b) => box[0] < b[2] && b[0] < box[2] && box[1] < b[3] && b[1] < box[3])) continue;
+      placed.push(box);
       c.fillRect(lx, py - 9, tw + 10, 17);
       c.fillStyle = col;
       c.fillText(text, lx + 5, py + 4);

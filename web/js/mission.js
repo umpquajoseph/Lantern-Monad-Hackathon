@@ -64,6 +64,9 @@ async function main() {
     throw e;
   }
   const rec = S.cr.rec;
+  // The index says whether the run logged per-step data; an old index (no row) still asks.
+  const row = (S.index.find((b) => b.batch_id === pick.batch)?.runs || []).find((r) => r.run_id === pick.run);
+  S.cr.hasSteps = !row || !!row.pipeline;
   $("loading").textContent = "Loading terrain";
   try {
     terrain = await Terrain.load(await assetsBase(rec));
@@ -116,7 +119,7 @@ async function openSortie(s, { t = null, follow = null } = {}) {
   S.playing = false;
   showToast(`Loading sortie ${s.sortie_id}`);
   const over = S.cr.rec.sorties.filter((x) => x.t_start < s.t_end && x.t_end > s.t_start).map((x) => x.sortie_id);
-  const pipes = await loadPipeline(S.cr, over);
+  const pipes = S.cr.hasSteps ? await loadPipeline(S.cr, over) : {};
   const run = new FleetRun(S.cr, s, { pipes });
   const pts = run.agencies.flatMap((a) => run.tracks[a].truth.filter((_, i) => i % 3 === 0));
   await Promise.all([...terrain.keysNear(pts, 4)].map((k) => terrain.loadTile(k)));

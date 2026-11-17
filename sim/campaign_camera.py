@@ -35,6 +35,44 @@ from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
 from sim.campaign import ACT, K95_2D, Sortie, rnd, rng_for
+
+
+class _AheadRng:
+    """Vision's generator, with the one standard-normal block a camera step
+    draws (the frame's depth noise, or the stream-keeping draw of a skipped
+    frame) drawn on a worker thread from the step's start, so it overlaps the
+    render or the rest of the step. Calls reach the generator in the same
+    order as before: a pending block is collected (or, for a skipped frame,
+    left drawn and dropped) before any other call, so every value is the same."""
+
+    _pool = None
+
+    def __init__(self, g):
+        self.g, self.fut, self.shape = g, None, None
+
+    def draw_ahead(self, shape):
+        self._settle()
+        if _AheadRng._pool is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _AheadRng._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="vis-noise")
+        self.shape, self.fut = tuple(shape), _AheadRng._pool.submit(self.g.standard_normal, tuple(shape))
+
+    def _settle(self):
+        if self.fut is not None:
+            self.fut.result()
+            self.fut = None
+
+    def standard_normal(self, size=None, *a, **k):
+        if self.fut is not None:
+            if a or k or tuple(np.atleast_1d(size)) != self.shape:
+                raise RuntimeError("Vision drew a block other than the one drawn ahead")
+            out, self.fut = self.fut.result(), None
+            return out
+        return self.g.standard_normal(size, *a, **k)
+
+    def __getattr__(self, name):
+        self._settle()
+        return getattr(self.g, name)
 from sim.crossing import R95_2D
 
 CAM = "cam"                  # the scene's one agency: only the sortie being simulated is in it
@@ -284,6 +322,7 @@ class CameraSortie(Sortie):
         nav.p = mu + (nav.p - mu) * k
         _, r.sigma = nav.belief()
         self.vis = Vision(rig.scene, rng_for(camp.seed, 6, si, n))
+        self.vis.rng = _AheadRng(self.vis.rng)
         self.lid = Lidar(rig.scene, rng_for(camp.seed, 7, si, n))
         self.map_true = self._map_truth()
         self.drift_true = w.draws["drift_frac"]
@@ -421,15 +460,16 @@ class CameraSortie(Sortie):
         t0 = time.perf_counter()
         cam_ok = self.nav_ok      # a camera or lamp fault leaves the camera blind
         look = cam_ok and rig.crater_in_view(pose)   # GATE_*: no crater in view, no rim in the frame
+        if cam_ok and (look or GATE_KEEP_STREAM):
+            from sim.scene import FP_SIZE
+            self.vis.rng.draw_ahead((FP_SIZE[1], FP_SIZE[0]))   # rims' depth noise, or the kept-stream draw
         if look:
             rig.scene.set_rover(CAM, pose)
             img, depth = rig.scene.first_person(CAM)
             rig.frames["rendered"] += 1
         else:
             rig.frames["skipped_camera_off" if not cam_ok else "skipped_no_crater"] += 1
-            if cam_ok and GATE_KEEP_STREAM:
-                from sim.scene import FP_SIZE
-                self.vis.rng.standard_normal((FP_SIZE[1], FP_SIZE[0]))
+            # cam_ok: the block drawn ahead above keeps Vision's stream where it was.
         t1 = time.perf_counter()
         rims = self.vis.rims(img, depth) if look else np.zeros((0, 2))
         t2 = time.perf_counter()

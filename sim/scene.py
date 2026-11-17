@@ -662,6 +662,17 @@ def _color_actor(pd, lighting=False):
     return a
 
 
+_NOISE_POOL = None
+
+
+def _noise_pool():
+    """One worker thread for the GPU path's sensor-noise draws."""
+    global _NOISE_POOL
+    if _NOISE_POOL is None:
+        _NOISE_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="fp-noise")
+    return _NOISE_POOL
+
+
 def _grid_tris(nr, nc, cell_mask=None):
     """Two triangles per cell of an (nr x nc) vertex grid, CCW seen from +z."""
     i, j = np.meshgrid(np.arange(nr - 1), np.arange(nc - 1), indexing="ij")
@@ -883,6 +894,14 @@ class Scene:
     def first_person(self, agency):
         """(img (h, w, 3) uint8, depth (h, w) float32 metres, NaN for sky)."""
         t0 = time.perf_counter()
+        gpu = self._gpu_shader()
+        if gpu is not None:
+            # The sensor noise is this frame's draw from its pose seed. It is
+            # drawn on a worker thread while the GL render runs (VTK and
+            # numpy's fill both release the GIL); same draw, same values.
+            seed = zlib.crc32(repr((agency,) + tuple(round(v, 3) for v in self.poses[agency])).encode())
+            w, h = FP_SIZE
+            noise_f = _noise_pool().submit(lambda: np.random.default_rng(seed).standard_normal((h, w), dtype=np.float32))
         C, fwd, right, up = self._camera_frame(agency)
         cam = self._fp_ren.GetActiveCamera()
         cam.SetPosition(*C)
@@ -897,19 +916,18 @@ class Scene:
         self._fp_rw.Render()
         zb = vtk.vtkFloatArray()
         self._fp_rw.GetZbufferData(0, 0, w - 1, h - 1, zb)
-        d = vnp.vtk_to_numpy(zb).reshape(h, w)[::-1].astype(np.float64)
         n, f = cam.GetClippingRange()
-        t1 = time.perf_counter()
-        gpu = self._gpu_shader()
         if gpu is not None:
             # sim/scene_gpu.py: the same shading on the GPU, frame for frame
-            # (display "off", one agency). The noise is this function's draw.
-            seed = zlib.crc32(repr((agency,) + tuple(round(v, 3) for v in self.poses[agency])).encode())
-            noise = np.random.default_rng(seed).standard_normal((h, w), dtype=np.float32)
-            img, depth = gpu.shade(agency, d.astype(np.float32), n, f, C, fwd, right, up, noise)
+            # (display "off", one agency). The z-buffer is float32, so it goes
+            # up as read (the CPU path's float64 copy rounds back to it exactly).
+            t1 = time.perf_counter()
+            img, depth = gpu.shade(agency, vnp.vtk_to_numpy(zb).reshape(h, w), n, f, C, fwd, right, up, noise_f.result())
             self.timings["fp_render_ms"] = 1e3 * (t1 - t0)
             self.timings["fp_shade_ms"] = 1e3 * (time.perf_counter() - t1)
             return img, depth
+        d = vnp.vtk_to_numpy(zb).reshape(h, w)[::-1].astype(np.float64)
+        t1 = time.perf_counter()
 
         sky = d >= 1.0
         z_ndc = 2.0 * d - 1.0

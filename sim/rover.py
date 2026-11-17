@@ -186,7 +186,7 @@ class SlopeMap:
         # Cells are flat indices i * nx + j: heap ties then break in the same
         # (i, j) order as tuples, and lookups are on bytes and dicts, so the
         # search, its float arithmetic and its result are as before, faster.
-        okb = np.ascontiguousarray(ok).tobytes()
+        okb = memoryview(np.ascontiguousarray(ok).reshape(-1))   # bool lookups, no copy
         costf = cost.ravel() if cost is not None else None
         nbrs = [(-1, -1, 1.4142), (-1, 0, 1.0), (-1, 1, 1.4142), (0, -1, 1.0),
                 (0, 1, 1.0), (1, -1, 1.4142), (1, 0, 1.0), (1, 1, 1.4142)]
@@ -357,12 +357,13 @@ class Rover:
         lim = math.radians(MAX_TURN_DEG)
         best, best_cost = None, None
         if abs(want) <= math.pi / 2 + lim:      # aim not behind: drive, turning toward it
-            for off in np.arange(-MAX_TURN_DEG, MAX_TURN_DEG + 1e-9, TURN_STEP_DEG):
-                dh = math.radians(float(off))
-                if not self._feasible(x, y, h + dh, d, steep_only=True):
+            dhs = [math.radians(float(off)) for off in np.arange(-MAX_TURN_DEG, MAX_TURN_DEG + 1e-9, TURN_STEP_DEG)]
+            feas, share = self._feasible_many(x, y, [h + dh for dh in dhs], d)
+            for dh, ok, sh in zip(dhs, feas, share):
+                if not ok:
                     continue
                 # Heading error to the aim (rad), plus the crater ground the step crosses.
-                c = abs(want - dh) + 0.1 * CRATER_COST * self._crater_share(x, y, h + dh, d)
+                c = abs(want - dh) + 0.1 * CRATER_COST * float(sh)
                 if best_cost is None or c < best_cost - 1e-9:
                     best, best_cost = dh, c
         if best is not None:
@@ -372,11 +373,12 @@ class Rover:
         # turn in place to the clear heading nearest the aim (the next step
         # then drives it). With none clear, keep turning one way.
         turn, best_cost = None, None
-        for off in np.arange(-180.0, 180.0, POINT_TURN_SCAN_DEG):
-            dh = math.radians(float(off))
-            if not self._feasible(x, y, h + dh, d, steep_only=True):
+        dhs = [math.radians(float(off)) for off in np.arange(-180.0, 180.0, POINT_TURN_SCAN_DEG)]
+        feas, share = self._feasible_many(x, y, [h + dh for dh in dhs], d)
+        for dh, ok, sh in zip(dhs, feas, share):
+            if not ok:
                 continue
-            c = abs((want - dh + math.pi) % (2 * math.pi) - math.pi) + 0.1 * CRATER_COST * self._crater_share(x, y, h + dh, d)
+            c = abs((want - dh + math.pi) % (2 * math.pi) - math.pi) + 0.1 * CRATER_COST * float(sh)
             if best_cost is None or c < best_cost - 1e-9:
                 turn, best_cost = dh, c
         if turn is not None and abs(turn) <= lim:
@@ -583,6 +585,44 @@ class Rover:
         if here <= SLOPE_LIMIT_DEG:
             return bool(np.all(s <= SLOPE_LIMIT_DEG))
         return bool(np.all(s <= here) and s[-1] < here)
+
+    def _feasible_many(self, x, y, hs, d):
+        """[_feasible(x, y, h, d, steep_only=True) for h in hs] and
+        [_crater_share(x, y, h, d) for h in hs], as two arrays, in one pass.
+        Same arithmetic per element (math.cos/sin per heading, then numpy's
+        elementwise ops, which do not depend on the array's shape)."""
+        sm = self.slope
+        c = sm.cell
+        hs = list(hs)
+        ch = np.array([math.cos(h) for h in hs])[:, None]
+        sh = np.array([math.sin(h) for h in hs])[:, None]
+        # _feasible (steep_only): every half cell along the step
+        n = max(1, int(math.ceil(d / (0.5 * c))))
+        fd = (np.arange(1, n + 1) / n) * d
+        px, py = x + fd[None, :] * ch, y + fd[None, :] * sh
+        ins = np.array([sm.inside(a, b) and sm.inside(e, f) for a, b, e, f in zip(px[:, -1], py[:, -1], px[:, 0], py[:, 0])])
+        s = sm.at(px, py)
+        here = float(sm.at(x, y))
+        hz = self.haz_steep
+        hi = np.clip(np.rint((py - sm.y0) / c).astype(int), 0, hz.shape[0] - 1)
+        hj = np.clip(np.rint((px - sm.x0) / c).astype(int), 0, hz.shape[1] - 1)
+        haz = hz[hi, hj]
+        on_haz = bool(hz[int(np.clip(round((y - sm.y0) / c), 0, self.haz_fine.shape[0] - 1)),
+                         int(np.clip(round((x - sm.x0) / c), 0, self.haz_fine.shape[1] - 1))])
+        bad_haz = haz.any(axis=1) & ~(on_haz & ~haz[:, -1])
+        if here <= SLOPE_LIMIT_DEG:
+            ok_s = np.all(s <= SLOPE_LIMIT_DEG, axis=1)
+        else:
+            ok_s = np.all(s <= here, axis=1) & (s[:, -1] < here)
+        feas = ins & ~bad_haz & ok_s
+        # _crater_share: every cell along the step
+        m = max(1, int(math.ceil(d / c)))
+        gd = (np.arange(1, m + 1) / m) * d
+        qx, qy = x + gd[None, :] * ch, y + gd[None, :] * sh
+        ci = np.clip(np.rint((qy - sm.y0) / c).astype(int), 0, self.haz_crater.shape[0] - 1)
+        cj = np.clip(np.rint((qx - sm.x0) / c).astype(int), 0, self.haz_crater.shape[1] - 1)
+        share = self.haz_crater[ci, cj].mean(axis=1)
+        return feas, share
 
     def drive_toward(self, goal_xy, max_step=STEP_M):
         """One step toward goal_xy, steering by the estimate. Returns (dist, dheading) driven."""

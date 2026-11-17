@@ -43,9 +43,21 @@ drill. When the paper changes, the numbers change and the workflow stays.
 ## Done when
 
 1. One run plays end to end in Mission Control: the map grows, a rover
-   discovers a find, and a second rover corroborates it.
+   discovers a find, and a second rover checks it, whatever the verdict.
 2. A batch of runs gives the numbers the paper quotes, each traceable to the
    runs it came from.
 
 If the workflow cannot complete under honest settings, that is a result for
 the paper. Report it. Do not hide it by tuning.
+
+## What the simulation is for (product owner, 17 Nov 2026)
+
+"this is not about forcing rovers to come home but developing a wholistic
+and realistic simulation according to our papers proposed workflow, and if
+workers cant come home, then fine shadownav isnt accurate enough."
+
+So a change is right when it makes the simulation more faithful to the
+paper's workflow or to the real Moon: a bug fixed, a value given a source.
+A change is wrong when its purpose is a better outcome. Model only what
+the paper proposes: an aid the paper does not propose is not added to
+rescue Scouts.

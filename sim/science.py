@@ -91,7 +91,7 @@ PHASES = (
 
 # ASSUMED. Moon radius for the polar stereographic to lat/lon conversion. The
 # LOLA polar stereographic products use a sphere; check this against the
-# GeoTIFF's CRS before quoting a coordinate (docs/moon-ledger-spec.md, Part 4, item 4).
+# GeoTIFF's CRS before quoting a coordinate (_archive/docs/moon-ledger-spec.md, Part 4, item 4).
 MOON_RADIUS_M = 1_737_400.0
 
 

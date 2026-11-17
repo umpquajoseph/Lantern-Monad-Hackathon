@@ -181,6 +181,11 @@ class Settings:
     # render). The z^2 law then gives 0.19 m RMS over the ground pixels of
     # 3-10 m against the measured 0.22 m. Gaussian: Table 1's outliers
     # (25% beyond 1 m at 10-20 m) are folded into one spread.
+    # The contour filter's width threshold is this share x the map cut
+    # (sim/vision.py contour_ok). Measured by sim/arc_share.py on held-out
+    # frames under a rule fixed before measuring; NaN until measured, and
+    # then C23 sec. 1's 0.8 is used.
+    rim_arc_share_measured: float = S(float("nan"), "pending: sim/arc_share.py (rule committed before measuring)")
     stereo_disparity_sigma_px: float = S(5.9, "A24 Table 1 row (SGBM, 1.5 m, -0.2 m, med), 10-20 m RMS 1.15 m "
                                               "at the bin's middle (15 m); the z^2 shape is assumed")
     # The truth: how the odometer errs (sim/rover.py, sim/mission.py). The

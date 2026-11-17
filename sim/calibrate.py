@@ -55,7 +55,9 @@ Configs, cumulative, the same seeds in each (common random numbers):
   all-mapped  after, with every true crater in the map (a control, not a map)
 From 16 Nov 2026 17:00 (the table the paper uses):
   no-filter after, plus an orbital pixel's map error (sim/orbital_map.py)
-  filter    no-filter, plus A24 sec. III-D's contour filter (sim/vision.py)
+  filter    no-filter, plus A24 sec. III-D's contour filter (sim/vision.py) with C23's
+            80% arc share (width >= 8 m)
+  filter-measured  the same filter with Lantern's measured arc share (sim/arc_share.py)
 Another grid (--terrain, --display-dir) gives the same traverse styles on
 other ground, e.g. one built at the equilibrium crater density.
 --combine writes combined.md from batches already run.
@@ -372,7 +374,9 @@ CONFIGS = {
     "all-mapped": dict(map="all", noise="own", depth="stereo", fixes=True),
     # From 16 Nov 2026 17:00: the map also carries an orbital pixel's error (sim/orbital_map.py).
     "no-filter": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour=False),
-    "filter":    dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour=True),
+    "filter":    dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="c23"),
+    # The same filter with Lantern's own measured arc share (sim/arc_share.py, held-out frames).
+    "filter-measured": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="measured"),
 }
 _W = {}
 
@@ -433,7 +437,7 @@ def run_one(task):
         a, b = D["off"][k], D["off"][k + 1]
         sel = np.arange(a, b)
         if cfg.get("contour", False):                   # A24 sec. III-D contour filter (sim/vision.py)
-            sel = sel[contour_ok(D["width_m"][a:b], D["npx"][a:b])]
+            sel = sel[contour_ok(D["width_m"][a:b], D["npx"][a:b], cfg["contour"])]
         pl = vis.place(D["v"][sel].astype(int), D["u"][sel].astype(int), D["r0"][sel])
         rims = pl["rims"]
         nav.predict(d_o, dh_o)

@@ -47,7 +47,7 @@ from scipy.spatial import cKDTree
 from scipy.stats import norm
 
 from sim.settings import Settings, WorldRanges, sources
-from sim.orbital_map import in_orbital_map   # the Scouts' starting map, shared with every camera run
+from sim.orbital_map import orbital_map   # the Scouts' starting map, shared with every camera run
 
 from sim import crossing as X              # part 2: cross-checks and crater merging
 
@@ -94,6 +94,7 @@ class World:
     draws: dict             # every WorldRanges draw, plus dock_reg_err
     ice: list               # hidden deposits [{x, y, radius, peak}]
     standin: str | None = None
+    map_index: np.ndarray | None = None   # (M,) row of craters each map_start row stands for
 
     @property
     def bounds(self):
@@ -165,8 +166,8 @@ def standin_world(seed: int, s: Settings, ranges: WorldRanges) -> World:
     d = (a_ - u * (a_ - b_)) ** (-1.0 / b)
     xy = rng.uniform(0, size, (nc, 2)) + [x0 - cell / 2, y0 - cell / 2]
     craters = np.column_stack([xy, d])
-    in_map = in_orbital_map(d, rng.random(nc), draws["orbital_map_min_d_m"], draws["missing_share_large"])
-    map_start = craters[in_map]
+    # sim/orbital_map.py: the one map cut and its orbital position and size error.
+    map_start, in_map, _ = orbital_map(craters, rng, ranges, missing_share_large=draws["missing_share_large"])
 
     # Hidden ice: inside the floor, within survey reach of the descent end.
     route = descent_route_cached(z, sl, floor, x0, y0, cell, dock, s.slope_limit_deg)
@@ -184,7 +185,7 @@ def standin_world(seed: int, s: Settings, ranges: WorldRanges) -> World:
                     "peak": float(rng.uniform(*ranges.deposit_peak_wt))})
     return World(site="shoemaker", file="shoemaker_5m_window.npz", x0=x0, y0=y0, cell=cell,
                  height=z, slope=sl, floor=floor, craters=craters, map_start=map_start, dock=dock,
-                 draws=draws, ice=ice,
+                 draws=draws, ice=ice, map_index=np.flatnonzero(in_map),
                  standin="world: Shoemaker LOLA 5 m window, not PSR floor; seeded craters 7.5-20 m "
                          "(sim/campaign.py standin_world, site 'shoemaker')")
 
@@ -957,7 +958,12 @@ class Campaign:
         self._drivable = np.nan_to_num(w.slope, nan=90.0) < s.slope_limit_deg
         self.true_tree = cKDTree(w.craters[:, :2]) if len(w.craters) else None
         # True craters absent from the starting map (crossing.score_added indexes these).
-        if len(w.craters) and len(w.map_start):
+        if w.map_index is not None:
+            # Map rows carry orbital error, so membership comes from the cut's own index.
+            miss = np.ones(len(w.craters), bool)
+            miss[w.map_index] = False
+            self.craters_missing = w.craters[miss]
+        elif len(w.craters) and len(w.map_start):
             dm, _ = cKDTree(w.map_start[:, :2]).query(w.craters[:, :2])
             self.craters_missing = w.craters[dm > 1e-6]
         else:

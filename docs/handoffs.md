@@ -192,8 +192,9 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
   also gives each mapped crater an orbital pixel's error (1-sigma 2 m in
   position per axis and in diameter, `orbital_pos_err_px`,
   `orbital_diam_err_px`); row i of the map is truth crater
-  `np.flatnonzero(mask)[i]`. The campaign's `map_start` (cut only) has no
-  such error yet.
+  `np.flatnonzero(mask)[i]`. The campaign's `map_start` is built with
+  `orbital_map()` too (live-nav, 16 Nov), so it carries the same error;
+  `World.map_index` names each row's true crater.
 - `ParticleNav(fixes_on, rng, craters=None, noise=None)`: `noise` is a
   `nav.PFNoise` (default: `Settings.pf_*`, the filter's own model). New:
   `covariance()` -> `(mean, cov 2x2)`, `sigma_max()` (C23 sec. 6B's sqrt
@@ -661,7 +662,10 @@ A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_
   (sizes `WorldRanges.crater_d_m`), `map_start` `(M, 3)`, `dock` (sunlit rim
   ground), `draws` (every `WorldRanges` draw plus `dock_reg_err`, keys as
   `campaign.draw_world_values`), `ice` (on floor within
-  `WorldRanges.ice_reach_m` driving of the dock), `standin=None`.
+  `WorldRanges.ice_reach_m` driving of the dock), `standin=None`,
+  `map_index` `(M,)` (the `craters` row each `map_start` row stands for;
+  `map_start` is `sim/orbital_map.py orbital_map()`, with orbital error,
+  so membership is by index, never by position).
 - Sites (`sim/psr_sites.py` `SITES`): `haynes`, `s89_014e`, `s89_134e`
   (87-90 S, 5 m mosaic) and `nobile` (84.5-87 S, 10 m 83 S product).
   Built windows live in `DATA/terrain/psr_sites/<site>.npz`

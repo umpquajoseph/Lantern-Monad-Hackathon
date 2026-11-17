@@ -130,6 +130,27 @@ class SlopeMap:
     def inside(self, x, y):
         return (self.x0 + MAP_MARGIN_M <= x <= self.x1 - MAP_MARGIN_M) and (self.y0 + MAP_MARGIN_M <= y <= self.y1 - MAP_MARGIN_M)
 
+    def _may_connect(self, s, g):
+        """False only when no path joins planning cells s and g through the
+        open cells plan() uses with no hazards (under the slope limit, off
+        the margin), s and g themselves open. Hazards only close cells, so
+        False holds for any plan() call. 8-connected components, cached."""
+        if getattr(self, "_labels", None) is None:
+            from scipy.ndimage import label
+            m = int(math.ceil(MAP_MARGIN_M / self.b))
+            ok = self.deg <= SLOPE_LIMIT_DEG
+            ok[:m, :] = ok[-m:, :] = False
+            ok[:, :m] = ok[:, -m:] = False
+            self._labels, _ = label(ok, structure=np.ones((3, 3), int))
+        if max(abs(s[0] - g[0]), abs(s[1] - g[1])) <= 1:
+            return True
+        L = self._labels
+
+        def around(c):
+            blk = L[max(c[0] - 1, 0):c[0] + 2, max(c[1] - 1, 0):c[1] + 2]
+            return set(blk[blk > 0].ravel().tolist())
+        return bool(around(s) & around(g))
+
     def plan(self, start_xy, goal_xy, max_expand=None, blocked=None, cost=None):
         """A* over the 2 m grid, 8-connected, through cells under the slope limit.
 
@@ -153,6 +174,10 @@ class SlopeMap:
                     int(np.clip(math.floor((p[0] - self.x0) / self.b), 0, nx - 1)))
 
         s, g = cell(start_xy), cell(goal_xy)
+        if max_expand is None and not self._may_connect(s, g):
+            # A* would search every cell it can reach and then give up: the
+            # same answer, without the search (seconds on a 2 km run ground).
+            return [tuple(goal_xy)]
         ok[s] = ok[g] = True
         # Cells are flat indices i * nx + j: heap ties then break in the same
         # (i, j) order as tuples, and lookups are on bytes and dicts, so the

@@ -147,7 +147,9 @@ class CameraRig:
             try:
                 with np.load(path) as f:
                     meta = json.loads(str(f["meta"]))
-                if meta.get("box") == box and meta.get("seed") == camp.seed and meta.get("site") == w.site:
+                same_world = (json.dumps(meta.get("world_draws"), sort_keys=True)
+                              == json.dumps(json.loads(json.dumps(w.draws)), sort_keys=True))
+                if meta.get("box") == box and meta.get("seed") == camp.seed and meta.get("site") == w.site                         and same_world:
                     return path, box
             except Exception:
                 pass
@@ -238,9 +240,11 @@ class CameraSortie(Sortie):
 
     # ------------------------------------------------------------ truth
     def _map_truth(self):
-        """Per map row, the world crater it stands for: the nearest true
-        crater whose centre is within map_match_tol_m and size within
-        merge_size_tol_frac, else -1 (a misplaced or phantom entry)."""
+        """Per map row, the world crater it stands for. Start rows: the crater
+        the orbital cut took (World.map_index; its orbital error does not
+        make a pairing wrong). Added rows: the nearest true crater whose
+        centre is within map_match_tol_m and size within merge_size_tol_frac,
+        else -1 (a misplaced or phantom entry)."""
         c, s = self.c, self.s
         if c.map_tree is None or self.rig.true_tree is None:
             return np.zeros(0, int)
@@ -249,6 +253,9 @@ class CameraSortie(Sortie):
         dd = np.abs(self.w.craters[j, 2] - c.map_arr[:, 2]) <= s.merge_size_tol_frac * np.maximum(
             self.w.craters[j, 2], c.map_arr[:, 2])
         out = np.where(ok & dd, j, -1)
+        mi = self.w.map_index
+        if mi is not None:
+            out[:len(mi)] = mi
         return out
 
     # ------------------------------------------------------------ state

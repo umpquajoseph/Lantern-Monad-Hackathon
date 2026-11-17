@@ -563,6 +563,7 @@ class CampaignWorld:
     draws: dict             # every WorldRanges draw, plus dock_reg_err
     ice: list               # hidden deposits [{x, y, radius, peak}]
     standin: str | None = None
+    map_index: np.ndarray | None = None   # (M,) row of craters each map_start row stands for
 
 
 def _world_rng(seed: int, *key: int):
@@ -597,10 +598,11 @@ def campaign_world(site: str, seed: int, ranges=None) -> CampaignWorld:
     density, the true craters (uniform over the window, truncated power law
     over ranges.crater_d_m), which of them the Scouts' starting map holds
     (every crater under orbital_map_min_d_m is missing, plus a random share
-    missing_share_large of the rest), and the hidden ice (uniform over PSR
+    missing_share_large of the rest; each mapped crater carries the orbital
+    error of sim/orbital_map.py), and the hidden ice (uniform over PSR
     floor under the slope limit within ice_reach_m driving of the dock).
     """
-    from sim.orbital_map import in_orbital_map
+    from sim.orbital_map import orbital_map
     from sim.psr_sites import SITES, load_site
     from sim.settings import SiteBuild, WorldRanges
     ranges = ranges or WorldRanges()
@@ -625,8 +627,8 @@ def campaign_world(site: str, seed: int, ranges=None) -> CampaignWorld:
     d = (a_ - u * (a_ - b_)) ** (-1.0 / b)
     xy = rng.uniform(0, 1, (nc, 2)) * [w * cell, h * cell] + [x0 - cell / 2, y0 - cell / 2]
     craters = np.column_stack([xy, d])
-    in_map = in_orbital_map(d, rng.random(nc), draws["orbital_map_min_d_m"], draws["missing_share_large"])
-    map_start = craters[in_map]
+    # sim/orbital_map.py: the one map cut and its orbital position and size error.
+    map_start, in_map, _ = orbital_map(craters, rng, ranges, missing_share_large=draws["missing_share_large"])
 
     dist = t["dist_dock"]
     good = t["psr"] & (t["slope"] < SiteBuild().slope_limit_deg) & (np.nan_to_num(dist, nan=np.inf) <= ranges.ice_reach_m)
@@ -642,7 +644,8 @@ def campaign_world(site: str, seed: int, ranges=None) -> CampaignWorld:
                         "peak": float(rng.uniform(*ranges.deposit_peak_wt))})
     return CampaignWorld(site=site, file=f"psr_sites/{site}.npz", x0=x0, y0=y0, cell=cell,
                          height=t["height"], slope=t["slope"], floor=t["psr"], craters=craters,
-                         map_start=map_start, dock=t["dock"], draws=draws, ice=ice)
+                         map_start=map_start, dock=t["dock"], draws=draws, ice=ice,
+                         map_index=np.flatnonzero(in_map))
 
 
 def main():

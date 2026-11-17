@@ -169,16 +169,39 @@ class Settings:
     camera_height_m: float = S(1.6, "brief p.6 '1.6 m mast'; draft item 24. Camera assumed at the mast top. "
                                     "A24 sec. IV tested 1.5, 2.5 and 3 m")
     lamp_below_camera_m: float = S(0.2, "A24 sec. IV 'Light offsets of 0.2 m below the camera'")
+    # Stereo depth noise for rim points (sim/vision.py). The brief names
+    # stereo cameras (p.5) but no model, so the camera is ShadowNav's rig.
+    stereo_baseline_m: float = S(0.26, "A24 sec. IV-B: 'a stereo camera with a 0.26 m baseline'")
+    stereo_width_px: int = S(5120, "A24 sec. IV-B: '5,120-by-3,840 pixel resolution'")
+    stereo_hfov_deg: float = S(60.0, "A24 sec. IV-B: '60 horizontal field-of-view' (code sim/scene.py HFOV_DEG)")
+    # Depth error grows as z^2 sigma_d / (f B), f = 4434 px, f B = 1153 px m.
+    # A24 Table 1 (SGBM, camera 1.5 m, light 0.2 m below, medium power)
+    # measured RMS range error 0.22 m over 0-10 m and 1.15 m over 10-20 m.
+    # sigma_d = 1.15 x 1153 / 15^2 = 5.9 rig px (0.74 px at the 640 px
+    # render). The z^2 law then gives 0.19 m RMS over the ground pixels of
+    # 3-10 m against the measured 0.22 m. Gaussian: Table 1's outliers
+    # (25% beyond 1 m at 10-20 m) are folded into one spread.
+    stereo_disparity_sigma_px: float = S(5.9, "A24 Table 1 row (SGBM, 1.5 m, -0.2 m, med), 10-20 m RMS 1.15 m "
+                                              "at the bin's middle (15 m); the z^2 shape is assumed")
     # The truth: how the odometer errs (sim/rover.py, sim/mission.py). The
     # bias is drift_frac above.
     odom_noise_frac: float = S(0.005, ASSUMED + "; white distance noise per step, share of the step")
     odom_heading_noise_rad: float = S(0.0005, ASSUMED + "; heading noise per step (~0.7 deg after 1 km)")
-    # The filter's own model (sim/nav.py), set without reference to the
-    # truth above, as a real filter is tuned without knowing it.
-    pf_drift_sigma: float = S(0.02, "C23 sec. 6B 'utilizing 2% odometry noise'")
-    pf_step_noise_frac: float = S(0.01, ASSUMED + "; filter's process noise, not the truth's odom_noise_frac")
-    pf_heading_walk_rad: float = S(0.001, ASSUMED + "; filter's process noise, not the truth's "
-                                                     "odom_heading_noise_rad")
+    # The filter's own model (sim/nav.py), set from ShadowNav's motion model
+    # and never from the truth above, as a real filter is tuned without
+    # knowing it. sim/calibrate.py draws the truth's drift per seed from
+    # WorldRanges.drift_frac (1-4%), so the filter is right only on average.
+    pf_drift_sigma: float = S(0.02, "C23 sec. 6B 'utilizing 2% odometry noise'; 1-sigma of each "
+                                    "particle's odometer scale error")
+    pf_step_noise_frac: float = S(0.02, "A24 sec. III-E1 eqs. (3)-(6): additive noise w_k, zero mean, "
+                                        "'standard deviation based on p', p = 2% (A24 Table 2 '2% added error'). "
+                                        "Per axis, in x and y, times the step length")
+    pf_heading_walk_rad: float = S(0.0, "A24 sec. III-A: heading from the star tracker, the filter "
+                                        "estimates '2D position' only; so no heading spread")
+    pf_scale_walk: float = S(0.001, ASSUMED + "; per-step jitter of each particle's scale error, so "
+                                              "resampled copies spread again (no source; not from the truth)")
+    pf_sigma0_m: float = S(1.0, "C23 sec. 1 'initial 3-sigma uncertainty of 3 m'. C23 sec. 6B ran "
+                                "Table 2 with sigma_0 = 3 m; sim/calibrate.py uses that")
 
     # -------------------------------------------------------------- logging
     log_spacing_m: float = S(10.0, ASSUMED + " (record size, not physics)")
@@ -243,9 +266,17 @@ class WorldRanges:
     crater_n_ge10_per_km2: tuple = S((100.0, 10000.0),
                                      "A24 sec. I: mean spacing of 10 m craters 100 m (fresh) to 10 m (old) "
                                      "-> 100 to 10,000 per km^2; drawn log-uniform. Sweep axis of Figure 1a")
-    orbital_map_min_d_m: float = S(10.0, ASSUMED + "; craters below this are absent from the Scouts' "
-                                                   "starting map (draft 4.3: PSR DEMs 0.5-5 m/px, C23 sec. 1)")
-    missing_share_large: tuple = S((0.0, 0.2), ASSUMED + "; share of larger craters also absent")
+    # The Scouts' starting map is what the orbital product resolves
+    # (sim/orbital_map.py, used by the campaign and every camera run): a
+    # crater is in it when it spans orbital_resolve_px pixels of the orbital
+    # DEM, and then only if it is not among the random share left out.
+    orbital_dem_px_m: float = S(2.0, ASSUMED + "; inside C23 sec. 1 'LROC provides DEMs with a resolution "
+                                               "between 0.5 m-5 m per pixel ... there are some DEMs within PSRs' "
+                                               "(draft 4.3 cites the same)")
+    orbital_resolve_px: float = S(5.0, ASSUMED + "; pixels across for a crater to be mapped. With 2 m pixels "
+                                                 "the cut is 10 m, as C23 sec. 4A 'LROC has enough resolution "
+                                                 "to resolve craters of around 10 m'")
+    missing_share_large: tuple = S((0.0, 0.2), ASSUMED + "; share of resolved craters also absent")
     n_deposits: tuple = S((3, 12), ASSUMED)
     deposit_radius_m: tuple = S((3.0, 12.0), ASSUMED + "; code sim/ice.py:30 uses 6 m")
     deposit_peak_wt: tuple = S((1.0, 5.6), "upper end brief p.12 (LCROSS); lower end the find threshold")
@@ -260,6 +291,11 @@ class WorldRanges:
     ice_reach_m: float = S(3000.0, ASSUMED + "; hidden deposits lie on PSR floor within this driving "
                                             "distance of the dock (1.5 km descent + half the 4 km survey, "
                                             "brief p.6)")
+
+    @property
+    def orbital_map_min_d_m(self) -> float:
+        """Smallest crater the orbital map resolves: pixel size x pixels across (10 m by default)."""
+        return self.orbital_dem_px_m * self.orbital_resolve_px
 
 
 @dataclass(frozen=True)

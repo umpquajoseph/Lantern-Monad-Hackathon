@@ -180,6 +180,28 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
 - `estimate`: `(x, y)` in metres, world frame.
 - `sigma`: metres, as defined above. Logged next to the true error.
 
+## Camera navigation realism (16 Nov 2026, worker `realism`)
+
+- Starting map: `sim/orbital_map.py`. `in_orbital_map(d, u, d_min_m,
+  missing_share_large)` is the one cut the campaign (`campaign.py`,
+  `terrain.campaign_world`) and every camera run (`showcase.py`,
+  `run_demo.py` with vision, `calibrate.py`) use. `orbital_map(craters, rng)`
+  returns `(map (M, 3), mask (N,), share)`. `WorldRanges.orbital_map_min_d_m`
+  is now a property, `orbital_dem_px_m x orbital_resolve_px` (2 m x 5 px =
+  10 m); the record's `orbital_map_min_d_m` key is unchanged.
+- `ParticleNav(fixes_on, rng, craters=None, noise=None)`: `noise` is a
+  `nav.PFNoise` (default: `Settings.pf_*`, the filter's own model). New:
+  `covariance()` -> `(mean, cov 2x2)`, `sigma_max()` (C23 sec. 6B's sqrt
+  of the largest eigenvalue). `step()` and `belief()` are unchanged.
+- `Vision(scene, rng, depth_model="stereo")`: rim depth noise is stereo's
+  (`Settings.stereo_*`). `rims(img, depth)` is unchanged; new
+  `detect(img, depth)` -> rim pixels `(v, u)` (no noise drawn),
+  `place(v, u, r0)` and `rims_detail(img, depth)` -> dict `rims`, `true`
+  (noiseless placement, scoring only), `uv`, `idx`.
+- Calibration: `python -m sim.calibrate`, output in
+  `campaigns/calibration/<batch>/` (`table.md`, `calibration.json`,
+  format `lantern-calibration/1`).
+
 ## Step 1, chain client (`sim/chain.py`), gives
 
 ```python

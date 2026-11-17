@@ -591,6 +591,7 @@ def campaign_world(site: str, seed: int, ranges=None) -> CampaignWorld:
     missing_share_large of the rest), and the hidden ice (uniform over PSR
     floor under the slope limit within ice_reach_m driving of the dock).
     """
+    from sim.orbital_map import in_orbital_map
     from sim.psr_sites import SITES, load_site
     from sim.settings import SiteBuild, WorldRanges
     ranges = ranges or WorldRanges()
@@ -615,7 +616,7 @@ def campaign_world(site: str, seed: int, ranges=None) -> CampaignWorld:
     d = (a_ - u * (a_ - b_)) ** (-1.0 / b)
     xy = rng.uniform(0, 1, (nc, 2)) * [w * cell, h * cell] + [x0 - cell / 2, y0 - cell / 2]
     craters = np.column_stack([xy, d])
-    in_map = (d >= draws["orbital_map_min_d_m"]) & (rng.random(nc) >= draws["missing_share_large"])
+    in_map = in_orbital_map(d, rng.random(nc), draws["orbital_map_min_d_m"], draws["missing_share_large"])
     map_start = craters[in_map]
 
     dist = t["dist_dock"]

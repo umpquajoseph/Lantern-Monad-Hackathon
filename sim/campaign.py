@@ -47,6 +47,7 @@ from scipy.spatial import cKDTree
 from scipy.stats import norm
 
 from sim.settings import Settings, WorldRanges, sources
+from sim.orbital_map import in_orbital_map   # the Scouts' starting map, shared with every camera run
 
 from sim import crossing as X              # part 2: cross-checks and crater merging
 
@@ -164,7 +165,7 @@ def standin_world(seed: int, s: Settings, ranges: WorldRanges) -> World:
     d = (a_ - u * (a_ - b_)) ** (-1.0 / b)
     xy = rng.uniform(0, size, (nc, 2)) + [x0 - cell / 2, y0 - cell / 2]
     craters = np.column_stack([xy, d])
-    in_map = (d >= draws["orbital_map_min_d_m"]) & (rng.random(nc) >= draws["missing_share_large"])
+    in_map = in_orbital_map(d, rng.random(nc), draws["orbital_map_min_d_m"], draws["missing_share_large"])
     map_start = craters[in_map]
 
     # Hidden ice: inside the floor, within survey reach of the descent end.

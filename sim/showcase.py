@@ -40,6 +40,7 @@ import numpy as np
 import run_demo as rd
 from sim.ice import FIND_THRESHOLD_WT
 from sim.nav import ParticleNav
+from sim.orbital_map import orbital_map as _orbital_map
 from sim.rover import SPEED_M_S, SlopeMap
 from sim.settings import Settings, WorldRanges
 from sim.terrain import DATA, load_terrain
@@ -77,7 +78,7 @@ def scenario(site):
 
 def showcase_note(site):
     return ("Showcase run (sim/showcase.py): the Scouts navigate on their own lamp cameras, matched to the orbital "
-            "crater map (craters 10 m and up). None of the paper's numbers come from it. Here the find confirms "
+            "crater map (craters 10 m and up, less a random share left out). None of the paper's numbers come from it. Here the find confirms "
             "easily; the batch runs draw wrong matches at the assumed false-match rate, and there confirmations "
             "are rare. Ground: " + SITES[site]["ground"])
 
@@ -86,9 +87,11 @@ def bound95(sigma):
     return round(float(sigma) * K95, 3)
 
 
-def orbital_map(craters):
-    """The craters the Scouts' map holds: those at least orbital_map_min_d_m across, as in the campaign."""
-    return craters[craters[:, 2] >= WorldRanges().orbital_map_min_d_m]
+def orbital_map(craters, seed=None):
+    """The craters the Scouts' map holds: the campaign's own cut (sim/orbital_map.py), drawn
+    for this run's seed: resolved craters only, less a random share left out."""
+    seed = scenario("s89_134e")["seed"] if seed is None else seed
+    return _orbital_map(craters, np.random.default_rng([int(seed), 77]))[0]
 
 
 def to_record(run_id, steps, field, finds, ft, terrain, sensing, display, site):
@@ -165,7 +168,8 @@ def to_record(run_id, steps, field, finds, ft, terrain, sensing, display, site):
                         "time_s": {"drive": dur, "check": 0.0, "reading": 0.0, "drill": 0.0, "wait": 0.0},
                         "energy_end_kwh": round(float(p[-1, 7]), 3), "distance_m": round(dist, 1),
                         "checks": 0, "wrong_matches": 0})
-    small = craters[craters[:, 2] < WorldRanges().orbital_map_min_d_m]
+    in_map = {tuple(c) for c in np.round(orbital_map(craters, scn["seed"]), 6)}
+    small = np.array([c for c in craters if tuple(np.round(c, 6)) not in in_map]).reshape(-1, 3)
     path = np.concatenate([p[:, 1:3] for p in poses.values()])[::4]
     near = np.zeros(len(small), bool)
     for i in range(0, len(path), 200):
@@ -197,9 +201,10 @@ def to_record(run_id, steps, field, finds, ft, terrain, sensing, display, site):
         "dock": {"x": dock[0], "y": dock[1]},
         "scouts": ["S1", "S2"],
         "standins": [] if sensing else ["rims: stand-in rims from the crater map, no camera (--no-render)"],
-        "crater_map": {"start": rnd(orbital_map(craters)), "added": [],
-                       "scope": f"the map the filter matches against: craters of {WorldRanges().orbital_map_min_d_m:g} m and up; "
-                                "truth.craters_missing lists the smaller ones within 30 m of a driven path"},
+        "crater_map": {"start": rnd(orbital_map(craters, scn["seed"])), "added": [],
+                       "scope": f"the map the filter matches against: craters of {WorldRanges().orbital_map_min_d_m:g} m and up, "
+                                "less a random share left out (sim/orbital_map.py); truth.craters_missing lists "
+                                "the craters not in it within 30 m of a driven path"},
         "finds": [{"find_id": 1, "scout": "S1", "sortie_id": "S1-01", "est": find["est"], "bound95": find["bound95"],
                    "reading_wt": find["reading_wt"], "status": status}],
         "sorties": sorties,
@@ -235,8 +240,9 @@ def main():
     # Pass 1 learns S1's path, so the deposit can sit on it (run_demo.py's docstring says why this is fair).
     cam1 = rd.LiveCamera(scene, None, 1, sensors=True) if scene is not None else None
     # The filter matches against the orbital map; the scene and the camera see every crater.
-    nav_terrain = (height, orbital_map(craters), x0, y0, cell)
-    print(f"map: {len(nav_terrain[1])} of {len(craters)} craters (>= {WorldRanges().orbital_map_min_d_m:g} m)", flush=True)
+    nav_terrain = (height, orbital_map(craters, SCENARIO["seed"]), x0, y0, cell)
+    print(f"map: {len(nav_terrain[1])} of {len(craters)} craters (>= {WorldRanges().orbital_map_min_d_m:g} m, "
+          "less a random share)", flush=True)
     a_steps, _, _ = rd.simulate(SCENARIO, nav_terrain, slope, field=None, cam=cam1)
     field = rd.place_ice(SCENARIO, a_steps, x0, y0, np.random.default_rng([SCENARIO["seed"], 99]))
     print(f"pass 1: {len(a_steps)} steps in {time.perf_counter() - t0:.0f} s", flush=True)

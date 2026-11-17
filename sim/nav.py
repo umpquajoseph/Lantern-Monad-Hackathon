@@ -22,10 +22,17 @@ Heading is dead-reckoned from the odometry's heading changes; the spec
 assumes heading is known well (star tracker), and the odometry heading noise
 is small. With fixes off no measurement update runs, so the estimate is
 plain dead reckoning and sigma grows with the 2% drift model.
+
+The filter's motion model is its own (sim/settings.py pf_*), from ShadowNav,
+not the truth's odometer (sim/rover.py, drift_frac and odom_*): each particle
+carries an odometer scale error (C23 sec. 6B, 2%) and every step adds 2D
+noise of 2% of the step per axis (A24 sec. III-E1, eqs. 3-6). PFNoise holds
+it; sim/calibrate.py also runs the old model that copied the truth.
 """
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -46,14 +53,34 @@ _S = _Settings()
 ODOM_DRIFT = _S.pf_drift_sigma
 # Cauligi et al. 2023, sec. 1: "initial 3-sigma uncertainty of 3 m" -> 1 m.
 # (Sec. 6B writes sigma_0 = 3 m; this follows sec. 1 and sim/standins.py.)
-SIGMA0_M = 1.0
+SIGMA0_M = _S.pf_sigma0_m
 # Alg. 1 line 1: a negligibly small positive value to avoid divide-by-zero.
 Q_EPS = 1e-6
 
-STEP_NOISE_FRAC = _S.pf_step_noise_frac     # assumed: filter's distance noise per step, fraction of the step
-HEADING_WALK_RAD = _S.pf_heading_walk_rad    # assumed: filter's heading random walk per step
-SCALE_WALK = 0.001          # assumed: per-step jitter of each particle's scale error, so resampled copies spread again
+STEP_NOISE_FRAC = _S.pf_step_noise_frac     # A24 eqs. 3-6: 2D noise per axis, fraction of the step
+HEADING_WALK_RAD = _S.pf_heading_walk_rad    # A24 sec. III-A: position-only filter, heading known (0)
+SCALE_WALK = _S.pf_scale_walk                # assumed: per-step jitter of each particle's scale error
 CRATER_NEIGHBOURS = 6       # assumed: nearest mapped craters checked per rim point (enough within 15 m)
+
+
+@dataclass(frozen=True)
+class PFNoise:
+    """The filter's motion model. Defaults: sim/settings.py pf_* (sourced there).
+    isotropic: step noise in x and y (A24 eq. 3) rather than along the track only."""
+    drift_sigma: float = ODOM_DRIFT
+    step_noise_frac: float = STEP_NOISE_FRAC
+    heading_walk_rad: float = HEADING_WALK_RAD
+    scale_walk: float = SCALE_WALK
+    sigma0_m: float = SIGMA0_M
+    isotropic: bool = True
+
+
+# The model nav.py used before 16 Nov 2026: its noise copied the truth's
+# odometer (sim/rover.py odom_noise_frac, odom_heading_noise_rad), along the
+# track only. Kept for sim/calibrate.py's before/after numbers; never a default.
+PF_NOISE_COPIED_TRUTH = PFNoise(drift_sigma=_S.drift_frac, step_noise_frac=_S.odom_noise_frac,
+                                heading_walk_rad=_S.odom_heading_noise_rad, scale_walk=0.001,
+                                isotropic=False)
 
 STANDIN = None  # this is the real step 3, not a stand-in
 
@@ -69,11 +96,12 @@ class ParticleNav:
     NAME = ("nav: ShadowNav particle filter (Cauligi et al. 2023, Algs. 1-3), 100 particles, "
             "on odometry and rim points only (sim/nav.py)")
 
-    def __init__(self, fixes_on: bool, rng: np.random.Generator, craters=None):
+    def __init__(self, fixes_on: bool, rng: np.random.Generator, craters=None, noise: PFNoise | None = None):
         self.fixes_on = fixes_on
         self.rng = rng
-        self.err = rng.normal(0.0, SIGMA0_M, 2)   # simulation: how wrong the landing belief is
-        self.sigma = SIGMA0_M
+        self.noise = noise or PFNoise()
+        self.err = rng.normal(0.0, self.noise.sigma0_m, 2)   # simulation: how wrong the landing belief is
+        self.sigma = self.noise.sigma0_m
         self.craters = None
         self.tree = None
         if craters is not None:
@@ -89,13 +117,13 @@ class ParticleNav:
         self.tree = cKDTree(c[:, :2])
 
     def start(self, belief_xy, heading):
-        """Starting belief: mean belief_xy, sigma SIGMA0_M; heading as given.
+        """Starting belief: mean belief_xy, sigma noise.sigma0_m; heading as given.
 
         Particles come in mirrored pairs about the mean (antithetic), so with
         fixes off the mean stays exactly on the dead-reckoned track."""
         h = N_PARTICLES // 2
-        off = self.rng.normal(0.0, SIGMA0_M, (h, 2))
-        s = self.rng.normal(0.0, ODOM_DRIFT, h)
+        off = self.rng.normal(0.0, self.noise.sigma0_m, (h, 2))
+        s = self.rng.normal(0.0, self.noise.drift_sigma, h)
         th = np.zeros(h)
         self.p = np.asarray(belief_xy, float) + np.concatenate([off, -off])
         self.s = np.concatenate([s, -s])           # odometry scale error per particle
@@ -110,14 +138,22 @@ class ParticleNav:
         if d_odom <= 0:
             return
         h = N_PARTICLES // 2
-        w_d = self.rng.normal(0.0, STEP_NOISE_FRAC * d_odom, h)
-        w_h = self.rng.normal(0.0, HEADING_WALK_RAD, h)
-        w_s = self.rng.normal(0.0, SCALE_WALK, h)
-        self.th = self.th + np.concatenate([w_h, -w_h])
+        nz = self.noise
+        if nz.heading_walk_rad > 0:
+            w_h = self.rng.normal(0.0, nz.heading_walk_rad, h)
+            self.th = self.th + np.concatenate([w_h, -w_h])
+        w_s = self.rng.normal(0.0, nz.scale_walk, h)
         self.s = self.s + np.concatenate([w_s, -w_s])
-        d = d_odom * (1.0 - self.s) + np.concatenate([w_d, -w_d])
         a = self.heading + self.th
-        self.p = self.p + np.column_stack([d * np.cos(a), d * np.sin(a)])
+        if nz.isotropic:
+            # A24 eq. 3: b_k+1 = b_k + s_k+1 + w_k, w_k ~ N(0, (p |s|)^2) in x and y.
+            d = d_odom * (1.0 - self.s)
+            w = self.rng.normal(0.0, nz.step_noise_frac * d_odom, (h, 2))
+            self.p = self.p + np.column_stack([d * np.cos(a), d * np.sin(a)]) + np.concatenate([w, -w])
+        else:
+            w_d = self.rng.normal(0.0, nz.step_noise_frac * d_odom, h)
+            d = d_odom * (1.0 - self.s) + np.concatenate([w_d, -w_d])
+            self.p = self.p + np.column_stack([d * np.cos(a), d * np.sin(a)])
 
     def q_score_log(self, rims):
         """Alg. 1 for every particle at once: log Q, shape (Ns,)."""
@@ -170,6 +206,17 @@ class ParticleNav:
         dev = self.p - mu
         cov_trace = float(np.sum(w * np.einsum("ij,ij->i", dev, dev)))
         return mu, math.sqrt(cov_trace / 2.0)
+
+    def covariance(self):
+        """(mean (2,), weighted covariance (2, 2)) of the particles (C23 sec. 6B)."""
+        w = self._normalised()
+        mu = w @ self.p
+        dev = self.p - mu
+        return mu, (w[:, None] * dev).T @ dev
+
+    def sigma_max(self):
+        """C23 sec. 6B's reported uncertainty: sqrt of the largest covariance eigenvalue."""
+        return math.sqrt(max(0.0, float(np.linalg.eigvalsh(self.covariance()[1])[-1])))
 
     # -- the per-step call ------------------------------------------------------
     def step(self, odom, rims):

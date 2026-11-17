@@ -2,6 +2,7 @@
 // "Campaign simulator"): the index of batches and summary rows, one run's
 // record, and its pose rows. Nothing here draws.
 import { Run } from "./data.js";
+import { supersededLong } from "./superseded.js";
 
 export const SCOUT_COLOR = { S1: "#5aa7ff", S2: "#f2994a", S3: "#b58cff", S4: "#4fd1b5", S5: "#f06a9a" };
 export const STATUS_COLOR = { find: "#e0b84a", confirmed: "#4fbf72", unconfirmed: "#8a9099", drilled: "#58c8ff" };
@@ -15,13 +16,6 @@ export const TIME_KINDS = [
 export const OUTCOME_WORD = { showcase: "showcase run", ok: "home with reserve", below_reserve: "home below reserve", fault_return: "turned back on a fault", lost: "lost" };
 export const OUTCOME_SHORT = { showcase: "showcase", ok: "", below_reserve: "below reserve", fault_return: "fault", lost: "lost" };
 
-// Camera batches written before workflow's honest homing (lost reason
-// `stranded`, workflow fyi 20261117-130402): every sortie ended with a free
-// straight hop to the dock, up to 2.4 km, so "home" in them is not real. The
-// record has no field for it, so they are named here (leader's reply
-// 20261117-131552). Shown in the picker, the run panel and the banner.
-export const OLD_HOMING = new Set(["live-nav", "live-nav-check", "live-nav-check2", "live-nav-first3", "workflow-check1", "workflow-first3", "workflow-first3b"]);
-export const OLD_HOMING_NOTE = "homing used the old free last hop; superseded";
 
 const T_EPS_S = 0.5;   // display only: float32 rounding of pose times, see FleetRun.findsAt
 
@@ -213,7 +207,7 @@ export function fitPage() {
 
 // Every banner a record needs: the showcase note (sim/showcase.py), then what is a stand-in.
 export function bannersOf(rec, batch = null) {
-  return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec)) + oldHomingBanner(batch) + standinBanner(sensitivityOf(rec.settings), "Sensitivity");
+  return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec)) + supersededBanner(batch) + standinBanner(sensitivityOf(rec.settings), "Sensitivity");
 }
 
 // Settings.ground_roughness false (workflow fyi 20261117-132516): the labelled
@@ -225,8 +219,8 @@ export function sensitivityOf(s) {
   return v === false || v === "False" || v === "false" ? NO_ROUGH_NOTE : null;
 }
 
-export function oldHomingBanner(batch) {
-  return OLD_HOMING.has(batch) ? standinBanner(`This batch's ${OLD_HOMING_NOTE}: a Scout shown reaching the dock may never have found its way home.`, "Superseded") : "";
+export function supersededBanner(batch) {
+  return standinBanner(supersededLong(batch), "Superseded");
 }
 
 export function esc(s) {

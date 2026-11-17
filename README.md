@@ -88,5 +88,5 @@ numbers come from the batch files, not from the site.
 
 Lantern began at Monad Blitz Oregon on 15 November 2026 as a shared,
 on-chain map of lunar ice. That README, with its link to the hackathon
-build, is in [docs/hackathon-README.md](docs/hackathon-README.md). The chain
+build, is in [_archive/docs/hackathon-README.md](_archive/docs/hackathon-README.md). The chain
 code is in `_archive/`.

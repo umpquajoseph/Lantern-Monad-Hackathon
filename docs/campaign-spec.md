@@ -43,7 +43,7 @@ drill. When the paper changes, the numbers change and the workflow stays.
 ## Done when
 
 1. One run plays end to end in Mission Control: the map grows, a rover
-   discovers a find, and a second rover corroborates it.
+   discovers a find, and a second rover checks it, whatever the verdict.
 2. A batch of runs gives the numbers the paper quotes, each traceable to the
    runs it came from.
 

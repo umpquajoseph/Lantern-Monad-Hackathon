@@ -18,7 +18,7 @@ import { MissionPlayer, ensureStyles } from "./mission_player.js";
 import { ScienceRig, VERDICT_COLOR } from "./science_rig.js";
 import {
   CampaignRun, FleetRun, loadPipeline, groundEverywhere, loadIndex, assetsBase,
-  SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, ACTIVITY, OUTCOME_WORD, DOCKED, fmtNum, fmtDay, standinOf, esc,
+  SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, ACTIVITY, OUTCOME_WORD, DOCKED, fmtNum, fmtDay, standinOf, esc, isUnreached,
 } from "./campaign.js";
 
 const $ = (id) => document.getElementById(id);
@@ -447,7 +447,7 @@ function checkpointsFor(run) {
     }
     if (e.t <= T0 || e.t > T1 || !run.agencies.includes(e.scout)) continue;
     if (e.type === "find") out.push({ t: e.t, label: `${e.scout} logs find ${e.find_id}`, say: `${fmtNum(e.reading_wt, 1)} wt%, within ${fmtNum(e.bound95, 1)} m (95%)` });
-    if (e.type === "search_unreached") out.push({ t: e.t, label: `${e.scout} cannot reach ${finder(e.find_id)}'s find ${e.find_id}`, say: `it gave up ${fmtNum(e.dist_m, 0)} m from it, by its own estimate; no search, the find stays open` });
+    if (isUnreached(e)) out.push({ t: e.t, label: `${e.scout} cannot reach ${finder(e.find_id)}'s find ${e.find_id}`, say: `it gave up ${fmtNum(e.dist_m, 0)} m from it, by its own estimate; no search, the find stays open` });
     if (e.type === "search_start") out.push({ t: e.t, label: `${e.scout} starts searching for ${finder(e.find_id)}'s find ${e.find_id}`, say: `a ${fmtNum(e.radius_m, 0)} m circle round where ${finder(e.find_id)} logged it` });
     if (e.type === "search_end") out.push({ t: e.t, label: `${e.scout}: ${finder(e.find_id)}'s find ${e.find_id} ${e.result === "confirmed" ? "confirmed" : "not confirmed"}`, say: SEARCH_WHY[e.reason] || "" });
     if (e.type === "drill") out.push({ t: e.t, label: `${e.scout} drills find ${e.find_id}`, say: `its position error ${fmtNum(e.true_err_m, 1)} m` });
@@ -513,11 +513,12 @@ function exitDrill() {
 const SEARCH_WHY = { match: "a matching reading inside the search area", no_readings: "no readings in the search area",
   no_match: "no reading matched", bound_too_large: "the combined position bound was too large to judge" };
 
-// How a search ended. `end`: its search_end (a result). Else `stop`: the
-// first event of the same sortie after the start that ends the search with no
-// result (a turn back, the dock, the Scout lost), and `why` in words. Neither:
-// still searching at the record's end.
-const STOP_WHY = { time: "turned back for time", energy: "turned back on energy", fault: "turned back on a fault" };
+// How a search ended. `end`: its search_end (a result). Else `stop`: its
+// search_abandoned (docs/handoffs.md), or in a record without that event the
+// first turn back, dock arrival or loss of the same sortie after the start,
+// and `why` in words. Neither: still searching at the record's end.
+const STOP_WHY = { time: "turned back for time", energy: "turned back on energy", fault: "turned back on a fault", lost: "lost before the dock" };
+const PARTIAL_WHY = { no_readings: "no readings so far", no_match: "no reading matched so far", bound_too_large: "the combined position bound was too large to judge" };
 const searchEnds = new Map();
 function searchEnd(start) {
   if (searchEnds.has(start)) return searchEnds.get(start);
@@ -525,8 +526,14 @@ function searchEnd(start) {
   const end = S.cr.iceEvents.find((x) => x.type === "search_end" && x.find_id === start.find_id && same(x)) || null;
   let stop = null, why = "";
   if (!end) {
-    stop = S.cr.events.find((x) => same(x) && (x.type === "turn_back" || x.type === "dock_arrive" || x.type === "lost")) || null;
-    if (stop) why = stop.type === "turn_back" ? STOP_WHY[stop.reason] || `turned back (${stop.reason})` : stop.type === "lost" ? "lost before the dock" : "back at the dock";
+    stop = S.cr.iceEvents.find((x) => x.type === "search_abandoned" && x.find_id === start.find_id && same(x)) || null;
+    if (stop) {
+      const done = stop.points_planned ? ` after ${stop.points_done} of ${stop.points_planned} reading points` : "";
+      why = `${STOP_WHY[stop.reason] || stop.reason}${done}` + (stop.partial ? `; ${PARTIAL_WHY[stop.partial] || stop.partial}` : "");
+    } else {
+      stop = S.cr.events.find((x) => same(x) && (x.type === "turn_back" || x.type === "dock_arrive" || x.type === "lost")) || null;
+      if (stop) why = stop.type === "turn_back" ? STOP_WHY[stop.reason] || `turned back (${stop.reason})` : stop.type === "lost" ? "lost before the dock" : "back at the dock";
+    }
   }
   const r = { end, stop, why, t1: end ? end.t : stop ? stop.t : Infinity };
   searchEnds.set(start, r);
@@ -1133,7 +1140,8 @@ function timeline() {
     const at = `left:${(100 * (e.t - T0)) / span}%`;
     if (e.type === "find") out.push(`<i class="ice" style="${at};background:${STATUS_COLOR.find}" title="${esc(`${fmtDay(e.t)}: ${e.scout} logs find ${e.find_id}`)}"></i>`);
     else if (e.type === "search_end") out.push(`<i class="ice" style="${at};background:${e.result === "confirmed" ? STATUS_COLOR.confirmed : STATUS_COLOR.unconfirmed}" title="${esc(`${fmtDay(e.t)}: ${e.scout}, ${finder(e.find_id)}'s find ${e.find_id} ${e.result}`)}"></i>`);
-    else if (e.type === "search_unreached") out.push(`<i class="ice" style="${at};background:${STATUS_COLOR.unconfirmed}" title="${esc(`${fmtDay(e.t)}: ${e.scout} cannot reach ${finder(e.find_id)}'s find ${e.find_id}, ${fmtNum(e.dist_m, 0)} m short`)}"></i>`);
+    else if (e.type === "search_abandoned" && !isUnreached(e)) out.push(`<i class="ice" style="${at};background:${STATUS_COLOR.unconfirmed}" title="${esc(`${fmtDay(e.t)}: ${e.scout} leaves ${finder(e.find_id)}'s find ${e.find_id} unchecked (${e.reason})`)}"></i>`);
+    else if (isUnreached(e)) out.push(`<i class="ice" style="${at};background:${STATUS_COLOR.unconfirmed}" title="${esc(`${fmtDay(e.t)}: ${e.scout} cannot reach ${finder(e.find_id)}'s find ${e.find_id}, ${fmtNum(e.dist_m, 0)} m short`)}"></i>`);
     else if (e.type === "drill") out.push(`<i class="ice" style="${at};background:${STATUS_COLOR.drilled}" title="${esc(`${fmtDay(e.t)}: ${e.scout} drills find ${e.find_id}`)}"></i>`);
     else if (e.type === "check" && e.scout === S.sortie.scout) out.push(`<i class="chk${e.wrong_match ? " wrong" : ""}" style="${at}" title="${esc(`${fmtDay(e.t)}: ${e.scout} position check${e.fixed === false ? ", no fix" : ""}`)}"></i>`);
     else if (e.type === "fault" || e.type === "turn_back") out.push(`<i class="haz" style="${at}" title="${esc(`${fmtDay(e.t)}: ${e.scout} ${e.type === "fault" ? e.module + " fault" : "turns back (" + e.reason + ")"}`)}"></i>`);

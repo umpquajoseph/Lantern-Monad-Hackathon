@@ -15,6 +15,10 @@ export const TIME_KINDS = [
 export const OUTCOME_WORD = { showcase: "showcase run", ok: "home with reserve", below_reserve: "home below reserve", fault_return: "turned back on a fault", lost: "lost" };
 export const OUTCOME_SHORT = { showcase: "showcase", ok: "", below_reserve: "below reserve", fault_return: "fault", lost: "lost" };
 
+// A searcher gave up before reaching a find (docs/handoffs.md `search_abandoned`,
+// reason `unreached`). `search_unreached` is its earlier name, in workflow-first3.
+export const isUnreached = (e) => e.type === "search_unreached" || (e.type === "search_abandoned" && e.reason === "unreached");
+
 async function fetchOk(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`${url}: ${r.status}`);
@@ -52,7 +56,7 @@ export class CampaignRun {
     this.sortieById = Object.fromEntries(rec.sorties.map((s) => [s.sortie_id, s]));
     this.events = rec.events.slice().sort((a, b) => a.t - b.t);
     // The ice map's events only: a record can hold tens of thousands of sightings and checks.
-    this.iceEvents = this.events.filter((e) => e.type === "find" || e.type === "search_end" || e.type === "drill" || e.type === "search_start" || e.type === "search_unreached");
+    this.iceEvents = this.events.filter((e) => e.type === "find" || e.type === "search_end" || e.type === "drill" || e.type === "search_start" || e.type === "search_abandoned" || e.type === "search_unreached");
     this.addedBy = {};
     for (const c of rec.crater_map.added || []) (this.addedBy[c.after_sortie] ||= []).push(c);
   }
@@ -82,8 +86,8 @@ export class CampaignRun {
       const f = m.get(e.find_id);
       if (!f) continue;
       if (e.type === "search_end") { f.status = e.result; f.searches.push(e); }
-      // A searcher that could not reach the find (docs/handoffs.md `search_unreached`): no search, status unchanged.
-      if (e.type === "search_unreached") f.unreached.push(e);
+      // A searcher that could not reach the find: no search, status unchanged.
+      if (isUnreached(e)) f.unreached.push(e);
       if (e.type === "drill") { f.status = "drilled"; f.drill = e; }
     }
     return [...m.values()];

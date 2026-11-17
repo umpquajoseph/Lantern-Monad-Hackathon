@@ -78,6 +78,7 @@ from sim.crossing import R95_2D
 CAM = "cam"                  # the scene's one agency: only the sortie being simulated is in it
 LIDAR_KEEP = 2               # steps.npz keeps every 2nd lidar beam row and column (record size, not physics)
 PROGRESS_M = 0.5             # assumed: "getting closer" to a waypoint means by at least this much (cam_stuck_steps)
+PROGRESS_MIN_M = 50.0        # assumed: progress measured before CameraSortie.overhead() replaces 1 (the corridor alone is ~900 m)
 BLOCKED_ARRIVE_M = 2.0       # run_demo.py BLOCKED_ARRIVE_M (assumed there): arrived, when the goal is on no-go ground
 SIGHT_LINK_M = 2.0           # assumed: unmatched rim points this close are one arc
 SIGHT_CELL_M = 0.25          # unmatched points are thinned to one per cell of this size before clustering (memory:
@@ -327,6 +328,7 @@ class CameraSortie(Sortie):
         self.map_true = self._map_truth()
         self.drift_true = w.draws["drift_frac"]
         self.k = 0
+        self.prog_m = self.prog_t = 0.0      # overhead(): progress toward goals (m) and the drive time it took (s)
         self.point_turns = 0
         self.skipped = 0
         self.goal_xy = (float(wx), float(wy))
@@ -370,15 +372,31 @@ class CameraSortie(Sortie):
         self.errx, self.erry = self.ex - float(r.true[0]), self.ey - float(r.true[1])
         self.heading = float(r.true[2])
 
+    def overhead(self):
+        """Drive hours this sortie took per hour that straight driving at top
+        speed would have taken, for the same progress toward its waypoints
+        (its own estimate of distance to each goal, per step, gains only).
+        Turns in place, detours, back-and-forth and blocked waypoints all
+        count. The Scout measures it on itself; no truth. 1 until it has
+        PROGRESS_MIN_M of progress."""
+        if self.prog_m < PROGRESS_MIN_M:
+            return 1.0
+        return max(1.0, self.prog_t / (self.prog_m / self.v))
+
     def _return_energy(self):
+        # The sampled engine drives the route straight, so route length over
+        # top speed is its real cost. A camera Scout does not: on
+        # live-nav-first3 / workflow-first3 returns took 17-20 h against
+        # about 4 h of straight driving, and Scouts ran flat on the way home
+        # (s89_134e S1-01, S2-01). Scale by the Scout's own measured overhead.
         d = self._return_dist()
-        return d / self.v * self.em["p_drive_w"] / 3.6e6
+        return d / self.v * self.overhead() * self.em["p_drive_w"] / 3.6e6
 
     def _must_turn_back(self):
         s = self.s
         if self.energy - s.reserve_frac * s.battery_kwh <= self._return_energy():
             return "energy"
-        if self.t - self.t_launch + self._return_dist() / self.v >= s.sortie_h * 3600:
+        if self.t - self.t_launch + self._return_dist() / self.v * self.overhead() >= s.sortie_h * 3600:
             return "time"
         return None
 
@@ -411,8 +429,11 @@ class CameraSortie(Sortie):
             dist = math.hypot(gx - self.ex, gy - self.ey)
             if dist < s.cam_arrive_m or (dist < BLOCKED_ARRIVE_M and r.goal_blocked()):
                 return True
+            td = self.time["drive"]
             self._step()
             nd = math.hypot(gx - self.ex, gy - self.ey)
+            self.prog_m += max(0.0, dist - nd)
+            self.prog_t += self.time["drive"] - td
             if nd < best - PROGRESS_M:
                 best, since = nd, 0
             else:

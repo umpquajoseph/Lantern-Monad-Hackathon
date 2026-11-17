@@ -567,13 +567,19 @@ Record changes (additive unless marked):
     `bound95`, `anchor` as above, plus `points`, `fit_rms_m`.
   - `waypoint_skipped`: `reason` `blocked` (no progress for
     `Settings.cam_stuck_steps` steps) or `off_ground`; `goal` (map frame).
-  - `search_unreached` (workflow, 17 Nov 2026; either engine, in practice
-    camera only): the searcher's drive to the find ended with its estimate
-    outside the search circle (a skipped waypoint). `find_id`, `dist_m`
-    (estimated distance to the find's `est`), `radius_m` (the search
-    radius it would have used). No `search_start` or `search_end` follows;
-    the find keeps `status: "find"` and a later sortie may search it.
-    Summary adds `searches_unreached`.
+  - `search_abandoned` (workflow, 17 Nov 2026; either engine): a search
+    that did not finish. `find_id`, `reason`: `unreached` (the drive to
+    the find ended with the searcher's estimate outside the search circle,
+    after a skipped waypoint; no `search_start` was logged), `energy` /
+    `time` / `fault` / `lost` (cut short after `search_start`); `dist_m`
+    (estimated distance to the find's `est` when it stopped), `radius_m`,
+    `points_done`, `points_planned`, `partial` (what
+    `judge_search_detail` said of the readings so far: `no_readings` /
+    `no_match` / `bound_too_large`; null when unreached),
+    `combined_bound95` (when started). No `search_end` follows; the find
+    keeps `status: "find"` and a later sortie may search it. A search cut
+    short whose readings so far already confirm ends with a normal
+    `search_end` instead. Summary adds `searches_abandoned`.
 - `time_s.check` is 0: a camera Scout does not stop to fix.
   `Settings.check_policy`, `check_stop_s`, `drift_mode` and the sampled
   fix-error fields are not used. The truth's odometer is a scale error of
@@ -586,7 +592,11 @@ Record changes (additive unless marked):
 - Sorties add `steps` (camera steps), `point_turns`, `waypoints_skipped`,
   `pingpong_blocks` (planning cells closed by sim/rover.py's back-and-forth
   guard: a move that ends within 0.5 m of where the move before last
-  ended closes the turnaround's 2 m cell; 17 Nov 2026).
+  ended closes the turnaround's 2 m cell; 17 Nov 2026), `drive_overhead`
+  (sim/campaign_camera.py `CameraSortie.overhead`: drive time over the
+  time straight driving at top speed would take for the same progress
+  toward its waypoints, measured by the Scout on itself; its turn-back
+  rule multiplies the return's straight-driving time and energy by it).
 - **False-match rate** (one definition for the summary, the page and the
   paper; draft 4.2 "detected rims were paired with the wrong mapped
   crater"): of the rim points the filter paired with a mapped crater, the

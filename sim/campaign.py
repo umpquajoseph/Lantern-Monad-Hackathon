@@ -792,7 +792,8 @@ class Sortie:
         gap = math.hypot(f["est"][0] - self.ex, f["est"][1] - self.ey)
         reach = X.search_area(f, self.bound, s)
         if gap > reach:
-            self.event("search_unreached", find_id=f["find_id"], dist_m=rnd(gap, 2), radius_m=rnd(reach, 2))
+            self.event("search_abandoned", find_id=f["find_id"], reason="unreached", dist_m=rnd(gap, 2),
+                       radius_m=rnd(reach, 2), points_done=0, points_planned=0, partial=None)
             return False
         self.work_check("search")
         if self.anchor == "dock":
@@ -805,9 +806,23 @@ class Sortie:
                    find_bound95=f["bound95"], searcher_bound95=rnd(self.bound, 2), combined_bound95=rnd(comb, 2))
         readings, true_xy = [], []
         for px, py in pts:
+            stop = None
             if not self.drive_to(float(px), float(py), ACT["search"]):
-                return False
-            if not self.neutron_ok:
+                stop = "lost" if self.lost else (self.turn_reason or "turn_back")
+            elif not self.neutron_ok:
+                stop = "fault"
+            if stop:
+                # Cut short. The readings so far still count: a match inside
+                # the rule confirms as a full search would. Otherwise the
+                # search is logged as abandoned, with what the partial
+                # readings said, and the find stays open for another sortie.
+                det = X.judge_search_detail(f, readings, s)
+                if det["result"] == "confirmed" and not self.lost:
+                    break
+                self.event("search_abandoned", find_id=f["find_id"], reason=stop,
+                           dist_m=rnd(math.hypot(f["est"][0] - self.ex, f["est"][1] - self.ey), 2),
+                           radius_m=rnd(radius, 2), points_done=len(readings), points_planned=len(pts),
+                           partial=det["reason"], combined_bound95=rnd(comb, 2))
                 return False
             wt = self.read_here()
             readings.append((self.ex, self.ey, self.bound, wt, self.anchor))
@@ -823,7 +838,7 @@ class Sortie:
                    truth_has_deposit=bool(sc["truth_has_deposit"]),
                    false_confirmed=bool(sc["false_confirmed"]), missed=bool(sc["missed"]))
         self.search_results.append((f["find_id"], det["result"], det))
-        if det["result"] == "confirmed" and self.drills_left > 0:
+        if det["result"] == "confirmed" and self.drills_left > 0 and not self.returning:
             tgt = det.get("est") or f["est"]
             self.drill(f, tgt)
         return True
@@ -1207,6 +1222,7 @@ class Campaign:
             self.sortie_extra[so.sid] = {"steps": int(len(so.arrays[f"{so.sid}.step"])),
                                          "point_turns": so.point_turns, "waypoints_skipped": so.skipped,
                                          "pingpong_blocks": so.rover.pingpong_blocks,
+                                         "drive_overhead": rnd(so.overhead(), 3),
                                          "rim_points": so.n_rim_pts, "rim_matched": so.n_rim_matched,
                                          "rim_wrong": so.n_rim_wrong, "rim_unpaired": so.n_rim_unpaired}
         return so
@@ -1366,7 +1382,7 @@ class Campaign:
             # Additive (not in the handoffs list yet).
             "fixes": fixes,
             "searches": len(ends),
-            "searches_unreached": sum(e["type"] == "search_unreached" for e in ev),
+            "searches_abandoned": sum(e["type"] == "search_abandoned" for e in ev),
             "confirm_rate": rnd(sum(e["result"] == "confirmed" for e in ends) / len(ends), 3) if ends else None,
             "search_bound_too_large": sum(e.get("reason") == "bound_too_large" for e in ends),
             "search_no_match": sum(e.get("reason") == "no_match" for e in ends),

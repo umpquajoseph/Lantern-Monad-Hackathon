@@ -2,7 +2,7 @@
 // uncertainty circle, finds with status, and the real ice when the log has it.
 import { COLORS } from "./world.js";
 
-const PLAN_CSS = "rgba(255, 200, 60, 0.95)";   // the camera view's plan colour (main.js drawPlan)
+const PLAN_CSS = "rgba(255, 200, 60, 0.95)";   // the camera view's plan colour (the hackathon page's drawPlan, now mission.js drawFpOverlay)
 
 const hex = (c) => "#" + c.toString(16).padStart(6, "0");
 
@@ -295,7 +295,7 @@ export class MapView {
     }
 
     // Planned route (logged per step as "plan", world xy from the rover
-    // forward): amber dashes, as on the camera image (main.js drawPlan).
+    // forward): amber dashes, as on the camera image (the hackathon page's drawPlan, now mission.js drawFpOverlay).
     for (const a of run.agencies) {
       const plan = run.rover(a, k).plan;
       if (!plan || plan.length < 2) continue;

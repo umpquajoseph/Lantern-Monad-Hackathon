@@ -219,8 +219,9 @@ function lerpPose(a, b, f) {
 // pipes: {sortie_id: pipeline doc} from loadPipeline. Each pipeline step's
 // time becomes a step here, and that step's rover carries what the Scout's
 // pipeline produced: rims ([[x_fwd, y_left]], at that step's true pose),
-// rimInfo ([[match, wrong]] per point), particles ([[x, y, w]]), plan
-// ([[x, y]]) and lidar (the hazard grid string, see lidar_grid).
+// rimInfo ([[map_row | null, wrong]] per point), particles ([[x, y, w]]), plan
+// ([[x, y]]), lidar (the hazard grid string, HAZ_GRID) and range (the logged
+// range image, cm). See loadPipeline.
 export class FleetRun extends Run {
   constructor(cr, s, { believed = false, pipes = {} } = {}) {
     const T0 = s.t_start, T1 = s.t_end, c = cr.col, d = cr.rec.dock;
@@ -279,7 +280,7 @@ export class FleetRun extends Run {
         const rims = ps ? ps.rims : [];
         rovers[a] = { true_pose: q.tru, estimate: q.est.slice(0, 2), odom_pose: q.est, sigma: q.b, nav_on: true,
           rims: rims.map((p) => [p[0], p[1]]), rimInfo: rims.map((p) => [p[2], p[3]]),
-          particles: ps ? ps.particles : [], plan: ps ? ps.plan : null, lidar: ps ? ps.lidar : null, pipeT: ps ? ps.t : null };
+          particles: ps ? ps.particles : [], plan: ps ? ps.plan : null, lidar: ps ? ps.lidar : null, range: ps ? ps.range : null, pipeT: ps ? ps.t : null };
         info[a] = { act: q.act, energy: q.energy, sortie: q.sortie };
         poses.truth[a].push(q.tru);
         poses.believed[a].push(q.est);
@@ -324,16 +325,71 @@ export class FleetRun extends Run {
   }
 }
 
-// Per-step pipeline data for some sorties, from <run>/pipeline/<sortie_id>.json
-// (web/make_standin_pipeline.py's stand-in until the engine logs its own:
-// docs/handoffs.md, "Part 4 reads"). A sortie without a file is left out.
+// Per-step pipeline data for some sorties: the run's steps.npz (docs/handoffs.md,
+// "Camera navigation"), served as steps/<sortie_id>.bin + .json by
+// web/collect_campaigns.py convert_steps. Returns {sortie_id: doc}, doc =
+// {steps: [{t, rims: [[fwd, left, map_row | null, wrong]], particles: [[x, y, w]],
+// plan: [[x, y]], haz: [[fwd, left, kind]], range: Uint16Array (rows x cols, cm),
+// lidar: hazard grid string (see HAZ_GRID)}], lidar_grid, standin}. A sortie
+// without data is left out.
+// HAZ_GRID: sim/lidar.py's hazard cells (HAZ_CELL_M 0.5, HAZ_RANGE_M 2-25 m,
+// HAZ_HALF_WIDTH_M 15) as one char per cell, row-major (i forward, j left):
+// 0 not seen, 1 seen by the lidar with no hazard, 2 crater floor, 3 slope or rock.
+export const HAZ_GRID = { cell_m: 0.5, fwd0_m: 2, half_width_m: 15, nx: 46, ny: 60 };
+const HAZ_KIND_CELL = { 0: 2, 1: 3, 2: 3 };   // steps.npz haz_kind: 0 crater, 1 slope, 2 rock
+const TYPED = { float32: Float32Array, int32: Int32Array, uint16: Uint16Array, uint8: Uint8Array };
 export async function loadPipeline(cr, sortieIds) {
+  let index;
+  try {
+    const r = await fetch(`${cr.dir}steps/index.json`);
+    if (!r.ok) return {};
+    index = await r.json();
+  } catch { return {}; }
+  const el = index.lidar_el_deg.map((d) => (d * Math.PI) / 180), az = index.lidar_az_deg.map((d) => (d * Math.PI) / 180);
+  const g = { ...HAZ_GRID, el_deg: index.lidar_el_deg, az_deg: index.lidar_az_deg };
   const out = {};
-  await Promise.all(sortieIds.map(async (sid) => {
-    try {
-      const r = await fetch(`${cr.dir}pipeline/${encodeURIComponent(sid)}.json`);
-      if (r.ok) out[sid] = await r.json();
-    } catch { /* none for this sortie */ }
+  await Promise.all(sortieIds.filter((sid) => index.sorties.includes(sid)).map(async (sid) => {
+    const [mr, br] = await Promise.all([fetch(`${cr.dir}steps/${encodeURIComponent(sid)}.json`), fetch(`${cr.dir}steps/${encodeURIComponent(sid)}.bin`)]);
+    if (!mr.ok || !br.ok) return;
+    const meta = await mr.json(), buf = await br.arrayBuffer();
+    const A = {};
+    for (const [name, [dtype, shape, off]] of Object.entries(meta)) {
+      A[name] = { a: new TYPED[dtype](buf, off, shape.reduce((p, q) => p * q, 1)), shape };
+    }
+    const K = A.step.shape[0], NP = A.particles.shape[1], [LR, LC] = A.lidar.shape.slice(1);
+    const steps = [];
+    for (let k = 0; k < K; k++) {
+      const S = A.step.a.subarray(k * 12, k * 12 + 12);
+      const ex = S[4], ey = S[5];
+      const particles = [];
+      for (let i = 0; i < NP; i++) { const o = (k * NP + i) * 3; particles.push([ex + A.particles.a[o], ey + A.particles.a[o + 1], A.particles.a[o + 2]]); }
+      const rims = [];
+      for (let i = A.rim_o.a[k]; i < A.rim_o.a[k + 1]; i++) {
+        const m = A.rim_map.a[i];
+        rims.push([A.rims.a[2 * i], A.rims.a[2 * i + 1], m >= 0 ? m : null, A.rim_wrong.a[i] === 1]);
+      }
+      const plan = [];
+      for (let i = A.plan_o.a[k]; i < A.plan_o.a[k + 1]; i++) plan.push([A.plan.a[2 * i], A.plan.a[2 * i + 1]]);
+      const range = A.lidar.a.subarray(k * LR * LC, (k + 1) * LR * LC);
+      // The grid: cells a return fell in are seen; hazard cells take their kind.
+      const cells = new Uint8Array(g.nx * g.ny);
+      const cell = (f, l) => { const i = Math.floor((f - g.fwd0_m) / g.cell_m), j = Math.floor((l + g.half_width_m) / g.cell_m); return i >= 0 && i < g.nx && j >= 0 && j < g.ny ? i * g.ny + j : -1; };
+      for (let r = 0; r < LR; r++) for (let c = 0; c < LC; c++) {
+        const cm = range[r * LC + c];
+        if (!cm) continue;
+        const d = (cm / 100) * Math.cos(el[r]), q = cell(d * Math.cos(az[c]), d * Math.sin(az[c]));
+        if (q >= 0 && !cells[q]) cells[q] = 1;
+      }
+      const haz = [];
+      for (let i = A.haz_o.a[k]; i < A.haz_o.a[k + 1]; i++) {
+        const f = A.haz.a[2 * i], l = A.haz.a[2 * i + 1], kind = A.haz_kind.a[i];
+        haz.push([f, l, kind]);
+        const q = cell(f, l);
+        if (q >= 0) cells[q] = Math.max(cells[q], HAZ_KIND_CELL[kind]);
+      }
+      steps.push({ t: S[0], est_heading: S[6], goal: [S[10], S[11]], rims, particles, plan, haz, range, lidar: String.fromCharCode(...cells.map((v) => 48 + v)) });
+    }
+    out[sid] = { steps, lidar_grid: { ...g, rows: LR, cols: LC }, standin: index.standin || null };
   }));
   return out;
 }

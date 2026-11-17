@@ -36,8 +36,7 @@ FP.vfovDeg = 2 * THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.deg
 // Lidar, copied from sim/lidar.py: 120 x 33 deg (H_FOV_DEG, V_ANGLES_DEG -35..-2), 30 m
 // (MAX_RANGE_M), panel to 25 m (VIEW_RANGE_M), 0.25 m right of the camera (LIDAR_RIGHT_OF_CAMERA_M).
 const LIDAR = { hfov: 120, elLo: -35, elHi: -2, maxR: 30, viewR: 25, right: 0.25 };
-const LIDAR_FP_COLS = 60, LIDAR_FP_ROWS = 20, LIDAR_FP_STEP_M = 0.5;   // viewer only, assumed: rays in the drawn first-person lidar
-const HAZ_RGB = { 1: [95, 98, 104], 2: [240, 160, 40], 3: [230, 50, 40] };   // sim/lidar.py view(): safe, crater floor, no-go
+const HAZ_RGB = { 1: [95, 98, 104], 2: [240, 160, 40], 3: [230, 50, 40] };   // sim/lidar.py view(): seen, crater floor, no-go
 const SEARCH_LABEL_AFTER_S = 1800;   // display only: a search's label stays this long after it ends, with its result
 const FIND_VIEW_M = 120;             // display only: finds this near are marked in the first-person box
 
@@ -398,17 +397,19 @@ function updateSteepShade(t) {
     pos[p++] = v.x; pos[p++] = v.y; pos[p++] = v.z;
     uv[q++] = (wx - ax0) / aw; uv[q++] = (wy - ay0) / ah;
   }
-  const idx = new Uint32Array((n - 1) * (n - 1) * 6);
-  for (let a = 0, k = 0; a < n - 1; a++) for (let b = 0; b < n - 1; b++) {
+  // Only cells inside the nogo image: outside it a clamped texture would smear its edge pixels.
+  const inImg = (v) => uv[2 * v] >= 0 && uv[2 * v] <= 1 && uv[2 * v + 1] >= 0 && uv[2 * v + 1] <= 1;
+  const L = [];
+  for (let a = 0; a < n - 1; a++) for (let b = 0; b < n - 1; b++) {
     const v = a * n + b;
-    idx[k++] = v; idx[k++] = v + 1; idx[k++] = v + n; idx[k++] = v + 1; idx[k++] = v + n + 1; idx[k++] = v + n;
+    if (inImg(v) && inImg(v + n + 1)) L.push(v, v + 1, v + n, v + 1, v + n + 1, v + n);
   }
+  const idx = new Uint32Array(L);
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   if (!steepMesh) {
-    // Outside the nogo image the texture clamps to its edge: transparent there (build_assets.py draws clear ground clear).
     steepMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: steepTex, transparent: true, opacity: STEEP_OPACITY,
       depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
     steepMesh.frustumCulled = false;
@@ -823,8 +824,7 @@ function drawFpOverlay(cv, k, pose, camZ, small) {
 // ------------------------------------------------------------------ lidar
 // The logged scan of the followed Scout at the shown step. Top-down: the
 // hazard grid as sim/lidar.py view() draws it, forward up, rings every 5 m.
-// First person: the same wedge drawn from the 3D ground at the lidar's pose
-// (ray-marched here), shaded by range, the logged hazard cells coloured in.
+// First person: the logged range image, shaded by range, hazard cells coloured.
 let lidarKey = null, fpLidarCache = null;
 function drawLidar(k) {
   const cv = $("lid-cv"), c = cv.getContext("2d"), W = cv.width, H = cv.height;
@@ -844,7 +844,7 @@ function drawLidar(k) {
   lidarKey = key;
   c.fillStyle = "#000";
   c.fillRect(0, 0, W, H);
-  if (S.lidarKind === "fp") return lidarFp(c, W, H, r, g, a);
+  if (S.lidarKind === "fp") return lidarFp(c, W, H, r, g);
   const pxm = (H - 14) / LIDAR.viewR, ox = W / 2, oy = H - 8;
   for (let i = 0; i < g.nx; i++) for (let j = 0; j < g.ny; j++) {
     const ch = r.lidar.charCodeAt(i * g.ny + j) - 48;
@@ -866,35 +866,28 @@ function drawLidar(k) {
   c.beginPath(); c.moveTo(ox, oy - 7); c.lineTo(ox - 5, oy + 5); c.lineTo(ox + 5, oy + 5); c.closePath(); c.fill();
   let y = 18;
   c.font = "15px Barlow, sans-serif";
-  for (const [label, ch] of [["no-go: steeper than 15°", 3], ["crater floor: avoided", 2], ["judged safe", 1]]) {
+  for (const [label, ch] of [["no-go: slope over 15° or rock", 3], ["crater floor: avoided", 2], ["seen, no hazard", 1]]) {
     const [R_, G_, B_] = HAZ_RGB[ch];
     c.fillStyle = `rgb(${R_},${G_},${B_})`; c.fillRect(6, y - 11, 11, 11);
     c.fillStyle = "#e6e6e6"; c.fillText(label, 22, y); y += 20;
   }
 }
 
-function lidarFp(c, W, H, r, g, a) {
-  const pp = pipePose(a, r);
-  if (!pp) return;
-  const [x, y, h] = pp, cs = Math.cos(h), sn = Math.sin(h);
-  const ox = x + LIDAR.right * sn, oy = y - LIDAR.right * cs;   // right of the camera
-  const oz = terrain.heightAt(x, y) + FP.camH;
-  const img = c.createImageData(LIDAR_FP_COLS, LIDAR_FP_ROWS);
-  for (let row = 0; row < LIDAR_FP_ROWS; row++) {
-    const el = THREE.MathUtils.degToRad(LIDAR.elHi - (row + 0.5) * (LIDAR.elHi - LIDAR.elLo) / LIDAR_FP_ROWS);
-    for (let col = 0; col < LIDAR_FP_COLS; col++) {
-      const az = THREE.MathUtils.degToRad(LIDAR.hfov / 2 - (col + 0.5) * LIDAR.hfov / LIDAR_FP_COLS);   // left of the rover on the left
-      const ce = Math.cos(el), dx = ce * Math.cos(az), dy = ce * Math.sin(az), dz = Math.sin(el);
-      let hit = null;
-      for (let s = 1; s <= LIDAR.maxR; s += LIDAR_FP_STEP_M) {
-        const f = s * dx, l = s * dy;
-        const wx = ox + f * cs - l * sn, wy = oy + f * sn + l * cs;
-        if (oz + s * dz <= terrain.heightAt(wx, wy)) { hit = [s, f, l]; break; }
-      }
-      const o = 4 * (row * LIDAR_FP_COLS + col);
+// The logged range image itself (steps.npz lidar: every 2nd beam row and
+// column of sim/lidar.py's scan), shaded by range, hazard cells coloured.
+function lidarFp(c, W, H, r, g) {
+  if (!r.range) return;
+  const R = g.rows, C = g.cols, rad = Math.PI / 180;
+  const img = c.createImageData(C, R);
+  for (let row = 0; row < R; row++) {
+    const ri = R - 1 - row, el = g.el_deg[ri] * rad;          // top of the image: the highest beam
+    for (let col = 0; col < C; col++) {
+      const ci = C - 1 - col, az = g.az_deg[ci] * rad;        // left of the image: left of the Scout
+      const o = 4 * (row * C + col);
       img.data[o + 3] = 255;
-      if (!hit) continue;
-      const [rng, f, l] = hit;
+      const cm = r.range[ri * C + ci];
+      if (!cm) continue;
+      const rng = cm / 100, d = rng * Math.cos(el), f = d * Math.cos(az), l = d * Math.sin(az);
       const shade = 235 - 190 * Math.min(1, rng / LIDAR.maxR);
       let rgb = [shade * 0.8, shade * 0.88, shade];
       const i = Math.floor((f - g.fwd0_m) / g.cell_m), j = Math.floor((l + g.half_width_m) / g.cell_m);
@@ -906,7 +899,7 @@ function lidarFp(c, W, H, r, g, a) {
     }
   }
   const tmp = document.createElement("canvas");
-  tmp.width = LIDAR_FP_COLS; tmp.height = LIDAR_FP_ROWS;
+  tmp.width = C; tmp.height = R;
   tmp.getContext("2d").putImageData(img, 0, 0);
   const L = 40, Rm = 40, T = 8, B = 34;
   c.imageSmoothingEnabled = false;
@@ -917,7 +910,7 @@ function lidarFp(c, W, H, r, g, a) {
   c.textAlign = "left";
   c.fillText(`${LIDAR.elHi}°`, 4, T + 16); c.fillText(`${LIDAR.elLo}°`, 4, H - B);
   c.font = "13px Barlow, sans-serif"; c.fillStyle = "rgba(255,255,255,.65)";
-  c.fillText("drawn from the 3D ground; hazards from the logged scan", L + 6, T + 18);
+  c.fillText(`logged range image, ${R} x ${C} beams; hazard cells coloured`, L + 6, T + 18);
 }
 
 // -------------------------------------------------------- satellite map
@@ -1114,7 +1107,7 @@ function renderScouts(t, k) {
         <div class="stat"><b>±${fmtNum(r.sigma, 1)}</b><span>m bound, 95%</span></div>
         <div class="stat truth"><b>${fmtNum(err, 1)}</b><span>m true error</span></div>
       </div>
-      <div class="rv-pos">Thinks it is ${fmtNum(Math.abs(ex), 0)} m ${ex >= 0 ? "east" : "west"}, ${fmtNum(Math.abs(ey), 0)} m ${ey >= 0 ? "north" : "south"} of the dock; really ${fmtNum(err, 1)} m from there.</div>`}
+      <div class="rv-pos">Thinks it is ${fmtNum(Math.abs(ex), 0)} m ${ex >= 0 ? "east" : "west"}, ${fmtNum(Math.abs(ey), 0)} m ${ey >= 0 ? "north" : "south"} of the dock<span class="truth">; really ${fmtNum(err, 1)} m from there</span>.</div>`}
     </div>`;
   }).join(""));
   $("now").querySelectorAll(".rv").forEach((el) => (el.onclick = () => setRover(el.dataset.rover)));
@@ -1132,9 +1125,20 @@ function renderScouts(t, k) {
   });
 }
 
+// A drill's hidden truth, with only the fields the record has (miss_m and hit
+// are newer than the stand-in records; true_err_m is in every record).
+function drillTruth(d) {
+  const bits = [];
+  if (d.miss_m != null) bits.push(`${fmtNum(d.miss_m, 1)} m from the reading point`);
+  if (d.hit != null) bits.push(d.hit ? "on a deposit" : "no deposit under the drill");
+  if (!bits.length && d.true_err_m != null) bits.push(`the Scout was ${fmtNum(d.true_err_m, 1)} m off its estimate`);
+  return bits.join(", ");
+}
+
 function navLine() {
   const nav = String(S.cr.rec.nav || "");
-  if (nav.startsWith("sampled")) return "Navigation in this record: sampled from ShadowNav's published errors, not the camera pipeline. Its rim points, particles and lidar come from the stand-in pipeline file.";
+  if (nav.startsWith("sampled")) return "Navigation in this record: sampled from ShadowNav's published errors, not the camera pipeline." +
+    (S.run.pipelineStandin ? " Its rim points, particles and lidar are a labelled stand-in steps.npz." : "");
   if (nav.startsWith("camera")) return "Navigation in this record: the camera pipeline (rims from vision, particle filter).";
   return nav ? `Navigation: ${nav}` : "";
 }
@@ -1153,7 +1157,7 @@ function renderFinds(t) {
     });
     if (!starts.length) rows.push(`<li class="hint">No second Scout has searched it yet.</li>`);
     if (f.drill) rows.push(`<li><i class="dot" style="background:${scol(f.drill.scout)}"></i>${esc(f.drill.scout)} drilled it on ${esc(f.drill.sortie_id)}` +
-      (S.opts.truth ? ` <span class="truth">${fmtNum(f.drill.miss_m, 1)} m from the reading point, ${f.drill.hit ? "on a deposit" : "no deposit under the drill"}</span>` : "") + `</li>`);
+      (S.opts.truth ? ` <span class="truth">${drillTruth(f.drill)}</span>` : "") + `</li>`);
     const off = S.opts.truth && f.x != null ? ` <span class="truth">really ${fmtNum(Math.hypot(f.est[0] - f.x, f.est[1] - f.y), 1)} m off</span>` : "";
     return `<div class="find" data-s="${esc(f.sortie_id)}" data-t="${f.t}"><div class="fh"><b>Find ${f.find_id}</b> <span class="hint">by ${esc(f.scout)} on ${esc(f.sortie_id)}, ${fmtDay(f.t)}</span>
       <span class="st" style="color:${STATUS_COLOR[f.status]}">${esc(STATUS_WORD[f.status] || f.status)}</span></div>
@@ -1247,7 +1251,7 @@ function openRuns() {
     $("dr-runs").innerHTML = b.runs.filter((r) => r.map).slice(0, 400).map((r) => `<tr data-b="${esc(b.batch_id)}" data-r="${esc(r.run_id)}" class="${b.batch_id === S.batch && r.run_id === S.cr.rec.run_id ? "cur" : ""}">
       <td class="mono">${esc(r.run_id)}</td><td>${esc(r.site || "")}</td><td>${r.n_scouts ?? "–"}</td><td>${r.sorties != null ? `${r.sorties_ok}/${r.sorties}` : "–"}</td>
       <td>${r.finds ?? "–"}</td><td>${r.confirmed ?? "–"}</td><td>${r.wrong_match_rate != null ? fmtNum(r.wrong_match_rate * 100, 0) + "%" : "–"}</td>
-      <td>${r.pipeline ? `<span class="tag">${esc(r.pipeline)}</span>` : `<span class="hint">3D, map</span>`}</td></tr>`).join("");
+      <td>${r.pipeline ? `<span class="tag" title="Rim points, particles and lidar logged per step${r.pipeline === "standin" ? " (stand-in)" : ""}">every view${r.pipeline === "standin" ? ", stand-in" : ""}</span>` : `<span class="hint" title="No per-step pipeline data in this record">3D, map</span>`}</td></tr>`).join("");
     $("dr-runs").querySelectorAll("tr").forEach((tr) => (tr.onclick = () => { location.search = `?batch=${encodeURIComponent(tr.dataset.b)}&run=${encodeURIComponent(tr.dataset.r)}`; }));
   };
   fill(cur);

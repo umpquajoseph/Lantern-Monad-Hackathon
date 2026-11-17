@@ -401,6 +401,7 @@ body.map-full .topline { display: none; }
 .tl-marks i.chk { background: rgba(255,255,255,.35); top: 8px; height: 4px; width: 1px; }
 body.truth-on .tl-marks i.chk.wrong { background: #ff4d4d; height: 8px; top: 6px; width: 2px; }
 .truth { color: #bfe9ff; }
+body:not(.truth-on) .truth:not(.truth-ck) { display: none; }
 .stat.truth b { color: #bfe9ff; }
 .rv-pos { font-size: 11.5px; color: var(--dim); margin-top: 4px; }
 .gantt { margin: 6px 0 10px; }

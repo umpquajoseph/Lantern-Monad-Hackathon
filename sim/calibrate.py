@@ -398,11 +398,15 @@ CONFIGS = {
     "no-filter": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour=False),
     "filter":    dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="c23"),
     # The same filter with Lantern's own measured arc share (sim/arc_share.py, held-out frames).
-    "filter-measured": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="measured"),
+    "filter-measured": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="headon"),
     # The same, with every depth step reading one noisy stereo depth per frame: the
     # depth-jump test and the contour width as well as placement (16 Nov 2026, 20:00).
     "filter-measured-nd": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
-                               contour="measured", noisy_detect=True),
+                               contour="headon", noisy_detect=True),
+    # The second and last arc-share measurement (sim/arc_share.py rule route: headings over
+    # the whole field of view), with noisy-depth detection as the runs use it.
+    "filter-route-nd": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
+                            contour="route", noisy_detect=True),
 }
 _W = {}
 # Bumped when run_one's counting changes, so saved runs from older code are run again.

@@ -204,7 +204,14 @@ class Settings:
     # (sim/vision.py contour_ok). Measured by sim/arc_share.py on held-out
     # frames under a rule fixed before measuring; NaN until measured, and
     # then C23 sec. 1's 0.8 is used.
-    rim_arc_share_measured: float = S(0.553, "sim/arc_share.py rule (commit 89a6d8a), batch "
+    # Second and last measurement (rule "route", sim/arc_share.py): headings over the
+    # whole field of view, as route frames see craters. NaN until measured; then it is
+    # rim_arc_share_measured, the share the runs use.
+    rim_arc_share_route: float = S(0.476, "sim/arc_share.py rule route (commits b356a4d, 12a0ac0), batch "
+                                          "campaigns/calibration/arcshare-route, `python -m sim.arc_share --rule "
+                                          "route --batch arcshare-route --frames 120`: median of 96 held-out frames "
+                                          "on s89_014e_s2027 (quartiles 0.337-0.540); width threshold 4.76 m")
+    rim_arc_share_headon: float = S(0.553, "sim/arc_share.py rule (commit 89a6d8a), batch "
                                              "campaigns/calibration/arcshare-1, `python -m sim.arc_share --batch "
                                              "arcshare-1 --frames 120`: median of 120 held-out frames (quartiles "
                                              "0.484-0.620); width threshold 5.53 m")
@@ -285,6 +292,13 @@ class Settings:
 
     def with_(self, **kw) -> "Settings":
         return replace(self, **kw)
+
+    @property
+    def rim_arc_share_measured(self) -> float:
+        """The arc share the contour filter uses: the route measurement once it is set,
+        else the head-on one (sim/arc_share.py)."""
+        import math as _m
+        return self.rim_arc_share_route if _m.isfinite(self.rim_arc_share_route) else self.rim_arc_share_headon
 
 
 @dataclass(frozen=True)

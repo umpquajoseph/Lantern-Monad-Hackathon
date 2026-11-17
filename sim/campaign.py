@@ -782,6 +782,18 @@ class Sortie:
             return False
         if not self.drive_to(f["est"][0], f["est"][1], ACT["survey"]):
             return False
+        # A camera Scout gives up on a waypoint it cannot reach (event
+        # waypoint_skipped) and drive_to still returns. Searching from there
+        # would centre the grid on a spot the Scout never reached: on
+        # live-nav-first3 haynes S2-03 the search began 246 m from the find.
+        # By its own estimate, outside the search circle is not at the find:
+        # log it and leave the find open for another sortie. The sampled
+        # engine always arrives, so its runs are unchanged.
+        gap = math.hypot(f["est"][0] - self.ex, f["est"][1] - self.ey)
+        reach = X.search_area(f, self.bound, s)
+        if gap > reach:
+            self.event("search_unreached", find_id=f["find_id"], dist_m=rnd(gap, 2), radius_m=rnd(reach, 2))
+            return False
         self.work_check("search")
         if self.anchor == "dock":
             # crossing brief: a search is fix-anchored, never on the dock's error alone.
@@ -1194,6 +1206,7 @@ class Campaign:
             self.step_arrays.update(so.arrays)
             self.sortie_extra[so.sid] = {"steps": int(len(so.arrays[f"{so.sid}.step"])),
                                          "point_turns": so.point_turns, "waypoints_skipped": so.skipped,
+                                         "pingpong_blocks": so.rover.pingpong_blocks,
                                          "rim_points": so.n_rim_pts, "rim_matched": so.n_rim_matched,
                                          "rim_wrong": so.n_rim_wrong, "rim_unpaired": so.n_rim_unpaired}
         return so
@@ -1353,6 +1366,7 @@ class Campaign:
             # Additive (not in the handoffs list yet).
             "fixes": fixes,
             "searches": len(ends),
+            "searches_unreached": sum(e["type"] == "search_unreached" for e in ev),
             "confirm_rate": rnd(sum(e["result"] == "confirmed" for e in ends) / len(ends), 3) if ends else None,
             "search_bound_too_large": sum(e.get("reason") == "bound_too_large" for e in ends),
             "search_no_match": sum(e.get("reason") == "no_match" for e in ends),

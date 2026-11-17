@@ -567,6 +567,13 @@ Record changes (additive unless marked):
     `bound95`, `anchor` as above, plus `points`, `fit_rms_m`.
   - `waypoint_skipped`: `reason` `blocked` (no progress for
     `Settings.cam_stuck_steps` steps) or `off_ground`; `goal` (map frame).
+  - `search_unreached` (workflow, 17 Nov 2026; either engine, in practice
+    camera only): the searcher's drive to the find ended with its estimate
+    outside the search circle (a skipped waypoint). `find_id`, `dist_m`
+    (estimated distance to the find's `est`), `radius_m` (the search
+    radius it would have used). No `search_start` or `search_end` follows;
+    the find keeps `status: "find"` and a later sortie may search it.
+    Summary adds `searches_unreached`.
 - `time_s.check` is 0: a camera Scout does not stop to fix.
   `Settings.check_policy`, `check_stop_s`, `drift_mode` and the sampled
   fix-error fields are not used. The truth's odometer is a scale error of
@@ -576,7 +583,10 @@ Record changes (additive unless marked):
   particles spread to `dock_reg_bound95_m`.
 - `bound95` everywhere is `K95_2D * sigma`, sigma the filter's per-axis
   spread (sim/nav.py `belief`).
-- Sorties add `steps` (camera steps), `point_turns`, `waypoints_skipped`.
+- Sorties add `steps` (camera steps), `point_turns`, `waypoints_skipped`,
+  `pingpong_blocks` (planning cells closed by sim/rover.py's back-and-forth
+  guard: a move that ends within 0.5 m of where the move before last
+  ended closes the turnaround's 2 m cell; 17 Nov 2026).
 - **False-match rate** (one definition for the summary, the page and the
   paper; draft 4.2 "detected rims were paired with the wrong mapped
   crater"): of the rim points the filter paired with a mapped crater, the

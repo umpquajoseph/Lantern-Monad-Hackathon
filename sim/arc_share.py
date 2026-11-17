@@ -25,6 +25,28 @@ The rule (fixed and committed before any measurement, 16 Nov 2026):
   command as its source, and is not changed after the traverse table is
   read.
 
+Second and last measurement, rule "route" (fixed and committed before it was
+measured, 16 Nov 2026 20:20). The head-on rule above (rule "head-on", batch
+arcshare-1, 0.553) faced each crater within +-10 deg; on camera runs most
+detected mapped rims are seen about 31 deg off-axis (sim/rim_census.py on
+live-nav-check2), so it overstated the arc a route frame shows. Changes,
+and only these:
+
+- Heading: the bearing to the crater centre plus a uniform offset over the
+  camera's whole field of view, +-30 deg (A24 IV-B 60 deg; sim/scene.py).
+- Detection reads the frame's noisy stereo depth (Vision.noisy_depth, as
+  the runs do since ab141f1); a detected pixel is scored at its
+  renderer-depth position, as before (the share asks which arc pixels vision
+  found, not how well stereo placed them).
+- Held out: also more than HOLD_OUT_M from every crater and pose of
+  arcshare-1, so no frame repeats its ground. Seed 2027.
+- Same grid, crater sizes, ranges, slope and crater-floor rules, statistic
+  (the median) and threshold rule (median x the map cut). Whatever it gives
+  is the threshold the runs use (Settings.rim_arc_share_measured); the
+  head-on result stays as Settings.rim_arc_share_headon.
+
+    python -m sim.arc_share --rule route --batch arcshare-route --frames 120 --chunk 60
+
 Output: <data>/campaigns/calibration/<batch>/arc_share.json (every frame)
 and arc_share.md.
 """
@@ -52,9 +74,15 @@ D_RANGE_M = (10.0, 12.0)   # the rule: craters just over the map cut
 R_RANGE_M = (8.0, 12.0)    # the rule: range from the camera to the nearest rim point
 AIM_JITTER_DEG = 10.0      # the rule
 SEED = 2026
+# The two rules (see the docstring). Each: heading offset (deg), seed, depth read by
+# detection, and batches whose frames are held out.
+RULES = {
+    "head-on": dict(aim_deg=AIM_JITTER_DEG, seed=SEED, noisy=False, hold_out_batches=()),
+    "route": dict(aim_deg=30.0, seed=2027, noisy=True, hold_out_batches=("arcshare-1",)),
+}
 
 
-def measure(n_frames, routes_path, out_dir, chunk=None):
+def measure(n_frames, routes_path, out_dir, chunk=None, rule="head-on"):
     """Append frames to frames.jsonl until n_frames exist (at most `chunk` new ones per call).
     Each crater draws its pose from its own stream (SEED, crater), so a resumed run measures
     the same frames as an unbroken one."""
@@ -67,8 +95,14 @@ def measure(n_frames, routes_path, out_dir, chunk=None):
     # Traverse poses: the planned routes through the saved waypoints, as sim/calibrate.py drives them.
     from sim.calibrate import plan_route
     tp = np.concatenate([plan_route(slope, blocked, w)[:, :2] for w in routes["waypoints"].values()])
+    R = RULES[rule]
+    seed = R["seed"]
+    for b in R["hold_out_batches"]:            # earlier measurements' craters and poses
+        prev = [json.loads(x) for x in (OUT / b / "frames.jsonl").read_text().splitlines()]
+        tp = np.concatenate([tp, np.array([r["pose"][:2] for r in prev]),
+                             craters[[r["crater"] for r in prev], :2]])
     ttree = cKDTree(tp)
-    rng = np.random.default_rng(SEED)
+    rng = np.random.default_rng(seed)
     size = height.shape[0] * cell
     jl = Path(out_dir) / "frames.jsonl"
     rows = [json.loads(x) for x in jl.read_text().splitlines()] if jl.exists() else []
@@ -80,7 +114,7 @@ def measure(n_frames, routes_path, out_dir, chunk=None):
     cand = cand[ttree.query(craters[cand, :2])[0] > HOLD_OUT_M]
     rng.shuffle(cand)
     scene = Scene(height, craters, x0, y0, cell, display="full", display_dir=DISPLAY_DIR)
-    vis = Vision(scene, np.random.default_rng(SEED + 1))
+    vis = Vision(scene, np.random.default_rng(seed + 1))
     big = craters[craters[:, 2] >= 5.0]
     btree = cKDTree(big[:, :2])
     t = time.perf_counter()
@@ -89,7 +123,7 @@ def measure(n_frames, routes_path, out_dir, chunk=None):
             break
         if int(ci) in tried or int(ci) in skipped:
             continue
-        rng = np.random.default_rng([SEED, int(ci)])
+        rng = np.random.default_rng([seed, int(ci)])
         cx, cy, d = craters[ci]
         for _ in range(10):                       # a few bearings until one is drivable and held out
             b = rng.uniform(0, 2 * math.pi)
@@ -102,7 +136,7 @@ def measure(n_frames, routes_path, out_dir, chunk=None):
             near = btree.query_ball_point((px, py), 12.0)
             if any(math.hypot(px - big[j, 0], py - big[j, 1]) < big[j, 2] / 2 + 1.0 for j in near):
                 continue
-            hd = math.atan2(cy - py, cx - px) + math.radians(rng.uniform(-AIM_JITTER_DEG, AIM_JITTER_DEG))
+            hd = math.atan2(cy - py, cx - px) + math.radians(rng.uniform(-R["aim_deg"], R["aim_deg"]))
             break
         else:
             skipped.add(int(ci))
@@ -113,7 +147,7 @@ def measure(n_frames, routes_path, out_dir, chunk=None):
         img, depth = scene.first_person("A")
         # The renderer's depth, as measured in arcshare-1 (nd=depth keeps that measurement
         # reproducible; Vision now reads noisy depth by default).
-        v, u, wid, npx = vis.detect_contours(img, depth, nd=depth)
+        v, u, wid, npx = vis.detect_contours(img, depth, nd=vis.noisy_depth(depth) if R["noisy"] else depth)
         det = vis._rover_points(depth[v, u].astype(np.float64), v, u) if len(v) else np.zeros((0, 2))
         tr = rim_truth(scene, "A", depth)
         sel = (tr["crater_id"] == ci) & tr["near"]
@@ -146,17 +180,19 @@ def main():
     ap.add_argument("--frames", type=int, default=120)
     ap.add_argument("--routes", default=str(OUT / "realism-cal" / "routes.json"))
     ap.add_argument("--chunk", type=int, default=None, help="at most this many new frames per call (resumes)")
+    ap.add_argument("--rule", default="head-on", choices=sorted(RULES))
     a = ap.parse_args()
     out = OUT / a.batch
     out.mkdir(parents=True, exist_ok=True)
-    rows = measure(a.frames, a.routes, out, a.chunk)
+    rows = measure(a.frames, a.routes, out, a.chunk, a.rule)
     if len(rows) < a.frames:
         print(f"{len(rows)} of {a.frames} frames so far; run again to continue")
         return
     s = np.array([r["share"] for r in rows])
     med = float(np.median(s))
     cut = WorldRanges().orbital_map_min_d_m
-    cmd = f"python -m sim.arc_share --batch {a.batch} --frames {a.frames}"
+    cmd = f"python -m sim.arc_share --batch {a.batch} --frames {a.frames}" + (
+        f" --rule {a.rule}" if a.rule != "head-on" else "")
     summary = dict(frames=len(rows), median=med, mean=float(s.mean()), p25=float(np.percentile(s, 25)),
                    p75=float(np.percentile(s, 75)), zero_share=float(np.mean(s == 0)),
                    width_threshold_m=med * cut, command=cmd,

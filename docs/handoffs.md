@@ -207,8 +207,11 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
   at least 0.8 x the map cut = 8 m); `detect_contours()` gives the pixels
   before it with each one's contour width and pixel count;
   `Vision(..., contour_filter=False)` turns it off. The width threshold is
-  `Settings.rim_arc_share_measured` (0.553, `sim/arc_share.py`) x the map
-  cut = 5.53 m; `contour_ok(..., source="c23")` gives the 8 m one.
+  `Settings.rim_arc_share_measured` x the map cut. That share is
+  `rim_arc_share_route` (sim/arc_share.py rule route, headings over the
+  whole field of view) once measured, else `rim_arc_share_headon` (0.553,
+  5.53 m). `contour_ok(..., source=)` takes "c23" (8 m), "headon",
+  "route" or "measured".
 - From 16 Nov 2026 20:00, one noisy depth per frame: `vis.noisy_depth(depth)`
   draws the frame's stereo range image once, and the depth-jump test, the
   contour width, rim placement and `points()` all read it. `rims`,

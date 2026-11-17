@@ -698,7 +698,14 @@ A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_
   clear_dock` drops those craters and their map rows after every draw
   (both `campaign_world` and `standin_world`), so the rest of the world is
   what the seed drew. The run ground is rebuilt when a crater it carved is
-  no longer in the world.
+  no longer in the world. Why: uniform draws put a rim within 5 m of the
+  dock on about 1 seed in 5 (41 of 200 per site). On haynes seed 3 the
+  dock sat 3.4 m inside a 13 m crater, and a camera Scout on the 1 m run
+  ground could not climb out: it turned in place for a whole sortie and
+  ran out of energy 4 m from the dock. A lander is set down on ground
+  clear of hazards, so a world with a crater at the dock is not one the
+  mission would fly. The live_runs seeds (6, 9, 3) still meet their rule
+  after this change (sampled engine, seeds below each re-run).
 - Sites (`sim/psr_sites.py` `SITES`): `haynes`, `s89_014e`, `s89_134e`
   (87-90 S, 5 m mosaic) and `nobile` (84.5-87 S, 10 m 83 S product).
   Built windows live in `DATA/terrain/psr_sites/<site>.npz`

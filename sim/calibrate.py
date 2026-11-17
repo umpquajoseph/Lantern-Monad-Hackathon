@@ -586,7 +586,9 @@ def plot(routes, terrain, rows, out_dir):
     plt.close(fig)
     fig, axs = plt.subplots(1, 3, figsize=(14, 4), sharey=True)
     for ax, name in zip(axs, ("T1", "T2", "T3")):
-        for cfg, col in (("before", "#888888"), ("after", "#e63946"), ("odometry", "#457b9d")):
+        pal = ["#888888", "#e63946", "#457b9d", "#2a9d8f", "#e9c46a", "#6d597a", "#f4a261", "#264653", "#9d0208"]
+        run_cfgs = [c for c in CONFIGS if any(r["config"] == c for r in rows)]
+        for cfg, col in zip(run_cfgs, pal):
             E = np.array([r["err_series"] for r in rows if r["traj"] == name and r["config"] == cfg])
             if len(E) == 0:
                 continue

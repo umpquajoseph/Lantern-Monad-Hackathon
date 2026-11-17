@@ -578,6 +578,13 @@ Record changes (additive unless marked):
   `waypoints_skipped`. Sorties add `rim_points`, `rim_wrong`,
   `rim_unpaired`, `rim_matched` (points within `cam_match_tol_m` of their
   paired map edge: what crater passes and sightings call matched).
+- Runs launched by sim/live_runs.py add, in record.json, `seed_choice`
+  (how the seed was picked, and that the run is excluded from the paper's
+  statistics) and `paper_statistics: false`; their summary row (row.json,
+  the batch's summary.csv) carries `paper_statistics: false` too, and the
+  batch folder gets a README.md saying the same. The seeds are chosen so
+  the site and the video show finds; section 4.6 and Figure 1 must not
+  use these runs.
 
 `steps.npz` (camera runs only), next to `poses.npz`: every Scout-step the
 pipeline ran, per sortie. Keys are `<sortie_id>.<name>`; ragged lists use

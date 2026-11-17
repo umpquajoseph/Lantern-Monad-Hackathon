@@ -43,6 +43,11 @@ SITES = ("s89_134e", "s89_014e", "haynes")
 SEEDS = {"s89_134e": 6, "s89_014e": 9, "haynes": 3}
 SEED_RULE = ("the lowest seed whose world, run with the sampled engine on the same plan, makes at least 2 finds "
              "and 2 searches by a second Scout (sim/live_runs.py SEEDS)")
+# Product owner, 16 Nov 2026: these runs are chosen, not drawn, so they show
+# the workflow on the site and in the video and stay out of the paper's
+# statistics (section 4.6 numbers and Figure 1 come from drawn seeds).
+PAPER_NOTE = ("These runs are for the site and the video and are excluded from the paper's statistics "
+              "(section 4.6, Figure 1).")
 BATCH_ID = "live-nav-first3"
 # Measured on the test campaign (docs in the commit that sets them): wall
 # seconds per Scout-step with one run alone on the machine, and Scout-steps
@@ -149,11 +154,13 @@ def _run(job):
         rec_path = root / "record.json"
         rec = json.loads(rec_path.read_text(encoding="utf-8"))
         if SEEDS.get(site) == seed:
-            rec["seed_choice"] = f"seed {seed} chosen for {site}, not drawn: " + SEED_RULE
+            rec["seed_choice"] = f"seed {seed} chosen for {site}, not drawn: " + SEED_RULE + ". " + PAPER_NOTE
         else:
-            rec["seed_choice"] = f"seed {seed} given on the command line"
+            rec["seed_choice"] = f"seed {seed} given on the command line. " + PAPER_NOTE
+        rec["paper_statistics"] = False
         rec_path.write_text(json.dumps(rec, separators=(",", ":")), encoding="utf-8")
         sm = c.summary()
+        sm["paper_statistics"] = False
         wall = time.perf_counter() - t0
         (root / "row.json").write_text(json.dumps({"summary": sm, "by_sortie": c.by_sortie(), "wall_s": wall},
                                                   default=str), encoding="utf-8")
@@ -234,6 +241,19 @@ def main():
         w = csv.DictWriter(f, keys)
         w.writeheader()
         w.writerows(done_rows)
+    lines = [f"# Batch {a.batch_id}", "", PAPER_NOTE, "",
+             f"Seeds: {', '.join(f'{x} {seed[x]}' for x in sites)}; " + SEED_RULE + ".", "",
+             f"{a.scouts} Scouts x {a.sorties} sorties per run, {nav} navigation, map refinement on, "
+             f"crater density fixed at the 336 per km2 equilibrium. Launch log: launch.log. Rows: summary.csv.", "",
+             "| site | run | finds | confirmed | false-match rate | sorties ok |", "|---|---|---|---|---|---|"]
+    for x in sites:
+        r = rows.get(x)
+        if r:
+            lines.append(f"| {x} | {r.get('run_id')} | {r.get('finds')} | {r.get('confirmed')} | "
+                         f"{r.get('false_match_rate')} | {r.get('sorties_ok', '')} |")
+        else:
+            lines.append(f"| {x} | not finished | | | | |")
+    (batch / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     msg = (f"{len(done_rows)} of {len(sites)} runs finished, {len(jobs)} run this time in "
            f"{(time.perf_counter() - t0) / 3600:.2f} h; wrote {out}")
     if failed:

@@ -606,6 +606,12 @@ the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
   views say no pipeline data was logged. Mission Control also reads
   event `crater_added` `crater_id` and `t` (when an added crater appears) and
   event `drill` `miss_m` and `hit` when present.
+- Mission Control draws a camera run on the ground its cameras saw: it
+  reads the record's `ground` (`file`, `run_id`) and loads
+  `web/assets/terrain/runs/<run_id>/`, built by `python web/build_assets.py
+  --run-ground <batch>/<run_id>` from `DATA/terrain/<ground.file>`; without
+  it, the site's grid. It plays each `drill` event as the hackathon's drill
+  rig over the `settings.drill_h` hours before the event's `t`.
 - Until camera runs exist, `web/make_standin_pipeline.py` writes a
   stand-in `steps.npz` in exactly that format, with a top-level `standin`
   string, beside copies of `standin` records in the batch

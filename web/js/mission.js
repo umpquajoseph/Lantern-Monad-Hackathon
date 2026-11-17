@@ -15,6 +15,7 @@ import { Terrain, fmtClock } from "./data.js";
 import { World, COLORS, CAMERA_HEIGHT_M, CAMERA_PITCH_DEG, CAMERA_HFOV_DEG } from "./world.js";
 import { MapView } from "./map.js";
 import { MissionPlayer, ensureStyles } from "./mission_player.js";
+import { ScienceRig, VERDICT_COLOR } from "./science_rig.js";
 import {
   CampaignRun, FleetRun, loadPipeline, groundEverywhere, loadIndex, assetsBase,
   SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, ACTIVITY, OUTCOME_WORD, DOCKED, fmtNum, fmtDay, standinOf, esc,
@@ -87,6 +88,7 @@ async function main() {
   map.opts = mapOpts();
   map.groundLayers = [ground.far, ground.near].filter(Boolean).map(hillshade);
   for (const e of S.cr.events) if (e.type === "crater_added") addedT.set(e.crater_id, e.t);
+  drillEvents();
   dock3d();
   craters3d();
   runInfo();
@@ -101,13 +103,13 @@ async function main() {
   requestAnimationFrame(loop);
 }
 
-// The run asked for, else one that carries pipeline data (every view has
-// something to draw), else the first run with a record.
+// The run asked for, else a camera run, else one that carries stand-in
+// pipeline data (every view has something to draw), else the first run.
 function pickRun(index, batch, run) {
   if (batch && run) return { batch, run };
   const withMap = index.flatMap((b) => b.runs.filter((r) => r.map).map((r) => ({ batch: b.batch_id, run: r.run_id, r })));
-  const piped = withMap.filter((x) => x.r.pipeline);
-  const best = piped.find((x) => x.r.n_scouts >= 3) || piped[0] || withMap.find((x) => x.r.n_scouts >= 2) || withMap[0];
+  const cam = withMap.filter((x) => x.r.pipeline === "camera"), piped = withMap.filter((x) => x.r.pipeline);
+  const best = cam.find((x) => x.r.n_scouts >= 2) || cam[0] || piped.find((x) => x.r.n_scouts >= 3) || piped[0] || withMap.find((x) => x.r.n_scouts >= 2) || withMap[0];
   return best ? { batch: best.batch, run: best.run } : null;
 }
 
@@ -438,6 +440,62 @@ function checkpointsFor(run) {
   }
   return out;
 }
+// ------------------------------------------------------------- drilling
+// The hackathon's drill rig (science_rig.js): arm out, drill down, dust, core
+// up, stow, played at each drill event. A campaign drill is one stop of
+// settings.drill_h hours that ends at the event's t (sim/campaign.py drill),
+// so the hackathon's phase list (sim/science.py PHASES, 28 s) is stretched
+// over the stop; the split between phases is the hackathon's, assumed. While
+// a drill plays the clock slows so the stop takes DRILL_FOCUS_S real seconds,
+// and the camera closes in on the drill, as the hackathon page did.
+const DRILL_PHASES = [["park", 2], ["arm_deploy", 4], ["drill", 10], ["sample_lift", 3], ["analyze", 5], ["arm_stow", 4]];   // sim/science.py PHASES
+const DRILL_WORD = { idle: "parking", park: "parking", arm_deploy: "arm out", drill: "drilling", sample_lift: "core up", analyze: "reading the core", arm_stow: "arm back", done: "done" };
+const DRILL_FOCUS_S = 30;   // display only
+let rigs = {}, drills = [];
+
+function drillEvents() {
+  const dur = (S.cr.rec.settings?.drill_h ?? 1) * 3600, tot = DRILL_PHASES.reduce((q, p) => q + p[1], 0);
+  drills = S.cr.events.filter((e) => e.type === "drill").map((e) => {
+    let t0 = e.t - dur;
+    const phases = DRILL_PHASES.map(([name, d]) => { const p = { name, t0, dur: (d * dur) / tot }; t0 += p.dur; return p; });
+    return { ...e, t0: e.t - dur, t1: e.t, phases };
+  });
+}
+const drillAt = (t) => S.run && drills.find((d) => S.run.agencies.includes(d.scout) && t >= d.t0 && t <= d.t1);
+
+function updateRigs(t) {
+  for (const a of S.run.agencies) {
+    const d = drills.find((x) => x.scout === a && t >= x.t0 && t <= x.t1) || null;
+    if (!d && !rigs[a]) continue;
+    if (!rigs[a]) rigs[a] = new ScienceRig(world.rovers[a].g, world.scene, { up: "z" });
+    rigs[a].setEvent(d);
+    // The core's colour is the truth under the drill (event `hit`), so only with hidden truth on.
+    if (d) rigs[a].core.material.color.setHex(VERDICT_COLOR[S.opts.truth && d.hit != null ? (d.hit ? "ice" : "dry") : "trace"]);
+    rigs[a].update(t);
+  }
+}
+
+// The camera in close on the drill (the hackathon's closeUp), and back after.
+function enterDrill(d) {
+  if (!S.prevView) S.prevView = { cam: S.cam, rover: S.rover };
+  S.focusDrill = d;
+  if (S.rover !== d.scout) setRover(d.scout);
+  if (S.cam !== "third") setCam("third");
+  const [x, y, h] = S.run.poseAt(d.scout, d.t0 + 1);
+  const c = Math.cos(h), s = Math.sin(h), at = (fx, fy) => [x + fx * c - fy * s, y + fx * s + fy * c];
+  const [dx, dy] = at(1.55, -0.42), [ex, ey] = at(4.2, -4.6);
+  world.follow = "none";
+  world.controls.target.copy(world.groundL(dx, dy, 0.7));
+  world.camera.position.copy(world.groundL(ex, ey, 2.8));
+  world.controls.update();
+}
+function exitDrill() {
+  S.focusDrill = null;
+  const p = S.prevView;
+  S.prevView = null;
+  if (p) { setRover(p.rover); setCam(p.cam); }
+}
+
 const SEARCH_WHY = { match: "a matching reading inside the search area", no_readings: "no readings in the search area",
   no_match: "no reading matched", bound_too_large: "the combined position bound was too large to judge" };
 
@@ -623,7 +681,18 @@ function loop(now) {
   if (S.run && !S.busy) {
     const prevT = S.t;
     if (S.playing) {
-      S.t = Math.min(S.run.tEnd, S.t + dt * S.speed);
+      // A drill plays slowed; at speed the clock stops at a drill's start rather than jump over it.
+      let adv = dt * S.speed;
+      const d = drillAt(S.t);
+      if (d) adv = Math.min(adv, (dt * (d.t1 - d.t0)) / DRILL_FOCUS_S);
+      else {
+        const nx = drills.find((x) => S.run.agencies.includes(x.scout) && x.t0 > S.t && x.t0 <= S.t + adv);
+        if (nx) adv = nx.t0 - S.t + 1e-3;
+      }
+      S.effSpeed = adv / Math.max(dt, 1e-6);
+      S.t = Math.min(S.run.tEnd, S.t + adv);
+      const dn = drillAt(S.t);
+      if (dn && dn !== S.focusDrill) enterDrill(dn);
       if (!S.player.tick(prevT, S.t) && S.t >= S.run.tEnd) {
         // A run plays sortie by sortie: on into the next one, from the same moment when they overlap.
         const L = S.cr.rec.sorties, nx = L[L.indexOf(S.sortie) + 1];
@@ -631,6 +700,7 @@ function loop(now) {
         else { S.playing = false; setPlayIcon(); }
       }
     }
+    if (S.focusDrill && drillAt(S.t) !== S.focusDrill) exitDrill();
     if (!S.busy) {
       const panels = now - lastPanelAt > 150;
       render(panels);
@@ -661,6 +731,7 @@ function render(panels) {
   updatePlan3D(t);
   updateMarks(t);
   for (const a of run.agencies) updateSuspension(a, t);
+  updateRigs(t);
   if (S.cam === "third") world.render();
   else if (S.cam === "first") { world.renderer.setClearColor(0x000000, 1); world.renderer.clear(); }
   if (S.cam !== "overhead") firstPerson(k, t);
@@ -1222,7 +1293,7 @@ function renderStory(t, k) {
   const bits = [];
   if (S.cr.rec.standin) bits.push("stand-in record");
   if (run.pipelineStandin) bits.push("stand-in pipeline data");
-  if (!run.hasPipeline) bits.push("no pipeline data: no rims, particles or lidar");
+  if (!run.hasPipeline) bits.push("sampled navigation, comparison only: no rims, particles or lidar logged");
   const b = bits.length ? `<b>Labelled:</b> ${bits.join(" · ")}` : "";
   if ($("banner").dataset.html !== b) { $("banner").innerHTML = b; $("banner").dataset.html = b; $("banner").hidden = !b; $("banner").title = [standinOf(S.cr.rec), run.pipelineNote].filter(Boolean).join("\n\n"); }
 }
@@ -1232,7 +1303,10 @@ function showToast(html) { $("toast").innerHTML = html; $("toast").hidden = fals
 function renderToast(t, k) {
   if (performance.now() < toastUntil) return;
   const a = S.rover, el = $("toast");
-  const html = t >= S.run.tEnd && !S.playing ? `<b>Sortie ${esc(S.sortie.sortie_id)} over</b> · ${esc(OUTCOME_WORD[S.sortie.outcome] || S.sortie.outcome)}`
+  const d = drillAt(t), rig = d && rigs[d.scout];
+  const html = d && rig ? `<i class="dot" style="background:${scol(d.scout)}"></i> <b>Scout ${esc(d.scout)}</b> drills find ${esc(d.find_id)} · ${DRILL_WORD[rig.phaseAt(t).name] || ""}` +
+      ` · bit ${fmtNum(rig.depthAt(t), 2)} m down<span class="sp">${S.playing ? `Slowed to ${Math.round(S.effSpeed || 0)}×` : "Paused"}</span>`
+    : t >= S.run.tEnd && !S.playing ? `<b>Sortie ${esc(S.sortie.sortie_id)} over</b> · ${esc(OUTCOME_WORD[S.sortie.outcome] || S.sortie.outcome)}`
     : !S.playing && t === S.run.times[0] ? `Press <b>play</b> to start · drag to look around`
     : `<i class="dot" style="background:${scol(a)}"></i> <b>Scout ${esc(a)}</b> · ${esc(activityOf(a, k))}<span class="sp">${S.playing ? S.speed + "×" : "Paused"}</span>`;
   if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
@@ -1244,17 +1318,23 @@ function renderToast(t, k) {
 function openRuns() {
   $("drawer").hidden = false;
   $("dr-title").textContent = "Runs";
-  const batches = S.index.filter((b) => b.runs.some((r) => r.map));
+  // Camera runs first. Runs without per-step data navigated by sampling
+  // ShadowNav's published errors: they stay listed for comparison, labelled so.
+  const rank = (b) => (b.runs.some((r) => r.pipeline === "camera") ? 0 : b.runs.some((r) => r.pipeline) ? 1 : 2);
+  const batches = S.index.filter((b) => b.runs.some((r) => r.map)).sort((p, q) => rank(p) - rank(q));
   const cur = batches.find((b) => b.batch_id === S.batch) || batches[0];
-  $("dr-body").innerHTML = `<label class="small">Batch <select id="dr-batch">${batches.map((b) => `<option value="${esc(b.batch_id)}"${b === cur ? " selected" : ""}>${esc(b.batch_id)} (${b.runs.filter((r) => r.map).length})</option>`).join("")}</select></label>
-    <div id="dr-about" class="small hint"></div><div class="runs-wrap"><table class="runs"><thead><tr><th>Run</th><th>Site</th><th title="Scouts">Sc.</th><th title="Sorties ok of all">Sorties</th><th>Finds</th><th title="Confirmed by a second Scout">Conf.</th><th title="Wrong-match rate">Wrong</th><th title="Per-step pipeline data for the first-person, lidar and particle views">Views</th></tr></thead><tbody id="dr-runs"></tbody></table></div>
+  const bword = (b) => ["camera vision", "stand-in views", "sampled navigation, comparison only"][rank(b)];
+  $("dr-body").innerHTML = `<label class="small">Batch <select id="dr-batch">${batches.map((b) => `<option value="${esc(b.batch_id)}"${b === cur ? " selected" : ""}>${esc(b.batch_id)} (${b.runs.filter((r) => r.map).length}) · ${bword(b)}</option>`).join("")}</select></label>
+    <div id="dr-about" class="small hint"></div><div class="runs-wrap"><table class="runs"><thead><tr><th>Run</th><th>Site</th><th title="Scouts">Sc.</th><th title="Sorties ok of all">Sorties</th><th>Finds</th><th title="Confirmed by a second Scout">Conf.</th><th title="Wrong-match rate">Wrong</th><th title="How the Scouts navigated, and what per-step data the views draw">Navigation</th></tr></thead><tbody id="dr-runs"></tbody></table></div>
     <p class="small"><a href="runs.html">Every column, as a table</a></p>`;
   const fill = (b) => {
     $("dr-about").textContent = [b.standin, b.showcase].filter(Boolean).join(" ").slice(0, 400);
     $("dr-runs").innerHTML = b.runs.filter((r) => r.map).slice(0, 400).map((r) => `<tr data-b="${esc(b.batch_id)}" data-r="${esc(r.run_id)}" class="${b.batch_id === S.batch && r.run_id === S.cr.rec.run_id ? "cur" : ""}">
       <td class="mono">${esc(r.run_id)}</td><td>${esc(r.site || "")}</td><td>${r.n_scouts ?? "–"}</td><td>${r.sorties != null ? `${r.sorties_ok}/${r.sorties}` : "–"}</td>
       <td>${r.finds ?? "–"}</td><td>${r.confirmed ?? "–"}</td><td>${r.wrong_match_rate != null ? fmtNum(r.wrong_match_rate * 100, 0) + "%" : "–"}</td>
-      <td>${r.pipeline ? `<span class="tag" title="Rim points, particles and lidar logged per step${r.pipeline === "standin" ? " (stand-in)" : ""}">every view${r.pipeline === "standin" ? ", stand-in" : ""}</span>` : `<span class="hint" title="No per-step pipeline data in this record">3D, map</span>`}</td></tr>`).join("");
+      <td>${r.pipeline === "camera" ? `<span class="tag" title="Navigated by camera vision; rim points, particles and lidar logged per step">camera vision</span>`
+        : r.pipeline ? `<span class="tag" title="Sampled navigation; its rim points, particles and lidar are a labelled stand-in">sampled, stand-in views</span>`
+        : `<span class="hint" title="Navigation sampled from ShadowNav's published errors; no per-step data, so 3D and map only">sampled navigation, comparison only</span>`}</td></tr>`).join("");
     $("dr-runs").querySelectorAll("tr").forEach((tr) => (tr.onclick = () => { location.search = `?batch=${encodeURIComponent(tr.dataset.b)}&run=${encodeURIComponent(tr.dataset.r)}`; }));
   };
   fill(cur);

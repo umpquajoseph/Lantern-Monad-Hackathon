@@ -188,7 +188,12 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
   `run_demo.py` with vision, `calibrate.py`) use. `orbital_map(craters, rng)`
   returns `(map (M, 3), mask (N,), share)`. `WorldRanges.orbital_map_min_d_m`
   is now a property, `orbital_dem_px_m x orbital_resolve_px` (2 m x 5 px =
-  10 m); the record's `orbital_map_min_d_m` key is unchanged.
+  10 m); the record's `orbital_map_min_d_m` key is unchanged. `orbital_map()`
+  also gives each mapped crater an orbital pixel's error (1-sigma 2 m in
+  position per axis and in diameter, `orbital_pos_err_px`,
+  `orbital_diam_err_px`); row i of the map is truth crater
+  `np.flatnonzero(mask)[i]`. The campaign's `map_start` (cut only) has no
+  such error yet.
 - `ParticleNav(fixes_on, rng, craters=None, noise=None)`: `noise` is a
   `nav.PFNoise` (default: `Settings.pf_*`, the filter's own model). New:
   `covariance()` -> `(mean, cov 2x2)`, `sigma_max()` (C23 sec. 6B's sqrt
@@ -197,7 +202,11 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
   (`Settings.stereo_*`). `rims(img, depth)` is unchanged; new
   `detect(img, depth)` -> rim pixels `(v, u)` (no noise drawn),
   `place(v, u, r0)` and `rims_detail(img, depth)` -> dict `rims`, `true`
-  (noiseless placement, scoring only), `uv`, `idx`.
+  (noiseless placement, scoring only), `uv`, `idx`. `detect()` applies A24
+  sec. III-D's contour filter (`contour_ok`: at least 25 px, estimated width
+  at least 0.8 x the map cut = 8 m); `detect_contours()` gives the pixels
+  before it with each one's contour width and pixel count;
+  `Vision(..., contour_filter=False)` turns it off.
 - Calibration: `python -m sim.calibrate`, output in
   `campaigns/calibration/<batch>/` (`table.md`, `calibration.json`,
   format `lantern-calibration/1`).

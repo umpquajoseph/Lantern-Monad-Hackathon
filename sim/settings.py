@@ -296,6 +296,11 @@ class WorldRanges:
                                                  "the cut is 10 m, as C23 sec. 4A 'LROC has enough resolution "
                                                  "to resolve craters of around 10 m'")
     missing_share_large: tuple = S((0.0, 0.2), ASSUMED + "; share of resolved craters also absent")
+    orbital_pos_err_px: float = S(1.0, ASSUMED + "; 1-sigma error per axis of a mapped crater's centre, in "
+                                                 "orbital DEM pixels (2 m). C23 sec. 1 and 4A give the pixel, "
+                                                 "not the error")
+    orbital_diam_err_px: float = S(1.0, ASSUMED + "; 1-sigma error of a mapped crater's diameter, in orbital "
+                                                  "DEM pixels (2 m)")
     n_deposits: tuple = S((3, 12), ASSUMED)
     deposit_radius_m: tuple = S((3.0, 12.0), ASSUMED + "; code sim/ice.py:30 uses 6 m")
     deposit_peak_wt: tuple = S((1.0, 5.6), "upper end brief p.12 (LCROSS); lower end the find threshold")

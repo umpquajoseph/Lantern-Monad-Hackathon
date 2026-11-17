@@ -49,6 +49,16 @@ SHADOW_PROBE_PX = 3             # assumed: pixels above/below the edge sampled f
 DEPTH_JUMP_M = 0.15             # assumed: the shadowed side must be at least this much further away
 MIN_EDGE_PX = 25                # assumed: drop edge fragments shorter than this (rock shadows, noise)
 MAX_RIM_POINTS = 80             # assumed: subsample to at most this many points per frame
+# Contour filter, A24 sec. III-D: rim pixels are closed (dilate, then erode)
+# into contours, which "are then filtered by both number of pixels and
+# estimated length", the width from Eq. (1), W_m = W_px R_m / l_focal, R_m
+# the contour's mean range. A24 gives no thresholds. Set from what the step
+# is for, keeping rims of craters the map can hold: the map cut, times the
+# share of the leading arc detected at 10 m (C23 sec. 1, "captures 80% of
+# the leading crater arc at 10 m"). Fixed before the calibration was read.
+CONTOUR_CLOSE_PX = 5            # assumed: closing kernel (px) that joins broken pieces of one rim
+CONTOUR_MIN_PX = MIN_EDGE_PX    # assumed: the edge-fragment rule above, applied to contours
+CONTOUR_ARC_SHARE = 0.8         # C23 sec. 1: 80% of the leading arc at 10 m
 # Stereo depth noise (sim/settings.py, sourced there): f B in pixel-metres of
 # the rig, and the disparity noise in the rig's pixels.
 STEREO_FB_PX_M = (_S.stereo_width_px / 2.0) / math.tan(math.radians(_S.stereo_hfov_deg / 2.0)) * _S.stereo_baseline_m
@@ -73,18 +83,28 @@ MIN_POINTS_PER_CELL = 2         # assumed: cells with fewer depth points are unk
 STEP_USES_MAX = False           # assumed: a cell's height is its mean (the max picks up depth noise)
 
 
+def contour_ok(width_m, npx):
+    """A24 sec. III-D contour filter: enough pixels, and wide enough to be a mapped crater's rim."""
+    from sim.settings import WorldRanges
+    w_min = CONTOUR_ARC_SHARE * WorldRanges().orbital_map_min_d_m
+    return (np.asarray(npx) >= CONTOUR_MIN_PX) & (np.asarray(width_m) >= w_min)
+
+
 class Vision:
     """Turns one first-person frame into rim points and hazards (rover frame)."""
 
     NAME = ("vision: Canny on the lamp's rim shadows, placed by depth with noise; "
             "hazards from a height grid built from depth (sim/vision.py)")
 
-    def __init__(self, scene, rng: np.random.Generator, depth_model: str = "stereo"):
-        """depth_model: "stereo" (the default) or "old" (0.5% of range, before 16 Nov 2026)."""
+    def __init__(self, scene, rng: np.random.Generator, depth_model: str = "stereo",
+                 contour_filter: bool = True):
+        """depth_model: "stereo" (the default) or "old" (0.5% of range, before 16 Nov 2026).
+        contour_filter: A24 sec. III-D's contour filter (default on; off only for sim/calibrate.py)."""
         self.scene = scene
         self.rng = rng
         self.cam = scene.camera_model()
         self.depth_model = depth_model
+        self.contour_filter = contour_filter
         c = self.cam
         u = (np.arange(c["width"]) + 0.5 - c["cx"]) / c["fx"]
         v = (c["cy"] - (np.arange(c["height"]) + 0.5)) / c["fy"]
@@ -125,6 +145,37 @@ class Vision:
 
     def detect(self, img, depth):
         """Rim pixels (v, u), before placement: deterministic, no noise drawn."""
+        v, u, width_m, npx = self.detect_contours(img, depth)
+        if self.contour_filter and len(v):
+            ok = contour_ok(width_m, npx)
+            v, u = v[ok], u[ok]
+        return v, u
+
+    def detect_contours(self, img, depth):
+        """Rim pixels (v, u) before A24's contour filter, with their contour's estimated
+        width (m, Eq. 1) and pixel count, per pixel. Mean range is the renderer's depth:
+        a contour averages tens of pixels, so its stereo noise is small."""
+        v, u = self._shadow_edges(img, depth)
+        if len(v) == 0:
+            return v, u, np.zeros(0), np.zeros(0, int)
+        h, w = depth.shape
+        mask = np.zeros((h, w), np.uint8)
+        mask[v, u] = 1
+        k = np.ones((CONTOUR_CLOSE_PX, CONTOUR_CLOSE_PX), np.uint8)
+        closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k)
+        n, lab, _, _ = cv2.connectedComponentsWithStats(closed, connectivity=8)
+        comp = lab[v, u]
+        npx = np.bincount(comp, minlength=n)
+        r = np.bincount(comp, weights=depth[v, u].astype(np.float64), minlength=n) / np.maximum(npx, 1)
+        umin = np.full(n, w, int)
+        umax = np.full(n, -1, int)
+        np.minimum.at(umin, comp, u)
+        np.maximum.at(umax, comp, u)
+        width_m = (umax - umin + 1) * r / self.cam["fx"]          # A24 Eq. (1)
+        return v, u, width_m[comp], npx[comp]
+
+    def _shadow_edges(self, img, depth):
+        """Canny edges kept by the lamp-shadow and depth-jump tests (the rim pixels)."""
         g = img[..., 0] if img.ndim == 3 else img
         g = cv2.GaussianBlur(g, (3, 3), 0)
         edges = cv2.Canny(g, CANNY_LO, CANNY_HI) > 0

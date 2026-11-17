@@ -102,12 +102,21 @@ class Params:
     # craters 5-20 m in the sim set; 7.5-20 m are detected reliably.
     d_min_m: float = 2.3
     d_max_m: float = 20.0
-    # ASSUMED. Cumulative size-frequency slope, N(>D) ~ D^-b.
+    # Cumulative size-frequency slope, N(>D) ~ D^-b. Minton et al. 2019
+    # sec. 1.2: the equilibrium slope is ~2 (Gault 1970, Hartmann 1984 1.83,
+    # Xiao and Werner 2015, all quoted there).
     sfd_b: float = 2.0
-    # ASSUMED. Craters with D >= 10 m per km^2. [A24] section I cites mean
-    # spacing between 10 m craters of 100 m on fresh terrain and 10 m on old
-    # terrain, i.e. 100 to 10,000 per km^2; this sits between them.
-    n_ge10_per_km2: float = 600.0
+    # Craters with D >= 10 m per km^2. Small lunar craters on old surfaces
+    # are in equilibrium (production = destruction). Minton et al. 2019,
+    # Icarus, arXiv:1902.07746, sec. 1.2 and Fig. 2, Fit 1: cumulative
+    # n(>r) = 0.0084 r^-2 per m^2 (r radius in m, slope fixed at 2), 2.2% of
+    # geometric saturation, fitted to Apollo 15 NAC counts of 10-50 m radius
+    # craters; Xiao and Werner (2015, quoted there) found 0.009 +- 0.006 on
+    # several terrains. In diameters: N(>D) = 0.0336 D^-2 per m^2 = 336 per
+    # km^2 at 10 m. Used below 10 m (to d_min_m) by the same slope-2 law,
+    # which sec. 1.2 says holds at all small sizes. Was 600 (assumed; the top
+    # of Xiao and Werner's range, 3.9% of saturation).
+    n_ge10_per_km2: float = 336.0
     # ASSUMED. Two craters may not be closer than this times (R1 + R2), centre
     # to centre, so every listed rim is a clean, whole circle.
     min_sep_frac: float = 1.0

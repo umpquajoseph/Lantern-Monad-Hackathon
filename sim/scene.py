@@ -176,6 +176,8 @@ DRAPE_M = 0.10                # assumed: tracks float this far above the ground.
 # maps, so they add no memory. LANTERN_RENDER_THREADS=1 turns this off.
 RENDER_THREADS = max(1, int(os.environ.get("LANTERN_RENDER_THREADS", min(8, os.cpu_count() or 1))))  # assumed
 PAR_MIN_ROWS = 16384          # assumed: below this many points per thread, one call is faster
+GPU_SHADE = os.environ.get("LANTERN_GPU_SHADE", "1") != "0"  # first_person shades on the GPU when it can
+                                                             # (sim/scene_gpu.py, same frame); 0: numpy always
 _POOL = None
 
 
@@ -898,6 +900,16 @@ class Scene:
         d = vnp.vtk_to_numpy(zb).reshape(h, w)[::-1].astype(np.float64)
         n, f = cam.GetClippingRange()
         t1 = time.perf_counter()
+        gpu = self._gpu_shader()
+        if gpu is not None:
+            # sim/scene_gpu.py: the same shading on the GPU, frame for frame
+            # (display "off", one agency). The noise is this function's draw.
+            seed = zlib.crc32(repr((agency,) + tuple(round(v, 3) for v in self.poses[agency])).encode())
+            noise = np.random.default_rng(seed).standard_normal((h, w), dtype=np.float32)
+            img, depth = gpu.shade(agency, d.astype(np.float32), n, f, C, fwd, right, up, noise)
+            self.timings["fp_render_ms"] = 1e3 * (t1 - t0)
+            self.timings["fp_shade_ms"] = 1e3 * (time.perf_counter() - t1)
+            return img, depth
 
         sky = d >= 1.0
         z_ndc = 2.0 * d - 1.0
@@ -1021,6 +1033,16 @@ class Scene:
         self.timings["fp_render_ms"] = 1e3 * (t1 - t0)
         self.timings["fp_shade_ms"] = 1e3 * (t2 - t1)
         return img, depth
+
+    def _gpu_shader(self):
+        """sim/scene_gpu.py's shader when it applies (GPU_SHADE on, CuPy and a GPU
+        present, display "off", one agency in the scene), else None (numpy)."""
+        if not GPU_SHADE or self.display != "off" or self._tile is not None or len(self.poses) != 1:
+            return None
+        if getattr(self, "_gpu", None) is None:
+            from sim import scene_gpu
+            self._gpu = scene_gpu.GpuShade(self) if scene_gpu.available() else False
+        return self._gpu or None
 
     def third_person(self, agency, overlays=None):
         """(h, w, 3) uint8 chase view of `agency`, with optional overlays."""

@@ -1,0 +1,11 @@
+{
+ "poses": 50,
+ "gpu_used": true,
+ "rims_identical": 50,
+ "rim_pts_gpu": 320,
+ "rim_pts_numpy": 320,
+ "px_max": 1,
+ "depth_maxdiff": 0.0,
+ "gpu_ms_median": 104.6,
+ "numpy_ms_median": 270.0
+}

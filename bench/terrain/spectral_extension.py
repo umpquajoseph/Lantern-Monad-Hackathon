@@ -92,26 +92,75 @@ def report(name, z, d, lam_lo, lam_hi):
     return r
 
 
+def cleanest_square(z, size=512, step=32):
+    """The size x size window with the fewest NaN, NaN filled from the nearest valid pixel."""
+    from scipy.ndimage import distance_transform_edt
+    H, W = z.shape
+    best = None
+    for i in range(0, H - size + 1, step):
+        for j in range(0, W - size + 1, step):
+            f = float(np.isnan(z[i:i + size, j:j + size]).mean())
+            if best is None or f < best[0]:
+                best = (f, i, j)
+    f, i, j = best
+    s = z[i:i + size, j:j + size].copy()
+    bad = np.isnan(s)
+    if bad.any():
+        _, (ii, jj) = distance_transform_edt(bad, return_indices=True)
+        s = s[ii, jj]
+    return s, f, i, j
+
+
+def lola_windows(h, d, size_px=400, stride_px=400):
+    """Every non-overlapping size_px window with no NaN."""
+    H, W = h.shape
+    out = []
+    for i in range(0, H - size_px + 1, stride_px):
+        for j in range(0, W - size_px + 1, stride_px):
+            w = h[i:i + size_px, j:j + size_px]
+            if np.isfinite(w).all():
+                out.append(w)
+    return out
+
+
+def summarise(name, wins, d, lam_lo, lam_hi):
+    r = [report(f"{name}[{k}]", w, d, lam_lo, lam_hi) for k, w in enumerate(wins)]
+    e = np.array([x["extended_rms_2_10m"] for x in r])
+    H = np.array([x["H"] for x in r])
+    s = dict(n_windows=len(r), extended_rms_2_10m_median=float(np.median(e)),
+             extended_rms_2_10m_range=[float(e.min()), float(e.max())],
+             H_median=float(np.median(H)), H_range=[float(H.min()), float(H.max())])
+    print(name, json.dumps(s))
+    return s
+
+
 def main():
-    res = {}
-    # Hemmi CR1, real 1 m: the largest gap-free square.
-    zh, ch, _, _ = read_tif(DATA / "hemmi2025/DTMs/cr1_roi_sfs_1m-DEM.tif")
-    for size in (1400, 1200, 1024, 800):
-        s = square(zh, size)
-        if s is not None:
-            res["hemmi_cr1"] = report("hemmi_cr1", s, ch, 20, 200)
-            break
-    # LOLA Site01 5 m over CR1.
+    res = {"hemmi": {}}
+    # Hemmi 1 m DTMs: the cleanest 512 m window of each (NaN under 3% there,
+    # filled from the nearest pixel). Fit 20-100 m: above the SfS smoothing
+    # below 10 m (Hemmi sec. 4.2), below a fifth of the window.
+    for s in ("cr1", "gr1", "lp1", "mp1"):
+        zh, ch, xl, yt = read_tif(DATA / f"hemmi2025/DTMs/{s}_roi_sfs_1m-DEM.tif")
+        w, f, i, j = cleanest_square(zh)
+        r = report(f"hemmi_{s}", w, ch, 20, 100)
+        r.update(nan_filled_share=f, window_rows_cols=[i, j])
+        res["hemmi"][s] = r
+        if s == "cr1":
+            cr1_box = (xl + j * ch, yt - i * ch, w.shape[0] * ch)
+    # LOLA Site01 5 m over the same 512 m box as Hemmi CR1, and over 2 km.
     z5, c5, x5l, y5t = read_tif(DATA / "lola/Site01/Site01_final_adj_5mpp_surf.tif")
-    j = int((-11040 - x5l) / c5)
-    i = int((y5t - -12154) / c5)
-    res["lola_site01_cr1"] = report("lola_site01_cr1", z5[i - 200:i + 200, j - 200:j + 200], c5, 40, 400)
-    # LOLA 5 m at each PSR site, centred on the dock.
+    bx, by, side = cr1_box
+    j0 = int(round((bx - x5l) / c5))
+    i0 = int(round((y5t - by) / c5))
+    m = int(side / c5)
+    res["lola_site01_cr1_same_box"] = report("lola_site01_cr1_same_box", z5[i0:i0 + m, j0:j0 + m], c5, 20, 100)
+    jc, ic = int((-11040 - x5l) / c5), int((y5t - -12154) / c5)
+    res["lola_site01_cr1_2km"] = report("lola_site01_cr1_2km", z5[ic - 200:ic + 200, jc - 200:jc + 200], c5, 40, 400)
+    # LOLA 5 m at each PSR site: every gap-free 2 km window of the 8 km site.
     for s in ("haynes", "s89_014e", "s89_134e"):
         d = np.load(DATA / f"terrain/psr_sites/{s}.npz", allow_pickle=True)
-        h = d["height"].astype(np.float64)
-        n = h.shape[0]
-        res[f"lola_{s}"] = report(f"lola_{s}", h[n // 2 - 400:n // 2 + 400, n // 2 - 400:n // 2 + 400], float(d["cell"]), 40, 400)
+        res[f"lola_{s}"] = summarise(f"lola_{s}", lola_windows(d["height"].astype(np.float64), float(d["cell"])),
+                                     float(d["cell"]), 40, 400)
     res["lantern_current_rms_m"] = 0.3 * 0.234
     (OUT / "spectral_extension.json").write_text(json.dumps(res, indent=1))
 

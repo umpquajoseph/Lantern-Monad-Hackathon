@@ -30,7 +30,7 @@ Moon. It is wrong when its purpose is a better outcome.
 
 | Branch | Head | Holds |
 |---|---|---|
-| `lantern-workflow` | ba22641 | Base: spec, briefs, merged campaign-render + realism + mission |
+| `lantern-workflow` | de465bc | Base, checked out in `C:Monad-Hackathon-Project`: spec, briefs, this handoff; stale docs in `_archive/` |
 | `lantern-workflow-sim` | 8dcf209 | Simulation fixes and approved terrain defaults; has `lantern-ground` merged |
 | `lantern-workflow-web` | dc5a81f | Mission Control: real runs by default, workflow checkpoints, superseded list |
 | `lantern-ground` | 38e94a6 | `docs/terrain/position.md`, `docs/SOURCES.md`, 15 new source PDFs |

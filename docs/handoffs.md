@@ -520,6 +520,14 @@ its estimate and the lidar's hazards (`sim/rover.py`). Frames are never
 written to disk. Sorties are simulated one at a time, so a Scout's view
 never shows another Scout.
 
+Render gate (worker render, 16 Nov 2026): a step whose camera could see no
+true crater rim (none within `GATE_RANGE_M`, 25 m, inside the view plus
+`GATE_MARGIN_DEG`) is not rendered; its rims are empty, as the rendered
+frame's would be, and it still draws the frame's depth noise, so a run is
+step-for-step identical with the gate off (`LANTERN_CAM_GATE=0`). Record:
+`timing.frames` = `{"rendered", "skipped_no_crater", "skipped_camera_off"}`
+(additive).
+
 Record changes (additive unless marked):
 
 - Top level `nav`: `"camera"` or `"sampled"`. `pipeline`: one string per

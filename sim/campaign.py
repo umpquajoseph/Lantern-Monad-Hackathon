@@ -1481,7 +1481,10 @@ class Campaign:
             **({"pipeline": self.rig.pipeline, "ground": self.rig.ground,
                 "timing": {"wall_s": rnd(getattr(self, "wall_s", 0.0), 1), "setup_s": rnd(self.rig.t_setup, 1),
                            "scout_steps": self.rig.steps, "s_per_step": self.rig.s_per_step(),
-                           "note": "wall seconds; s_per_step splits each Scout-step's pipeline time"}}
+                           "frames": dict(self.rig.frames),
+                           "note": "wall seconds; s_per_step splits each Scout-step's pipeline time; "
+                                   "frames: steps rendered, and skipped by the render gate "
+                                   "(sim/campaign_camera.py GATE_*) or a camera fault"}}
                if self.rig is not None else {}),
             "settings": json.loads(json.dumps(asdict(s), default=list)),
             "world": {k: (rnd(v, 6) if isinstance(v, float) else v) for k, v in w.draws.items()},

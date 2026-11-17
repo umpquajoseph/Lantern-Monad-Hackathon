@@ -4,6 +4,7 @@ docs/campaign-spec.md sec. 1: every run navigates by camera vision. Each
 Scout, at every step (sim/rover.py STEP_M: 2 m driven, or one turn in place):
 
 1. renders its lamp-lit view at its true pose (sim/scene.py first_person),
+   when a crater rim could be in view (GATE_* below; otherwise no rim exists),
 2. finds crater rims in it (sim/vision.py Vision.rims),
 3. scans with the lidar and marks hazards (sim/lidar.py),
 4. moves its particle filter by its odometry and corrects it on the rims
@@ -45,6 +46,21 @@ SIGHT_CELL_M = 0.25          # unmatched points are thinned to one per cell of t
                              # a long pass held 42k points and 5 GB of point pairs); the fit sees the cell means
 NEIGHBOURS = 4               # nearest craters checked per rim point (labels only)
 PROGRESS_EVERY = int(os.environ.get("LANTERN_CAM_PROGRESS", "0"))   # print a line every N Scout-steps (0: never)
+# Render gate: a step renders and runs vision only when some true crater's rim
+# could be in the camera's view. Otherwise the frame holds no rim, and a frame
+# without rims leaves the filter unchanged (nav.correct runs only on rims), so
+# skipping it changes nothing but Vision's random stream. Measured on check 2
+# (live-nav-check2 w00003-c44d133e, bench/render/gatecheck.py): 990 frames
+# outside a narrower gate (craters >= 10 m within 15 m) rendered, 0 with rims;
+# kept rims reached 19.7 m. Every crater counts here, out to 25 m.
+GATE_RANGE_M = 25.0          # assumed: rims are kept to 19.7 m on check 2; 5 m spare
+GATE_MARGIN_DEG = 5.0        # assumed: beyond the 30 deg half view (sim/scene.py HFOV_DEG)
+GATE_ON = os.environ.get("LANTERN_CAM_GATE", "1") != "0"   # 0: render every step (to check the gate)
+# A skipped frame still draws the frame's depth noise (Vision.noisy_depth: one
+# standard normal per pixel, the frame's only draw when it holds no rim), so a
+# gated run is step-for-step identical to an ungated one. Costs ~2.6 ms a step;
+# False saves it and leaves runs statistically the same, not identical.
+GATE_KEEP_STREAM = True
 
 
 def _edge_match(tree, craters, pts, tol):
@@ -127,6 +143,8 @@ class CameraRig:
                          "planner": PLANNER_STANDIN + "; waypoints from sim/campaign.py's sortie plan",
                          "scene": f"sim/scene.py first_person, display {self.scene.display!r}, on the run ground"}
         self.true_tree = cKDTree(w.craters[:, :2]) if len(w.craters) else None
+        self.true_r_max = float(w.craters[:, 2].max()) / 2 if len(w.craters) else 0.0
+        self.frames = {"rendered": 0, "skipped_no_crater": 0, "skipped_camera_off": 0}
         self.map_rows, self.true_rows = {}, {}      # map row / world crater index -> table row
         self.map_tab, self.true_tab = [], []
         self.t = {"render": 0.0, "vision": 0.0, "lidar": 0.0, "filter": 0.0, "planner": 0.0, "labels": 0.0}
@@ -210,6 +228,29 @@ class CameraRig:
 
     def s_per_step(self):
         return {k: rnd(v / max(self.steps, 1), 4) for k, v in self.t.items()}
+
+    def crater_in_view(self, pose):
+        """True when some true crater's rim lies within GATE_RANGE_M of the
+        camera and inside its view widened by GATE_MARGIN_DEG plus the
+        crater's angular radius, or the camera stands inside a crater."""
+        if not GATE_ON:
+            return True
+        if self.true_tree is None:
+            return False
+        from sim.scene import HFOV_DEG
+        x, y, hd = pose
+        idx = self.true_tree.query_ball_point((x, y), GATE_RANGE_M + self.true_r_max)
+        if not idx:
+            return False
+        c = self.camp.world.craters[idx]
+        R = c[:, 2] / 2
+        dc = np.hypot(c[:, 0] - x, c[:, 1] - y)
+        near = dc - R <= GATE_RANGE_M
+        if np.any(near & (dc <= R)):
+            return True
+        ang = np.abs((np.arctan2(c[:, 1] - y, c[:, 0] - x) - hd + math.pi) % (2 * math.pi) - math.pi)
+        half = np.arcsin(np.minimum(1.0, R / np.maximum(dc, 1e-6)))
+        return bool(np.any(near & (ang <= math.radians(HFOV_DEG / 2 + GATE_MARGIN_DEG) + half)))
 
 
 class CameraSortie(Sortie):
@@ -378,18 +419,27 @@ class CameraSortie(Sortie):
         from sim.vision import rover_to_world
         pose = tuple(float(v) for v in r.true)
         t0 = time.perf_counter()
-        rig.scene.set_rover(CAM, pose)
-        img, depth = rig.scene.first_person(CAM)
-        t1 = time.perf_counter()
         cam_ok = self.nav_ok      # a camera or lamp fault leaves the camera blind
-        rims = self.vis.rims(img, depth) if cam_ok else np.zeros((0, 2))
+        look = cam_ok and rig.crater_in_view(pose)   # GATE_*: no crater in view, no rim in the frame
+        if look:
+            rig.scene.set_rover(CAM, pose)
+            img, depth = rig.scene.first_person(CAM)
+            rig.frames["rendered"] += 1
+        else:
+            rig.frames["skipped_camera_off" if not cam_ok else "skipped_no_crater"] += 1
+            if cam_ok and GATE_KEEP_STREAM:
+                from sim.scene import FP_SIZE
+                self.vis.rng.standard_normal((FP_SIZE[1], FP_SIZE[0]))
+        t1 = time.perf_counter()
+        rims = self.vis.rims(img, depth) if look else np.zeros((0, 2))
         t2 = time.perf_counter()
         pts, rng_img = self.lid.scan(pose)
         hz, kinds = self.lid.hazards(pts)
         if len(hz):
             r.add_hazards(rover_to_world(self.lid.to_camera_frame(hz), pose), kinds)
         t3 = time.perf_counter()
-        del img, depth
+        if look:
+            del img, depth
         # The filter step (sim/nav.py ParticleNav.step, spelled out): predict,
         # pair each rim with a map crater at the filter's mean before the
         # update (sim/calibrate.py's false-match rule, Alg. 1 line 4), correct.

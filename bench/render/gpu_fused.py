@@ -9,6 +9,7 @@ from vtk.util import numpy_support as vnp
 import sim.scene as S
 
 SRC = r"""
+#define M_PI 3.14159265358979323846
 extern "C" {
 __device__ float hbil(const float* h, int W, int H, double x0, double y0, double cell, double x, double y) {
     double fj = (x - x0) / cell, fi = (y - y0) / cell;

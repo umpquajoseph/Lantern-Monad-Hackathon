@@ -576,3 +576,4 @@ killed three times today while batches ran.
   mail expected while paused). On resume: mail each "unpause" with its
   next step, in the order its WIP report gives.
 - 13:5x Product owner: the aim is a realistic sim of the paper's workflow, not Scouts that come home; stranded Scouts are a finding about ShadowNav. Spec e070a04 and ba22641 on lantern-workflow; fyi to all three workers. Beacons only as the brief proposes them (comms relays).
+- 14:1x Product owner approved ground's five terrain decisions (roughness 0.035 m; craters 106-1,540/km2, 336 central; map cut 10 m, 18 m test; slope widening; no rocks, stated). workflow builds them after its steps 1-3, merging origin/lantern-ground. ground rewrites docs/SOURCES.md for the campaign sim (it still frames the hackathon) and checks every settings.py source tag is listed.

@@ -530,12 +530,12 @@ Record changes (additive unless marked):
     pass); `craters_in_view` (distinct true craters the pass's rim points
     lie on); `fixed` (true when `matched` >= 1: the filter corrected on
     the map; `fix_min_craters` is not used); `wrong_match` (more than half
-    of the pass's matched rim points paired with the wrong map crater,
-    against the truth); `wrong_match_cause` (`missing`: the true crater is
-    not in the map; `misplaced:<crater_id>`: paired with an added crater
-    that is not where its true crater is; `base`: paired with another
-    mapped crater, or the point lies on no crater); `points`,
-    `wrong_points`, `steps` (first and last step index of the pass in
+    of the pass's rim points are false matches, as defined below);
+    `wrong_match_cause` (the most common cause among its false matches:
+    `missing`: the source crater is not in the map;
+    `misplaced:<crater_id>`: paired with an added crater that is not its
+    source; `base`: paired with another mapped crater, or the point has no
+    source); `points`, `wrong_points` (false matches), `steps` (first and last step index of the pass in
     `steps.npz`); truth `true_err_before_m` (at the step before the
     pass), `true_err_m` (when the pass ends, `cam_pass_gap_steps` after
     its last rim). A pass is any run of steps with rim points; `fixed` is
@@ -555,9 +555,29 @@ Record changes (additive unless marked):
 - `bound95` everywhere is `K95_2D * sigma`, sigma the filter's per-axis
   spread (sim/nav.py `belief`).
 - Sorties add `steps` (camera steps), `point_turns`, `waypoints_skipped`.
+- **False-match rate** (one definition for the summary, the page and the
+  paper; draft 4.2 "detected rims were paired with the wrong mapped
+  crater"): of the rim points the filter paired with a mapped crater, the
+  share whose paired crater is not the rim's true crater. A spurious rim
+  (no true crater) that got paired counts as wrong; so does a rim from a
+  crater missing from the map. Pairing is the filter's own: the map
+  crater whose edge is nearest the point placed at the filter's weighted
+  mean pose before the update (sim/nav.py Alg. 1 line 4, among its
+  `CRATER_NEIGHBOURS` nearest craters, no distance limit). The true crater
+  is the one whose edge lies within `cam_match_tol_m` (1 m) of the point
+  placed at the true pose. Unpaired points (no map crater in reach, only
+  with an empty map) are left out of both counts and reported as
+  `unpaired_share`; with the filter's pairing it is 0 in practice. Summary
+  `false_match_rate`, `unpaired_share`; per sortie `rim_points` (paired
+  rims the filter used), `rim_wrong`, `rim_unpaired`; per sortie number in
+  `by_sortie.csv`. Camera runs only: sampled runs leave it empty.
+- `wrong_match_rate` keeps its per-check meaning (wrong checks over fixes;
+  for camera runs, crater passes) and is not the paper's false-match rate.
 - Summary adds `nav`, `steps`, `s_per_step` (wall seconds per Scout-step),
-  `rim_points`, `rim_wrong_share` (wrong-paired share of matched rim
-  points).
+  `rim_points`, `false_match_rate`, `unpaired_share`,
+  `waypoints_skipped`. Sorties add `rim_points`, `rim_wrong`,
+  `rim_unpaired`, `rim_matched` (points within `cam_match_tol_m` of their
+  paired map edge: what crater passes and sightings call matched).
 
 `steps.npz` (camera runs only), next to `poses.npz`: every Scout-step the
 pipeline ran, per sortie. Keys are `<sortie_id>.<name>`; ragged lists use
@@ -569,9 +589,10 @@ an offset array `o` of length K+1 (step k owns rows `o[k]:o[k+1]`).
 | `<sid>.particles` | float16 (K, 100, 3) | each particle `dx, dy` from `est`, metres, and weight (sums to 1) |
 | `<sid>.rim_o` | int32 (K+1) | offsets into the rim rows |
 | `<sid>.rims` | float16 (R, 2) | rim points `[x_forward, y_left]`, metres, rover frame, as the filter got them |
-| `<sid>.rim_map` | int32 (R) | map crater the point pairs with under the estimate (nearest edge within `cam_match_tol_m`), row of `map_craters`; -1 none |
+| `<sid>.rim_map` | int32 (R) | map crater the filter pairs the point with (nearest edge at its mean pose before the update, no limit), row of `map_craters` |
+| `<sid>.rim_map_m` | float16 (R) | distance from the point to that crater's edge, metres; within `cam_match_tol_m` counts as matched (passes, sightings) |
 | `<sid>.rim_true` | int32 (R) | true crater the point lies on (truth, nearest edge within `cam_match_tol_m` of the true pose's point), row of `true_craters`; -1 none |
-| `<sid>.rim_wrong` | uint8 (R) | 1: paired with a map crater that is not this point's true crater (truth) |
+| `<sid>.rim_wrong` | uint8 (R) | 1: a false match, as defined above (0 for points the filter did not use: the dock frame, camera off) |
 | `<sid>.lidar` | uint16 (K, 20, 121) | range image, every other beam row and column of sim/lidar.py's 40 x 241 scan (elevations `lidar_el_deg`, azimuths `lidar_az_deg`), centimetres, 0 = no return |
 | `<sid>.haz_o`, `<sid>.haz`, `<sid>.haz_kind` | int32 (K+1), float16 (H, 2), uint8 (H) | lidar hazard cells `[x_forward, y_left]` from the lidar, kind 0 crater, 1 slope, 2 rock |
 | `<sid>.plan_o`, `<sid>.plan` | int32 (K+1), float32 (P, 2) | the route the Scout is about to drive, true frame world xy, from the Scout forward, about 20 m (sim/rover.py `planned_route`) |

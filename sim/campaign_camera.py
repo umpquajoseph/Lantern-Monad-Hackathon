@@ -62,6 +62,20 @@ def _edge_match(tree, craters, pts, tol):
     return out
 
 
+def _edge_pair(tree, craters, pts):
+    """(index of the crater whose edge is nearest each point, that edge
+    distance): the pairing the filter's Q-score makes, no tolerance."""
+    if len(pts) == 0 or tree is None:
+        return np.full(len(pts), -1, int), np.full(len(pts), np.inf)
+    k = min(NEIGHBOURS, len(craters))
+    _, idx = tree.query(pts, k=k)
+    idx = np.asarray(idx).reshape(len(pts), k)
+    c = craters[idx]
+    de = np.abs(np.hypot(c[..., 0] - pts[:, 0:1], c[..., 1] - pts[:, 1:2]) - c[..., 2] / 2)
+    j = de.argmin(axis=1)
+    return idx[np.arange(len(pts)), j], de[np.arange(len(pts)), j]
+
+
 def _to_world(pts, x, y, h):
     c, s = math.cos(h), math.sin(h)
     return np.column_stack([x + c * pts[:, 0] - s * pts[:, 1], y + s * pts[:, 0] + c * pts[:, 1]])
@@ -229,12 +243,12 @@ class CameraSortie(Sortie):
         self.point_turns = 0
         self.skipped = 0
         self.goal_xy = (float(wx), float(wy))
-        self.st = {k: [] for k in ("step", "particles", "rims", "rim_map", "rim_true", "rim_wrong", "lidar",
+        self.st = {k: [] for k in ("step", "particles", "rims", "rim_map", "rim_map_m", "rim_true", "rim_wrong", "lidar",
                                    "haz", "haz_kind", "plan")}
         self.st_o = {k: [0] for k in ("rim", "haz", "plan")}
         self.pass_ = None
         self.gap = 0
-        self.n_rim_pts = self.n_rim_wrong = self.n_rim_matched = 0
+        self.n_rim_pts = self.n_rim_wrong = self.n_rim_matched = self.n_rim_unpaired = 0
         self._sync()
         self._sense_and_log(moved=False)    # the first frame, at the dock
 
@@ -369,25 +383,43 @@ class CameraSortie(Sortie):
             r.add_hazards(rover_to_world(self.lid.to_camera_frame(hz), pose), kinds)
         t3 = time.perf_counter()
         del img, depth
+        # The filter step (sim/nav.py ParticleNav.step, spelled out): predict,
+        # pair each rim with a map crater at the filter's mean before the
+        # update (sim/calibrate.py's false-match rule, Alg. 1 line 4), correct.
+        nav = r.nav
         if odo is not None:
-            r.localize(None, odo[0], len(rims), odom=odo, rims=rims)
+            nav.predict(*odo)
+        mu, _ = nav.belief()
+        hd = float(nav.heading + nav._normalised() @ nav.th)
+        used = odo is not None and nav.fixes_on and len(rims) > 0
+        if len(rims):
+            mrow, mdist = _edge_pair(self.c.map_tree, self.c.map_arr, _to_world(rims, mu[0], mu[1], hd))
+        if used:
+            nav.correct(rims)
+        if odo is not None:
+            est, r.sigma = nav.belief()
+            r.estimate = np.asarray(est, dtype=np.float64)
         t4 = time.perf_counter()
         self._sync()
-        # Labels: which map crater each rim pairs with under the estimate, and
-        # which true crater it really lies on.
-        nav = r.nav
         est_h = float(nav.heading)
         if len(rims):
-            pw = _to_world(rims, self.ex, self.ey, est_h)
-            mrow = _edge_match(self.c.map_tree, self.c.map_arr, pw, s.cam_match_tol_m)
+            # Source: the true crater whose edge lies within cam_match_tol_m of
+            # the point placed at the true pose (none: a spurious edge). A
+            # point is a false match unless its source is mapped and it pairs
+            # with that crater's map row (sim/calibrate.py false_match_rate).
             tw = _to_world(rims, pose[0], pose[1], pose[2])
             trow = _edge_match(rig.true_tree, self.w.craters, tw, s.cam_match_tol_m)
-            mt = np.where(mrow >= 0, self.map_true[np.maximum(mrow, 0)] if len(self.map_true) else -1, -1)
-            wrong = (mrow >= 0) & ((trow < 0) | (mt != trow))
+            mt = self.map_true[mrow] if len(self.map_true) else np.full(len(rims), -1)
+            wrong = ~((trow >= 0) & (mrow >= 0) & (mt == trow))
+            if not used:
+                wrong[:] = False          # the filter did not use them (start frame, camera off)
+            matched = (mrow >= 0) & (mdist <= s.cam_match_tol_m)
+            pw = _to_world(rims, self.ex, self.ey, est_h)   # sightings: the estimated frame after the update
         else:
             pw = np.zeros((0, 2))
             mrow = trow = np.zeros(0, int)
-            wrong = np.zeros(0, bool)
+            mdist = np.zeros(0)
+            wrong = matched = np.zeros(0, bool)
         t5 = time.perf_counter()
         rig.t["render"] += t1 - t0
         rig.t["vision"] += t2 - t1
@@ -403,6 +435,7 @@ class CameraSortie(Sortie):
         self.st["particles"].append(part)
         self.st["rims"].append(np.asarray(rims, np.float16).reshape(-1, 2))
         self.st["rim_map"].append(rig.map_index(mrow))
+        self.st["rim_map_m"].append(np.asarray(mdist, np.float16))
         self.st["rim_true"].append(rig.true_index(trow))
         self.st["rim_wrong"].append(wrong.astype(np.uint8))
         self.st_o["rim"].append(self.st_o["rim"][-1] + len(rims))
@@ -414,10 +447,13 @@ class CameraSortie(Sortie):
         plan = np.asarray(r.planned_route() if getattr(r, "local_plan", None) else [pose[:2]], np.float32)
         self.st["plan"].append(plan.reshape(-1, 2))
         self.st_o["plan"].append(self.st_o["plan"][-1] + len(plan))
-        self.n_rim_pts += len(rims)
-        self.n_rim_matched += int((mrow >= 0).sum())
-        self.n_rim_wrong += int(wrong.sum())
-        return dict(pw=pw, mrow=mrow, trow=trow, wrong=wrong)
+        if used:
+            paired = mrow >= 0
+            self.n_rim_pts += int(paired.sum())          # paired rims: the false-match rate's denominator
+            self.n_rim_unpaired += int((~paired).sum())  # no map crater in reach (an empty map)
+            self.n_rim_wrong += int((wrong & paired).sum())
+        self.n_rim_matched += int(matched.sum())
+        return dict(pw=pw, mrow=mrow, trow=trow, wrong=wrong, matched=matched)
 
     # ------------------------------------------------------------ passes
     def _pass_update(self, lab):
@@ -428,7 +464,7 @@ class CameraSortie(Sortie):
                                   matched=0, wrong=[], free=[])
             p = self.pass_
             p["k1"] = self.k
-            m = lab["mrow"] >= 0
+            m = lab["matched"]
             p["mrows"].update(int(v) for v in lab["mrow"][m])
             p["trows"].update(int(v) for v in lab["trow"][lab["trow"] >= 0])
             p["pts"] += n
@@ -454,7 +490,7 @@ class CameraSortie(Sortie):
         p, self.pass_, self.gap = self.pass_, None, 0
         matched = len(p["mrows"])
         fixed = matched >= 1
-        wrong = fixed and len(p["wrong"]) > 0.5 * p["matched"]
+        wrong = fixed and len(p["wrong"]) > 0.5 * p["pts"]
         cause = None
         if wrong:
             causes = []
@@ -463,7 +499,7 @@ class CameraSortie(Sortie):
             for mrow, trow in p["wrong"]:
                 if trow >= 0 and trow not in mapped_true:
                     causes.append("missing")
-                elif mrow >= n0:
+                elif mrow >= n0 and self.map_true[mrow] != trow:
                     causes.append("misplaced:" + c.added[mrow - n0]["crater_id"])
                 else:
                     causes.append("base")
@@ -524,6 +560,7 @@ class CameraSortie(Sortie):
             f"{sid}.rim_o": np.asarray(o["rim"], np.int32),
             f"{sid}.rims": cat("rims", np.float16, (2,)),
             f"{sid}.rim_map": cat("rim_map", np.int32, ()),
+            f"{sid}.rim_map_m": cat("rim_map_m", np.float16, ()),
             f"{sid}.rim_true": cat("rim_true", np.int32, ()),
             f"{sid}.rim_wrong": cat("rim_wrong", np.uint8, ()),
             f"{sid}.lidar": np.stack(st["lidar"]),

@@ -1193,7 +1193,7 @@ class Campaign:
             self.sortie_extra[so.sid] = {"steps": int(len(so.arrays[f"{so.sid}.step"])),
                                          "point_turns": so.point_turns, "waypoints_skipped": so.skipped,
                                          "rim_points": so.n_rim_pts, "rim_matched": so.n_rim_matched,
-                                         "rim_wrong": so.n_rim_wrong}
+                                         "rim_wrong": so.n_rim_wrong, "rim_unpaired": so.n_rim_unpaired}
         return so
 
     def _apply(self, so: Sortie, t_arr):
@@ -1369,12 +1369,15 @@ class Campaign:
         if s.nav == "camera":
             ex = self.sortie_extra.values()
             pts = sum(e["rim_points"] for e in ex)
-            matched = sum(e["rim_matched"] for e in ex)
             row.update({
                 "steps": sum(e["steps"] for e in ex),
                 "s_per_step": rnd(self.wall_s / max(self.rig.steps, 1), 3) if getattr(self, "wall_s", None) else None,
                 "rim_points": pts,
-                "rim_wrong_share": rnd(sum(e["rim_wrong"] for e in ex) / matched, 4) if matched else None,
+                # The false-match rate the paper quotes (docs/handoffs.md; draft 4.2): of rim
+                # points the filter paired with a mapped crater, the share paired with the wrong one.
+                "false_match_rate": rnd(sum(e["rim_wrong"] for e in ex) / pts, 4) if pts else None,
+                "unpaired_share": rnd(sum(e["rim_unpaired"] for e in ex) / (pts + sum(e["rim_unpaired"] for e in ex)), 4)
+                if pts else None,
                 "waypoints_skipped": sum(e["waypoints_skipped"] for e in ex),
             })
         return row
@@ -1385,10 +1388,15 @@ class Campaign:
             rs = [r for r in self.sorties if r["n"] == n]
             if not rs:
                 continue
-            out.append({"run_id": self.run_id, "sortie_n": n,
-                        "checks": sum(r["checks"] for r in rs), "wrong_matches": sum(r["wrong_matches"] for r in rs),
-                        "map_craters": max(r["map_craters"] for r in rs),
-                        "fixes": sum(r["fixes"] for r in rs), "sorties": len(rs)})
+            row = {"run_id": self.run_id, "sortie_n": n,
+                   "checks": sum(r["checks"] for r in rs), "wrong_matches": sum(r["wrong_matches"] for r in rs),
+                   "map_craters": max(r["map_craters"] for r in rs),
+                   "fixes": sum(r["fixes"] for r in rs), "sorties": len(rs)}
+            if self.s.nav == "camera":
+                pts = sum(r.get("rim_points", 0) for r in rs)
+                row.update(rim_points=pts, false_match_rate=rnd(sum(r.get("rim_wrong", 0) for r in rs) / pts, 4)
+                           if pts else None)
+            out.append(row)
         return out
 
     def _survey_err_p95(self):

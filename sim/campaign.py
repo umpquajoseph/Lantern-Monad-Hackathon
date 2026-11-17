@@ -558,8 +558,16 @@ class Sortie:
             self.errx += -uy * self.hdg_err * ds
             self.erry += ux * self.hdg_err * ds
         self.heading = math.atan2(uy, ux)
+        self._after_move(ds, ds / self.v)
+
+    def _after_move(self, ds, dt, checks=True):
+        """Everything a move of ds metres taking dt seconds does to the
+        sortie's books: distance, time, energy, logging, faults, readings,
+        scheduled checks (sampled navigation only) and the turn-back rule.
+        Shared by the sampled step above and the camera step
+        (sim/campaign_camera.py)."""
+        s = self.s
         self.d_fix += ds; self.d_chk += ds; self.d_total += ds; self.d_log += ds; self.d_read += ds
-        dt = ds / self.v
         self.t += dt
         self.energy -= self.em["p_drive_w"] * dt / 3.6e6
         self.time["drive"] += dt
@@ -581,7 +589,7 @@ class Sortie:
         if self.act == ACT["survey"] and self.d_read >= s.reading_spacing_m:
             self.d_read = 0.0
             self.reading()
-        if self.nav_ok and self._check_due() and self._map_predicts():
+        if checks and self.nav_ok and self._check_due() and self._map_predicts():
             self.check("schedule")
         why = None if self.returning else self._must_turn_back()
         if why:
@@ -841,6 +849,9 @@ class Sortie:
         self.lanes_done.append(ln["id"])
         return True
 
+    def _before_dock(self):
+        """Hook: the last thing a sortie does before closing on the dock."""
+
     # ------------------------------------------------------------ the sortie
     def run(self, searches, drills, lanes):
         s, c = self.s, self.c
@@ -889,6 +900,7 @@ class Sortie:
             if self.lost:
                 break
             self.drive_to(wx, wy, ACT["return"])
+        self._before_dock()
         if not self.lost:
             # Home on the dock itself: drive the true remaining distance.
             d_home = math.hypot(self.tx - self.w.dock[0], self.ty - self.w.dock[1])
@@ -964,6 +976,9 @@ class Campaign:
         self.events: list = []
         self.poses: dict = {}
         self.added_by_sortie: dict = {}
+        self.rig = None                 # camera navigation (sim/campaign_camera.py), built in run()
+        self.step_arrays: dict = {}     # steps.npz, per sortie
+        self.sortie_extra: dict = {}
 
     # ------------------------------------------------------------ helpers
     def _rebuild_map(self):
@@ -1048,16 +1063,17 @@ class Campaign:
                               "dist_entry": math.hypot(xm - ex, y - ey)})
         return lanes
 
-    def _reserve_lanes(self, start_xy, budget):
+    def _reserve_lanes(self, start_xy, budget, state=None):
         """Greedy chain of pending lanes, nearest first. survey_m counts the
         lanes and the drives between them; the approach from the descent end
         to the first lane and the drive back are transit, charged to energy
         and time but not to the survey, so once the floor near the descent
         end is surveyed, sorties drive farther to keep surveying survey_m."""
+        state = self.lane_state if state is None else state
         out, used = [], 0.0
         x, y = start_xy
         ex, ey = self.entry
-        pending = [ln for ln in self.lanes if self.lane_state[ln["id"]] == "pending"]
+        pending = [ln for ln in self.lanes if state[ln["id"]] == "pending"]
         while pending:
             k = min(range(len(pending)), key=lambda i: min(math.hypot(pending[i]["a"][0] - x, pending[i]["a"][1] - y),
                                                            math.hypot(pending[i]["b"][0] - x, pending[i]["b"][1] - y)))
@@ -1072,13 +1088,18 @@ class Campaign:
             used += step
             x, y = nx, ny
             out.append(ln)
-            self.lane_state[ln["id"]] = "reserved"
+            state[ln["id"]] = "reserved"
         return out
 
     # ------------------------------------------------------------ the loop
     def run(self):
         s = self.s
         t_wall = time.perf_counter()
+        if s.nav == "camera" and self.rig is None:
+            from sim.campaign_camera import CameraRig
+            self.rig = CameraRig(self)
+        elif s.nav not in ("camera", "sampled"):
+            raise ValueError(f"Settings.nav must be 'camera' or 'sampled', not {s.nav!r}")
         heap = []
         seq = 0
         for i, sc in enumerate(self.scouts):
@@ -1133,7 +1154,11 @@ class Campaign:
     def _launch(self, sc, n, t):
         s = self.s
         self.finds_at_launch = list(self.finds)
-        so = Sortie(self, sc, n, t)
+        if s.nav == "camera":
+            from sim.campaign_camera import CameraSortie
+            so = CameraSortie(self, sc, n, t)
+        else:
+            so = Sortie(self, sc, n, t)
         searches = []
         for f in sorted(self.finds, key=lambda f: math.hypot(f["est"][0] - self.entry[0], f["est"][1] - self.entry[1])):
             if len(searches) >= s.searches_per_sortie_max:
@@ -1155,6 +1180,13 @@ class Campaign:
         so.planned_drills = len(drills)
         so.run(searches, drills, lanes)
         self.poses[so.sid] = so.rows
+        if s.nav == "camera":
+            so.release()
+            self.step_arrays.update(so.arrays)
+            self.sortie_extra[so.sid] = {"steps": int(len(so.arrays[f"{so.sid}.step"])),
+                                         "point_turns": so.point_turns, "waypoints_skipped": so.skipped,
+                                         "rim_points": so.n_rim_pts, "rim_matched": so.n_rim_matched,
+                                         "rim_wrong": so.n_rim_wrong}
         return so
 
     def _apply(self, so: Sortie, t_arr):
@@ -1218,6 +1250,7 @@ class Campaign:
                "checks": so.n_checks, "fixes": so.n_fixes, "wrong_matches": so.n_wrong,
                "survey_m": rnd(so.survey_used, 1), "transit_m": rnd(so.transit_m + so.survey_back, 1), "map_craters": len(self.map_rows),
                "turn_back": so.turn_reason}
+        rec.update(self.sortie_extra.get(so.sid, {}))
         rec.update(self._completion(so))
         self.sorties.append(rec)
         so.rec = rec
@@ -1326,6 +1359,17 @@ class Campaign:
             "craters_added": len(self.added),
             "campaign_days": rnd(self.t_end / 86400, 2),
         })
+        if s.nav == "camera":
+            ex = self.sortie_extra.values()
+            pts = sum(e["rim_points"] for e in ex)
+            matched = sum(e["rim_matched"] for e in ex)
+            row.update({
+                "steps": sum(e["steps"] for e in ex),
+                "s_per_step": rnd(self.wall_s / max(self.rig.steps, 1), 3) if getattr(self, "wall_s", None) else None,
+                "rim_points": pts,
+                "rim_wrong_share": rnd(sum(e["rim_wrong"] for e in ex) / matched, 4) if matched else None,
+                "waypoints_skipped": sum(e["waypoints_skipped"] for e in ex),
+            })
         return row
 
     def by_sortie(self) -> list:
@@ -1416,7 +1460,12 @@ class Campaign:
             "format": FORMAT,
             "run_id": self.run_id, "seed": self.seed,
             "made_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "nav": "sampled",
+            "nav": s.nav,
+            **({"pipeline": self.rig.pipeline, "ground": self.rig.ground,
+                "timing": {"wall_s": rnd(getattr(self, "wall_s", 0.0), 1), "setup_s": rnd(self.rig.t_setup, 1),
+                           "scout_steps": self.rig.steps, "s_per_step": self.rig.s_per_step(),
+                           "note": "wall seconds; s_per_step splits each Scout-step's pipeline time"}}
+               if self.rig is not None else {}),
             "settings": json.loads(json.dumps(asdict(s), default=list)),
             "world": {k: (rnd(v, 6) if isinstance(v, float) else v) for k, v in w.draws.items()},
             "world_ranges": json.loads(json.dumps(asdict(self.ranges), default=list)),
@@ -1447,11 +1496,17 @@ class Campaign:
         (root / "record.json").write_text(json.dumps(rec, separators=(",", ":")), encoding="utf-8")
         arrs = {sid: np.asarray(rows, np.float32).reshape(-1, len(POSE_COLS)) for sid, rows in self.poses.items()}
         np.savez_compressed(root / "poses.npz", **arrs)
+        if self.rig is not None:
+            rig = self.rig
+            extra = {"map_craters": np.asarray(rig.map_tab, np.float32).reshape(-1, 3),
+                     "true_craters": np.asarray(rig.true_tab, np.float32).reshape(-1, 3),
+                     "lidar_el_deg": rig.lidar_el, "lidar_az_deg": rig.lidar_az}
+            np.savez_compressed(root / "steps.npz", **self.step_arrays, **extra)
         return root
 
 
 # Design choices swept on purpose (spec sec. 4); every one goes in summary.csv.
-SWEPT = ["site", "n_scouts", "check_policy", "map_refinement", "top_speed_mps", "check_stop_s", "drill_limit_m",
+SWEPT = ["site", "nav", "n_scouts", "check_policy", "map_refinement", "top_speed_mps", "check_stop_s", "drill_limit_m",
          "avg_load_w", "sightings_to_add", "drift_mode", "star_tracker",
          # assumed inputs swept for sensitivity (spec 4a item 3)
          "p_wrong_per_missing", "confirm_bound_max_m", "bound_model"]

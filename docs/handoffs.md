@@ -503,8 +503,10 @@ Record changes (additive unless marked):
     that is not where its true crater is; `base`: paired with another
     mapped crater, or the point lies on no crater); `points`,
     `wrong_points`, `steps` (first and last step index of the pass in
-    `steps.npz`); truth `true_err_before_m` (at the pass's first step,
-    before its correction), `true_err_m` (after its last).
+    `steps.npz`); truth `true_err_before_m` (at the step before the
+    pass), `true_err_m` (when the pass ends, `cam_pass_gap_steps` after
+    its last rim). A pass is any run of steps with rim points; `fixed` is
+    false when none of them paired with a map crater.
   - `sighting`: an unmatched rim arc fitted with a circle (Kasa fit) at the
     end of a pass, in the Scout's estimated frame: `est`, `d_est`,
     `bound95`, `anchor` as above, plus `points`, `fit_rms_m`.

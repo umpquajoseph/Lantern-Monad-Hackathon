@@ -164,8 +164,25 @@ class Settings:
     p_fail_neutron: float = S(0.01, ASSUMED)
     swap_downtime_h: float = S(24.0, ASSUMED)
 
-    # ------------------------------------- camera navigation (showcase only)
-    # Batch runs sample navigation (above) and never read these.
+    # ------------------------------------------------- camera navigation
+    nav: str = S("camera", "docs/campaign-spec.md sec. 1: 'Every run navigates by camera vision'. "
+                           "'camera': render, rims, particle filter, lidar, planner at every step "
+                           "(sim/campaign.py CameraSortie); 'sampled': error drawn from C23 Table 2, "
+                           "the paper's comparison column only")
+    cam_arrive_m: float = S(1.0, ASSUMED + "; a camera Scout has reached a waypoint when its estimate is this close")
+    cam_stuck_steps: int = S(40, ASSUMED + "; a waypoint is skipped after this many steps without getting 0.5 m closer")
+    cam_match_tol_m: float = S(1.0, ASSUMED + "; a rim point pairs with a crater whose edge is this close "
+                                              "(record labels and sightings only; the filter scores every point)")
+    cam_pass_gap_steps: int = S(3, ASSUMED + "; a crater pass (one 'check' event) ends after this many steps "
+                                             "without a matched rim")
+    cam_sighting_min_points: int = S(12, ASSUMED + "; unmatched rim points needed to fit a sighting circle")
+    cam_sighting_fit_rms_m: float = S(0.5, ASSUMED + "; largest circle-fit residual (RMS) a sighting may have")
+    cam_turn_rate_deg_s: float = S(5.0, ASSUMED + "; turn-in-place rate, for time and energy")
+    cam_ground_margin_m: float = S(250.0, ASSUMED + "; fine ground built this far beyond the dock, corridor "
+                                                    "and every lane the run could reserve")
+    cam_display: str = S("off", "sim/scene.py DISPLAY_MODES: 'off' = the run ground as built (no display "
+                                "assets exist for a run ground)")
+    # Batch runs with nav='sampled' never read the fields below.
     camera_height_m: float = S(1.6, "brief p.6 '1.6 m mast'; draft item 24. Camera assumed at the mast top. "
                                     "A24 sec. IV tested 1.5, 2.5 and 3 m")
     lamp_below_camera_m: float = S(0.2, "A24 sec. IV 'Light offsets of 0.2 m below the camera'")

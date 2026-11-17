@@ -111,7 +111,9 @@ def measure(n_frames, routes_path, out_dir, chunk=None):
         pose = (px, py, hd)
         scene.set_rover("A", pose)
         img, depth = scene.first_person("A")
-        v, u, wid, npx = vis.detect_contours(img, depth)
+        # The renderer's depth, as measured in arcshare-1 (nd=depth keeps that measurement
+        # reproducible; Vision now reads noisy depth by default).
+        v, u, wid, npx = vis.detect_contours(img, depth, nd=depth)
         det = vis._rover_points(depth[v, u].astype(np.float64), v, u) if len(v) else np.zeros((0, 2))
         tr = rim_truth(scene, "A", depth)
         sel = (tr["crater_id"] == ci) & tr["near"]

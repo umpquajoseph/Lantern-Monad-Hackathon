@@ -1,6 +1,6 @@
 """Lantern's own front-arc share for a 10 m crater, measured on held-out frames.
 
-    python -m sim.arc_share --batch arcshare-1 --frames 120
+    python -m sim.arc_share --batch arcshare-1 --frames 120 --chunk 40   # run three times; it resumes
 
 The rule (fixed and committed before any measurement, 16 Nov 2026):
 
@@ -54,7 +54,10 @@ AIM_JITTER_DEG = 10.0      # the rule
 SEED = 2026
 
 
-def measure(n_frames, routes_path, out_dir):
+def measure(n_frames, routes_path, out_dir, chunk=None):
+    """Append frames to frames.jsonl until n_frames exist (at most `chunk` new ones per call).
+    Each crater draws its pose from its own stream (SEED, crater), so a resumed run measures
+    the same frames as an unbroken one."""
     from sim.scene import Scene
     terrain = load_terrain(TERRAIN)
     height, craters, x0, y0, cell = terrain
@@ -67,6 +70,12 @@ def measure(n_frames, routes_path, out_dir):
     ttree = cKDTree(tp)
     rng = np.random.default_rng(SEED)
     size = height.shape[0] * cell
+    jl = Path(out_dir) / "frames.jsonl"
+    rows = [json.loads(x) for x in jl.read_text().splitlines()] if jl.exists() else []
+    tried = {r["crater"] for r in rows}
+    skipped_p = Path(out_dir) / "skipped.json"
+    skipped = set(json.loads(skipped_p.read_text())) if skipped_p.exists() else set()
+    new = 0
     cand = np.flatnonzero((craters[:, 2] >= D_RANGE_M[0]) & (craters[:, 2] <= D_RANGE_M[1]))
     cand = cand[ttree.query(craters[cand, :2])[0] > HOLD_OUT_M]
     rng.shuffle(cand)
@@ -74,11 +83,13 @@ def measure(n_frames, routes_path, out_dir):
     vis = Vision(scene, np.random.default_rng(SEED + 1))
     big = craters[craters[:, 2] >= 5.0]
     btree = cKDTree(big[:, :2])
-    rows = []
     t = time.perf_counter()
     for ci in cand:
-        if len(rows) >= n_frames:
+        if len(rows) >= n_frames or (chunk is not None and new >= chunk):
             break
+        if int(ci) in tried or int(ci) in skipped:
+            continue
+        rng = np.random.default_rng([SEED, int(ci)])
         cx, cy, d = craters[ci]
         for _ in range(10):                       # a few bearings until one is drivable and held out
             b = rng.uniform(0, 2 * math.pi)
@@ -94,6 +105,8 @@ def measure(n_frames, routes_path, out_dir):
             hd = math.atan2(cy - py, cx - px) + math.radians(rng.uniform(-AIM_JITTER_DEG, AIM_JITTER_DEG))
             break
         else:
+            skipped.add(int(ci))
+            skipped_p.write_text(json.dumps(sorted(skipped)))
             continue
         pose = (px, py, hd)
         scene.set_rover("A", pose)
@@ -104,15 +117,21 @@ def measure(n_frames, routes_path, out_dir):
         sel = (tr["crater_id"] == ci) & tr["near"]
         arc = tr["xy"][sel]
         if len(arc) == 0:
+            skipped.add(int(ci))
+            skipped_p.write_text(json.dumps(sorted(skipped)))
             continue
         if len(det):
             dist = cKDTree(det).query(arc)[0]
             share = float(np.mean(dist <= TOL_M))
         else:
             share = 0.0
-        rows.append(dict(crater=int(ci), d_m=float(d), range_m=float(rr), pose=[float(px), float(py), float(hd)],
-                         share=share, arc_points=int(len(arc)), in_view_share=float(np.mean(tr["in_view"][sel])),
-                         visible_share=float(np.mean(tr["visible"][sel]))))
+        row = dict(crater=int(ci), d_m=float(d), range_m=float(rr), pose=[float(px), float(py), float(hd)],
+                   share=share, arc_points=int(len(arc)), in_view_share=float(np.mean(tr["in_view"][sel])),
+                   visible_share=float(np.mean(tr["visible"][sel])))
+        with open(jl, "a") as fh:
+            fh.write(json.dumps(row) + "\n")
+        rows.append(row)
+        new += 1
         if len(rows) % 20 == 0:
             print(f"  {len(rows)} frames, {time.perf_counter() - t:.0f} s, median so far "
                   f"{np.median([r['share'] for r in rows]):.3f}", flush=True)
@@ -124,10 +143,14 @@ def main():
     ap.add_argument("--batch", default="arcshare-1")
     ap.add_argument("--frames", type=int, default=120)
     ap.add_argument("--routes", default=str(OUT / "realism-cal" / "routes.json"))
+    ap.add_argument("--chunk", type=int, default=None, help="at most this many new frames per call (resumes)")
     a = ap.parse_args()
     out = OUT / a.batch
     out.mkdir(parents=True, exist_ok=True)
-    rows = measure(a.frames, a.routes, out)
+    rows = measure(a.frames, a.routes, out, a.chunk)
+    if len(rows) < a.frames:
+        print(f"{len(rows)} of {a.frames} frames so far; run again to continue")
+        return
     s = np.array([r["share"] for r in rows])
     med = float(np.median(s))
     cut = WorldRanges().orbital_map_min_d_m

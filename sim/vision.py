@@ -12,6 +12,13 @@ the image) than just before it, and the ground beyond is further away (the
 shadowed side). Its position comes from the depth, with noise added, as the
 spec says ("the renderer's depth, with noise added, places each rim point").
 
+Depth noise is stereo's (sim/settings.py stereo_*): the camera is ShadowNav's
+field rig (A24 sec. IV-B: 0.26 m baseline, 5120 px across a 60 deg view), and
+each pixel's disparity carries Gaussian noise of stereo_disparity_sigma_px.
+Depth is Z = f B / disparity, so its error grows as Z^2 (about 0.13 m at 5 m,
+1.15 m at 15 m, 2 m at 20 m). The shadow test above reads the noiseless
+depth: it compares pixels 3 px apart, whose stereo errors are correlated.
+
 Obstacles: the depth is turned into rover-frame points, binned into a small
 height grid ahead of the rover, and a cell is a hazard if the ground steps
 by more than the wheel can climb within one cell's neighbourhood, or slopes
@@ -25,6 +32,12 @@ import math
 import cv2
 import numpy as np
 
+try:
+    from sim.settings import Settings as _Settings
+except ImportError:  # run as a script from sim/
+    from settings import Settings as _Settings
+_S = _Settings()
+
 # --- rims
 # Atha et al. 2024 sec. IV: rims are seen from about 5 to 25 m; Cauligi et
 # al. 2023 sec. 1: Canny finds rims beyond 10 m. Stereo depth is good to
@@ -36,7 +49,18 @@ SHADOW_PROBE_PX = 3             # assumed: pixels above/below the edge sampled f
 DEPTH_JUMP_M = 0.15             # assumed: the shadowed side must be at least this much further away
 MIN_EDGE_PX = 25                # assumed: drop edge fragments shorter than this (rock shadows, noise)
 MAX_RIM_POINTS = 80             # assumed: subsample to at most this many points per frame
-DEPTH_NOISE_FRAC = 0.005        # assumed: 1-sigma range noise, fraction of range (0.05 m at 10 m)
+# Stereo depth noise (sim/settings.py, sourced there): f B in pixel-metres of
+# the rig, and the disparity noise in the rig's pixels.
+STEREO_FB_PX_M = (_S.stereo_width_px / 2.0) / math.tan(math.radians(_S.stereo_hfov_deg / 2.0)) * _S.stereo_baseline_m
+DISPARITY_SIGMA_PX = _S.stereo_disparity_sigma_px
+# The model before 16 Nov 2026: range noise a fixed 0.5% of range. Kept for
+# sim/calibrate.py's before/after numbers; never a default.
+DEPTH_NOISE_FRAC_OLD = 0.005
+
+
+def stereo_sigma_z(z):
+    """1-sigma stereo depth error at depth z (m), first order: z^2 sigma_d / (f B)."""
+    return np.asarray(z, float) ** 2 * DISPARITY_SIGMA_PX / STEREO_FB_PX_M
 
 # --- obstacles
 HAZARD_RANGE_M = (3.0, 10.0)    # assumed: ShadowNav notes stereo is reliable to about 10 m
@@ -55,21 +79,52 @@ class Vision:
     NAME = ("vision: Canny on the lamp's rim shadows, placed by depth with noise; "
             "hazards from a height grid built from depth (sim/vision.py)")
 
-    def __init__(self, scene, rng: np.random.Generator):
+    def __init__(self, scene, rng: np.random.Generator, depth_model: str = "stereo"):
+        """depth_model: "stereo" (the default) or "old" (0.5% of range, before 16 Nov 2026)."""
         self.scene = scene
         self.rng = rng
         self.cam = scene.camera_model()
+        self.depth_model = depth_model
+        c = self.cam
+        u = (np.arange(c["width"]) + 0.5 - c["cx"]) / c["fx"]
+        v = (c["cy"] - (np.arange(c["height"]) + 0.5)) / c["fy"]
+        U, V = np.meshgrid(u, v)
+        self._cos = 1.0 / np.sqrt(1.0 + U * U + V * V)   # depth along the optical axis / range along the ray
 
     # -- helpers ------------------------------------------------------------
+    def noisy_range(self, rng_m, cos):
+        """Range along each pixel ray with depth noise. rng_m, cos: same shape."""
+        r = np.asarray(rng_m, np.float64)
+        n = self.rng.standard_normal(r.shape)
+        if self.depth_model == "old":
+            return r * (1.0 + DEPTH_NOISE_FRAC_OLD * n)
+        z = r * cos
+        with np.errstate(divide="ignore", invalid="ignore"):
+            disp = STEREO_FB_PX_M / z + DISPARITY_SIGMA_PX * n      # disparity in the rig's pixels
+            zn = np.where(disp > 0, STEREO_FB_PX_M / disp, np.nan)  # no match beyond infinity
+        return zn / cos
+
     def points(self, depth):
-        """(h, w, 3) rover-frame points [x_fwd, y_left, z_up] from the camera, with range noise."""
-        d = depth.astype(np.float64)
-        noisy = d * (1.0 + DEPTH_NOISE_FRAC * self.rng.standard_normal(d.shape))
+        """(h, w, 3) rover-frame points [x_fwd, y_left, z_up] from the camera, with stereo depth noise."""
+        noisy = self.noisy_range(depth.astype(np.float64), self._cos)
         return self.scene.depth_to_rover(noisy.astype(np.float32))
+
+    def _rover_points(self, rng_m, v, u):
+        """Rover-frame [x_fwd, y_left] of pixels (v, u) at range rng_m along their rays."""
+        c = self.cam
+        U = (u + 0.5 - c["cx"]) / c["fx"]
+        V = (c["cy"] - (v + 0.5)) / c["fy"]
+        z_eye = rng_m * self._cos[v, u]
+        p = math.radians(c["pitch_deg"])
+        return np.column_stack([z_eye * (math.cos(p) + V * math.sin(p)), -z_eye * U])
 
     # -- rims -------------------------------------------------------------------
     def rims(self, img, depth, P=None):
         """Rim points (M, 2) [x_forward, y_left] in metres."""
+        return self.rims_detail(img, depth, P)["rims"]
+
+    def detect(self, img, depth):
+        """Rim pixels (v, u), before placement: deterministic, no noise drawn."""
         g = img[..., 0] if img.ndim == 3 else img
         g = cv2.GaussianBlur(g, (3, 3), 0)
         edges = cv2.Canny(g, CANNY_LO, CANNY_HI) > 0
@@ -84,7 +139,7 @@ class Vision:
         edges &= keep[lab]
         v, u = np.nonzero(edges)
         if len(v) == 0:
-            return np.zeros((0, 2))
+            return v, u
         gi = g.astype(np.int16)
         before = gi[v + k, u]          # nearer ground (lower in the image)
         beyond = gi[v - k, u]          # further ground (higher in the image)
@@ -92,20 +147,34 @@ class Vision:
         d_beyond = depth[v - k, u]
         ok = (before - beyond >= SHADOW_CONTRAST)
         ok &= np.isfinite(d_before) & (~np.isfinite(d_beyond) | (d_beyond - d_before > DEPTH_JUMP_M))
-        v, u = v[ok], u[ok]
+        # The rim is the lit edge: it is placed with the depth just before the shadow.
+        return np.minimum(v[ok] + 1, h - 1), u[ok]
+
+    def rims_detail(self, img, depth, P=None, pixels=None):
+        """dict: rims (M, 2) as rims() returns; true (M, 2) the same pixels placed with the
+        renderer's depth (no noise; for scoring only); uv (M, 2) their pixels.
+        pixels: detect()'s output, if already computed for this frame."""
+        v, u = self.detect(img, depth) if pixels is None else pixels
+        return self.place(v, u, depth[v, u], P)
+
+    def place(self, v, u, r0, P=None):
+        """Place detected rim pixels (v, u), whose renderer range is r0, with depth noise:
+        range cut, subsample, as rims_detail() returns. P: noisy points to use instead."""
         if len(v) == 0:
-            return np.zeros((0, 2))
+            return {"rims": np.zeros((0, 2)), "true": np.zeros((0, 2)), "uv": np.zeros((0, 2), int),
+                    "idx": np.zeros(0, int)}
+        r0 = np.asarray(r0, np.float64)
         if P is None:
-            P = self.points(depth)
-        # The rim is the lit edge: place it with the depth just before the shadow.
-        pts = P[np.minimum(v + 1, h - 1), u][:, :2]
+            pts = self._rover_points(self.noisy_range(r0, self._cos[v, u]), v, u)
+        else:
+            pts = P[v, u][:, :2]
+        true = self._rover_points(r0, v, u)
         good = np.all(np.isfinite(pts), axis=1)
-        pts = pts[good]
         r = np.hypot(pts[:, 0], pts[:, 1])
-        pts = pts[(r >= RIM_RANGE_M[0]) & (r <= RIM_RANGE_M[1])]
-        if len(pts) > MAX_RIM_POINTS:
-            pts = pts[self.rng.choice(len(pts), MAX_RIM_POINTS, replace=False)]
-        return pts
+        keep = np.flatnonzero(good & (r >= RIM_RANGE_M[0]) & (r <= RIM_RANGE_M[1]))
+        if len(keep) > MAX_RIM_POINTS:
+            keep = keep[self.rng.choice(len(keep), MAX_RIM_POINTS, replace=False)]
+        return {"rims": pts[keep], "true": true[keep], "uv": np.column_stack([u[keep], v[keep]]), "idx": keep}
 
     # -- hazards ----------------------------------------------------------------
     def hazards(self, depth, P=None):

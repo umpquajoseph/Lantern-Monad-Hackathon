@@ -45,6 +45,7 @@ from sim.ice import (DEPOSIT_RADIUS_M, FIND_THRESHOLD_WT, RICH_PEAK_WT, Deposit,
                      FOOTPRINT_RADIUS_M)
 from sim.rover import PLANNER_STANDIN, SLOPE_LIMIT_DEG, SPEED_M_S, STEP_M, Rover, SlopeMap
 from sim.nav import ParticleNav
+from sim.orbital_map import orbital_map
 from sim.lidar import Lidar, fp_name
 from sim.vision import Vision, rover_to_world
 from sim.standins import RIMS_STANDIN, ChainStandin, rims_standin
@@ -744,7 +745,11 @@ def main():
         t0 = time.perf_counter()
         # Pass 1 senses like pass 2 (no files), so A drives the same path.
         cam1 = LiveCamera(scene, None, args.frame_every, sensors=args.vision) if scene is not None else None
-        a_steps, _, _ = simulate(scn, terrain, slope, field=None, cam=cam1)
+        # With vision the camera sees every crater and the filter matches the orbital map
+        # (sim/orbital_map.py); stand-in rims come from the map itself, so they keep the full list.
+        nav_terrain = ((height, orbital_map(craters, np.random.default_rng([scn["seed"], 77]))[0], x0, y0, cell)
+                       if args.vision else terrain)
+        a_steps, _, _ = simulate(scn, nav_terrain, slope, field=None, cam=cam1)
         field = place_ice(scn, a_steps, x0, y0, np.random.default_rng([scn["seed"], 99]))
         run_id = f"{scn['key']}-{stamp}"
         run_dir = out / run_id
@@ -754,7 +759,7 @@ def main():
             cam = _FrameNames(run_dir, args.frame_every)
         if cam is not None:
             cam.score_every = args.score_rims
-        steps, chain, ft = simulate(scn, terrain, slope, field=field, cam=cam)
+        steps, chain, ft = simulate(scn, nav_terrain, slope, field=field, cam=cam)
         finds = chain.get_finds()
         if not finds:
             raise RuntimeError(f"{scn['key']}: A never posted a find")

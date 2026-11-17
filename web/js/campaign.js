@@ -52,7 +52,7 @@ export class CampaignRun {
     this.sortieById = Object.fromEntries(rec.sorties.map((s) => [s.sortie_id, s]));
     this.events = rec.events.slice().sort((a, b) => a.t - b.t);
     // The ice map's events only: a record can hold tens of thousands of sightings and checks.
-    this.iceEvents = this.events.filter((e) => e.type === "find" || e.type === "search_end" || e.type === "drill" || e.type === "search_start");
+    this.iceEvents = this.events.filter((e) => e.type === "find" || e.type === "search_end" || e.type === "drill" || e.type === "search_start" || e.type === "search_unreached");
     this.addedBy = {};
     for (const c of rec.crater_map.added || []) (this.addedBy[c.after_sortie] ||= []).push(c);
   }
@@ -78,10 +78,12 @@ export class CampaignRun {
   findsFrom(events) {
     const m = new Map();
     for (const e of events) {
-      if (e.type === "find") m.set(e.find_id, { ...e, status: "find", searches: [], drill: null });
+      if (e.type === "find") m.set(e.find_id, { ...e, status: "find", searches: [], unreached: [], drill: null });
       const f = m.get(e.find_id);
       if (!f) continue;
       if (e.type === "search_end") { f.status = e.result; f.searches.push(e); }
+      // A searcher that could not reach the find (docs/handoffs.md `search_unreached`): no search, status unchanged.
+      if (e.type === "search_unreached") f.unreached.push(e);
       if (e.type === "drill") { f.status = "drilled"; f.drill = e; }
     }
     return [...m.values()];

@@ -16,6 +16,7 @@ Pieces, in order:
     1. terrain       sim/terrain.py build           -> data/terrain/shoemaker.npz
     2. display layer sim/terrain_display.py build   -> data/terrain/display/
     3. web assets    web/build_assets.py            -> web/assets/terrain/
+                     web/build_assets.py --run-ground, per camera run -> web/assets/terrain/runs/<run_id>/
     4. campaigns     the campaign engine            -> data/campaigns/<batch_id>/
                      (none yet: web/make_standin_campaign.py writes a labelled stand-in)
     5. site index    web/collect_campaigns.py       -> web/campaigns/index.json (+ terrain windows)
@@ -96,6 +97,33 @@ def build(standin: bool):
         say(f"campaigns: {', '.join(p.parent.name for p in sorted(CAMPAIGNS.glob('*/summary.csv')))}")
 
 
+def run_grounds():
+    """Each camera run's own ground (record `ground`, docs/handoffs.md) -> web/assets/terrain/runs/<run_id>/.
+
+    Mission Control draws a camera run on the ground its cameras saw; without
+    these assets it falls back to the Shoemaker stand-in grid, which is the
+    wrong place for a PSR run. Camera runs are the ones with steps.npz.
+    """
+    import json
+    built = kept = 0
+    for steps in sorted(CAMPAIGNS.glob("*/*/steps.npz")):
+        rdir = steps.parent
+        try:
+            g = json.loads((rdir / "record.json").read_text()).get("ground") or {}
+        except (OSError, ValueError):
+            continue
+        src = DATA / "terrain" / g["file"] if g.get("file") else None
+        if src is None or not src.exists():
+            continue
+        meta = WEB / "assets" / "terrain" / "runs" / rdir.name / "meta.json"
+        if stale(meta, src, WEB / "build_assets.py"):
+            run(["web/build_assets.py", "--run-ground", f"{rdir.parent.name}/{rdir.name}"], f"run ground {rdir.name}")
+            built += 1
+        else:
+            kept += 1
+    say(f"run grounds: {built} built, {kept} kept")
+
+
 def sync_runs(max_runs, copy=False):
     """Index the batches. Locally web/serve.py reads the runs from DATA; --site copies them."""
     sys.path.insert(0, str(WEB))
@@ -142,6 +170,7 @@ def main():
     a = ap.parse_args()
 
     build(a.standin)
+    run_grounds()
     sync_runs(a.max_runs, copy=bool(a.site))
     if a.site:
         export_site(a.site)

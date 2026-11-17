@@ -104,13 +104,18 @@ async function main() {
   requestAnimationFrame(loop);
 }
 
-// The run asked for, else a camera run, else one that carries stand-in
-// pipeline data (every view has something to draw), else the first run.
+// The run asked for, else the real camera run that gets furthest through the
+// workflow (map, discover, corroborate: confirmed, then searches, then finds),
+// else one that carries stand-in pipeline data, else the first run. A
+// stand-in batch never wins over a real one.
 function pickRun(index, batch, run) {
   if (batch && run) return { batch, run };
-  const withMap = index.flatMap((b) => b.runs.filter((r) => r.map).map((r) => ({ batch: b.batch_id, run: r.run_id, r })));
-  const cam = withMap.filter((x) => x.r.pipeline === "camera"), piped = withMap.filter((x) => x.r.pipeline);
-  const best = cam.find((x) => x.r.n_scouts >= 2) || cam[0] || piped.find((x) => x.r.n_scouts >= 3) || piped[0] || withMap.find((x) => x.r.n_scouts >= 2) || withMap[0];
+  const withMap = index.flatMap((b) => b.runs.filter((r) => r.map).map((r) => ({ batch: b.batch_id, run: r.run_id, r, standin: !!b.standin })));
+  const n = (v) => Number(v) || 0;
+  const reach = (r) => [n(r.confirmed), n(r.searches), n(r.finds), n(r.n_scouts) >= 2 ? 1 : 0, n(r.sorties_ok)];
+  const cmp = (p, q) => { const a = reach(p.r), b = reach(q.r); for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] - a[i]; return 0; };
+  const cam = withMap.filter((x) => x.r.pipeline === "camera" && !x.standin).sort(cmp), piped = withMap.filter((x) => x.r.pipeline);
+  const best = cam[0] || piped.find((x) => x.r.n_scouts >= 3) || piped[0] || withMap.find((x) => x.r.n_scouts >= 2) || withMap[0];
   return best ? { batch: best.batch, run: best.run } : null;
 }
 
@@ -315,8 +320,8 @@ function searchMarks() {
   const findEv = new Map(cr.iceEvents.filter((e) => e.type === "find").map((e) => [e.find_id, e]));
   for (const e of cr.iceEvents) {
     if (e.type !== "search_start" || e.t > T1) continue;
-    const end = cr.iceEvents.find((x) => x.type === "search_end" && x.find_id === e.find_id && x.sortie_id === e.sortie_id && x.t >= e.t);
-    if ((end ? end.t : e.t) + SEARCH_LABEL_AFTER_S < T0) continue;
+    const se = searchEnd(e), end = se.end;
+    if (se.t1 + SEARCH_LABEL_AFTER_S < T0) continue;
     const f = findEv.get(e.find_id);
     if (!f || !run.agencies.includes(e.scout)) continue;
     const ring = world.ring(f.est[0], f.est[1], e.radius_m, world.lineMat(hexInt(scol(e.scout)), 3, { dashed: true }));
@@ -325,19 +330,19 @@ function searchMarks() {
     lbl.position.set(p.x, p.y, p.z + 3);
     lbl.center.set(1, 0.5);   // low and left of the find's beam, whose own label sits above-right
     world.scene.add(ring, lbl);
-    marks.push({ start: e, end, find: f, ring, lbl });
+    marks.push({ start: e, end, se, find: f, ring, lbl });
   }
 }
 
 function updateMarks(t) {
   for (const s of marks) {
-    const t0 = s.start.t, t1 = s.end ? s.end.t : t0;
+    const t0 = s.start.t, t1 = s.se.t1;
     const on = t >= t0 && t <= t1 + SEARCH_LABEL_AFTER_S;
     s.ring.visible = on && t <= t1;
     s.lbl.visible = on;
     s.lbl.element.style.display = on ? "" : "none";
     if (!on) continue;
-    const res = t > t1 && s.end ? ` · ${s.end.result === "confirmed" ? "confirmed" : "not confirmed"}` : "";
+    const res = t > t1 ? (s.end ? ` · ${s.end.result === "confirmed" ? "confirmed" : "not confirmed"}` : ` · no result, ${s.se.why}`) : "";
     const html = `<span>${s.start.scout} ${t <= t1 ? "searching" : "searched"} ${s.find.scout}'s find ${s.find.find_id}${res}</span>`;
     if (s.lbl.element.innerHTML !== html) s.lbl.element.innerHTML = html;
   }
@@ -429,13 +434,21 @@ function updateSteepShade(t) {
 
 // --------------------------------------------------------- checkpoints
 // The moments the video and a viewer want to stop on, from the record's own
-// events inside this sortie's window: a find, a second Scout's search result, a drill.
+// events inside this sortie's window: a find, a second Scout starting its
+// search, the search's result (or the search left with none), a drill.
 function checkpointsFor(run) {
   const T0 = run.times[0], T1 = run.tEnd, out = [];
   const finder = (id) => (S.cr.iceEvents.find((x) => x.type === "find" && x.find_id === id) || {}).scout || "?";
   for (const e of S.cr.iceEvents) {
+    if (e.type === "search_start" && run.agencies.includes(e.scout)) {
+      const se = searchEnd(e);
+      if (se.stop && se.stop.t > T0 && se.stop.t <= T1)
+        out.push({ t: se.stop.t, label: `${e.scout} leaves ${finder(e.find_id)}'s find ${e.find_id} unchecked`, say: `${se.why}; the search has no result` });
+    }
     if (e.t <= T0 || e.t > T1 || !run.agencies.includes(e.scout)) continue;
     if (e.type === "find") out.push({ t: e.t, label: `${e.scout} logs find ${e.find_id}`, say: `${fmtNum(e.reading_wt, 1)} wt%, within ${fmtNum(e.bound95, 1)} m (95%)` });
+    if (e.type === "search_unreached") out.push({ t: e.t, label: `${e.scout} cannot reach ${finder(e.find_id)}'s find ${e.find_id}`, say: `it gave up ${fmtNum(e.dist_m, 0)} m from it, by its own estimate; no search, the find stays open` });
+    if (e.type === "search_start") out.push({ t: e.t, label: `${e.scout} starts searching for ${finder(e.find_id)}'s find ${e.find_id}`, say: `a ${fmtNum(e.radius_m, 0)} m circle round where ${finder(e.find_id)} logged it` });
     if (e.type === "search_end") out.push({ t: e.t, label: `${e.scout}: ${finder(e.find_id)}'s find ${e.find_id} ${e.result === "confirmed" ? "confirmed" : "not confirmed"}`, say: SEARCH_WHY[e.reason] || "" });
     if (e.type === "drill") out.push({ t: e.t, label: `${e.scout} drills find ${e.find_id}`, say: `its position error ${fmtNum(e.true_err_m, 1)} m` });
   }
@@ -499,6 +512,26 @@ function exitDrill() {
 
 const SEARCH_WHY = { match: "a matching reading inside the search area", no_readings: "no readings in the search area",
   no_match: "no reading matched", bound_too_large: "the combined position bound was too large to judge" };
+
+// How a search ended. `end`: its search_end (a result). Else `stop`: the
+// first event of the same sortie after the start that ends the search with no
+// result (a turn back, the dock, the Scout lost), and `why` in words. Neither:
+// still searching at the record's end.
+const STOP_WHY = { time: "turned back for time", energy: "turned back on energy", fault: "turned back on a fault" };
+const searchEnds = new Map();
+function searchEnd(start) {
+  if (searchEnds.has(start)) return searchEnds.get(start);
+  const same = (x) => x.sortie_id === start.sortie_id && x.t >= start.t;
+  const end = S.cr.iceEvents.find((x) => x.type === "search_end" && x.find_id === start.find_id && same(x)) || null;
+  let stop = null, why = "";
+  if (!end) {
+    stop = S.cr.events.find((x) => same(x) && (x.type === "turn_back" || x.type === "dock_arrive" || x.type === "lost")) || null;
+    if (stop) why = stop.type === "turn_back" ? STOP_WHY[stop.reason] || `turned back (${stop.reason})` : stop.type === "lost" ? "lost before the dock" : "back at the dock";
+  }
+  const r = { end, stop, why, t1: end ? end.t : stop ? stop.t : Infinity };
+  searchEnds.set(start, r);
+  return r;
+}
 
 // --------------------------------------------------------------- controls
 function bind() {
@@ -1100,6 +1133,7 @@ function timeline() {
     const at = `left:${(100 * (e.t - T0)) / span}%`;
     if (e.type === "find") out.push(`<i class="ice" style="${at};background:${STATUS_COLOR.find}" title="${esc(`${fmtDay(e.t)}: ${e.scout} logs find ${e.find_id}`)}"></i>`);
     else if (e.type === "search_end") out.push(`<i class="ice" style="${at};background:${e.result === "confirmed" ? STATUS_COLOR.confirmed : STATUS_COLOR.unconfirmed}" title="${esc(`${fmtDay(e.t)}: ${e.scout}, ${finder(e.find_id)}'s find ${e.find_id} ${e.result}`)}"></i>`);
+    else if (e.type === "search_unreached") out.push(`<i class="ice" style="${at};background:${STATUS_COLOR.unconfirmed}" title="${esc(`${fmtDay(e.t)}: ${e.scout} cannot reach ${finder(e.find_id)}'s find ${e.find_id}, ${fmtNum(e.dist_m, 0)} m short`)}"></i>`);
     else if (e.type === "drill") out.push(`<i class="ice" style="${at};background:${STATUS_COLOR.drilled}" title="${esc(`${fmtDay(e.t)}: ${e.scout} drills find ${e.find_id}`)}"></i>`);
     else if (e.type === "check" && e.scout === S.sortie.scout) out.push(`<i class="chk${e.wrong_match ? " wrong" : ""}" style="${at}" title="${esc(`${fmtDay(e.t)}: ${e.scout} position check${e.fixed === false ? ", no fix" : ""}`)}"></i>`);
     else if (e.type === "fault" || e.type === "turn_back") out.push(`<i class="haz" style="${at}" title="${esc(`${fmtDay(e.t)}: ${e.scout} ${e.type === "fault" ? e.module + " fault" : "turns back (" + e.reason + ")"}`)}"></i>`);
@@ -1229,14 +1263,17 @@ function renderFinds(t) {
   const evs = cr.iceEvents.filter((e) => e.t <= t);
   const finds = cr.findsFrom(evs);
   $("finds-count").textContent = finds.length ? String(finds.length) : "";
-  once("finds", `${evs.length}|${S.opts.truth}`, () => finds.length ? finds.slice().reverse().map((f) => {
+  const gaveUp = evs.filter((e) => e.type === "search_start" && t >= searchEnd(e).t1).length;   // a search's stop is not an ice event
+  once("finds", `${evs.length}|${gaveUp}|${S.opts.truth}`, () => finds.length ? finds.slice().reverse().map((f) => {
     const starts = evs.filter((e) => e.type === "search_start" && e.find_id === f.find_id);
     const rows = starts.map((s) => {
       const end = f.searches.find((e) => e.sortie_id === s.sortie_id);
-      return `<li><i class="dot" style="background:${scol(s.scout)}"></i>${esc(s.scout)} searched within ${fmtNum(s.radius_m, 1)} m on ${esc(s.sortie_id)}: ${end ? `<span class="res ${end.result}">${end.result === "confirmed" ? "confirmed" : "not confirmed"}</span> <span class="hint">${esc(SEARCH_WHY[end.reason] || "")}</span>` : `<span class="hint">searching now</span>`}` +
+      const se = searchEnd(s), gaveUp = !end && t >= se.t1;
+      return `<li><i class="dot" style="background:${scol(s.scout)}"></i>${esc(s.scout)} searched within ${fmtNum(s.radius_m, 1)} m on ${esc(s.sortie_id)}: ${end ? `<span class="res ${end.result}">${end.result === "confirmed" ? "confirmed" : "not confirmed"}</span> <span class="hint">${esc(SEARCH_WHY[end.reason] || "")}</span>` : gaveUp ? `<span class="res unconfirmed">no result</span> <span class="hint">${esc(se.why)}</span>` : `<span class="hint">searching now</span>`}` +
         (S.opts.truth && end ? ` <span class="truth">${end.truth_has_deposit ? "a deposit is there" : "no deposit there"}${end.false_confirmed ? ", a false confirmation" : ""}</span>` : "") + `</li>`;
     });
-    if (!starts.length) rows.push(`<li class="hint">No second Scout has searched it yet.</li>`);
+    for (const u of f.unreached) rows.push(`<li><i class="dot" style="background:${scol(u.scout)}"></i>${esc(u.scout)} set out on ${esc(u.sortie_id)} but could not reach it: <span class="res unconfirmed">no search</span> <span class="hint">gave up ${fmtNum(u.dist_m, 0)} m away</span></li>`);
+    if (!starts.length && !f.unreached.length) rows.push(`<li class="hint">No second Scout has searched it yet.</li>`);
     if (f.drill) rows.push(`<li><i class="dot" style="background:${scol(f.drill.scout)}"></i>${esc(f.drill.scout)} drilled it on ${esc(f.drill.sortie_id)}` +
       (S.opts.truth ? ` <span class="truth">${drillTruth(f.drill)}</span>` : "") + `</li>`);
     const off = S.opts.truth && f.x != null ? ` <span class="truth">really ${fmtNum(Math.hypot(f.est[0] - f.x, f.est[1] - f.y), 1)} m off</span>` : "";

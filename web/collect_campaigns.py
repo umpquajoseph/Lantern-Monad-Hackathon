@@ -92,6 +92,8 @@ def copy_run(src: Path, dst: Path) -> None:
     convert_poses(src / "poses.npz", dst)
     if (src / "fp").is_dir():   # the showcase run's first-person frames (sim/showcase.py)
         shutil.copytree(src / "fp", dst / "fp", dirs_exist_ok=True)
+    if (src / "pipeline").is_dir():   # per-step pipeline data (web/make_standin_pipeline.py until the engine logs it)
+        shutil.copytree(src / "pipeline", dst / "pipeline", dirs_exist_ok=True)
 
 
 def has_record(d: Path) -> bool:
@@ -189,6 +191,9 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
                 rows.append({**r, "map": False})
         for r in rows:
             r.setdefault("map", r["run_id"] in by_name)
+            # Per-step pipeline data for Mission Control's views: "standin" (web/make_standin_pipeline.py) or absent.
+            if r["map"] and (by_name[r["run_id"]] / "pipeline").is_dir():
+                r["pipeline"] = "standin"
         rows = rows[: max_runs or None]
         if copy:
             for r in rows:

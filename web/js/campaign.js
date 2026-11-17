@@ -1,6 +1,7 @@
 // Campaign runs as web/collect_campaigns.py writes them (docs/handoffs.md,
 // "Campaign simulator"): the index of batches and summary rows, one run's
 // record, and its pose rows. Nothing here draws.
+import { Run } from "./data.js";
 
 export const SCOUT_COLOR = { S1: "#5aa7ff", S2: "#f2994a", S3: "#b58cff", S4: "#4fd1b5", S5: "#f06a9a" };
 export const STATUS_COLOR = { find: "#e0b84a", confirmed: "#4fbf72", unconfirmed: "#8a9099", drilled: "#58c8ff" };
@@ -195,4 +196,173 @@ export function bannersOf(rec) {
 
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
+// ------------------------------------------------------------ sortie window
+export const DOCKED = 7;            // poses.npz activity: docked (docs/handoffs.md)
+const PARK_M = 4;                   // display only: Scouts at the dock are drawn this far apart, beside the pad
+
+function lerpPose(a, b, f) {
+  let dh = b[2] - a[2];
+  dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + dh * f];
+}
+
+// One sortie's time window as a "Run log" (docs/handoffs.md, "Part 4 reads"):
+// every Scout out during it, sampled on one shared timeline, one rover per
+// Scout, so world.js and map.js replay it unchanged. Between its own sorties
+// a Scout is parked at the dock. Nothing is re-simulated.
+//
+// believed: draw each Scout at the pose it believed (the sortie replay page,
+// truth behind a reveal); otherwise at its true pose with the estimate drawn
+// beside it (Mission Control, as the hackathon page drew it).
+// pipes: {sortie_id: pipeline doc} from loadPipeline. Each pipeline step's
+// time becomes a step here, and that step's rover carries what the Scout's
+// pipeline produced: rims ([[x_fwd, y_left]], at that step's true pose),
+// rimInfo ([[match, wrong]] per point), particles ([[x, y, w]]), plan
+// ([[x, y]]) and lidar (the hazard grid string, see lidar_grid).
+export class FleetRun extends Run {
+  constructor(cr, s, { believed = false, pipes = {} } = {}) {
+    const T0 = s.t_start, T1 = s.t_end, c = cr.col, d = cr.rec.dock;
+    const over = cr.rec.sorties.filter((x) => x.t_start < T1 && x.t_end > T0);
+    const scouts = [s.scout, ...[...new Set(over.map((x) => x.scout))].filter((a) => a !== s.scout).sort()];
+    const rowsOf = Object.fromEntries(over.map((x) => [x.sortie_id, cr.rows(x.sortie_id)]));
+    const tset = new Set([T0, T1]);
+    for (const rows of Object.values(rowsOf)) for (const r of rows) if (r[c.t] >= T0 && r[c.t] <= T1) tset.add(r[c.t]);
+    // Pipeline steps, per Scout, in time order; each one's time is a step.
+    const pipe = {};
+    for (const x of over) {
+      const doc = pipes[x.sortie_id];
+      if (!doc) continue;
+      for (const st of doc.steps) {
+        (pipe[x.scout] ||= []).push(st);
+        if (st.t >= T0 && st.t <= T1) tset.add(st.t);
+      }
+    }
+    for (const a in pipe) pipe[a].sort((p, q) => p.t - q.t);
+    const times = [...tset].sort((a, b) => a - b);
+    const park = (i) => [d.x - PARK_M * (i + 1), d.y - PARK_M, 0];
+
+    const sample = (a, i, t) => {
+      const so = over.find((x) => x.scout === a && x.t_start <= t && t <= x.t_end);
+      const rows = so && rowsOf[so.sortie_id];
+      if (!rows || !rows.length) {
+        const p = park(i);
+        return { tru: p, est: p, b: 0.3, act: DOCKED, energy: null, sortie: null };
+      }
+      let lo = 0, hi = rows.length - 1;
+      if (t <= rows[0][c.t]) hi = 0;
+      else while (lo < hi) { const m = (lo + hi + 1) >> 1; if (rows[m][c.t] <= t) lo = m; else hi = m - 1; }
+      const r0 = rows[lo], r1 = rows[Math.min(lo + 1, rows.length - 1)];
+      const span = r1[c.t] - r0[c.t], f = span > 0 ? Math.min(1, Math.max(0, (t - r0[c.t]) / span)) : 0;
+      const tru = lerpPose([r0[c.true_x], r0[c.true_y], r0[c.true_heading]], [r1[c.true_x], r1[c.true_y], r1[c.true_heading]], f);
+      const est = lerpPose([r0[c.est_x], r0[c.est_y], r0[c.true_heading]], [r1[c.est_x], r1[c.est_y], r1[c.true_heading]], f);
+      return { tru, est, b: r0[c.bound95] + (r1[c.bound95] - r0[c.bound95]) * f, act: r1[c.activity],
+        energy: r0[c.energy_kwh] + (r1[c.energy_kwh] - r0[c.energy_kwh]) * f, sortie: so };
+    };
+    // The latest pipeline step at or before t, inside the Scout's own sortie.
+    const pipeAt = (a, t, so) => {
+      const L = pipe[a];
+      if (!L || !so) return null;
+      let lo = 0, hi = L.length - 1, k = -1;
+      while (lo <= hi) { const m = (lo + hi) >> 1; if (L[m].t <= t) { k = m; lo = m + 1; } else hi = m - 1; }
+      return k >= 0 && L[k].t >= so.t_start ? L[k] : null;
+    };
+
+    const poses = { truth: {}, believed: {} };
+    for (const a of scouts) { poses.truth[a] = []; poses.believed[a] = []; }
+    const steps = times.map((t) => {
+      const rovers = {}, info = {};
+      scouts.forEach((a, i) => {
+        const q = sample(a, i, t);
+        const ps = pipeAt(a, t, q.sortie);
+        const rims = ps ? ps.rims : [];
+        rovers[a] = { true_pose: q.tru, estimate: q.est.slice(0, 2), odom_pose: q.est, sigma: q.b, nav_on: true,
+          rims: rims.map((p) => [p[0], p[1]]), rimInfo: rims.map((p) => [p[2], p[3]]),
+          particles: ps ? ps.particles : [], plan: ps ? ps.plan : null, lidar: ps ? ps.lidar : null, pipeT: ps ? ps.t : null };
+        info[a] = { act: q.act, energy: q.energy, sortie: q.sortie };
+        poses.truth[a].push(q.tru);
+        poses.believed[a].push(q.est);
+      });
+      return { t, rovers, info };
+    });
+    super({ run_id: `${cr.rec.run_id}:${s.sortie_id}`, steps, truth: { ice: cr.rec.truth.ice } }, "");
+    this.agencies = scouts;
+    this.tracks = {};
+    for (const a of scouts) this.tracks[a] = { truth: poses.truth[a].map((p) => p.slice(0, 2)),
+      est: poses.believed[a].map((p) => p.slice(0, 2)), odom: poses.believed[a].map((p) => p.slice(0, 2)) };
+    this.poses = poses;
+    this.cr = cr;
+    this.sortie = s;
+    this.over = over;
+    this.hasPipeline = Object.keys(pipe).length > 0;
+    this.hasParticles = this.hasPipeline;
+    const doc = Object.values(pipes)[0];
+    this.lidarGrid = doc ? doc.lidar_grid : null;
+    this.pipelineNote = doc ? doc.standin || doc.note || null : null;
+    this.pipelineStandin = !!(doc && doc.standin);
+    this.showTruth(!believed);
+    this._finds = new Map();
+  }
+
+  showTruth(on) {
+    const P = on ? this.poses.truth : this.poses.believed;
+    for (const a of this.agencies) this.steps.forEach((st, k) => { st.rovers[a].true_pose = P[a][k]; });
+  }
+
+  // The ice map as the Scouts had logged it by step k, every Scout's finds
+  // with their status. world.js draws each with its 95% bound.
+  findsAt(k) {
+    if (this._finds.has(k)) return this._finds.get(k);
+    const T = this.times[k];
+    const list = this.cr.findsFrom(this.cr.iceEvents.filter((e) => e.t <= T)).map((f) => ({
+      find_id: f.find_id, agency: f.scout, x: f.est[0], y: f.est[1], sigma: f.bound95, status: f.status, checks: [],
+      reading: f.reading_wt, sortie_id: f.sortie_id, searches: f.searches, drill: f.drill, tx: f.x, ty: f.y,
+    }));
+    this._finds.set(k, list);
+    return list;
+  }
+}
+
+// Per-step pipeline data for some sorties, from <run>/pipeline/<sortie_id>.json
+// (web/make_standin_pipeline.py's stand-in until the engine logs its own:
+// docs/handoffs.md, "Part 4 reads"). A sortie without a file is left out.
+export async function loadPipeline(cr, sortieIds) {
+  const out = {};
+  await Promise.all(sortieIds.map(async (sid) => {
+    try {
+      const r = await fetch(`${cr.dir}pipeline/${encodeURIComponent(sid)}.json`);
+      if (r.ok) out[sid] = await r.json();
+    } catch { /* none for this sortie */ }
+  }));
+  return out;
+}
+
+// A sortie runs kilometres past the 1 km drive area. Outside it, heights come
+// from the real LOLA backdrops, lowered exactly as world.js draws them
+// (buildBackdrop: 0.5 m plus r^2 / 2R), so the Scouts sit on the drawn ground.
+// Call before World is built: a 5 m window outside the near backdrop takes
+// the near backdrop's place (world.js buildBackdrop draws it).
+export async function groundEverywhere(terrain, rec) {
+  const m = terrain.meta;
+  const win = await windowFor(rec);
+  if (win) {
+    const n = m.backdrop_near;
+    const inside = n && win.x0 >= n.x0 && win.y0 >= n.y0 && win.x0 + win.cols * win.cell <= n.x0 + n.cols * n.cell &&
+      win.y0 + win.rows * win.cell <= n.y0 + n.rows * n.cell;
+    if (!inside) m.backdrop_near = win;
+  }
+  const near = await terrain.loadBackdrop("backdrop_near"), far = await terrain.loadBackdrop("backdrop");
+  const ox = m.x0 + 0.5 * (m.cols - 1) * m.cell, oy = m.y0 + 0.5 * (m.rows - 1) * m.cell;
+  const R = (m.display && m.display.moon_radius_m) || 1737400;
+  const x1 = m.x0 + (m.cols - 1) * m.cell, y1 = m.y0 + (m.rows - 1) * m.cell;
+  const inner = terrain.heightAt.bind(terrain);
+  terrain.heightAt = (x, y) => {
+    if (x >= m.x0 && x <= x1 && y >= m.y0 && y <= y1) return inner(x, y);
+    const drop = 0.5 + ((x - ox) ** 2 + (y - oy) ** 2) / (2 * R);
+    if (near && near.contains(x, y)) return near.at(x, y) - drop;
+    if (far && far.contains(x, y)) return far.at(x, y) - drop;
+    return inner(x, y);
+  };
+  return { near, far };
 }

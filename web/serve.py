@@ -23,7 +23,7 @@ WEB = Path(__file__).resolve().parent
 sys.path.insert(0, str(WEB))
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 CONVERT = threading.Lock()   # one conversion at a time: poses.bin and poses.json are asked for together
-RUN_FILE = re.compile(r"^/campaigns/([A-Za-z0-9][A-Za-z0-9_.-]*)/([A-Za-z0-9][A-Za-z0-9_.-]*)/(record\.json|poses\.bin|poses\.json|fp/[A-Za-z0-9_.-]+\.jpg)$")
+RUN_FILE = re.compile(r"^/campaigns/([A-Za-z0-9][A-Za-z0-9_.-]*)/([A-Za-z0-9][A-Za-z0-9_.-]*)/(record\.json|poses\.bin|poses\.json|fp/[A-Za-z0-9_.-]+\.jpg|pipeline/[A-Za-z0-9_.-]+\.json)$")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -38,7 +38,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             batch, run, name = m.groups()
             src = SRC / batch / run
             if (src / "record.json").exists():
-                if name == "record.json" or name.startswith("fp/"):   # fp/: the showcase's frames
+                if name == "record.json" or name.startswith(("fp/", "pipeline/")):   # fp/: the showcase's frames; pipeline/: per-step data
                     return str(src / name)
                 with CONVERT:
                     convert_poses(src / "poses.npz", DST / batch / run)

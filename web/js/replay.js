@@ -3,9 +3,9 @@
 // Nothing is re-simulated. The window is converted to the "Run log" shape
 // (docs/handoffs.md, "Part 4 reads"), one rover per Scout.
 import * as THREE from "three";
-import { Terrain, Run } from "./data.js";
+import { Terrain } from "./data.js";
 import { World, COLORS } from "./world.js";
-import { CampaignRun, SCOUT_COLOR, STATUS_COLOR, ACTIVITY, OUTCOME_WORD, fmtNum, fmtDay, standinBanner, standinOf, bannersOf, fitPage, windowFor, assetsBase } from "./campaign.js";
+import { CampaignRun, FleetRun, groundEverywhere, SCOUT_COLOR, STATUS_COLOR, ACTIVITY, OUTCOME_WORD, fmtNum, fmtDay, bannersOf, fitPage, assetsBase } from "./campaign.js";
 
 const $ = (id) => document.getElementById(id);
 const P = new URLSearchParams(location.search);
@@ -16,92 +16,9 @@ for (const [k, v] of Object.entries(STATUS_COLOR)) COLORS[k] = hexInt(v);
 
 const ACT_COLOR = ["#4a6a8f", "#6f8fb3", "#4a6a8f", "#e0b84a", "#4fbf72", "#58c8ff", "#b58cff", "#3b4048", "#e5574f"];
 const DOCKED = 7;
-const PARK_M = 4;              // display only: Scouts at the dock are drawn this far apart, beside the pad
 const SEARCH_LABEL_AFTER_S = 1800;  // display only: a search's label stays this long after it ends, with its result
 const state = { t: 0, playing: false, speed: 600, fill: true, truth: P.get("truth") === "1", follow: null };
 let world, terrain, cr, sortie, run, searches = [];
-
-function lerpPose(a, b, f) {
-  let dh = b[2] - a[2];
-  dh = Math.atan2(Math.sin(dh), Math.cos(dh));
-  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + dh * f];
-}
-
-// Every Scout out during the picked sortie, sampled on one shared timeline.
-// Between its own sorties a Scout is at the dock. world.js draws the rover
-// body at true_pose; until the truth is revealed it gets the pose the Scout
-// believed, and the true pose is kept aside.
-class FleetRun extends Run {
-  constructor(cr, s) {
-    const T0 = s.t_start, T1 = s.t_end, c = cr.col, d = cr.rec.dock;
-    const over = cr.rec.sorties.filter((x) => x.t_start < T1 && x.t_end > T0);
-    const scouts = [s.scout, ...[...new Set(over.map((x) => x.scout))].filter((a) => a !== s.scout).sort()];
-    const rowsOf = Object.fromEntries(over.map((x) => [x.sortie_id, cr.rows(x.sortie_id)]));
-    const tset = new Set([T0, T1]);
-    for (const rows of Object.values(rowsOf)) for (const r of rows) if (r[c.t] >= T0 && r[c.t] <= T1) tset.add(r[c.t]);
-    const times = [...tset].sort((a, b) => a - b);
-    const park = (i) => [d.x - PARK_M * (i + 1), d.y - PARK_M, 0];
-
-    const sample = (a, i, t) => {
-      const so = over.find((x) => x.scout === a && x.t_start <= t && t <= x.t_end);
-      const rows = so && rowsOf[so.sortie_id];
-      if (!rows || !rows.length) {
-        const p = park(i);
-        return { tru: p, est: p, b: 0.3, act: DOCKED, energy: null, sortie: null };
-      }
-      let lo = 0, hi = rows.length - 1;
-      if (t <= rows[0][c.t]) hi = 0;
-      else while (lo < hi) { const m = (lo + hi + 1) >> 1; if (rows[m][c.t] <= t) lo = m; else hi = m - 1; }
-      const r0 = rows[lo], r1 = rows[Math.min(lo + 1, rows.length - 1)];
-      const span = r1[c.t] - r0[c.t], f = span > 0 ? Math.min(1, Math.max(0, (t - r0[c.t]) / span)) : 0;
-      const tru = lerpPose([r0[c.true_x], r0[c.true_y], r0[c.true_heading]], [r1[c.true_x], r1[c.true_y], r1[c.true_heading]], f);
-      const est = lerpPose([r0[c.est_x], r0[c.est_y], r0[c.true_heading]], [r1[c.est_x], r1[c.est_y], r1[c.true_heading]], f);
-      return { tru, est, b: r0[c.bound95] + (r1[c.bound95] - r0[c.bound95]) * f, act: r1[c.activity], energy: r0[c.energy_kwh], sortie: so };
-    };
-
-    const poses = { truth: {}, believed: {} };
-    for (const a of scouts) { poses.truth[a] = []; poses.believed[a] = []; }
-    const steps = times.map((t) => {
-      const rovers = {}, info = {};
-      scouts.forEach((a, i) => {
-        const q = sample(a, i, t);
-        rovers[a] = { true_pose: q.tru, estimate: q.est.slice(0, 2), odom_pose: q.est, sigma: q.b };
-        info[a] = { act: q.act, energy: q.energy, sortie: q.sortie };
-        poses.truth[a].push(q.tru);
-        poses.believed[a].push(q.est);
-      });
-      return { t, rovers, info };
-    });
-    super({ run_id: `${cr.rec.run_id}:${s.sortie_id}`, steps, truth: { ice: cr.rec.truth.ice } }, "");
-    this.agencies = scouts;
-    this.tracks = {};
-    for (const a of scouts) this.tracks[a] = { truth: poses.truth[a].map((p) => p.slice(0, 2)),
-      est: poses.believed[a].map((p) => p.slice(0, 2)), odom: poses.believed[a].map((p) => p.slice(0, 2)) };
-    this.poses = poses;
-    this.cr = cr;
-    this.sortie = s;
-    this.over = over;
-    this.showTruth(false);
-    this._finds = new Map();
-  }
-
-  showTruth(on) {
-    const P = on ? this.poses.truth : this.poses.believed;
-    for (const a of this.agencies) this.steps.forEach((st, k) => { st.rovers[a].true_pose = P[a][k]; });
-  }
-
-  // The ice map as the Scouts had logged it by step k, every Scout's finds
-  // with their status. world.js draws each with its 95% bound.
-  findsAt(k) {
-    if (this._finds.has(k)) return this._finds.get(k);
-    const T = this.times[k];
-    const list = this.cr.findsFrom(this.cr.iceEvents.filter((e) => e.t <= T)).map((f) => ({
-      find_id: f.find_id, agency: f.scout, x: f.est[0], y: f.est[1], sigma: f.bound95, status: f.status, checks: [],
-    }));
-    this._finds.set(k, list);
-    return list;
-  }
-}
 
 async function main() {
   const batch = P.get("batch"), id = P.get("run");
@@ -131,7 +48,7 @@ async function main() {
   $("sortie-title").textContent = sortie.sortie_id;
   document.title = `Lantern · ${sortie.sortie_id} replay`;
 
-  await groundEverywhere();
+  await groundEverywhere(terrain, cr.rec);
   world = new World($("viewport"), terrain, P.get("quality") || "high");
   world.hideOdom = true;
   world.buildTerrain();
@@ -139,7 +56,7 @@ async function main() {
   world.loadRocks();
   world.initPatches();
 
-  run = new FleetRun(cr, sortie);
+  run = new FleetRun(cr, sortie, { believed: true });
   // Fine tiles under every track first, so the lines drape on the real ground.
   const pts = run.agencies.flatMap((a) => run.tracks[a].truth.filter((_, i) => i % 3 === 0));
   const keys = [...terrain.keysNear(pts, 4)];
@@ -174,34 +91,6 @@ async function main() {
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
-}
-
-// A sortie runs kilometres past the 1 km drive area. Outside it, heights come
-// from the real LOLA backdrops, lowered exactly as world.js draws them
-// (buildBackdrop: 0.5 m plus r^2 / 2R), so the Scouts sit on the drawn ground.
-async function groundEverywhere() {
-  const m = terrain.meta;
-  // A run on a 5 m window outside the near backdrop: the window takes the near
-  // backdrop's place (world.js buildBackdrop draws it, with the 20 m one round it).
-  const win = await windowFor(cr.rec);
-  if (win) {
-    const n = m.backdrop_near;
-    const inside = n && win.x0 >= n.x0 && win.y0 >= n.y0 && win.x0 + win.cols * win.cell <= n.x0 + n.cols * n.cell &&
-      win.y0 + win.rows * win.cell <= n.y0 + n.rows * n.cell;
-    if (!inside) m.backdrop_near = win;
-  }
-  const near = await terrain.loadBackdrop("backdrop_near"), far = await terrain.loadBackdrop("backdrop");
-  const ox = m.x0 + 0.5 * (m.cols - 1) * m.cell, oy = m.y0 + 0.5 * (m.rows - 1) * m.cell;
-  const R = (m.display && m.display.moon_radius_m) || 1737400;
-  const x1 = m.x0 + (m.cols - 1) * m.cell, y1 = m.y0 + (m.rows - 1) * m.cell;
-  const inner = terrain.heightAt.bind(terrain);
-  terrain.heightAt = (x, y) => {
-    if (x >= m.x0 && x <= x1 && y >= m.y0 && y <= y1) return inner(x, y);
-    const drop = 0.5 + ((x - ox) ** 2 + (y - oy) ** 2) / (2 * R);
-    if (near && near.contains(x, y)) return near.at(x, y) - drop;
-    if (far && far.contains(x, y)) return far.at(x, y) - drop;
-    return inner(x, y);
-  };
 }
 
 function dock() {

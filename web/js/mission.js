@@ -1,406 +1,226 @@
-// Lantern Mission Control: replays a Surveyor/Prospector registry mission
-// (sim/roles.py run log) on Joseph's terrain and 3D world (world.js).
-// Layout after NASA's "Experience Curiosity": the 3D scene fills the window,
-// the rover camera and an overhead map sit in small boxes over it, and one
-// play bar runs along the bottom. Science stops slow the clock and zoom in.
+// Lantern Mission Control: plays a campaign run (docs/handoffs.md, "Campaign
+// simulator") sortie by sortie on the 3D world (world.js). The hackathon's
+// page, with the chain taken out: the 3D scene fills the window, the
+// first-person box, the satellite map and the lidar sit in small boxes over
+// it, the panels on the left, one play bar along the bottom.
+//
+// Everything drawn comes from the run record, its poses and, where a record
+// has it, the per-step pipeline data (campaign.js loadPipeline). Sensor frames
+// are not saved, so the first-person box is drawn here from the 3D ground at
+// the Scout's camera pose, with the logged rim points, route and lidar on top.
 import * as THREE from "three";
-import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
-import { Terrain, Run, loadIndex, fmtClock } from "./data.js";
-import { World } from "./world.js";
+import { Terrain, fmtClock } from "./data.js";
+import { World, COLORS, CAMERA_HEIGHT_M, CAMERA_PITCH_DEG, CAMERA_HFOV_DEG } from "./world.js";
 import { MapView } from "./map.js";
-import { ScienceRig, DRILL_DEPTH_M } from "./science_rig.js";
-import { frostPatch, ICE_HEX, ICE_CSS } from "./frost.js";
 import { MissionPlayer, ensureStyles } from "./mission_player.js";
-// The judges' page plays Kellen's mission log (run_mission.py, docs/handoffs.md
-// "Mission log"): checkpoints and live chain posts come from mission_player.js,
-// the chain feed from the log's find and check events.
+import {
+  CampaignRun, FleetRun, loadPipeline, groundEverywhere, loadIndex, assetsBase,
+  SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, ACTIVITY, OUTCOME_WORD, DOCKED, fmtNum, fmtDay, standinOf, esc,
+} from "./campaign.js";
 
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const short = (h, a = 8, b = 6) => (h ? `${h.slice(0, a)}…${h.slice(-b)}` : "");
-const ROLE = { A: "Surveyor", B: "Prospector" };
-// The state machines' states, in words a visitor reads at a glance.
-const DOING = {
-  IDLE: "Waiting", EXPLORING: "Surveying", CANDIDATE_FOUND: "Candidate found", NAVIGATING_TO_SITE: "Driving to site",
-  MAPPING_HAZARD: "Mapping a hazard", INSPECTING: "Mapping the site", PUBLISHING: "Publishing", RESUMING: "Resuming", ERROR: "Error",
-  FETCHING_TARGET: "Reading registry", PLANNING: "Planning", NAVIGATING: "Driving", REPLANNING: "Replanning",
-  ANALYZING: "Analysing", REPORTING: "Publishing", COMPLETED: "Done",
-};
-const PHASE = { park: "Park", nir_scan: "NIR scan", arm_deploy: "Arm out", drill: "Drill 1 m", sample_lift: "Core up",
-  analyze: "Analyse", arm_stow: "Stow", stop: "Stop", mast_pan: "Camera pan", terrain_map: "Map terrain",
-  neutron_dwell: "Neutron dwell", photo: "Photo", flag: "Flag", neutron_survey: "Neutron survey" };
-// What the Surveyor's name tag says during each step of a stop.
-const A_TAG = { park: "PARKED", nir_scan: "NIR SCAN", neutron_survey: "NEUTRON SURVEY", analyze: "ANALYSING", mast_pan: "CAMERA PAN", terrain_map: "MAPPING TERRAIN", neutron_dwell: "NEUTRON DWELL", photo: "PHOTO",
-  flag: "FLAGGING HAZARD" };
-const CALL = {
-  registerCandidate: "Candidate registered",
-  submitSurveyorInspection: "Surveyor result",
-  submitProspectorAnalysis: "Prospector analysis",
-};
-// What each kind of write puts on chain, and what stays off chain under its hash.
-const SPLIT = {
-  registerCandidate: ["Site, position, confidence, hash", "Neutron scan readings"],
-  submitSurveyorInspection: ["Result, hash, route ID", "Water by depth, route driven"],
-  submitProspectorAnalysis: ["Result, link to the Surveyor's report, hash", "Water by depth, NIR scan, route"],
-};
-const MODE_SHORT = { local: "Local chain", monad: "Monad testnet", offline: "Offline" };
-const STAGE_N = { None: 0, Candidate: 1, SurveyorInspected: 2, ProspectorAnalyzed: 3 };
-const SITE_COLOR = { Candidate: 0x9aa7b8, Positive: ICE_HEX, Negative: 0x8d939b, Inconclusive: 0xd9b44a, Analyzed: 0x58b4ff };
-const FOCUS_SPEED = 1.5;   // sim seconds per real second during a science stop (Ritvik's short stops)
-const FOCUS_WALL_S = 3;    // asked for: the final-site drill plays in about this many real seconds (135-270 s of sim time)
-const FOCUS_LEAD_S = 3;    // the close-up starts this many sim seconds before the stop
-const FOCUS_TAIL_S = 3;    // and holds this long after it
-const BOTH_IN_SHOT_M = 20; // assumed: the drill close-up widens to frame the other rover when it is this near
+const hexInt = (h) => parseInt(h.slice(1), 16);
+// world.js and map.js colour by key: the Scouts and the campaign's find statuses.
+for (const [k, v] of Object.entries(SCOUT_COLOR)) COLORS[k] = hexInt(v);
+for (const [k, v] of Object.entries(STATUS_COLOR)) COLORS[k] = hexInt(v);
+const scol = (a) => SCOUT_COLOR[a] || "#cccccc";
 const NARROW = matchMedia("(max-width: 760px)");
-// Candidate sites from orbit (S1, S2): green in 3D, on the camera and on the map
-// (asked for: "the site rings can be green"), so amber means the planned route only.
-const SITE_HEX = 0x7ddc7a, SITE_CSS = "#7ddc7a";
-// Frost patches drawn at this brightness (asked for: "cut the ice patch brightness a bit").
-const FROST_DIM = 0.45;   // 0.6 still read as a white cloud at S2 with fill off; 0.45 reads as frost
-function dimFrost(obj) {
-  obj.traverse((o) => { if (o.isMesh && o.material && o.material.map && o.material.color) o.material.color.setScalar(FROST_DIM); });
-}
+
+// Rover camera as sim/scene.py: 640 x 480 (FP_SIZE, assumed), 60 deg wide
+// (HFOV_DEG), 15 deg down (CAMERA_PITCH_DEG), on the 1.6 m mast.
+const FP = { w: 640, h: 480, pitch: THREE.MathUtils.degToRad(CAMERA_PITCH_DEG), camH: CAMERA_HEIGHT_M,
+  fx: 320 / Math.tan(THREE.MathUtils.degToRad(CAMERA_HFOV_DEG / 2)) };
+FP.vfovDeg = 2 * THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(CAMERA_HFOV_DEG / 2)) * FP.h / FP.w));
+// Lidar, copied from sim/lidar.py: 120 x 33 deg (H_FOV_DEG, V_ANGLES_DEG -35..-2), 30 m
+// (MAX_RANGE_M), panel to 25 m (VIEW_RANGE_M), 0.25 m right of the camera (LIDAR_RIGHT_OF_CAMERA_M).
+const LIDAR = { hfov: 120, elLo: -35, elHi: -2, maxR: 30, viewR: 25, right: 0.25 };
+const LIDAR_FP_COLS = 60, LIDAR_FP_ROWS = 20, LIDAR_FP_STEP_M = 0.5;   // viewer only, assumed: rays in the drawn first-person lidar
+const HAZ_RGB = { 1: [95, 98, 104], 2: [240, 160, 40], 3: [230, 50, 40] };   // sim/lidar.py view(): safe, crater floor, no-go
+const SEARCH_LABEL_AFTER_S = 1800;   // display only: a search's label stays this long after it ends, with its result
+const FIND_VIEW_M = 120;             // display only: finds this near are marked in the first-person box
 
 const S = {
-  lidarKind: "top",   // lidar inset: "top" (lidar_frame) or "fp" (lidar_fp_frame)
-  run: null, t: 0, playing: false, speed: 200, cam: "third", rover: "A", tab: "rover", tabBeforeFocus: null,
-  opts: { fill: false, routes: true, hazards: true, nogo: true, truth: false, particles: true, rims: true }, sensor: "camera", focus: true, focusEv: null, prev: null, lastPanel: "",
-  player: null,        // MissionPlayer: checkpoints and live chain
-  autoB: { armed: true, pending: false },   // switch to the Prospector once after the Surveyor's find
-  pauseAtT: 0,         // a checkpoint met during the drill pauses here, when the drill ends; 0 = none
+  index: [], batch: null, cr: null, run: null, sortie: null,
+  t: 0, playing: false, speed: 600, cam: "third", rover: null, tab: "sorties", lidarKind: "top", busy: false,
+  opts: { fill: false, routes: true, particles: true, rims: true, hazards: true, nogo: true, craters: true, truth: false, next: true },
+  player: null,
 };
-let terrain, world, map, rigs = {}, ov, sci = [], drill = [], reg = [], hazards = [], planned = [], siteObjs = new Map();
-let satObjs = [], extras = {}, dressed = {}, odo = {}, susp = {};
-// Rover camera, as sim/scene.py: 640x480, 60 deg wide, 15 deg down, 2.5 m up.
-const FP = { w: 640, h: 480, pitch: (15 * Math.PI) / 180, camH: 2.5, fx: 320 / Math.tan((30 * Math.PI) / 180) };
-const evidenceCache = new Map();
+let terrain, world, map, fpCam, dockObj = null, craterRings = [], marks = [], odo = {}, susp = {}, dressed = {};
+const addedT = new Map();   // crater_id -> campaign time it joined the dock's map
 
 // ------------------------------------------------------------------ boot
 async function main() {
-  const params = new URLSearchParams(location.search);
+  const P = new URLSearchParams(location.search);
+  ensureStyles();
+  try { S.index = await loadIndex(); } catch { S.index = []; }
+  const pick = pickRun(S.index, P.get("batch"), P.get("run"));
+  if (!pick) { $("loading").textContent = "No campaign runs yet. Run python app.py, or python web/make_standin_campaign.py for a labelled stand-in."; return; }
+  S.batch = pick.batch;
   try {
-    terrain = await Terrain.load("assets/terrain/");
+    S.cr = await CampaignRun.load(pick.batch, pick.run);
   } catch (e) {
-    $("loading").textContent = "Terrain assets missing: run python web/build_assets.py";
+    $("loading").textContent = `Run ${pick.run} not found in ${pick.batch}.`;
     throw e;
   }
-  world = new World($("viewport"), terrain, params.get("quality") || "high");
+  const rec = S.cr.rec;
+  $("loading").textContent = "Loading terrain";
+  try {
+    terrain = await Terrain.load(await assetsBase(rec));
+  } catch (e) {
+    $("loading").textContent = "Terrain assets missing: run python app.py";
+    throw e;
+  }
+  const ground = await groundEverywhere(terrain, rec);
+  world = new World($("viewport"), terrain, P.get("quality") || "high");
+  world.hideOdom = true;   // no odometry-alone line in the 3D view
   world.buildTerrain();
   world.buildBackdrop();
   world.loadRocks();
+  world.initPatches();
+  fpCam = new THREE.PerspectiveCamera(FP.vfovDeg, FP.w / FP.h, 0.3, 3000);
+  fpCam.up.set(0, 0, 1);
   map = new MissionMap($("map-cv"), terrain);
-  const runs = await loadIndex("runs/");
-  const want = params.get("run");
-  const entry = runs.find((r) => r.run_id === want) || runs.find((r) => r.run_id === "mission-demo") || runs[0];
-  await openRun(entry);
+  map.opts = mapOpts();
+  map.groundLayers = [ground.far, ground.near].filter(Boolean).map(hillshade);
+  for (const e of S.cr.events) if (e.type === "crater_added") addedT.set(e.crater_id, e.t);
+  dock3d();
+  craters3d();
+  runInfo();
+  sortieList();
   bind();
-  updateLegend();
   if (NARROW.matches) $("panel").classList.add("closed");
-  window.lantern = { world, S, rigs };   // for poking at the scene from the browser console
+  syncCollapse();
+  const s = S.cr.sortieById[P.get("sortie")] || S.cr.rec.sorties[0];
+  await openSortie(s, { t: P.has("t") ? Number(P.get("t")) : null, follow: P.get("follow") });
+  window.lantern = { world, S, map };   // for poking at the scene from the browser console
   $("loading").hidden = true;
   requestAnimationFrame(loop);
 }
 
-async function openRun(entry) {
-  $("loading").textContent = "Loading the mission";
-  const run = await Run.load("runs/", entry);
-  const log = run.log;
-  const pts = run.agencies.flatMap((a) => run.tracks[a].truth);
-  const keys = [...terrain.keysNear(pts.filter((_, i) => i % 2 === 0), 4)];
-  let done = 0;
-  await Promise.all(keys.map((k) => terrain.loadTile(k).then(() => {
-    $("loading").textContent = `Loading terrain ${++done} / ${keys.length}`;
-  })));
+// The run asked for, else one that carries pipeline data (every view has
+// something to draw), else the first run with a record.
+function pickRun(index, batch, run) {
+  if (batch && run) return { batch, run };
+  const withMap = index.flatMap((b) => b.runs.filter((r) => r.map).map((r) => ({ batch: b.batch_id, run: r.run_id, r })));
+  const piped = withMap.filter((x) => x.r.pipeline);
+  const best = piped.find((x) => x.r.n_scouts >= 3) || piped[0] || withMap.find((x) => x.r.n_scouts >= 2) || withMap[0];
+  return best ? { batch: best.batch, run: best.run } : null;
+}
+
+// One sortie's window: every Scout out during it, plus its pipeline data.
+async function openSortie(s, { t = null, follow = null } = {}) {
+  if (S.busy) return;
+  S.busy = true;
+  const wasPlaying = S.playing;
+  S.playing = false;
+  showToast(`Loading sortie ${s.sortie_id}`);
+  const over = S.cr.rec.sorties.filter((x) => x.t_start < s.t_end && x.t_end > s.t_start).map((x) => x.sortie_id);
+  const pipes = await loadPipeline(S.cr, over);
+  const run = new FleetRun(S.cr, s, { pipes });
+  const pts = run.agencies.flatMap((a) => run.tracks[a].truth.filter((_, i) => i % 3 === 0));
+  await Promise.all([...terrain.keysNear(pts, 4)].map((k) => terrain.loadTile(k)));
   S.run = run;
-  world.currentT = 0;
-  world.hideOdom = true;   // no odometry-alone line in the 3D view
+  S.sortie = s;
+  S.t = Math.min(run.tEnd, Math.max(run.times[0], t ?? s.t_start));
+  S.rover = run.agencies.includes(follow) ? follow : run.agencies.includes(S.rover) && follow === "keep" ? S.rover : s.scout;
+  world.currentT = S.t;
+  world.follow = S.rover;
   world.setRun(run);
-  for (const s of world.iceSites || []) dimFrost(s.obj);
-  for (const o of world.truthObjs || []) if (o.isGroup) dimFrost(o);
-  run.hasLidar = run.agencies.some((ag) => run.steps.some((st) => st.rovers[ag] && st.rovers[ag].lidar_frame));
-  for (const b of document.querySelectorAll("[data-sensor]")) {
-    b.onclick = () => setSensor(b.dataset.sensor);
-    if (b.dataset.sensor === "lidar") {
-      b.disabled = !run.hasLidar;
-      b.title = run.hasLidar ? "Lidar (L)" : "No lidar in this run";
-    }
-  }
-  let saved = "camera";
-  try { saved = localStorage.getItem("lantern.sensor") || "camera"; } catch (e) { /* private window */ }
-  S.sensor = run.hasLidar && saved === "lidar" ? "lidar" : "camera";
-  for (const b of document.querySelectorAll("[data-sensor]")) b.setAttribute("aria-selected", String(b.dataset.sensor === S.sensor));
-  world.setVisibility({ fill: S.opts.fill, tracks: S.opts.routes, truth: S.opts.truth });
-  $("vnote").hidden = !S.opts.fill;
-  map.setRun(run);
-  map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
-  document.title = `Lantern Mission Control · ${log.label || entry.label}`;
-
-  sci = [];
-  reg = [];
-  run.steps.forEach((s) => {
-    for (const e of s.science || []) {
-      sci.push({ ...e, t0: e.phases[0].t0, t1: e.phases.at(-1).t0 + e.phases.at(-1).dur });
-    }
-    for (const e of s.registry || []) reg.push(e);
-  });
-  if (!sci.length) sci = missionScience(run);
-  sci.sort((a, b) => a.t0 - b.t0);
-  // Asked for: no slow-mo at the Surveyor's sites, only the drill at the final site.
-  drill = sci.filter((e) => e.agency === "B").slice(-1);
-  reg.sort((a, b) => a.t - b.t);
-  hazards = log.hazards || [];
-  planned = log.planned_routes || [];
-
-  ensureStyles();
-  S.player = new MissionPlayer(run, {
-    pause: (tt) => { S.pauseAtT = 0; S.playing = false; S.t = tt; setPlayIcon(); },
-    resume: () => { S.pauseAtT = 0; S.playing = true; setPlayIcon(); },
-    // A checkpoint pauses at once and waits for Play. One inside the final-site
-    // drill lets the drill play out first, then pauses where it ends.
-    checkpoint: (tt) => {
-      S.t = tt;
-      const ev = drill.find((e) => tt >= e.t0 - FOCUS_LEAD_S && tt <= e.t1 + FOCUS_TAIL_S);
-      if (ev) { S.pauseAtT = ev.t1 + FOCUS_TAIL_S; return; }
-      S.pauseAtT = 0; S.playing = false; setPlayIcon();
-    },
-    note: (html) => { const b = $("checkpoint"); b.hidden = !html; b.innerHTML = html || ""; },
-    rerender: () => { $("chain-now").dataset.key = ""; render(true); },
-  });
-  setChainBadge();
-
-  // Only the Prospector has an arm and a drill; the Surveyor works with its mast camera.
-  for (const a of run.agencies) {
-    if (!dressed[a]) { dressed[a] = true; dressRover(a); }
-    if (a === "B" && !rigs[a]) rigs[a] = new ScienceRig(world.rovers[a].g, world.scene, { up: "z" });
-  }
+  for (const [a, r] of Object.entries(world.rovers)) r.g.visible = run.agencies.includes(a);
+  for (const a of run.agencies) if (!dressed[a]) { dressed[a] = true; dressRover(a); }
   odo = {};
   for (const a of run.agencies) {   // distance driven by each step, for the wheels
     const T = run.tracks[a].truth, c = [0];
     for (let i = 1; i < T.length; i++) c.push(c[i - 1] + Math.hypot(T[i][0] - T[i - 1][0], T[i][1] - T[i - 1][1]));
     odo[a] = c;
   }
-  buildOverlay();
-  buildTimeline();
-  setCam("third");
-  setRover("A");
-  S.t = 0;
+  vis();
+  map.setRun(run);
+  searchMarks();
+  for (const o of Object.values(plan3d)) { if (o.line) { world.scene.remove(o.line); o.line.geometry.dispose(); o.line = null; } o.k = -1; }
+  fpLidarCache = null;
+  S.player = new MissionPlayer(checkpointsFor(run), {
+    pause: (tt) => { S.t = tt; S.playing = false; setPlayIcon(); },
+    note: (html) => { const b = $("checkpoint"); b.hidden = !html; b.innerHTML = html || ""; },
+  });
+  S.player.rewound(S.t);
+  roverSeg();
+  timeline();
+  markSortie();
+  setCam(S.cam);
+  if (S.cam === "third") world.setFollow(S.rover);
+  urlState();
+  S.busy = false;
+  S.playing = wasPlaying;
+  setPlayIcon();
   render(true);
 }
 
-// Kellen's mission log has no science events: each rover step carries the
-// instrument phase it ended in ({name, step, of}, docs/handoffs.md "Mission
-// log"). Rebuild Ritvik's science events from them: one event per stop, one
-// phase per run of steps with the same instrument name, spanning those steps.
-function missionScience(run) {
-  const out = [], sites = (run.log.mission || {}).sites || [];
-  for (const a of run.agencies) {
-    let cur = null;
-    run.steps.forEach((st, k) => {
-      const r = st.rovers[a] || {}, ins = r.instrument;
-      const stop = /^(survey|prospect)\b/.test(r.phase || "") ? r.phase : null;
-      if (!ins || !stop || k === 0) { if (cur) { out.push(cur); cur = null; } return; }
-      if (!cur || cur.stop !== stop) {
-        if (cur) out.push(cur);
-        const m = /survey (\S+)/.exec(stop);
-        const fid = /find (\d+)/.exec(stop);
-        const fe = fid ? run.events.find((e) => e.type === "find" && e.find_id === Number(fid[1])) : null;
-        const target = m ? m[1] : fe ? fe.site_id : stop;
-        const site = sites.find((x) => x.id === target);
-        const chk = run.events.find((e) => e.type === "check" && fe && e.find_id === fe.find_id);
-        cur = { agency: a, stop, target_id: target, kind: "site", record_id: `${a}-${stop}`, phases: [],
-          verdict: a === "A" ? (site && site.verdict) || "dry" : chk ? (chk.agrees ? "ice" : "dry") : "ice",
-          observation: a === "A" ? "survey" : "core", reading: null };
-      }
-      const t0 = run.times[k - 1], dur = run.times[k] - run.times[k - 1];
-      const last = cur.phases.at(-1);
-      if (last && last.name === ins.name) last.dur = t0 + dur - last.t0;
-      else cur.phases.push({ name: ins.name, t0, dur });
-      if (r.ice_reading != null) cur.reading = r.ice_reading;
-    });
-    if (cur) out.push(cur);
-  }
-  for (const e of out) { e.t0 = e.phases[0].t0; e.t1 = e.phases.at(-1).t0 + e.phases.at(-1).dur; }
-  return out;
-}
-
-// Each rover gets its own look. world.js pins a name tag 3.6 m above each
-// rover; in this close 3D view it floats loose from the rover, so it is taken
-// off here. The rover picker, the key and the status chip name the rovers.
-function dressRover(a) {
-  const g = world.rovers[a].g;
-  const tags = [];
-  g.traverse((o) => { if (o.element && o.element.classList.contains("lbl3d")) tags.push(o); });
-  for (const o of tags) { o.removeFromParent(); o.element.remove(); }
-  world.rovers[a].tag = null;
-  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.35 });
-  const box = (m, cx, cy, cz, dx, dy, dz) => {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(dx, dy, dz), m);
-    b.position.set(cx, cy, cz); b.castShadow = true; g.add(b); return b;
-  };
-  if (a === "A") {
-    // Surveyor: a wide neutron-spectrometer boom across the nose, and a radiator panel.
-    const gold = mat(0xd8b24a);
-    box(gold, 0.78, 0, 0.5, 0.1, 1.9, 0.1);
-    const s1 = box(mat(0x222222), 0.78, 0.9, 0.5, 0.26, 0.22, 0.22);
-    const s2 = box(mat(0x222222), 0.78, -0.9, 0.5, 0.26, 0.22, 0.22);
-    const panel = box(mat(0x1d3f7a), -0.75, 0, 1.45, 0.9, 1.5, 0.04);
-    panel.rotation.y = -0.5;
-    extras.A = { sensors: [s1, s2] };
-  } else {
-    // Prospector: side battery pods, a taller frame, and the NIR head on the mast.
-    const pod = mat(0x8a4a1c);
-    box(pod, -0.2, 0.72, 0.95, 1.1, 0.2, 0.36);
-    box(pod, -0.2, -0.72, 0.95, 1.1, 0.2, 0.36);
-    box(mat(0xc9ccd1), -0.9, 0, 1.3, 0.12, 1.1, 0.5);
-    const nir = box(mat(0x2a1c4a), 0.12, 0, 2.05, 0.22, 0.3, 0.2);
-    extras.B = { sensors: [nir] };
-  }
-  loadModel(a);
-}
-
-// NASA's own 3D models (github.com/nasa/NASA-3D-Resources): both are Mars
-// rovers, used here as stand-ins for the lunar rovers and credited on the
-// page. Each is measured once loaded, turned to this scene's frame (x
-// forward, y left, z up), scaled to a rover length, and set on the ground.
-// The box rover stays underneath until the model arrives, and if it fails.
-const MODELS = {
-  A: { file: "models/opportunity.glb", name: "Opportunity (MER-B)", length: 2.2, yaw: 0 },
-  B: { file: "models/perseverance.glb", name: "Perseverance (Mars 2020)", length: 2.9, yaw: 0 },
-};
+// ------------------------------------------------------------- rovers
+// All Scouts are identical, so all get the same NASA model (a Mars rover,
+// standing in for a lunar one, credited on the page). It is measured once
+// loaded, turned to this scene's frame (x forward, y left, z up), scaled to
+// a rover length and set on the ground. The box rover stays underneath until
+// the model arrives, and if it fails.
+const MODEL = { file: "models/opportunity.glb", name: "Opportunity (MER-B)", length: 2.2 };
 const gltf = new GLTFLoader();
 // NASA's files are Draco-compressed; the decoder comes from the same pinned three.js release.
 gltf.setDRACOLoader(new DRACOLoader().setDecoderPath("https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/gltf/"));
-const modelNote = {};
+let modelScene = null, modelWait = null;
 
-// ----------------------------------------------------------- suspension
-// NASA's Perseverance file has all six wheels in one mesh ("Wheels_objs") and
-// the rocker-bogie in another ("suspension"). We cut the wheels apart by
-// clustering their vertices (3 along the body, 2 across), give each its own
-// pivot at its centre, and do the same for the two rocker halves. Opportunity
-// is a single mesh, so its body tilts and lifts but its wheels do not move alone.
-function clusterMesh(obj, seedsFor) {
-  // NASA's glTF splits a part into one mesh per material under a group, so
-  // gather every child mesh's vertices into the group's frame and cluster them
-  // together; each mesh is then cut by the shared labels.
-  obj.updateMatrix();
-  const meshes = obj.isMesh ? [{ mesh: obj, mat: new THREE.Matrix4() }] : obj.children.filter((o) => o.isMesh).map((o) => { o.updateMatrix(); return { mesh: o, mat: o.matrix.clone() }; });
-  if (!meshes.length || meshes.some(({ mesh }) => !mesh.geometry.index)) return null;
-  const P = [];                                     // [x, y, z] in obj's frame
-  const v3 = new THREE.Vector3();
-  for (const m of meshes) {
-    const pos = m.mesh.geometry.attributes.position;
-    m.off = P.length;
-    for (let i = 0; i < pos.count; i++) { v3.fromBufferAttribute(pos, i).applyMatrix4(m.mat); P.push([v3.x, v3.y, v3.z]); }
-  }
-  const n = P.length, bb = new THREE.Box3();
-  for (const q of P) bb.expandByPoint(v3.set(q[0], q[1], q[2]));
-  const ctr = bb.getCenter(new THREE.Vector3()), ext = bb.getSize(new THREE.Vector3());
-  let best = null;
-  for (const [fa, la] of [[0, 2], [2, 0]]) {       // glTF is y up: forward is x or z
-    const seeds = seedsFor(ctr.getComponent(fa), ext.getComponent(fa), ctr.getComponent(la), ext.getComponent(la));
-    const lab = new Uint8Array(n);
-    let sse = 0;
-    for (let it = 0; it < 8; it++) {
-      const acc = seeds.map(() => [0, 0, 0]);
-      sse = 0;
-      for (let v = 0; v < n; v++) {
-        const f = P[v][fa], l = P[v][la];
-        let bi = 0, bd = Infinity;
-        for (let k = 0; k < seeds.length; k++) {
-          const d = (f - seeds[k][0]) ** 2 + (l - seeds[k][1]) ** 2;
-          if (d < bd) { bd = d; bi = k; }
-        }
-        lab[v] = bi; acc[bi][0] += f; acc[bi][1] += l; acc[bi][2]++; sse += bd;
-      }
-      acc.forEach((q, k) => { if (q[2]) seeds[k] = [q[0] / q[2], q[1] / q[2]]; });
+function dressRover(a) {
+  if (!modelWait) modelWait = new Promise((ok, bad) => gltf.load(MODEL.file, (res) => ok(res.scene), undefined, bad));
+  modelWait.then((scene) => {
+    modelScene = scene;
+    const g = world.rovers[a].g;
+    const model = scene.clone(true);
+    // The lamp sits inside the model's mast (1.4 m): a stand-in body must not shadow the lamp's own pool.
+    model.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; } });
+    const holder = new THREE.Group();     // glTF is y-up: turn it to z-up
+    holder.rotation.x = Math.PI / 2;
+    holder.add(model);
+    const fit = new THREE.Group();
+    fit.add(holder);
+    fit.updateMatrixWorld(true);
+    let box = new THREE.Box3().setFromObject(fit);
+    let size = box.getSize(new THREE.Vector3());
+    if (size.y > size.x) {                 // put the long side along x (forward)
+      fit.rotation.z = Math.PI / 2;
+      fit.updateMatrixWorld(true);
+      box = new THREE.Box3().setFromObject(fit);
+      size = box.getSize(new THREE.Vector3());
     }
-    if (!best || sse < best.sse) best = { lab, sse, seeds, fa, la };
-  }
-  // One pivot per cluster, at the cluster's centre, holding that cluster's
-  // triangles from every mesh.
-  const root = new THREE.Group();
-  root.position.copy(obj.position); root.quaternion.copy(obj.quaternion); root.scale.copy(obj.scale);
-  obj.parent.add(root);
-  obj.visible = false;
-  const parts = best.seeds.map(() => ({ min: new THREE.Vector3(Infinity, Infinity, Infinity), max: new THREE.Vector3(-Infinity, -Infinity, -Infinity), count: 0 }));
-  for (let v = 0; v < n; v++) {
-    const q = parts[best.lab[v]];
-    v3.set(P[v][0], P[v][1], P[v][2]);
-    q.min.min(v3); q.max.max(v3); q.count++;
-  }
-  const out = [];
-  parts.forEach((q, k) => {
-    if (!q.count) return;
-    const c = q.min.clone().add(q.max).multiplyScalar(0.5);
-    const pivot = new THREE.Group();
-    pivot.position.copy(c);
-    const inner = new THREE.Group();
-    inner.position.copy(c).negate();
-    pivot.add(inner);
-    for (const m of meshes) {
-      const geo = m.mesh.geometry, idx = geo.index.array, tri = [];
-      for (let i = 0; i < idx.length; i += 3) if (best.lab[m.off + idx[i]] === k) tri.push(idx[i], idx[i + 1], idx[i + 2]);
-      if (!tri.length) continue;
-      const g2 = new THREE.BufferGeometry();
-      for (const [key, v] of Object.entries(geo.attributes)) g2.setAttribute(key, v);
-      g2.setIndex(tri);
-      const piece = new THREE.Mesh(g2, m.mesh.material);
-      piece.castShadow = piece.receiveShadow = true;
-      piece.matrixAutoUpdate = false;
-      piece.matrix.copy(m.mat);
-      inner.add(piece);
-    }
-    root.add(pivot);
-    out.push({ pivot, base: c.clone(), radius: (q.max.y - q.min.y) / 2, la: best.la, fa: best.fa });
-  });
-  return out;
+    fit.scale.setScalar(MODEL.length / size.x);
+    fit.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(fit);
+    const c = box.getCenter(new THREE.Vector3());
+    fit.position.set(-0.2 - c.x, -c.y, -box.min.z);   // centred on the body, wheels on the ground
+    fit.name = "nasa-model";
+    for (const o of g.children) if (o.isMesh) o.visible = false;   // hide the box body; keep the lamp and the tag
+    const sg = new THREE.Group();
+    sg.name = "suspension";
+    sg.add(fit);
+    g.add(sg);
+    g.updateMatrixWorld(true);
+    setupSuspension(a, g, sg, fit);
+    $("model-credit").textContent = `Rover model: NASA 3D Resources, ${MODEL.name}, a Mars rover standing in for the Scouts.`;
+  }).catch((err) => console.warn("NASA model not loaded; keeping the simple rover", err));
 }
 
+// The body rides on a group that tilts and lifts with the ground under six
+// contact points (Opportunity is one mesh: its wheels do not move alone).
 function setupSuspension(a, g, sg, fit) {
-  // Measure the model in the rover's own frame: setFromObject gives scene
-  // coordinates, and the rover is hundreds of metres from the scene origin.
   g.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(fit).applyMatrix4(g.matrixWorld.clone().invert());
   const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
-  const S_ = { g: sg, pitch: 0, roll: 0, z: 0, wheels: [], rockers: [], contacts: [] };
-  const wheelMesh = fit.getObjectByName("Wheels_objs"), rockMesh = fit.getObjectByName("suspension");
-  if (wheelMesh) {
-    const w = clusterMesh(wheelMesh, (fc, fe, lc, le) => [-1, 0, 1].flatMap((i) => [-1, 1].map((j) => [fc + (i * fe) / 2.6, lc + (j * le) / 3])));
-    if (w && w.length === 6) {
-      g.updateMatrixWorld(true);
-      const sc = new THREE.Vector3();
-      w[0].pivot.getWorldScale(sc);
-      for (const wh of w) {
-        const p = wh.pivot.getWorldPosition(new THREE.Vector3());
-        g.worldToLocal(p);
-        S_.wheels.push({ ...wh, fx: p.x, fy: p.y, k: sc.x, rM: wh.radius * sc.x });
-      }
-      S_.contacts = S_.wheels.map((wh) => [wh.fx, wh.fy]);
-    }
-  }
-  if (rockMesh && S_.wheels.length) {
-    const r = clusterMesh(rockMesh, (fc, fe, lc, le) => [[fc, lc - le / 4], [fc, lc + le / 4]]);
-    if (r) {
-      g.updateMatrixWorld(true);
-      for (const half of r) {
-        const p = half.pivot.getWorldPosition(new THREE.Vector3());
-        g.worldToLocal(p);
-        S_.rockers.push({ ...half, fy: p.y });
-      }
-    }
-  }
-  if (!S_.contacts.length) {   // no wheels to cut out: six contact points under the body
-    const L = size.x * 0.36, W = size.y * 0.4;
-    for (const fx of [c.x - L, c.x, c.x + L]) for (const fy of [-W, W]) S_.contacts.push([fx, fy]);
-  }
-  susp[a] = S_;
+  const L = size.x * 0.36, W = size.y * 0.4, contacts = [];
+  for (const fx of [c.x - L, c.x, c.x + L]) for (const fy of [-W, W]) contacts.push([fx, fy]);
+  susp[a] = { g: sg, pitch: 0, roll: 0, z: 0, contacts };
 }
 
-// Each frame: fit a plane to the ground under the wheels, tilt and lift the
-// body onto it, then let each wheel follow the ground under it (what is left
-// over from the plane, a few cm) and spin by the distance driven.
+// Each frame: fit a plane to the ground under the contacts, tilt and lift the body onto it.
 function updateSuspension(a, t) {
   const S_ = susp[a];
   if (!S_) return;
@@ -416,533 +236,23 @@ function updateSuspension(a, t) {
   }
   const det = sxx * syy - sxy * sxy || 1;
   const b = (sxz * syy - syz * sxy) / det, cc = (syz * sxx - sxz * sxy) / det;
-  const plane = (fx, fy) => mz + b * (fx - mx) + cc * (fy - my);
-  const pitch = Math.atan(b), roll = Math.atan(cc), zc = plane(0, 0);
+  const pitch = Math.atan(b), roll = Math.atan(cc), zc = mz + b * (0 - mx) + cc * (0 - my);
   const jump = Math.abs(pitch - S_.pitch) > 0.25 || Math.abs(roll - S_.roll) > 0.25;
   const k = jump ? 1 : 0.25;
   S_.pitch += (pitch - S_.pitch) * k; S_.roll += (roll - S_.roll) * k; S_.z += (zc - S_.z) * k;
   S_.g.rotation.set(S_.roll, -S_.pitch, 0);
   S_.g.position.z = S_.z;
-  if (!S_.wheels.length) return;
-  const T = odo[a], kk = S.run.stepAt(t), f = kk < T.length - 1 ? (t - S.run.times[kk]) / (S.run.times[kk + 1] - S.run.times[kk]) : 0;
-  const dist = T[kk] + (kk < T.length - 1 ? (T[kk + 1] - T[kk]) * f : 0);
-  const res = pts.map(([fx, fy, z]) => THREE.MathUtils.clamp(z - plane(fx, fy), -0.18, 0.18));
-  S_.wheels.forEach((wh, i) => {
-    wh.pivot.position.y = wh.base.y + res[i] / wh.k;
-    wh.pivot.rotation[wh.la === 0 ? "x" : "z"] = -dist / wh.rM;
-  });
-  // Rockers: each side tips by the difference between its front and rear wheels.
-  for (const rk of S_.rockers) {
-    const side = S_.wheels.map((wh, i) => [wh, res[i]]).filter(([wh]) => Math.sign(wh.fy) === Math.sign(rk.fy));
-    if (side.length < 2) continue;
-    side.sort((p, q) => q[0].fx - p[0].fx);
-    const span = side[0][0].fx - side.at(-1)[0].fx || 1;
-    rk.pivot.rotation[rk.la === 0 ? "x" : "z"] = Math.atan2(side[0][1] - side.at(-1)[1], span) * 0.6;
-  }
 }
 
-function loadModel(a) {
-  const spec = MODELS[a];
-  const g = world.rovers[a].g;
-  gltf.load(spec.file, (res) => {
-    const model = res.scene;
-    model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    const holder = new THREE.Group();     // glTF is y-up: turn it to z-up
-    holder.rotation.x = Math.PI / 2;
-    holder.add(model);
-    const fit = new THREE.Group();
-    fit.add(holder);
-    fit.updateMatrixWorld(true);
-    let box = new THREE.Box3().setFromObject(fit);
-    let size = box.getSize(new THREE.Vector3());
-    if (size.y > size.x) {                 // put the long side along x (forward)
-      fit.rotation.z = Math.PI / 2;
-      fit.updateMatrixWorld(true);
-      box = new THREE.Box3().setFromObject(fit);
-      size = box.getSize(new THREE.Vector3());
-    }
-    fit.rotation.z += spec.yaw;
-    const k = spec.length / size.x;
-    fit.scale.setScalar(k);
-    fit.updateMatrixWorld(true);
-    box = new THREE.Box3().setFromObject(fit);
-    const c = box.getCenter(new THREE.Vector3());
-    fit.position.set(-0.2 - c.x, -c.y, -box.min.z);   // centred on the body, wheels on the ground
-    fit.name = "nasa-model";
-    // Hide the box body; keep the lamp, the name tag and the science arm.
-    for (const o of g.children) if (o.isMesh) o.visible = false;
-    if (extras[a]) extras[a].sensors = [];
-    // The body rides on a suspension group that tilts and lifts with the
-    // ground under its wheels (updateSuspension); the wheels, where the model
-    // lets us cut them apart, spin and ride up and down on their own.
-    const sg = new THREE.Group();
-    sg.name = "suspension";
-    sg.add(fit);
-    g.add(sg);
-    g.updateMatrixWorld(true);
-    setupSuspension(a, g, sg, fit);
-    modelNote[a] = spec.name;
-    $("model-credit").textContent = `Rover models: NASA 3D Resources, ${Object.values(modelNote).join(" and ")}. Mars rovers, standing in for lunar ones.`;
-  }, undefined, (err) => console.warn(`NASA model for ${a} not loaded; keeping the simple rover`, err));
-}
-
-// ------------------------------------------------------------- overlays
-function buildOverlay() {
-  if (ov) { world.scene.remove(ov); ov.traverse((c) => { if (c.element) c.element.remove(); }); }
-  ov = new THREE.Group();
-  world.scene.add(ov);
-  siteObjs = new Map();
-  const mats = {};
-  for (const [k, c] of Object.entries(SITE_COLOR)) mats[k] = world.lineMat(c, 2.5);
-  for (const e of reg) {
-    if (e.call !== "registerCandidate" || siteObjs.has(e.site_id)) continue;
-    const g = new THREE.Group();
-    const ring = world.ring(e.x, e.y, 3.5, mats.Candidate);
-    const p = world.groundL(e.x, e.y, 0);
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 5, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }));
-    beam.rotation.x = Math.PI / 2;
-    beam.position.set(p.x, p.y, p.z + 2.5);
-    const el = document.createElement("div");
-    el.className = "lbl-site";
-    el.onclick = () => openSite(e.site_id);
-    const lbl = new CSS2DObject(el);
-    lbl.position.set(p.x, p.y, p.z + 5.4);
-    lbl.center.set(0, 1);
-    // Ice found here: a frost patch on the ground, so nobody can miss it.
-    const disc = frostPatch(world, e.x, e.y, 4.5, e.site_id);
-    dimFrost(disc);
-    disc.visible = false;
-    g.add(ring, beam, lbl, disc);
-    ov.add(g);
-    siteObjs.set(e.site_id, { g, ring, beam, el, mats, disc, t: e.t, target: e.target_id, key: "" });
-  }
-  // What the satellite relayed: where to look. Amber, dashed, until a rover gets there.
-  satObjs = [];
-  for (const s of S.run.log.satellite_sites || []) {
-    const g = new THREE.Group();
-    g.add(world.ring(s.x, s.y, 6, world.lineMat(SITE_HEX, 2, { dashed: true, opacity: 0.9 })));
-    const el = document.createElement("div");
-    el.className = "lbl-sat";
-    el.textContent = s.id;
-    el.title = "Possible site, relayed by the satellite";
-    const lbl = new CSS2DObject(el);
-    lbl.position.copy(world.groundL(s.x, s.y, 3.5));
-    g.add(lbl);
-    ov.add(g);
-    satObjs.push({ g, id: s.id, x: s.x, y: s.y });
-  }
-  for (const h of hazards) {
-    const g = new THREE.Group();
-    const rockMat = new THREE.MeshStandardMaterial({ color: 0x77736c, roughness: 1 });
-    let seed = Math.round(h.x * 13 + h.y * 7);
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const rim = h.crater_d ? h.crater_d / 2 : null;
-    for (let i = 0; i < 34; i++) {
-      // Boulders on the crater's rim when it is a crater, scattered otherwise.
-      const a = rnd() * Math.PI * 2, r = rim ? rim - 0.4 + rnd() * 1.8 : Math.sqrt(rnd()) * h.radius;
-      const s = 0.25 + rnd() * 0.7;
-      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMat);
-      const q = world.groundL(h.x + r * Math.cos(a), h.y + r * Math.sin(a), s * 0.4);
-      m.position.copy(q);
-      m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
-      m.castShadow = true;
-      g.add(m);
-    }
-    g.add(world.ring(h.x, h.y, h.radius + 0.5, world.lineMat(0xff5d5d, 2, { dashed: true })));
-    const el = document.createElement("div");
-    el.className = "lbl-haz";
-    el.textContent = h.hazard_id ? `Crater ${h.hazard_id} · flagged` : "Obstacle";
-    el.title = `Not on the orbital map. Found, mapped and flagged by ${ROLE[h.seen_by]} ${h.seen_by}`;
-    const lbl = new CSS2DObject(el);
-    lbl.position.copy(world.groundL(h.x, h.y, 3));
-    g.add(lbl);
-    g.userData.t = h.seen_t;
-    ov.add(g);
-    h.obj = g;
-  }
-  for (const pr of planned) {
-    const col = pr.agency === "A" ? 0x5aa7ff : 0xf2994a;
-    const d = world.drape(pr.points, world.lineMat(col, 2, { dashed: true, opacity: 0.9 }));
-    d.line.visible = false;
-    ov.add(d.line);
-    pr.line = d.line;
-  }
-}
-
-// Ticks on the play bar: blue for a science stop, ice white where ice was found,
-// a low red tick for a new obstacle. Hover for what each is.
-function buildTimeline() {
-  const marks = $("tl-marks");
-  marks.innerHTML = "";
-  const T = S.run.tEnd || 1;
-  const add = (t, cls, title) => {
-    const i = document.createElement("i");
-    i.className = cls;
-    i.style.left = `${(100 * t) / T}%`;
-    i.title = title;
-    marks.appendChild(i);
-  };
-  for (const e of sci) add(e.t0, "sci", `${ROLE[e.agency]}: ${e.observation || "science"} at ${e.target_id}`);
-  for (const e of reg) if (e.result === "Positive") add(e.t, "ice", `Ice at ${e.target_id} (${ROLE[e.agency]})`);
-  for (const h of hazards) add(h.seen_t, "haz", "New obstacle");
-  for (const c of (S.run.log.mission || {}).checkpoints || []) if (c.pause) add(c.t, "cp", `Checkpoint: ${c.label}`);
-  for (const e of S.run.events) add(S.run.times[e.k], "ice", e.type === "find" ? `Ice find posted (${ROLE[e.agency]})` : `Check posted (${ROLE[e.agency]})`);
-}
-
-// ------------------------------------------------------------------ legend
-// Bottom left, above the play bar. A row shows only while its layer draws.
-function updateLegend() {
-  const run = S.run, o = S.opts;
-  const on = {
-    routes: o.routes,
-    nogo: o.nogo && !!terrain.meta.nogo,
-    hazards: o.hazards && hazards.length > 0,
-    particles: o.routes && o.particles && run.hasParticles !== false,
-    sat: (run.log.satellite_sites || []).length > 0,
-    find: ((run.log.mission || {}).sites || []).some((s) => s.verdict === "ice"),
-    truth: o.truth && ((run.truth && run.truth.ice) || []).length > 0,
-  };
-  for (const li of document.querySelectorAll("#lg-rows [data-on]")) li.hidden = !on[li.dataset.on];
-}
-
-// The collapse button says what it does next.
-function syncCollapse() {
-  const closed = $("panel").classList.contains("closed"), b = $("collapse");
-  b.setAttribute("aria-label", closed ? "Show panel" : "Hide panel");
-  b.title = closed ? "Show panel" : "Hide panel";
-  b.setAttribute("aria-expanded", String(!closed));
-}
-
-// ---------------------------------------------------------------- controls
-function bind() {
-  $("play").onclick = togglePlay;
-  // A click on a paused checkpoint card plays on, like the Play button.
-  $("checkpoint").onclick = (e) => { if (!S.playing && !e.target.closest("a")) togglePlay(); };
-  $("restart").onclick = () => { S.pauseAtT = 0; S.t = 0; S.playing = false; setPlayIcon(); exitFocus(); S.dismissed = null; S.player.restart(); rearmAutoB(0); render(true); };
-  $("speed").onchange = (e) => (S.speed = Number(e.target.value));
-  $("scrub").oninput = (e) => {
-    const nt = (Number(e.target.value) / 1000) * S.run.tEnd;
-    S.pauseAtT = 0;
-    if (nt < S.t) { S.player.rewound(nt); rearmAutoB(nt); }
-    else if (S.player.busy) return;                            // a live post is in flight: the slider waits
-    else if (!S.player.jumped(S.t, nt)) $("checkpoint").hidden = true;   // a stale checkpoint card from before the jump
-    // (a jump over a chain step posts it live, paused at nt, and says so in the card)
-    S.t = nt; exitFocus(); S.dismissed = null; render(true);
-  };
-  $("step-back").onclick = () => stepBy(-1);
-  $("step-fwd").onclick = () => stepBy(1);
-  $("zoom-in").onclick = () => zoom(1 / 1.35);
-  $("zoom-out").onclick = () => zoom(1.35);
-  document.querySelectorAll("#rover-seg button").forEach((b) => (b.onclick = () => { exitFocus(true); setRover(b.dataset.rover); }));
-  document.querySelectorAll("#lid-seg button").forEach((b) => (b.onclick = () => {
-    S.lidarKind = b.dataset.lk;
-    document.querySelectorAll("#lid-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-    render(true);
-  }));
-  document.querySelectorAll("[data-expand]").forEach((b) => (b.onclick = () => { exitFocus(true); setCam(b.dataset.expand); }));
-  $("back-chip").onclick = () => { exitFocus(true); setCam("third"); };
-  document.querySelectorAll(".rail button").forEach((b) => (b.onclick = () => {
-    const p = $("panel");
-    if (p.classList.contains("closed")) p.classList.remove("closed");
-    else if (S.tab === b.dataset.tab) { p.classList.add("closed"); return; }
-    S.tabBeforeFocus = null;
-    setTab(b.dataset.tab);
-  }));
-  $("collapse").onclick = () => { $("panel").classList.toggle("closed"); syncCollapse(); };
-  $("key-btn").onclick = () => {
-    const open = $("legend").classList.toggle("open");
-    $("key-btn").setAttribute("aria-expanded", String(open));
-  };
-  for (const k of ["fill", "routes", "hazards", "nogo", "truth", "particles", "rims"]) {
-    $("opt-" + k).onchange = (e) => {
-      S.opts[k] = e.target.checked;
-      world.setVisibility({ fill: S.opts.fill, tracks: S.opts.routes, truth: S.opts.truth });
-  $("vnote").hidden = !S.opts.fill;
-      map.opts = { tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo };
-      updateLegend();
-      render(true);
-    };
-  }
-  $("layers-btn").onclick = (e) => {
-    e.stopPropagation();
-    const open = $("layers").hidden;
-    $("layers").hidden = !open;
-    $("layers-btn").setAttribute("aria-expanded", String(open));
-  };
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest(".pop-wrap")) { $("layers").hidden = true; $("layers-btn").setAttribute("aria-expanded", "false"); }
-  });
-  $("info-btn").onclick = () => $("about").showModal();
-  $("full-btn").onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
-  $("dr-close").onclick = () => ($("drawer").hidden = true);
-  addEventListener("keydown", (e) => {
-    // Typing in a field: leave its keys alone. The timeline and the checkboxes
-    // keep focus after a click, so they still let the shortcuts through.
-    if (e.target.closest?.("input:not([type=range]):not([type=checkbox]), select, textarea")) return;
-    if (e.code === "Space") { e.preventDefault(); togglePlay(); }
-    if (e.code === "ArrowRight") { e.preventDefault(); stepBy(1); }
-    if (e.code === "ArrowLeft") { e.preventDefault(); stepBy(-1); }
-    if (e.key === "Escape") $("drawer").hidden = true;
-    if (e.key === "+" || e.key === "=") zoom(1 / 1.35);
-    if (e.key === "-") zoom(1.35);
-    // 1 / 2 blow the rover camera or the satellite map up to the full window (again: back); L flips the lidar view.
-    if (e.key === "1") { exitFocus(true); setCam(S.cam === "first" ? "third" : "first"); }
-    if (e.key === "2") { exitFocus(true); setCam(S.cam === "overhead" ? "third" : "overhead"); }
-    if (e.key === "f" || e.key === "F") $("opt-fill").click();   // fill light on / off
-    if (e.key === "l" || e.key === "L") $(`lid-seg`).querySelector(`[data-lk="${S.lidarKind === "top" ? "fp" : "top"}"]`)?.click();
-  });
-}
-
-// The right column: rover camera, satellite map and lidar, stacked and all showing.
-function applyInsets() {
-  $("in-fp").hidden = S.cam === "first";
-  $("in-map").hidden = S.cam === "overhead";
-  $("in-lidar").hidden = !S.run.hasLidar;
-}
-
-// When the Surveyor is finished (at rest after its last site, after it drives
-// clear of the find) the replay pauses; the view follows the Prospector the
-// moment Play is pressed, once per play-through (asked for: "when a is finished
-// it pauses and when i unpause it switches to b"). A rover picked by hand while
-// paused wins. If a checkpoint already paused on that step (today's log: the find
-// and the dispatch), that one pause does both.
-function aDoneT() {
-  const run = S.run;
-  const cp = ((run.log.mission || {}).checkpoints || []).find((c) => c.id === "done-A");
-  if (cp) return run.times[cp.step];
-  const f = run.events.find((e) => e.type === "find");
-  const k0 = f ? f.k : 0;
-  const k = run.steps.findIndex((s, i) => i >= k0 && (s.rovers.A || {}).phase === "done");
-  return k < 0 ? null : run.times[k];
-}
-
-function rearmAutoB(t) {
-  const ta = aDoneT();
-  if (ta != null && t >= ta) return;
-  // The auto switch fired in this play-through: going back before the find returns to the Surveyor.
-  if (!S.autoB.armed && S.autoB.switched && S.rover === "B") setRover("A");
-  S.autoB = { armed: true, pending: false };
-}
-
-function autoB(prevT, t) {
-  const ta = aDoneT();
-  if (ta == null || !S.autoB.armed || S.autoB.pending || !(prevT < ta && t >= ta)) return;
-  S.autoB = { armed: true, pending: true, rover: S.rover };
-  const b = $("checkpoint"), hint = ` <span class="cp-hint">Play follows Prospector B.</span>`;
-  if (S.playing) {
-    // No checkpoint here in this log: pause on the Surveyor's last step.
-    S.t = ta; S.playing = false; setPlayIcon();
-    const st = stateAt("A", ta);
-    b.innerHTML = `<span class="cp-tag">Checkpoint</span> <b>Surveyor finished</b> · ${esc((st && st.objective) || "survey complete")}.` + hint;
-  } else if (!b.hidden && !b.innerHTML.includes("cp-hint") && !b.innerHTML.includes("Surveyor finished")) b.innerHTML += hint;
-  b.hidden = false;
-}
-
-function fireAutoB() {
-  const untouched = S.rover === S.autoB.rover;
-  S.autoB = { armed: false, pending: false, switched: untouched && S.rover !== "B" };
-  if (S.autoB.switched) { exitFocus(true); setRover("B"); }
-}
-
-function setChainBadge() {
-  const run = S.run, badge = $("chain-badge");
-  const live = S.player && S.player.liveOn;
-  const real = run.chain && run.chain.explorer && !run.fakeTx;
-  badge.className = `chain-badge ${live || real ? "monad" : "offline"}`;
-  badge.textContent = live ? "Monad testnet · live" : real ? "Monad testnet" : "Recorded";
-  badge.title = live ? "Each find and check is signed and sent to Monad testnet as the replay crosses it."
-    : real ? `Contract ${run.chain.contract}` : "Recorded transactions from the mission log. Add ?key= to post them live.";
-}
-
-// One logged step (one sensor frame) back or forward, paused (main.js stepBy).
-function stepBy(n) {
-  const run = S.run;
-  if (S.player.busy) return;
-  S.pauseAtT = 0;
-  S.playing = false;
-  setPlayIcon();
-  const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(S.t) + n));
-  const back = run.times[k] < S.t, prevT = S.t;
-  S.t = run.times[k];
-  if (back) { S.player.rewound(S.t); rearmAutoB(S.t); }
-  else if (!S.player.jumped(prevT, S.t)) $("checkpoint").hidden = true;   // stepping onto a chain step posts it live
-  exitFocus(true);
-  render(true);
-}
-
-function setPlayIcon() {
-  $("play").innerHTML = `<svg><use href="#i-${S.playing ? "pause" : "play"}"/></svg>`;
-  $("play").setAttribute("aria-label", S.playing ? "Pause" : "Play");
-}
-
-function togglePlay() {
-  if (S.player && S.player.busy) return;   // a live chain post is in flight
-  if (S.t >= S.run.tEnd) { S.t = 0; S.player.restart(); rearmAutoB(0); }
-  S.playing = !S.playing;
-  if (S.playing && !S.player.busy) $("checkpoint").hidden = true;
-  if (S.playing && S.autoB.pending) fireAutoB();
-  setPlayIcon();
-}
-
-// Move the 3D camera toward or away from what it is looking at. Works in
-// every 3D view, including a science close-up; the rover camera is a
-// recorded frame, so it has nothing to zoom.
-function zoom(f) {
-  if (S.cam === "first") return;
-  const c = world.controls, cam = world.camera;
-  const off = cam.position.clone().sub(c.target);
-  off.setLength(THREE.MathUtils.clamp(off.length() * f, c.minDistance, c.maxDistance));
-  cam.position.copy(c.target).add(off);
-  c.update();
-}
-
-function setTab(tab) {
-  S.tab = tab;
-  document.querySelectorAll(".rail button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
-  document.querySelectorAll(".pane").forEach((p) => (p.hidden = p.dataset.pane !== tab));
-}
-
-// The big view is the third-person chase camera; either small box can be
-// blown up to fill the window, and "Back to rover view" returns.
-function setCam(cam) {
-  S.cam = cam;
-  $("fp").hidden = cam !== "first";
-  applyInsets();
-  $("back-chip").hidden = cam === "third";
-  world.labels.domElement.style.display = cam === "first" ? "none" : "";
-  if (cam === "third") world.setFollow(S.rover);
-  if (cam === "overhead") overhead();
-  render(true);
-}
-
-function setRover(a) {
-  S.rover = a;
-  document.querySelectorAll("#rover-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.rover === a)));
-  if (S.cam === "third") world.setFollow(a);
-  S.lastPanel = "";
-  render(true);
-}
-
-function overhead() {
-  const run = S.run;
-  world.follow = "none";
-  const all = run.agencies.flatMap((a) => run.tracks[a].truth);
-  const xs = all.map((p) => p[0]), ys = all.map((p) => p[1]);
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) + 80;
-  const tgt = world.groundL(cx, cy);
-  world.controls.target.copy(tgt);
-  world.camera.position.set(tgt.x, tgt.y - span * 0.03, tgt.z + span * 1.05);
-  world.controls.update();
-}
-
-// A close view of the drill: from the rover's front right, where the arm works.
-function closeUp(ev) {
-  const [x, y, h] = S.run.poseAt(ev.agency, ev.t0);
-  const c = Math.cos(h), s = Math.sin(h);
-  const at = (fx, fy) => [x + fx * c - fy * s, y + fx * s + fy * c];
-  let [dx, dy] = at(1.55, -0.42);
-  let [ex, ey] = at(4.2, -4.6);
-  let eh = 2.8;
-  // At the final site the Surveyor is parked a few metres off: pull back and look
-  // across the line between them, so both rovers are in shot (the close-up alone
-  // framed only the Prospector).
-  const other = ev.agency === "B" ? "A" : null;
-  if (other && S.run.agencies.includes(other)) {
-    const [ox, oy] = S.run.poseAt(other, ev.t0);
-    const sep = Math.hypot(ox - dx, oy - dy);
-    if (sep > 1 && sep < BOTH_IN_SHOT_M) {
-      let nx = -(oy - dy) / sep, ny = (ox - dx) / sep;            // across the A-B line
-      if (nx * (ex - dx) + ny * (ey - dy) < 0) { nx = -nx; ny = -ny; }   // on the close-up's side
-      const mx = (dx + ox) / 2, my = (dy + oy) / 2, d = Math.max(6, 1.1 * sep + 3);
-      [dx, dy, ex, ey, eh] = [mx, my, mx + nx * d, my + ny * d, 2.8 + 0.3 * sep];
-    }
-  }
-  world.follow = "none";
-  world.controls.target.copy(world.groundL(dx, dy, 0.7));
-  world.camera.position.copy(world.groundL(ex, ey, eh));
-  world.controls.update();
-}
-
-function enterFocus(ev) {
-  if (!S.prev) S.prev = { cam: S.cam, rover: S.rover };
-  S.focusEv = ev;
-  S.rover = ev.agency;
-  document.querySelectorAll("#rover-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.rover === ev.agency)));
-  $("back-chip").hidden = true;
-  if (ev.agency === "A") {
-    // The Surveyor's stops keep the view the user picked (no snap to first person).
-  } else {
-    S.cam = "third";
-    $("fp").hidden = true;
-    applyInsets();
-    world.labels.domElement.style.display = "";
-    closeUp(ev);
-  }
-  // Bring the science panel forward while the drill works, then put back whatever was open.
-  if (S.tab !== "science") { S.tabBeforeFocus = S.tab; setTab("science"); }
-  document.querySelector('.rail [data-tab="science"]').classList.add("live");
-}
-
-// byUser: the viewer picked another camera or rover mid-stop, so this stop
-// plays on at normal speed instead of pulling the camera back.
-function exitFocus(byUser = false) {
-  if (!S.focusEv) return;
-  if (byUser) S.dismissed = S.focusEv;
-  S.focusEv = null;
-  document.querySelector('.rail [data-tab="science"]').classList.remove("live");
-  if (S.tabBeforeFocus) { setTab(S.tabBeforeFocus); S.tabBeforeFocus = null; }
-  const p = S.prev;
-  S.prev = null;
-  if (p && !byUser) { S.rover = p.rover; setCam(p.cam); setRover(p.rover); }
-}
-
-const focusSpeed = (ev) => Math.min(S.speed, Math.max(FOCUS_SPEED, (ev.t1 - ev.t0) / FOCUS_WALL_S));
-const activeSci = (t) => drill.find((e) => t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + FOCUS_TAIL_S);
-
-// -------------------------------------------------------------------- loop
-let last = performance.now(), lastPanelAt = 0;
-function loop(now) {
-  const dt = Math.min(0.1, (now - last) / 1000);
-  last = now;
-  const prevT = S.t;
-  if (S.playing && S.run) {
-    let adv = dt * (S.focusEv ? focusSpeed(S.focusEv) : S.speed);
-    if (S.focus && !S.focusEv) {
-      // Never jump over a science stop at high speed: stop at its start.
-      const next = drill.find((e) => e.t0 - FOCUS_LEAD_S > S.t && e.t0 - FOCUS_LEAD_S <= S.t + adv);
-      if (next) adv = next.t0 - FOCUS_LEAD_S - S.t;
-    }
-    S.t = Math.min(S.run.tEnd, S.t + adv);
-    if (S.pauseAtT && S.t >= S.pauseAtT) { S.t = S.pauseAtT; S.pauseAtT = 0; S.playing = false; setPlayIcon(); }
-    if (S.t >= S.run.tEnd) { S.playing = false; setPlayIcon(); }
-    S.player.tick(prevT, S.t);   // a checkpoint or a live post pauses and sets S.t
-  }
-  if (S.run) {
-    autoB(prevT, S.t);
-    const ev = S.focus ? activeSci(S.t) : null;
-    if (ev && ev !== S.focusEv && ev !== S.dismissed) enterFocus(ev);
-    if (!ev && S.focusEv) exitFocus();
-    const panels = now - lastPanelAt > 150;
-    render(panels);
-    if (panels) lastPanelAt = now;
-  }
-  requestAnimationFrame(loop);
-}
-
-// ------------------------------------------------------------------ render
-// A very dim rim light on both rover models (asked for: "a very dim rover rim light
-// would be good"): a glow at grazing view angles, added in each rover material's
-// own shader, so it lights the rover silhouettes and nothing else. Viewer only:
-// the rover camera images are rendered offline and never see it.
+// A very dim rim light on the rover models, in each material's own shader,
+// so it lights the silhouettes and nothing else. Viewer only.
 const ROVER_RIM_RGB = [0.11, 0.13, 0.16], ROVER_RIM_POW = 2.5;   // assumed, display only
 function addRoverRim(a) {
   const g = (world.rovers[a] || {}).g;
   if (!g) return;
   let n = 0;
   g.traverse((o) => { if (o.isMesh) n++; });
-  if (g.userData.rimN === n) return;   // models can arrive late: patch what is new
+  if (g.userData.rimN === n) return;   // the model can arrive late: patch what is new
   g.userData.rimN = n;
   g.traverse((o) => {
     const m = o.isMesh && o.material;
@@ -959,283 +269,79 @@ function addRoverRim(a) {
   });
 }
 
-function render(panels) {
-  const run = S.run, t = S.t;
-  if (!run) return;
-  world.currentT = t;
-  for (const a of run.agencies) addRoverRim(a);
-  world.update(t, { tracks: S.opts.routes, particles: S.opts.particles });
-  updateSteepShade(t);
-  updatePlan3D(t);
-  for (const a of run.agencies) {
-    updateSuspension(a, t);
-    const ev = sci.filter((e) => e.agency === a && t >= e.t0 - FOCUS_LEAD_S && t <= e.t1 + 1).at(-1) || null;
-    const rig = rigs[a];
-    if (rig) {
-      rig.setEvent(ev);
-      rig.update(t);
-      // The arm shows only while an instrument is in use, so its appearance means "science now".
-      const busy = ev && !["idle", "done", "park"].includes(rig.phaseAt(t).name);
-      rig.mount.visible = !!busy || (ev && rig.phaseAt(t).name === "done" && t < ev.t1 + 1);
-    }
-    // What the instrument is doing right now lights its sensors.
-    const txt = instrumentNow(a, t, ev);
-    const ph = ev ? (phaseOf(ev, t) || {}).name : "idle";
-    const on = txt === "neutron survey" || txt === "NEUTRON DWELL" || ph === "nir_scan";
-    for (const m of (extras[a] || {}).sensors || []) m.material.emissive.setHex(on ? (a === "A" ? 0x33aa66 : 0x7744ff) : 0);
-  }
-  updateOverlay(t);
-  if (S.cam !== "first") world.render();
-  else showFrame($("fp-img"), $("fp-ov"), $("fp-none"), false);
-  if (S.cam !== "first") showFrame($("fpi-img"), $("fpi-ov"), $("fpi-none"), true);
-  showLidar(t);
-  const cap = sensorCaption(t);
-  if ($("fpi-cap").textContent !== cap) $("fpi-cap").textContent = cap;
-  if (S.cam !== "overhead") map.update(t);
-  $("clock").textContent = fmtClock(t);
-  $("tl-fill").style.width = `${(100 * t) / run.tEnd}%`;
-  $("scrub").value = String(Math.round((1000 * t) / run.tEnd));
-  if (panels) renderPanels(t);
+// ------------------------------------------------------------- overlays
+function dock3d() {
+  const d = S.cr.rec.dock;
+  const g = new THREE.Group();
+  const p = world.groundL(d.x, d.y);
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 0.4), new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.7 }));
+  pad.position.set(p.x, p.y, p.z + 0.2);
+  pad.receiveShadow = true;
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  mast.rotation.x = Math.PI / 2;
+  mast.position.set(p.x, p.y, p.z + 1.9);
+  const lbl = world.label("<span>Dock</span>", "#ffffff");
+  lbl.position.set(p.x, p.y, p.z + 4);
+  g.add(pad, mast, lbl);
+  world.scene.add(g);
+  dockObj = g;
 }
 
-// The phase of a stop at time t, with how far through it is (0..1).
-function phaseOf(ev, t) {
-  let cur = null;
-  ev.phases.forEach((p, i) => { if (t >= p.t0) cur = { ...p, i, p: Math.min(1, (t - p.t0) / p.dur) }; });
-  return cur;
-}
-
-function instrumentNow(a, t, ev) {
-  if (a === "A") {
-    const ph = ev ? phaseOf(ev, t) : null;
-    if (ph && ph.p < 1 || ph && ph.i < ev.phases.length - 1) return A_TAG[ph.name] || "";
-    return stateAt(a, t).state === "EXPLORING" ? "neutron survey" : "";
-  }
-  const ph = ev && rigs[a] ? rigs[a].phaseAt(t).name : "idle";
-  if (ph === "drill") return `DRILLING ${(100 * rigs[a].depthAt(t)).toFixed(0)} cm`;
-  if (ph === "nir_scan") return "NIR SCAN";
-  if (ph === "analyze") return "ANALYSING CORE";
-  if (ph === "arm_deploy" || ph === "arm_stow" || ph === "sample_lift") return "DRILL ARM";
-  if (a === "A" && stateAt(a, t).state === "EXPLORING") return "neutron survey";
-  return "";
-}
-
-// The lidar scan (sim/lidar.py Lidar.view, logged per step as lidar_frame):
-// the latest one at or before the shown moment, for the selected rover.
-// Runs without lidar keep the box hidden.
-function showLidar(t) {
-  const run = S.run;
-  if (run.hasLidar === undefined) run.hasLidar = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_frame));
-  if (!run.hasLidar) return;
-  // Top-down / First person (lidar_fp_frame, step-6-nav 6846caf), only when the run logs both.
-  if (run.hasLidarFp === undefined) run.hasLidarFp = run.steps.some((s) => Object.values(s.rovers).some((r) => r.lidar_fp_frame));
-  $("lid-seg").hidden = !run.hasLidarFp;
-  const fp = run.hasLidarFp && S.lidarKind === "fp";
-  const a = S.rover, k = run.stepAt(t);
-  let src = null;
-  for (let i = k; i >= 0 && i > k - 50 && !src; i--) {
-    const r = run.steps[i].rovers[a];
-    src = r && (fp && r.lidar_fp_frame ? r.lidar_fp_frame : r.lidar_frame);
-  }
-  const img = $("lid-img");
-  $("lid-none").hidden = !!src;
-  img.hidden = !src;
-  if (src && img.dataset.src !== run.dir + src) { img.src = run.dir + src; img.dataset.src = run.dir + src; }
-  // Top-down scans (step-6-nav 40304d4) are 800 px wide; older range images 400.
-  const top = !(img.naturalWidth > 0 && img.naturalWidth < 800);   // not loaded yet: the current kind
-  const isFp = fp && src && src.endsWith("_fp.jpg");
-  const cap = run.hasLidarFp ? `${ROLE[a] || "Rover " + a} lidar` : `${ROLE[a] || "Rover " + a} lidar, ${top ? "from above" : "range image"}`;
-  const tip = isFp ? "First person: the same scan, 120° across, near bright, far dark. Red no-go, amber crater floor."
-    : top ? "Top-down, forward up, rover at the bottom centre. Grey safe, amber crater floor (avoided), red steeper than 15° (no-go). Rings every 5 m."
-    : "Range image beside the camera, 120° x 33°: near warm, far cool.";
-  if ($("lid-cap").textContent !== cap) $("lid-cap").textContent = cap;
-  if ($("in-lidar").title !== tip) $("in-lidar").title = tip;
-}
-
-function showFrame(img, cv, none, small) {
-  let fr = S.run.frameNear(S.rover, S.t);
-  // Lidar view: Calvin's Lidar.view of the scan taken with that camera frame
-  // (sim/mission_render.py): from above, forward up, rover at the bottom
-  // centre. It is not a camera view, so the route overlay is left off.
-  const lidar = S.sensor === "lidar";
-  img.parentElement.classList.toggle("lidar-on", lidar);
-  if (fr && lidar) {
-    const lf = S.run.steps[fr.k].rovers[S.rover].lidar_frame;
-    fr = lf ? { ...fr, src: S.run.dir + lf, sub: false } : null;
-  }
-  none.hidden = !!fr;
-  img.hidden = !fr;
-  if (fr && img.dataset.src !== fr.src) { img.src = fr.src; img.dataset.src = fr.src; }
-  if (lidar) { cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); return; }
-  drawFpOverlay(fr, cv, small);
-}
-
-// Camera | Lidar: one setting for the camera box and the full-screen view.
-function setSensor(v) {
-  if (v === "lidar" && !S.run.hasLidar) v = "camera";
-  S.sensor = v;
-  try { localStorage.setItem("lantern.sensor", v); } catch (e) { /* private window */ }
-  for (const b of document.querySelectorAll("[data-sensor]")) b.setAttribute("aria-selected", String(b.dataset.sensor === v));
-  $("fpi-img").alt = $("fp-img").alt = v === "lidar" ? "Lidar view" : "Rover camera";
-  render(true);
-}
-
-function sensorCaption(t) {
-  if (S.sensor !== "lidar") return "Rover camera";
-  const fr = S.run.frameNear(S.rover, t);
-  const hz = fr ? S.run.steps[fr.k].rovers[S.rover].lidar_hazards || {} : {};
-  const n = (hz.crater || 0) + (hz.slope || 0);
-  return n ? `Lidar · ${n} hazard cells` : "Lidar · clear";
-}
-
-// Project a world point into the recorded camera frame (pinhole, sim/scene.py camera_model()).
-function project(pose, camZ, wx, wy, wz) {
-  const [x, y, h] = pose;
-  const dx = wx - x, dy = wy - y, up = wz - camZ;
-  const fwd = dx * Math.cos(h) + dy * Math.sin(h), left = -dx * Math.sin(h) + dy * Math.cos(h);
-  const depth = fwd * Math.cos(FP.pitch) - up * Math.sin(FP.pitch);
-  if (depth < 1.2) return null;
-  const yu = fwd * Math.sin(FP.pitch) + up * Math.cos(FP.pitch);
-  return [FP.w / 2 - (FP.fx * left) / depth, FP.h / 2 - (FP.fx * yu) / depth, depth];
-}
-
-// On the camera frame: the route the rover is following right now, any
-// obstacle it has found, and the sites ahead. In the small box the strokes
-// and text are drawn larger so they survive being scaled down.
-function drawFpOverlay(fr, cv, small) {
-  const c = cv.getContext("2d");
-  c.clearRect(0, 0, FP.w, FP.h);
-  if (!fr) return;
-  const k = small ? 2 : 1;
-  const font = (px) => `600 ${px * k}px Barlow, Helvetica, Arial, sans-serif`;
-  const a = S.rover, run = S.run, tf = run.times[fr.k];
-  // The step's logged pose places what the step logged (rims); the shown image's
-  // own pose (a display sub-frame sits fr.f of the way to the next step) projects
-  // everything, so marks stay put on the ground between steps.
-  const stepPose = run.steps[fr.k].rovers[a].true_pose;
-  const kNext = Math.min(fr.k + 1, run.steps.length - 1);
-  const pose = fr.sub ? run.poseAt(a, run.times[fr.k] + fr.f * (run.times[kNext] - run.times[fr.k])) : stepPose;
-  const camZ = terrain.heightAt(pose[0], pose[1]) + FP.camH;
-  const P = (x, y, lift = 0.05) => project(pose, camZ, x, y, terrain.heightAt(x, y) + lift);
-  const col = a === "A" ? "#5aa7ff" : "#f2994a";
-  const route = planned.filter((p) => p.agency === a && p.t <= tf).at(-1);
-  const st = stateAt(a, tf).state;
-  // A Surveyor stop under way: just its camera, no marks.
-  const sev = a === "A" ? sci.find((e) => e.agency === "A" && S.t >= e.t0 && S.t <= e.t1 + FOCUS_TAIL_S) : null;
-  if (sev) return;   // a plain camera view while it surveys
-  if (route && S.opts.routes && ["EXPLORING", "NAVIGATING", "REPLANNING", "PLANNING", "NAVIGATING_TO_SITE"].includes(st)) {
-    const pts = route.points;
-    let best = 0, bd = Infinity;
-    pts.forEach((p, i) => { const d = Math.hypot(p[0] - pose[0], p[1] - pose[1]); if (d < bd) { bd = d; best = i; } });
-    const path = [[pose[0] + 2 * Math.cos(pose[2]), pose[1] + 2 * Math.sin(pose[2])]];
-    let len = 0;
-    for (let i = best + 1; i < pts.length && len < 40; i++) {
-      const q = path.at(-1), d = Math.hypot(pts[i][0] - q[0], pts[i][1] - q[1]), n = Math.max(1, Math.ceil(d));
-      for (let j = 1; j <= n; j++) path.push([q[0] + ((pts[i][0] - q[0]) * j) / n, q[1] + ((pts[i][1] - q[1]) * j) / n]);
-      len += d;
-    }
-    c.lineJoin = c.lineCap = "round";
-    for (const [w, style] of [[9 * k, "rgba(0,0,0,.55)"], [4 * k, col]]) {
-      c.beginPath();
-      let open = false;
-      for (const p of path) {
-        const q = P(p[0], p[1]);
-        if (!q) { open = false; continue; }
-        open ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]);
-        open = true;
-      }
-      c.lineWidth = w; c.strokeStyle = style; c.stroke();
-    }
-    c.fillStyle = col; c.font = font(14);
-    const msg = st === "REPLANNING" ? "Replanning" : route.kind === "replanned" ? `To ${route.target_id}, around obstacle` : `To ${route.target_id}`;
-    c.textAlign = "right"; c.fillText(msg, FP.w - 12, 12 + 14 * k); c.textAlign = "left";
-  }
-  // The mission log's planned route ("plan", world xy, out to ~20 m, re-planned
-  // every step) as amber dashes, from the pose the shown image was taken at
-  // (ported from the old page's drawPlan, main.js).
-  const plan = !route && S.opts.routes ? (run.steps[fr.k].rovers[a] || {}).plan : null;
-  if (plan && plan.length > 1) {
-    const k1 = Math.min(fr.k + 1, run.steps.length - 1);
-    const tp = run.times[fr.k] + (fr.sub ? fr.f : 0) * (run.times[k1] - run.times[fr.k]);
-    const [x0, y0, h0] = run.poseAt(a, tp);
-    const camZ0 = terrain.heightAt(x0, y0) + FP.camH;
-    const cp = Math.cos(FP.pitch), sp = Math.sin(FP.pitch), ch = Math.cos(h0), sh = Math.sin(h0);
-    const proj = (wx, wy) => {
-      const dx = wx - x0, dy = wy - y0, f = dx * ch + dy * sh, l = -dx * sh + dy * ch;
-      const z = terrain.heightAt(wx, wy) + 0.05 - camZ0;
-      const Xc = -l, Yc = f * sp + z * cp, Zc = f * cp - z * sp;
-      return Zc <= 0.5 ? null : [FP.w / 2 + (FP.fx * Xc) / Zc, FP.h / 2 - (FP.fx * Yc) / Zc, Math.hypot(f, l)];
-    };
-    c.strokeStyle = "rgba(255, 200, 60, 0.95)";
-    c.lineCap = "round";
-    const DASH = 0.6, GAP = 0.4;
-    let on = true, left = DASH, start = plan[0];
-    for (let i = 0; i + 1 < plan.length; i++) {
-      const [ax, ay] = plan[i], [bx, by] = plan[i + 1], seg = Math.hypot(bx - ax, by - ay);
-      let s0 = 0;
-      while (s0 < seg) {
-        const take = Math.min(left, seg - s0), s1 = s0 + take;
-        const p1 = [ax + ((bx - ax) * s1) / seg, ay + ((by - ay) * s1) / seg];
-        if (on) {
-          const pa = proj(start[0], start[1]), pb = proj(p1[0], p1[1]);
-          if (pa && pb) {
-            c.lineWidth = k * Math.max(1.2, Math.min(6, 20 / Math.max(pa[2], 1)));
-            c.beginPath(); c.moveTo(pa[0], pa[1]); c.lineTo(pb[0], pb[1]); c.stroke();
-          }
-        }
-        left -= take; s0 = s1;
-        if (left <= 1e-9) { on = !on; left = on ? DASH : GAP; start = p1; }
-      }
-    }
-  }
-  for (const h of hazards) {
-    if (!S.opts.hazards || tf < h.seen_t) continue;
-    c.beginPath();
-    let open = false, top = null;
-    for (let i = 0; i <= 48; i++) {
-      const an = (i / 48) * Math.PI * 2, q = P(h.x + h.radius * Math.cos(an), h.y + h.radius * Math.sin(an));
-      if (!q) { open = false; continue; }
-      open ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]);
-      open = true;
-      if (!top || q[1] < top[1]) top = q;
-    }
-    c.lineWidth = 3 * k; c.strokeStyle = "#ff5d5d"; c.fillStyle = "rgba(255,93,93,.18)"; c.fill(); c.stroke();
-    if (top) { c.fillStyle = "#ff5d5d"; c.font = font(13); c.fillText(h.hazard_id ? `FLAGGED ${h.hazard_id} · KEEP CLEAR` : "OBSTACLE", top[0] - 34 * k, top[1] - 8); }
-  }
-  // Rim points the navigation used at this step: rover frame at the step's pose
-  // into the world, then onto the shown image. On a display sub-frame they stay
-  // (asked for: "the crater points keep blinking on and off"), a little fainter.
-  const rr = run.steps[fr.k].rovers[a];
-  if (S.opts.rims && rr && rr.rims) {
-    c.fillStyle = col;
-    c.globalAlpha = fr.sub ? 0.7 : 1;
-    const cs = Math.cos(stepPose[2]), sn = Math.sin(stepPose[2]);
-    for (const [f, l] of rr.rims) {
-      const wx = stepPose[0] + f * cs - l * sn, wy = stepPose[1] + f * sn + l * cs;
-      const q = P(wx, wy, 0);
-      if (q) c.fillRect(q[0] - 3 * k, q[1] - 3 * k, 6 * k, 6 * k);
-    }
-    c.globalAlpha = 1;
-  }
-  const sites = registryAt(tf);
-  for (const s of run.log.satellite_sites || []) {
-    const r = [...sites.values()].find((v) => v.target === s.id);
-    const ice = (r && (r.surveyor === "Positive" || r.prospector === "Positive")) || siteVerdict(s.id, tf) === "ice";
-    const color = ice ? ICE_CSS : r ? "#9aa7b8" : SITE_CSS;
-    const base = P(s.x, s.y), tip = P(s.x, s.y, 6);
-    if (!base || !tip || base[2] > 250) continue;
-    c.strokeStyle = color; c.lineWidth = 2 * k;
-    c.beginPath(); c.moveTo(base[0], base[1]); c.lineTo(tip[0], tip[1]); c.stroke();
-    c.fillStyle = color; c.font = font(12);
-    c.fillText(`${s.id}${ice ? " ICE" : ""} · ${base[2].toFixed(0)} m`, tip[0] + 5, tip[1] + 4);
+// Craters the Scouts added to the dock's map: a green ring on the ground from
+// the moment the dock merged it, so the map can be seen growing in 3D too.
+function craters3d() {
+  const mat = world.lineMat(0x7ddc7a, 2, { dashed: true, opacity: 0.85 });
+  for (const c of S.cr.rec.crater_map.added || []) {
+    const ring = world.ring(c.x, c.y, c.d / 2, mat, 48);
+    ring.visible = false;
+    ring.userData = { t: addedT.has(c.crater_id) ? addedT.get(c.crater_id) : Infinity };
+    world.scene.add(ring);
+    craterRings.push(ring);
   }
 }
 
-// ------------------------------------------------------- planned route in 3D
-// Each rover's logged plan for the shown step ("plan", world xy, out to ~20 m,
-// re-planned every step) draped on the ground as amber dashes, the same line
-// the rover camera and the satellite map draw. Rebuilt when the step changes.
-const PLAN_HEX = 0xffc83c;   // amber is the planned route only; sites are SITE_HEX green   // the camera's plan colour, rgba(255, 200, 60) (map.js PLAN_CSS)
+// A Scout searching another Scout's find: a ring of the search radius round
+// the find, in the searcher's colour, with a label, while the search runs
+// and for a while after with its result. This is the cross-check.
+function searchMarks() {
+  for (const m of marks) for (const o of [m.ring, m.lbl]) { world.scene.remove(o); if (o.geometry) o.geometry.dispose(); if (o.element) o.element.remove(); }
+  marks = [];
+  const run = S.run, cr = S.cr, T0 = run.times[0], T1 = run.tEnd;
+  const findEv = new Map(cr.iceEvents.filter((e) => e.type === "find").map((e) => [e.find_id, e]));
+  for (const e of cr.iceEvents) {
+    if (e.type !== "search_start" || e.t > T1) continue;
+    const end = cr.iceEvents.find((x) => x.type === "search_end" && x.find_id === e.find_id && x.sortie_id === e.sortie_id && x.t >= e.t);
+    if ((end ? end.t : e.t) + SEARCH_LABEL_AFTER_S < T0) continue;
+    const f = findEv.get(e.find_id);
+    if (!f || !run.agencies.includes(e.scout)) continue;
+    const ring = world.ring(f.est[0], f.est[1], e.radius_m, world.lineMat(hexInt(scol(e.scout)), 3, { dashed: true }));
+    const p = world.groundL(f.est[0], f.est[1]);
+    const lbl = world.label("", scol(e.scout));
+    lbl.position.set(p.x, p.y, p.z + 3);
+    lbl.center.set(1, 0.5);   // low and left of the find's beam, whose own label sits above-right
+    world.scene.add(ring, lbl);
+    marks.push({ start: e, end, find: f, ring, lbl });
+  }
+}
+
+function updateMarks(t) {
+  for (const s of marks) {
+    const t0 = s.start.t, t1 = s.end ? s.end.t : t0;
+    const on = t >= t0 && t <= t1 + SEARCH_LABEL_AFTER_S;
+    s.ring.visible = on && t <= t1;
+    s.lbl.visible = on;
+    s.lbl.element.style.display = on ? "" : "none";
+    if (!on) continue;
+    const res = t > t1 && s.end ? ` · ${s.end.result === "confirmed" ? "confirmed" : "not confirmed"}` : "";
+    const html = `<span>${s.start.scout} ${t <= t1 ? "searching" : "searched"} ${s.find.scout}'s find ${s.find.find_id}${res}</span>`;
+    if (s.lbl.element.innerHTML !== html) s.lbl.element.innerHTML = html;
+  }
+  for (const r of craterRings) r.visible = S.opts.craters && t >= r.userData.t;
+}
+
+// The route each Scout's pipeline planned at the shown step, draped on the
+// ground as amber dashes, the same line the first-person box and the map draw.
+const PLAN_HEX = 0xffc83c;
 const plan3d = {};
 function updatePlan3D(t) {
   const run = S.run, k = run.stepAt(t);
@@ -1243,31 +349,29 @@ function updatePlan3D(t) {
     let o = plan3d[a];
     if (!o) {
       const mat = world.lineMat(PLAN_HEX, 3, { dashed: true, opacity: 0.95 });
-      mat.dashSize = 0.6; mat.gapSize = 0.4;   // metres, as the camera's dashes
+      mat.dashSize = 0.6; mat.gapSize = 0.4;   // metres, as the first-person dashes
       o = plan3d[a] = { mat, line: null, k: -1 };
     }
-    const show = S.opts.routes;
     if (o.k !== k) {
       o.k = k;
       if (o.line) { world.scene.remove(o.line); o.line.geometry.dispose(); o.line = null; }
-      const plan = (run.steps[k].rovers[a] || {}).plan;
+      const plan = run.steps[k].rovers[a].plan;
       if (plan && plan.length > 1) {
         o.line = world.drape(plan, o.mat, 0.5).line;
         o.line.renderOrder = 3;
         world.scene.add(o.line);
       }
     }
-    if (o.line) o.line.visible = show;
+    if (o.line) o.line.visible = S.opts.routes;
   }
+  for (const [a, o] of Object.entries(plan3d)) if (!run.agencies.includes(a) && o.line) o.line.visible = false;
 }
 
-// ------------------------------------------------------- steep ground
-// The planner's no-go ground (assets/terrain/nogo.png: sim/rover.py SlopeMap,
-// over 15 deg across 2 m, the overhead map's layer) shaded red on the 3D
-// ground near the rover being followed. One draped grid, rebuilt when the
-// rover has moved STEEP_STEP_M. Unlit, so it reads in the dark.
-const STEEP_HALF_M = 120, STEEP_CELL_M = 0.5, STEEP_STEP_M = 40, STEEP_LIFT_M = 0.06;   // assumed, display only
-const STEEP_OPACITY = 0.72;   // asked for: "a bit more opaque" (was 0.55)
+// The planner's no-go ground (assets/terrain/nogo.png: over 15 deg across
+// 2 m, the satellite map's layer) shaded red on the 3D ground near the Scout
+// being followed. One draped grid, rebuilt when the Scout has moved
+// STEEP_STEP_M. Unlit, so it reads in the dark. Drive area only.
+const STEEP_HALF_M = 120, STEEP_CELL_M = 0.5, STEEP_STEP_M = 40, STEEP_LIFT_M = 0.06, STEEP_OPACITY = 0.72;   // assumed, display only
 let steepMesh = null, steepAt = null, steepTex = null;
 function updateSteepShade(t) {
   const m = terrain.meta;
@@ -1304,6 +408,7 @@ function updateSteepShade(t) {
   g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   if (!steepMesh) {
+    // Outside the nogo image the texture clamps to its edge: transparent there (build_assets.py draws clear ground clear).
     steepMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: steepTex, transparent: true, opacity: STEEP_OPACITY,
       depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
     steepMesh.frustumCulled = false;
@@ -1315,473 +420,838 @@ function updateSteepShade(t) {
   }
 }
 
-function registryAt(t) {
-  const sites = new Map();
-  for (const e of reg) {
-    if (e.t > t) break;
-    let s = sites.get(e.site_id);
-    if (!s) { s = { site_id: e.site_id, target: e.target_id, stage: "Candidate", surveyor: "Unknown", prospector: "Unknown", writes: [] }; sites.set(e.site_id, s); }
-    if (e.call === "registerCandidate") Object.assign(s, { x: e.x, y: e.y, confidence: e.confidence });
-    if (e.call === "submitSurveyorInspection") Object.assign(s, { stage: "SurveyorInspected", surveyor: e.result });
-    if (e.call === "submitProspectorAnalysis") Object.assign(s, { stage: "ProspectorAnalyzed", prospector: e.result });
-    s.writes.push(e);
+// --------------------------------------------------------- checkpoints
+// The moments the video and a viewer want to stop on, from the record's own
+// events inside this sortie's window: a find, a second Scout's search result, a drill.
+function checkpointsFor(run) {
+  const T0 = run.times[0], T1 = run.tEnd, out = [];
+  const finder = (id) => (S.cr.iceEvents.find((x) => x.type === "find" && x.find_id === id) || {}).scout || "?";
+  for (const e of S.cr.iceEvents) {
+    if (e.t <= T0 || e.t > T1 || !run.agencies.includes(e.scout)) continue;
+    if (e.type === "find") out.push({ t: e.t, label: `${e.scout} logs find ${e.find_id}`, say: `${fmtNum(e.reading_wt, 1)} wt%, within ${fmtNum(e.bound95, 1)} m (95%)` });
+    if (e.type === "search_end") out.push({ t: e.t, label: `${e.scout}: ${finder(e.find_id)}'s find ${e.find_id} ${e.result === "confirmed" ? "confirmed" : "not confirmed"}`, say: SEARCH_WHY[e.reason] || "" });
+    if (e.type === "drill") out.push({ t: e.t, label: `${e.scout} drills find ${e.find_id}`, say: `its position error ${fmtNum(e.true_err_m, 1)} m` });
   }
-  return sites;
+  return out;
+}
+const SEARCH_WHY = { match: "a matching reading inside the search area", no_readings: "no readings in the search area",
+  no_match: "no reading matched", bound_too_large: "the combined position bound was too large to judge" };
+
+// --------------------------------------------------------------- controls
+function bind() {
+  $("play").onclick = togglePlay;
+  $("checkpoint").onclick = () => { if (!S.playing) togglePlay(); };
+  $("restart").onclick = () => { S.t = S.run.times[0]; S.playing = false; setPlayIcon(); S.player.restart(); render(true); };
+  $("speed").onchange = (e) => (S.speed = Number(e.target.value));
+  $("scrub").oninput = (e) => {
+    const T0 = S.run.times[0], nt = T0 + (Number(e.target.value) / 1000) * (S.run.tEnd - T0);
+    if (nt < S.t) S.player.rewound(nt); else S.player.jumped(nt);
+    $("checkpoint").hidden = true;
+    S.t = nt;
+    render(true);
+  };
+  $("step-back").onclick = () => stepBy(-1);
+  $("step-fwd").onclick = () => stepBy(1);
+  $("zoom-in").onclick = () => zoom(1 / 1.35);
+  $("zoom-out").onclick = () => zoom(1.35);
+  $("sortie-pick").onchange = (e) => openSortie(S.cr.sortieById[e.target.value]);
+  document.querySelectorAll("#lid-seg button").forEach((b) => (b.onclick = () => setLidar(b.dataset.lk)));
+  document.querySelectorAll("[data-expand]").forEach((b) => (b.onclick = () => setCam(S.cam === b.dataset.expand ? "third" : b.dataset.expand)));
+  $("back-chip").onclick = () => setCam("third");
+  document.querySelectorAll(".rail button").forEach((b) => (b.onclick = () => {
+    const p = $("panel");
+    if (p.classList.contains("closed")) p.classList.remove("closed");
+    else if (S.tab === b.dataset.tab) { p.classList.add("closed"); syncCollapse(); return; }
+    setTab(b.dataset.tab);
+    syncCollapse();
+  }));
+  $("collapse").onclick = () => { $("panel").classList.toggle("closed"); syncCollapse(); };
+  for (const k of ["fill", "routes", "particles", "rims", "hazards", "nogo", "craters", "truth", "next"]) {
+    $("opt-" + k).checked = S.opts[k];
+    $("opt-" + k).onchange = (e) => { S.opts[k] = e.target.checked; vis(); render(true); };
+  }
+  $("layers-btn").onclick = (e) => {
+    e.stopPropagation();
+    const open = $("layers").hidden;
+    $("layers").hidden = !open;
+    $("layers-btn").setAttribute("aria-expanded", String(open));
+  };
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".pop-wrap")) { $("layers").hidden = true; $("layers-btn").setAttribute("aria-expanded", "false"); }
+  });
+  $("info-btn").onclick = () => $("about").showModal();
+  $("full-btn").onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
+  $("runs-btn").onclick = openRuns;
+  $("dr-close").onclick = () => ($("drawer").hidden = true);
+  $("banner").onclick = () => { $("panel").classList.remove("closed"); setTab("run"); syncCollapse(); };
+  addEventListener("keydown", (e) => {
+    // Typing in a field: leave its keys alone. The slider and the checkboxes keep the shortcuts.
+    if (e.target.closest?.("input:not([type=range]):not([type=checkbox]), select, textarea")) return;
+    if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+    if (e.code === "ArrowRight") { e.preventDefault(); stepBy(1); }
+    if (e.code === "ArrowLeft") { e.preventDefault(); stepBy(-1); }
+    if (e.key === "[") sortieBy(-1);
+    if (e.key === "]") sortieBy(1);
+    if (e.key === "Escape") $("drawer").hidden = true;
+    if (e.key === "+" || e.key === "=") zoom(1 / 1.35);
+    if (e.key === "-") zoom(1.35);
+    // 1 / 2 blow the first-person box or the satellite map up to the full window (again: back).
+    if (e.key === "1") setCam(S.cam === "first" ? "third" : "first");
+    if (e.key === "2") setCam(S.cam === "overhead" ? "third" : "overhead");
+    if (e.key === "f" || e.key === "F") $("opt-fill").click();
+    if (e.key === "t" || e.key === "T") $("opt-truth").click();
+    if (e.key === "l" || e.key === "L") setLidar(S.lidarKind === "top" ? "fp" : "top");
+  });
 }
 
-function siteStatus(s) {
-  const both = s.stage === "ProspectorAnalyzed";
-  return both ? (s.prospector === "Positive" ? "Positive" : "Analyzed") : s.stage === "SurveyorInspected" ? s.surveyor : "Candidate";
+function vis() {
+  world.setVisibility({ fill: S.opts.fill, tracks: S.opts.routes, truth: S.opts.truth });
+  $("vnote").hidden = !S.opts.fill;
+  map.opts = mapOpts();
+  document.body.classList.toggle("truth-on", S.opts.truth);
+}
+const mapOpts = () => ({ tracks: S.opts.routes, truth: S.opts.truth, nogo: S.opts.nogo, particles: S.opts.particles, terrainCraters: false });
+
+function setLidar(kind) {
+  S.lidarKind = kind;
+  document.querySelectorAll("#lid-seg button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.lk === kind)));
+  lidarKey = null;
+  render(true);
 }
 
-function updateOverlay(t) {
-  const sites = registryAt(t);
-  for (const [sid, o] of siteObjs) {
-    const s = sites.get(sid);
-    o.g.visible = !!s;
-    if (!s) continue;
-    const both = s.stage === "ProspectorAnalyzed";
-    const status = siteStatus(s);
-    const key = `${status}${both}`;
-    if (o.key !== key) {
-      o.key = key;
-      o.ring.material = o.mats[status];
-      o.el.style.color = "#" + SITE_COLOR[status].toString(16).padStart(6, "0");
-      o.beam.material.color.set(SITE_COLOR[status]);
-      o.disc.visible = status === "Positive";
-      const words = { Candidate: "candidate", Positive: both ? "ICE CONFIRMED" : "ICE", Negative: "no ice",
-        Inconclusive: "unclear", Analyzed: s.prospector.toLowerCase() }[status];
-      o.el.textContent = `${o.target} · ${words}`;
+function syncCollapse() {
+  const closed = $("panel").classList.contains("closed"), b = $("collapse");
+  b.setAttribute("aria-label", closed ? "Show panel" : "Hide panel");
+  b.title = closed ? "Show panel" : "Hide panel";
+  b.setAttribute("aria-expanded", String(!closed));
+}
+
+function setTab(tab) {
+  S.tab = tab;
+  document.querySelectorAll(".rail button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+  document.querySelectorAll(".pane").forEach((p) => (p.hidden = p.dataset.pane !== tab));
+  panelKey = {};
+  if (S.run) renderPanels(S.t);
+}
+
+// One logged step back or forward, paused.
+function stepBy(n) {
+  const run = S.run;
+  S.playing = false;
+  setPlayIcon();
+  const k = Math.min(run.steps.length - 1, Math.max(0, run.stepAt(S.t) + n));
+  const nt = run.times[k];
+  if (nt < S.t) S.player.rewound(nt); else S.player.jumped(nt);
+  $("checkpoint").hidden = true;
+  S.t = nt;
+  render(true);
+}
+
+function sortieBy(n) {
+  const L = S.cr.rec.sorties, i = L.indexOf(S.sortie) + n;
+  if (i >= 0 && i < L.length) openSortie(L[i]);
+}
+
+function setPlayIcon() {
+  $("play").innerHTML = `<svg><use href="#i-${S.playing ? "pause" : "play"}"/></svg>`;
+  $("play").setAttribute("aria-label", S.playing ? "Pause" : "Play");
+}
+
+function togglePlay() {
+  if (S.busy) return;
+  if (S.t >= S.run.tEnd) { S.t = S.run.times[0]; S.player.restart(); }
+  S.playing = !S.playing;
+  if (S.playing) $("checkpoint").hidden = true;
+  setPlayIcon();
+}
+
+// Move the 3D camera toward or away from what it is looking at.
+function zoom(f) {
+  if (S.cam !== "third") return;
+  const c = world.controls, cam = world.camera;
+  const off = cam.position.clone().sub(c.target);
+  off.setLength(THREE.MathUtils.clamp(off.length() * f, c.minDistance, c.maxDistance));
+  cam.position.copy(c.target).add(off);
+  c.update();
+}
+
+// The big view is the third-person chase camera; the first-person box or the
+// satellite map can be blown up to fill the window, and the chip returns.
+function setCam(cam) {
+  S.cam = cam;
+  $("fp").hidden = cam !== "first";
+  $("in-fp").hidden = cam !== "third";
+  $("in-map").classList.toggle("full", cam === "overhead");
+  document.body.classList.toggle("map-full", cam === "overhead");
+  $("back-chip").hidden = cam === "third";
+  world.labels.domElement.style.display = cam === "third" ? "" : "none";
+  if (cam === "third") world.setFollow(S.rover);
+  if (S.run) render(true);
+}
+
+function setRover(a) {
+  S.rover = a;
+  document.querySelectorAll("#rover-seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.rover === a)));
+  if (S.cam === "third") world.setFollow(a);
+  steepAt = null;
+  lidarKey = null;
+  timelineActs();
+  panelKey = {};
+  render(true);
+}
+
+function roverSeg() {
+  $("rover-seg").innerHTML = S.run.agencies.map((a) =>
+    `<button data-rover="${a}" aria-selected="${a === S.rover}"><i class="dot" style="background:${scol(a)}"></i>Scout ${a}</button>`).join("");
+  document.querySelectorAll("#rover-seg button").forEach((b) => (b.onclick = () => setRover(b.dataset.rover)));
+}
+
+function urlState() {
+  const q = new URLSearchParams({ batch: S.batch, run: S.cr.rec.run_id, sortie: S.sortie.sortie_id });
+  history.replaceState(null, "", `?${q}`);
+}
+
+// ------------------------------------------------------------------- loop
+let last = performance.now(), lastPanelAt = 0;
+function loop(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (S.run && !S.busy) {
+    const prevT = S.t;
+    if (S.playing) {
+      S.t = Math.min(S.run.tEnd, S.t + dt * S.speed);
+      if (!S.player.tick(prevT, S.t) && S.t >= S.run.tEnd) {
+        // A run plays sortie by sortie: on into the next one, from the same moment when they overlap.
+        const L = S.cr.rec.sorties, nx = L[L.indexOf(S.sortie) + 1];
+        if (S.opts.next && nx) openSortie(nx, { t: Math.max(nx.t_start, Math.min(S.t, nx.t_end)) });
+        else { S.playing = false; setPlayIcon(); }
+      }
+    }
+    if (!S.busy) {
+      const panels = now - lastPanelAt > 150;
+      render(panels);
+      if (panels) lastPanelAt = now;
     }
   }
-  // During a close-up, clear the markers that would stand in front of the drill.
-  const fa = S.focusEv ? S.focusEv.agency : null;
-  for (const o of siteObjs.values()) o.beam.visible = !fa;
-  // A science close-up shows the rovers themselves: no estimate dots, rings or
-  // particle clouds on either (at the final site they hid the parked Surveyor).
-  for (const ag of S.run.agencies) {
-    if (world.estDots[ag]) world.estDots[ag].visible = S.opts.routes && !fa;
-    if (world.sigmaRings[ag]) world.sigmaRings[ag].visible = S.opts.routes && !fa;
-    if (fa && world.particles && world.particles[ag]) world.particles[ag].visible = false;
+  requestAnimationFrame(loop);
+}
+
+// ----------------------------------------------------------------- render
+function render(panels) {
+  const run = S.run, t = S.t;
+  if (!run || !world) return;
+  world.currentT = t;
+  for (const a of run.agencies) addRoverRim(a);
+  world.update(t, { tracks: S.opts.routes, particles: S.opts.particles });
+  const k = run.stepAt(t), nxt = run.steps[Math.min(k + 1, run.steps.length - 1)];
+  // A Scout at the dock has no estimate to draw.
+  for (const a of run.agencies) {
+    const docked = nxt.info[a].act === DOCKED;
+    if (world.estDots[a]) world.estDots[a].visible = S.opts.routes && !docked;
+    if (world.sigmaRings[a]) world.sigmaRings[a].visible = S.opts.routes && !docked;
+    const tag = world.rovers[a] && world.rovers[a].tag;
+    const html = `<span>${a}${docked ? " · docked" : ""}</span>`;
+    if (tag && tag.innerHTML !== html) tag.innerHTML = html;
   }
-  const done = new Set([...sites.values()].map((s) => s.target));
-  for (const o of satObjs) o.g.visible = !done.has(o.id);
-  for (const h of hazards) if (h.obj) h.obj.visible = S.opts.hazards && t >= h.seen_t;
-  for (const a of S.run.agencies) {
-    const st = stateAt(a, t).state;
-    const latest = planned.filter((p) => p.agency === a && p.t <= t).at(-1);
-    for (const p of planned.filter((q) => q.agency === a)) {
-      p.line.visible = S.opts.routes && p === latest && ["EXPLORING", "NAVIGATING", "PLANNING", "REPLANNING", "NAVIGATING_TO_SITE"].includes(st);
+  updateSteepShade(t);
+  updatePlan3D(t);
+  updateMarks(t);
+  for (const a of run.agencies) updateSuspension(a, t);
+  if (S.cam === "third") world.render();
+  else if (S.cam === "first") { world.renderer.setClearColor(0x000000, 1); world.renderer.clear(); }
+  if (S.cam !== "overhead") firstPerson(k, t);
+  map.update(t);
+  drawLidar(k);
+  $("clock").innerHTML = `${fmtClock(t - run.times[0])}<small>${fmtDay(t)}</small>`;
+  const f = (t - run.times[0]) / Math.max(1, run.tEnd - run.times[0]);
+  $("tl-fill").style.width = `${100 * f}%`;
+  $("scrub").value = String(Math.round(1000 * f));
+  if (panels) renderPanels(t);
+}
+
+// ------------------------------------------------------ first-person box
+// The 3D ground from the followed Scout's camera pose, lamp only, rendered
+// into the canvas under the box (or the full window), then what its pipeline
+// logged at that step drawn on top: rim points, planned route, lidar hazards.
+function firstPerson(k, t) {
+  const a = S.rover, run = S.run;
+  const full = S.cam === "first";
+  const box = full ? $("fp-box") : $("fp-mini"), ov = full ? $("fp-ov") : $("fpi-ov");
+  const docked = run.steps[Math.min(k + 1, run.steps.length - 1)].info[a].act === DOCKED;
+  const none = $("fpi-none");
+  none.hidden = full || !docked;
+  if (!full) none.textContent = "At the dock";
+  if (box.offsetParent === null && !full) return;
+  const R = box.getBoundingClientRect(), C = world.renderer.domElement.getBoundingClientRect();
+  if (!R.width || !R.height) return;
+  const r3 = world.renderer;
+  const x = R.left - C.left, y = C.bottom - R.bottom;
+  if (docked) {
+    r3.setScissorTest(true); r3.setScissor(x, y, R.width, R.height); r3.setClearColor(0x050506, 1); r3.clear(); r3.setScissorTest(false);
+    ov.getContext("2d").clearRect(0, 0, ov.width, ov.height);
+    return;
+  }
+  const [px, py, ph] = run.poseAt(a, t);
+  const camZ = terrain.heightAt(px, py) + FP.camH;
+  fpCam.position.copy(world.L(px, py, camZ));
+  fpCam.lookAt(world.L(px + Math.cos(ph) * Math.cos(FP.pitch), py + Math.sin(ph) * Math.cos(FP.pitch), camZ - Math.sin(FP.pitch)));
+  fpCam.aspect = R.width / R.height;
+  fpCam.updateProjectionMatrix();
+  // What the camera would see: ground, rocks, other Scouts and their lamps.
+  // Not the page's drawings (tracks, rings, labels) nor this Scout's own body.
+  const hide = [world.overlay, steepMesh, dockObj && dockObj.children[2], ...craterRings, ...marks.flatMap((m) => [m.ring, m.lbl]),
+    ...Object.values(plan3d).map((o) => o.line)].filter((o) => o && o.visible);
+  const own = [];
+  world.rovers[a].g.traverse((o) => { if (o.isMesh && o.visible) own.push(o); });
+  for (const o of [...hide, ...own]) o.visible = false;
+  const fill = [world.fill.visible, world.ambient.visible];
+  world.fill.visible = world.ambient.visible = false;
+  r3.setScissorTest(true);
+  r3.setScissor(x, y, R.width, R.height);
+  r3.setViewport(x, y, R.width, R.height);
+  r3.setClearColor(0x000000, 1);
+  r3.render(world.scene, fpCam);
+  r3.setViewport(0, 0, C.width, C.height);
+  r3.setScissorTest(false);
+  [world.fill.visible, world.ambient.visible] = fill;
+  for (const o of [...hide, ...own]) o.visible = true;
+  drawFpOverlay(ov, k, [px, py, ph], camZ, !full);
+}
+
+// Project a world point into the drawn camera (pinhole, sim/scene.py camera_model()).
+function project(pose, camZ, wx, wy, wz) {
+  const [x, y, h] = pose;
+  const dx = wx - x, dy = wy - y, up = wz - camZ;
+  const fwd = dx * Math.cos(h) + dy * Math.sin(h), left = -dx * Math.sin(h) + dy * Math.cos(h);
+  const depth = fwd * Math.cos(FP.pitch) - up * Math.sin(FP.pitch);
+  if (depth < 0.5) return null;
+  const yu = fwd * Math.sin(FP.pitch) + up * Math.cos(FP.pitch);
+  return [FP.w / 2 - (FP.fx * left) / depth, FP.h / 2 - (FP.fx * yu) / depth, depth];
+}
+
+// The pose a step's pipeline data belongs to: the Scout's true pose at the pipeline step.
+const pipePose = (a, r) => (r.pipeT != null ? S.run.poseAt(a, r.pipeT) : null);
+
+function drawFpOverlay(cv, k, pose, camZ, small) {
+  const c = cv.getContext("2d");
+  c.clearRect(0, 0, FP.w, FP.h);
+  const a = S.rover, run = S.run, r = run.rover(a, k);
+  const K = small ? 2 : 1;
+  const font = (px) => `600 ${px * K}px Barlow, Helvetica, Arial, sans-serif`;
+  const P = (x, y, lift = 0.05) => project(pose, camZ, x, y, terrain.heightAt(x, y) + lift);
+  const col = scol(a);
+  const pp = pipePose(a, r);
+  const toWorld = (f, l) => [pp[0] + f * Math.cos(pp[2]) - l * Math.sin(pp[2]), pp[1] + f * Math.sin(pp[2]) + l * Math.cos(pp[2])];
+  // Lidar hazard cells, translucent on the ground.
+  const g = run.lidarGrid;
+  if (S.opts.hazards && pp && g && r.lidar) {
+    for (let i = 0; i < g.nx; i++) for (let j = 0; j < g.ny; j++) {
+      const ch = r.lidar.charCodeAt(i * g.ny + j) - 48;
+      if (ch < 2) continue;
+      const f0 = g.fwd0_m + i * g.cell_m, l0 = -g.half_width_m + j * g.cell_m;
+      const q = [[f0, l0], [f0 + g.cell_m, l0], [f0 + g.cell_m, l0 + g.cell_m], [f0, l0 + g.cell_m]].map(([f, l]) => P(...toWorld(f, l), 0.03));
+      if (q.some((v) => !v)) continue;
+      const [R_, G_, B_] = HAZ_RGB[ch];
+      c.fillStyle = `rgba(${R_},${G_},${B_},0.42)`;
+      c.beginPath(); c.moveTo(q[0][0], q[0][1]); for (const v of q.slice(1)) c.lineTo(v[0], v[1]); c.closePath(); c.fill();
     }
   }
+  // The planned route as amber dashes on the ground.
+  const plan = S.opts.routes ? r.plan : null;
+  if (plan && plan.length > 1) {
+    c.strokeStyle = "rgba(255, 200, 60, 0.95)";
+    c.lineCap = "round";
+    const DASH = 0.6, GAP = 0.4;
+    let on = true, left = DASH, start = plan[0];
+    for (let i = 0; i + 1 < plan.length; i++) {
+      const [ax, ay] = plan[i], [bx, by] = plan[i + 1], seg = Math.hypot(bx - ax, by - ay);
+      let s0 = 0;
+      while (s0 < seg) {
+        const take = Math.min(left, seg - s0), s1 = s0 + take;
+        const p1 = [ax + ((bx - ax) * s1) / seg, ay + ((by - ay) * s1) / seg];
+        if (on) {
+          const pa = P(start[0], start[1]), pb = P(p1[0], p1[1]);
+          if (pa && pb) {
+            c.lineWidth = K * Math.max(1.2, Math.min(6, 20 / Math.max(pa[2], 1)));
+            c.beginPath(); c.moveTo(pa[0], pa[1]); c.lineTo(pb[0], pb[1]); c.stroke();
+          }
+        }
+        left -= take; s0 = s1;
+        if (left <= 1e-9) { on = !on; left = on ? DASH : GAP; start = p1; }
+      }
+    }
+  }
+  // Finds near enough to see: a beam with its label, and a search ring while one runs.
+  for (const f of run.findsAt(k)) {
+    const d = Math.hypot(f.x - pose[0], f.y - pose[1]);
+    if (d > FIND_VIEW_M) continue;
+    const base = P(f.x, f.y), tip = P(f.x, f.y, 4);
+    if (!base || !tip) continue;
+    const fc = STATUS_COLOR[f.status] || "#fff";
+    c.strokeStyle = fc; c.lineWidth = 2 * K;
+    c.beginPath(); c.moveTo(base[0], base[1]); c.lineTo(tip[0], tip[1]); c.stroke();
+    c.fillStyle = fc; c.font = font(12);
+    c.fillText(`find ${f.find_id} · ${f.status} · ${d.toFixed(0)} m`, tip[0] + 5, tip[1] + 4);
+  }
+  // Rim points the navigation used at this step: rover frame at the step's
+  // pose into the world, then onto the drawn view. Filled: matched to a mapped
+  // crater. Hollow: no map partner (a sighting). Hidden truth: a red cross on
+  // a wrong match.
+  if (S.opts.rims && pp && r.rims && r.rims.length) {
+    const sz = 3 * K;
+    c.lineWidth = 1.5 * K;
+    r.rims.forEach(([f, l], i) => {
+      const q = P(...toWorld(f, l), 0);
+      if (!q) return;
+      const [match, wrong] = r.rimInfo[i] || [null, false];
+      if (match != null) { c.fillStyle = col; c.fillRect(q[0] - sz, q[1] - sz, 2 * sz, 2 * sz); }
+      else { c.strokeStyle = "#ffffff"; c.strokeRect(q[0] - sz, q[1] - sz, 2 * sz, 2 * sz); }
+      if (S.opts.truth && wrong) {
+        c.strokeStyle = "#ff4d4d";
+        c.beginPath(); c.moveTo(q[0] - 2 * sz, q[1] - 2 * sz); c.lineTo(q[0] + 2 * sz, q[1] + 2 * sz);
+        c.moveTo(q[0] + 2 * sz, q[1] - 2 * sz); c.lineTo(q[0] - 2 * sz, q[1] + 2 * sz); c.stroke();
+      }
+    });
+  }
+  // What this box is, in the box itself (the full-window view has its own note).
+  if (small) {
+    c.font = font(10); c.fillStyle = "rgba(255,255,255,.7)";
+    c.fillText(run.hasPipeline ? (run.pipelineStandin ? "drawn · stand-in pipeline data" : "drawn · logged pipeline data") : "drawn · no pipeline data in this record", 10, FP.h - 12);
+  }
 }
 
-function stateAt(a, t) {
-  const list = (S.run.log.states || {})[a] || [];
-  let cur = list[0] || { state: "IDLE", objective: "" };
-  for (const s of list) { if (s.t <= t) cur = s; else break; }
-  return cur;
+// ------------------------------------------------------------------ lidar
+// The logged scan of the followed Scout at the shown step. Top-down: the
+// hazard grid as sim/lidar.py view() draws it, forward up, rings every 5 m.
+// First person: the same wedge drawn from the 3D ground at the lidar's pose
+// (ray-marched here), shaded by range, the logged hazard cells coloured in.
+let lidarKey = null, fpLidarCache = null;
+function drawLidar(k) {
+  const cv = $("lid-cv"), c = cv.getContext("2d"), W = cv.width, H = cv.height;
+  const a = S.rover, run = S.run, r = run.rover(a, k), g = run.lidarGrid;
+  const docked = run.steps[Math.min(k + 1, run.steps.length - 1)].info[a].act === DOCKED;
+  const cap = `Scout ${a} lidar${run.pipelineStandin ? " (stand-in)" : ""}`;
+  if ($("lid-cap").textContent !== cap) $("lid-cap").textContent = cap;
+  const has = !!(g && r.lidar && !docked);
+  $("lid-none").hidden = has;
+  if (!has) {
+    $("lid-none").textContent = docked ? "At the dock" : run.hasPipeline ? "No scan yet" : "No lidar logged in this record";
+    if (lidarKey !== "none") { c.fillStyle = "#000"; c.fillRect(0, 0, W, H); lidarKey = "none"; }
+    return;
+  }
+  const key = `${a}|${r.pipeT}|${S.lidarKind}`;
+  if (key === lidarKey) return;
+  lidarKey = key;
+  c.fillStyle = "#000";
+  c.fillRect(0, 0, W, H);
+  if (S.lidarKind === "fp") return lidarFp(c, W, H, r, g, a);
+  const pxm = (H - 14) / LIDAR.viewR, ox = W / 2, oy = H - 8;
+  for (let i = 0; i < g.nx; i++) for (let j = 0; j < g.ny; j++) {
+    const ch = r.lidar.charCodeAt(i * g.ny + j) - 48;
+    if (ch < 1) continue;
+    const [R_, G_, B_] = HAZ_RGB[ch];
+    c.fillStyle = `rgb(${R_},${G_},${B_})`;
+    const f0 = g.fwd0_m + i * g.cell_m, l0 = -g.half_width_m + j * g.cell_m;
+    c.fillRect(ox - (l0 + g.cell_m) * pxm, oy - (f0 + g.cell_m) * pxm, g.cell_m * pxm + 0.5, g.cell_m * pxm + 0.5);
+  }
+  c.strokeStyle = "rgb(150,150,150)"; c.fillStyle = "rgb(150,150,150)"; c.lineWidth = 1;
+  c.font = "14px Barlow, sans-serif";
+  const hf = THREE.MathUtils.degToRad(LIDAR.hfov / 2);
+  for (let rr = 5; rr <= LIDAR.viewR; rr += 5) {
+    c.beginPath(); c.arc(ox, oy, rr * pxm, -Math.PI / 2 - hf, -Math.PI / 2 + hf); c.stroke();
+    c.fillText(`${rr} m`, ox + rr * pxm * Math.sin(hf) + 3, oy - rr * pxm * Math.cos(hf));
+  }
+  for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(ox, oy); c.lineTo(ox + sg * LIDAR.viewR * pxm * Math.sin(hf), oy - LIDAR.viewR * pxm * Math.cos(hf)); c.stroke(); }
+  c.fillStyle = "#fff";
+  c.beginPath(); c.moveTo(ox, oy - 7); c.lineTo(ox - 5, oy + 5); c.lineTo(ox + 5, oy + 5); c.closePath(); c.fill();
+  let y = 18;
+  c.font = "15px Barlow, sans-serif";
+  for (const [label, ch] of [["no-go: steeper than 15°", 3], ["crater floor: avoided", 2], ["judged safe", 1]]) {
+    const [R_, G_, B_] = HAZ_RGB[ch];
+    c.fillStyle = `rgb(${R_},${G_},${B_})`; c.fillRect(6, y - 11, 11, 11);
+    c.fillStyle = "#e6e6e6"; c.fillText(label, 22, y); y += 20;
+  }
 }
 
-// The overhead box: Joseph's 2D map (hillshade, tracks, rovers), with this
-// mission's satellite sites, registry sites and obstacles drawn on top.
+function lidarFp(c, W, H, r, g, a) {
+  const pp = pipePose(a, r);
+  if (!pp) return;
+  const [x, y, h] = pp, cs = Math.cos(h), sn = Math.sin(h);
+  const ox = x + LIDAR.right * sn, oy = y - LIDAR.right * cs;   // right of the camera
+  const oz = terrain.heightAt(x, y) + FP.camH;
+  const img = c.createImageData(LIDAR_FP_COLS, LIDAR_FP_ROWS);
+  for (let row = 0; row < LIDAR_FP_ROWS; row++) {
+    const el = THREE.MathUtils.degToRad(LIDAR.elHi - (row + 0.5) * (LIDAR.elHi - LIDAR.elLo) / LIDAR_FP_ROWS);
+    for (let col = 0; col < LIDAR_FP_COLS; col++) {
+      const az = THREE.MathUtils.degToRad(LIDAR.hfov / 2 - (col + 0.5) * LIDAR.hfov / LIDAR_FP_COLS);   // left of the rover on the left
+      const ce = Math.cos(el), dx = ce * Math.cos(az), dy = ce * Math.sin(az), dz = Math.sin(el);
+      let hit = null;
+      for (let s = 1; s <= LIDAR.maxR; s += LIDAR_FP_STEP_M) {
+        const f = s * dx, l = s * dy;
+        const wx = ox + f * cs - l * sn, wy = oy + f * sn + l * cs;
+        if (oz + s * dz <= terrain.heightAt(wx, wy)) { hit = [s, f, l]; break; }
+      }
+      const o = 4 * (row * LIDAR_FP_COLS + col);
+      img.data[o + 3] = 255;
+      if (!hit) continue;
+      const [rng, f, l] = hit;
+      const shade = 235 - 190 * Math.min(1, rng / LIDAR.maxR);
+      let rgb = [shade * 0.8, shade * 0.88, shade];
+      const i = Math.floor((f - g.fwd0_m) / g.cell_m), j = Math.floor((l + g.half_width_m) / g.cell_m);
+      if (i >= 0 && i < g.nx && j >= 0 && j < g.ny) {
+        const ch = r.lidar.charCodeAt(i * g.ny + j) - 48;
+        if (ch >= 2) rgb = HAZ_RGB[ch];
+      }
+      img.data[o] = rgb[0]; img.data[o + 1] = rgb[1]; img.data[o + 2] = rgb[2];
+    }
+  }
+  const tmp = document.createElement("canvas");
+  tmp.width = LIDAR_FP_COLS; tmp.height = LIDAR_FP_ROWS;
+  tmp.getContext("2d").putImageData(img, 0, 0);
+  const L = 40, Rm = 40, T = 8, B = 34;
+  c.imageSmoothingEnabled = false;
+  c.drawImage(tmp, L, T, W - L - Rm, H - T - B);
+  c.strokeStyle = "rgb(150,150,150)"; c.lineWidth = 2; c.strokeRect(L - 1, T - 1, W - L - Rm + 2, H - T - B + 2);
+  c.fillStyle = "#e6e6e6"; c.font = "18px Barlow, sans-serif"; c.textAlign = "center";
+  for (const [b, lab] of [[60, "60L"], [0, "ahead"], [-60, "60R"]]) c.fillText(lab, L + ((LIDAR.hfov / 2 - b) / LIDAR.hfov) * (W - L - Rm), H - 10);
+  c.textAlign = "left";
+  c.fillText(`${LIDAR.elHi}°`, 4, T + 16); c.fillText(`${LIDAR.elLo}°`, 4, H - B);
+  c.font = "13px Barlow, sans-serif"; c.fillStyle = "rgba(255,255,255,.65)";
+  c.fillText("drawn from the 3D ground; hazards from the logged scan", L + 6, T + 18);
+}
+
+// -------------------------------------------------------- satellite map
+// MapView (hillshade, tracks, estimates, particles, finds, plan) with the
+// campaign's own layers under the tracks: ground beyond the drive area, the
+// dock's crater map as it stood at time t (added craters marked), the hidden
+// truth behind its toggle, the dock and the search areas.
 class MissionMap extends MapView {
-  draw() {
-    super.draw();
-    const run = this.run;
-    if (!run || !this.view || !S.run) return;
-    const c = this.ctx, W = this.cv.clientWidth, H = this.cv.clientHeight;
-    const w = this.window(), s = this.view.s, cx = w.cx + this.pan[0], cy = w.cy + this.pan[1];
-    const X = (x) => W / 2 + (x - cx) * s, Y = (y) => H / 2 - (y - cy) * s;
-    const t = this.t || 0, sites = registryAt(t);
-    const done = new Set([...sites.values()].map((v) => v.target));
-    c.lineWidth = 1.5;
-    for (const o of S.run.log.satellite_sites || []) {
-      if (done.has(o.id)) continue;
-      c.setLineDash([3, 3]); c.strokeStyle = SITE_CSS;
-      c.beginPath(); c.arc(X(o.x), Y(o.y), 5, 0, Math.PI * 2); c.stroke();
+  drawUnder(c, X, Y, s, W, H) {
+    if (!S.cr) return;
+    const rec = S.cr.rec, t = this.t || 0;
+    const inView = (x, y, r) => X(x) + r * s > -20 && X(x) - r * s < W + 20 && Y(y) + r * s > -20 && Y(y) - r * s < H + 20;
+    if (S.opts.craters) {
+      c.lineWidth = 1;
+      c.strokeStyle = "rgba(199, 210, 223, .45)";
+      c.beginPath();
+      for (const [x, y, d] of rec.crater_map.start) {
+        const r = d / 2;
+        if (r * s < 0.8 || !inView(x, y, r)) continue;
+        c.moveTo(X(x) + r * s, Y(y));
+        c.arc(X(x), Y(y), r * s, 0, 2 * Math.PI);
+      }
+      c.stroke();
+      // Added craters known by t; thicker for the dock's most recent merge.
+      const known = (rec.crater_map.added || []).filter((a) => (addedT.get(a.crater_id) ?? Infinity) <= t);
+      const lastT = known.reduce((m, a) => Math.max(m, addedT.get(a.crater_id)), -Infinity);
+      c.strokeStyle = "#7ddc7a";
+      for (const a of known) {
+        if (!inView(a.x, a.y, a.d / 2)) continue;
+        c.lineWidth = addedT.get(a.crater_id) === lastT ? 2.4 : 1.3;
+        c.beginPath(); c.arc(X(a.x), Y(a.y), Math.max(2.5, (a.d / 2) * s), 0, 2 * Math.PI); c.stroke();
+      }
+      if (S.opts.truth) {
+        // Craters missing from the map that no correctly placed added crater stands for.
+        const found = new Set(known.filter((a) => !a.misplaced && a.true_crater != null).map((a) => a.true_crater));
+        c.setLineDash([3, 3]);
+        c.strokeStyle = "rgba(255, 122, 107, .6)";
+        c.lineWidth = 1;
+        c.beginPath();
+        rec.truth.craters_missing.forEach(([x, y, d], i) => {
+          const r = d / 2;
+          if (found.has(i) || r * s < 0.8 || !inView(x, y, r)) return;
+          c.moveTo(X(x) + r * s, Y(y));
+          c.arc(X(x), Y(y), r * s, 0, 2 * Math.PI);
+        });
+        c.stroke();
+        c.setLineDash([]);
+        // Added in the wrong place: a cross over it and a line to the real crater.
+        c.strokeStyle = "#ff9b5e";
+        c.lineWidth = 1.5;
+        for (const a of known) {
+          if (!a.misplaced || !inView(a.x, a.y, a.d)) continue;
+          const px = X(a.x), py = Y(a.y), q = Math.max(3, (a.d / 2) * s * 0.7);
+          c.beginPath(); c.moveTo(px - q, py - q); c.lineTo(px + q, py + q); c.moveTo(px + q, py - q); c.lineTo(px - q, py + q);
+          const tc = a.true_crater != null && rec.truth.craters_missing[a.true_crater];
+          if (tc) { c.moveTo(px, py); c.lineTo(X(tc[0]), Y(tc[1])); }
+          c.stroke();
+        }
+      }
+    }
+    // Search areas while a search runs.
+    c.setLineDash([5, 4]);
+    for (const m of marks) {
+      if (t < m.start.t || t > (m.end ? m.end.t : m.start.t)) continue;
+      c.strokeStyle = scol(m.start.scout); c.lineWidth = 2;
+      c.beginPath(); c.arc(X(m.find.est[0]), Y(m.find.est[1]), Math.max(4, m.start.radius_m * s), 0, 2 * Math.PI); c.stroke();
     }
     c.setLineDash([]);
-    for (const v of sites.values()) {
-      const st = siteStatus(v), col = "#" + SITE_COLOR[st].toString(16).padStart(6, "0");
-      if (st === "Positive") {
-        c.fillStyle = "rgba(255,77,77,.28)";
-        c.beginPath(); c.arc(X(v.x), Y(v.y), 9, 0, Math.PI * 2); c.fill();
-      }
-      c.fillStyle = col;
-      c.beginPath(); c.arc(X(v.x), Y(v.y), 4, 0, Math.PI * 2); c.fill();
-    }
-    if (S.opts.hazards) {
-      c.strokeStyle = "#ff5d5d"; c.lineWidth = 2;
-      for (const h of hazards) {
-        if (t < h.seen_t) continue;
-        const r = Math.max(4, h.radius * s);
-        c.setLineDash([3, 2]);
-        c.beginPath(); c.arc(X(h.x), Y(h.y), r, 0, Math.PI * 2); c.stroke();
-        c.setLineDash([]);
-        if (h.hazard_id) { c.fillStyle = "#ff5d5d"; c.font = "600 11px Barlow, sans-serif"; c.fillText(h.hazard_id, X(h.x) + r + 3, Y(h.y) + 4); }
-      }
-    }
+    const d = rec.dock, DX = X(d.x), DY = Y(d.y);
+    c.fillStyle = "#fff"; c.strokeStyle = "#000"; c.lineWidth = 2;
+    c.beginPath(); c.rect(DX - 5, DY - 5, 10, 10); c.fill(); c.stroke();
+    c.font = "600 11px Barlow, sans-serif"; c.fillText("Dock", DX + 8, DY + 4);
   }
 }
 
-// ------------------------------------------------------------------ panels
-function renderPanels(t) {
-  renderStory(t);
-  renderRover(t);
-  renderToast(t);
-  renderScience(t);
-  renderChain(t);
-  renderRegistry(t);
-}
-
-function renderRover(t) {
-  const run = S.run, k = run.stepAt(t);
-  $("now").innerHTML = run.agencies.map((a) => {
-    const r = run.rover(a, k), st = stateAt(a, t);
-    const [x, y] = run.poseAt(a, t), [x2, y2] = run.poseAt(a, Math.max(0, t - 20));
-    const v = Math.hypot(x - x2, y - y2) / Math.min(20, Math.max(t, 1e-6));
-    const soc = r.soc ?? null;
-    return `<div class="rv ${a === S.rover ? "sel" : ""}" data-rover="${a}">
-      <div class="rv-head"><i class="dot ${a}"></i>${ROLE[a]} ${a}<span class="doing">${esc(DOING[st.state] || st.state)}</span></div>
-      <div class="rv-obj">${esc(st.objective)}</div>
-      <div class="stats">
-        <div class="stat"><b>${v < 0.005 ? "0" : (100 * v).toFixed(0)}</b><span>cm/s</span></div>
-        <div class="stat"><b>${soc == null ? "–" : (100 * soc).toFixed(0) + "%"}</b><span>battery</span>${soc == null ? "" : `<div class="batt"><i style="width:${100 * soc}%;background:${soc < 0.3 ? "var(--neg)" : "var(--pos)"}"></i></div>`}</div>
-        <div class="stat"><b>±${r.sigma.toFixed(1)}</b><span>m position</span></div>
-      </div></div>`;
-  }).join("");
-  $("now").querySelectorAll(".rv").forEach((el) => (el.onclick = () => { exitFocus(true); setRover(el.dataset.rover); }));
-  $("navt").innerHTML = navTable(run, k);
-  if (!$("standin").dataset.done) {
-    $("standin").dataset.done = "1";
-    const si = run.standin || run.log.standins;
-    $("standin").hidden = !si;
-    if (si) {
-      const lines = Object.entries(si).map(([kk, v]) => (String(v).startsWith(kk) ? v : `${kk.replace(/_/g, " ")}: ${v}`));
-      const chainLine = run.fakeTx ? " Transaction hashes in this log are stand-ins; ?key= posts them live." : "";
-      $("standin").innerHTML = `<b>Stand-ins:</b> ${esc(Object.keys(si).map((kk) => kk.replace(/_/g, " ")).join(", "))}.${chainLine} Camera frames are real renders.` +
-        `<details><summary>Details</summary><ul>${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></details>`;
-    }
+function hillshade(g) {
+  const { rows, cols, cell, z } = g;
+  const cv = document.createElement("canvas");
+  cv.width = cols; cv.height = rows;
+  const im = cv.getContext("2d").createImageData(cols, rows);
+  const az = (315 * Math.PI) / 180, el = (35 * Math.PI) / 180;
+  const lx = Math.cos(el) * Math.sin(az), ly = Math.cos(el) * Math.cos(az), lz = Math.sin(el);
+  for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
+    const jl = Math.max(0, j - 1), jr = Math.min(cols - 1, j + 1), id = Math.max(0, i - 1), iu = Math.min(rows - 1, i + 1);
+    const dzdx = (z[i * cols + jr] - z[i * cols + jl]) / ((jr - jl) * cell);
+    const dzdy = (z[iu * cols + j] - z[id * cols + j]) / ((iu - id) * cell);
+    const L = Math.max(0, (-dzdx * lx - dzdy * ly + lz) / Math.hypot(dzdx, dzdy, 1));
+    const v = 30 + 150 * L;
+    const p = 4 * ((rows - 1 - i) * cols + j);   // rows run north; image row 0 is the north edge
+    im.data[p] = v * 0.96; im.data[p + 1] = v * 0.98; im.data[p + 2] = v; im.data[p + 3] = 255;
   }
+  cv.getContext("2d").putImageData(im, 0, 0);
+  return { img: cv, x0: g.x0 - cell / 2, y0: g.y0 - cell / 2, x1: g.x0 + (cols - 0.5) * cell, y1: g.y0 + (rows - 0.5) * cell };
 }
 
-// Where each rover thinks it is against where it is (the old page's HUD table).
-function navTable(run, k) {
-  const rows = run.agencies.map((a) => {
-    const r = run.rover(a, k);
-    const [tx, ty] = r.true_pose;
-    const err = Math.hypot(r.estimate[0] - tx, r.estimate[1] - ty);
-    const odo = r.odom_pose ? Math.hypot(r.odom_pose[0] - tx, r.odom_pose[1] - ty) : NaN;
-    const odoCell = !isFinite(odo) ? "n/a" : odo.toFixed(1) === err.toFixed(1) ? "same" : `${odo.toFixed(1)} m`;
-    return `<tr><td><i class="dot ${a}"></i>${a}</td><td>${r.nav_on ? "crater rims" : "odometry only"}</td><td>±${r.sigma.toFixed(1)} m</td><td>${err.toFixed(1)} m</td><td>${odoCell}</td></tr>`;
-  }).join("");
-  const nav = run.nav ? run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim() : "";
-  return `<table class="navt"><thead><tr><th></th><th>Steering by</th><th title="The rover's own 1-sigma estimate of its position error">Thinks within</th>` +
-    `<th title="Distance from the estimate to the hidden true position">Actually off</th><th title="Where odometry alone would put it, distance from the true position">Odometry alone</th></tr></thead>` +
-    `<tbody>${rows}</tbody></table>` + navSources(run);
-}
-
-function navSources(run) {
+// ------------------------------------------------------------- timeline
+// Over the play bar: the followed Scout's activity, in order, and ticks for
+// the moments that matter (finds, searches, drilling, position checks).
+function timeline() {
+  timelineActs();
+  const run = S.run, T0 = run.times[0], span = run.tEnd - T0 || 1;
+  const finder = (id) => (S.cr.iceEvents.find((x) => x.type === "find" && x.find_id === id) || {}).scout || "?";
   const out = [];
-  if (run.nav) {
-    const nav = run.nav.replace(/\s*\([^)]*\)/g, "").split(",").slice(0, 2).join(",").trim();
-    const dots = run.hasParticles !== false && S.opts.particles ? "; dots in 3D are its particles" : "";
-    out.push(`<div class="hud-src" title="${esc(run.nav)}">${esc(nav)}${dots}</div>`);
+  for (const e of S.cr.events) {
+    if (e.t < T0 || e.t > run.tEnd || !run.agencies.includes(e.scout)) continue;
+    const at = `left:${(100 * (e.t - T0)) / span}%`;
+    if (e.type === "find") out.push(`<i class="ice" style="${at};background:${STATUS_COLOR.find}" title="${esc(`${fmtDay(e.t)}: ${e.scout} logs find ${e.find_id}`)}"></i>`);
+    else if (e.type === "search_end") out.push(`<i class="ice" style="${at};background:${e.result === "confirmed" ? STATUS_COLOR.confirmed : STATUS_COLOR.unconfirmed}" title="${esc(`${fmtDay(e.t)}: ${e.scout}, ${finder(e.find_id)}'s find ${e.find_id} ${e.result}`)}"></i>`);
+    else if (e.type === "drill") out.push(`<i class="ice" style="${at};background:${STATUS_COLOR.drilled}" title="${esc(`${fmtDay(e.t)}: ${e.scout} drills find ${e.find_id}`)}"></i>`);
+    else if (e.type === "check" && e.scout === S.sortie.scout) out.push(`<i class="chk${e.wrong_match ? " wrong" : ""}" style="${at}" title="${esc(`${fmtDay(e.t)}: ${e.scout} position check${e.fixed === false ? ", no fix" : ""}`)}"></i>`);
+    else if (e.type === "fault" || e.type === "turn_back") out.push(`<i class="haz" style="${at}" title="${esc(`${fmtDay(e.t)}: ${e.scout} ${e.type === "fault" ? e.module + " fault" : "turns back (" + e.reason + ")"}`)}"></i>`);
   }
-  const si = run.standin || {};
-  const rims = si.rims ? "stand-ins from the crater map" : run.log.vision ? "crater rims from the camera frames" : "";
-  if (rims) {
-    const sq = S.opts.rims ? "; squares on the rover camera" : "";
-    out.push(`<div class="hud-src" title="${esc(run.log.vision || si.rims || "")}">Steers on ${rims}${sq}</div>`);
-  }
-  if (run.planner) {
-    const short = run.planner.replace(/^planner:\s*/, "").split(/[;(]/)[0].replace(/[.,\s]+$/, "");
-    out.push(`<div class="hud-src" title="${esc(run.planner)}">Route: ${esc(short)}; amber dashes on the camera</div>`);
-  }
-  return out.join("");
+  $("tl-marks").innerHTML = out.join("");
 }
 
-// A mission site's verdict once the Surveyor has published it (log.states).
-function siteVerdict(id, t) {
-  const site = ((S.run.log.mission || {}).sites || []).find((x) => x.id === id);
-  if (!site) return null;
-  const pub = ((S.run.log.states || {}).A || []).find((q) => q.state === "PUBLISHING" && q.objective.includes(id));
-  return pub && t >= pub.t ? site.verdict : null;
+const ACT_COLOR = ["#4a6a8f", "#6f8fb3", "#4a6a8f", "#e0b84a", "#4fbf72", "#58c8ff", "#b58cff", "#3b4048", "#e5574f"];
+function timelineActs() {
+  const run = S.run, a = S.rover, T0 = run.times[0], span = run.tEnd - T0 || 1;
+  let html = "";
+  for (let k = 0; k < run.steps.length - 1; k++) {
+    const w = (100 * (run.times[k + 1] - run.times[k])) / span, act = run.steps[k + 1].info[a].act;
+    if (w > 0) html += `<i style="width:${w}%;background:${ACT_COLOR[act] || "#333"}" title="${a}: ${ACTIVITY[act]}"></i>`;
+  }
+  $("tl-acts").innerHTML = html;
 }
 
-// One sentence on what is happening now, for someone who just walked up
-// (main.js story() and missionStory() at 4f51c54, for the mission log).
-function renderStory(t) {
+// --------------------------------------------------------- sortie list
+// Every sortie of the run: a lane per Scout across the campaign, and a list.
+function sortieList() {
+  const rec = S.cr.rec, L = rec.sorties, Tend = Math.max(...L.map((s) => s.t_end)) || 1;
+  $("so-count").textContent = `${L.length}, ${rec.scouts.length} Scout${rec.scouts.length > 1 ? "s" : ""}`;
+  const OUT_COL = { below_reserve: "#d9b44a", fault_return: "#8a9099", lost: "#e5574f" };
+  const finds = (sid) => S.cr.iceEvents.filter((e) => e.type === "find" && e.sortie_id === sid).length;
+  $("gantt").innerHTML = rec.scouts.map((a) => `<div class="lane"><span class="ln">${a}</span><div class="bars">${L.filter((s) => s.scout === a).map((s) =>
+    `<b data-s="${s.sortie_id}" style="left:${(100 * s.t_start) / Tend}%;width:${Math.max(0.6, (100 * (s.t_end - s.t_start)) / Tend)}%;background:${OUT_COL[s.outcome] || scol(a)}" title="${esc(`${s.sortie_id}: ${OUTCOME_WORD[s.outcome] || s.outcome}`)}"></b>`).join("")}</div></div>`).join("") +
+    `<div class="lane axis"><span class="ln"></span><div class="bars"><i id="gantt-now"></i><span>day 1</span><span style="right:0">day ${Math.ceil(Tend / 86400)}</span></div></div>`;
+  $("so-list").innerHTML = L.map((s) => {
+    const n = finds(s.sortie_id);
+    const outc = s.outcome === "ok" ? "" : `<span class="out ${s.outcome}">${esc(OUTCOME_WORD[s.outcome] || s.outcome)}</span>`;
+    return `<li data-s="${s.sortie_id}"><i class="dot" style="background:${scol(s.scout)}"></i><b>${esc(s.sortie_id)}</b>
+      <span class="hint">Scout ${esc(s.scout)}, sortie ${s.n} · ${fmtDay(s.t_start)} · ${fmtNum(s.distance_m / 1000, 1)} km · ${s.checks} checks${n ? ` · ${n} find${n > 1 ? "s" : ""}` : ""}</span>${outc}</li>`;
+  }).join("");
+  $("sortie-pick").innerHTML = L.map((s) => `<option value="${s.sortie_id}">${s.sortie_id}</option>`).join("");
+  for (const el of document.querySelectorAll("#gantt b[data-s], #so-list li[data-s]")) el.onclick = () => openSortie(S.cr.sortieById[el.dataset.s]);
+}
+
+function markSortie() {
+  const id = S.sortie.sortie_id;
+  $("sortie-pick").value = id;
+  for (const el of document.querySelectorAll("#gantt b[data-s], #so-list li[data-s]")) el.classList.toggle("cur", el.dataset.s === id);
+  const li = document.querySelector(`#so-list li[data-s="${id}"]`);
+  if (li && !S.tab.startsWith("x")) li.scrollIntoView({ block: "nearest" });
+}
+
+// ------------------------------------------------------------- panels
+let panelKey = {};
+function once(id, key, html) {
+  if (panelKey[id] === key) return;
+  panelKey[id] = key;
+  $(id).innerHTML = typeof html === "function" ? html() : html;
+}
+
+function renderPanels(t) {
   const run = S.run, k = run.stepAt(t);
-  const html = story(run, k, run.findsAt(k));
+  renderStory(t, k);
+  renderToast(t, k);
+  const g = $("gantt-now");
+  if (g) g.style.left = `${(100 * t) / (Math.max(...S.cr.rec.sorties.map((s) => s.t_end)) || 1)}%`;
+  if (S.tab === "scouts") renderScouts(t, k);
+  if (S.tab === "finds") renderFinds(t);
+  if (S.tab === "map") renderCraterMap(t);
+}
+
+function activityOf(a, k) {
+  const i = S.run.steps[Math.min(k + 1, S.run.steps.length - 1)].info[a];
+  return i.act === DOCKED ? (i.sortie ? "docked" : "at the dock") : ACTIVITY[i.act];
+}
+
+function renderScouts(t, k) {
+  const run = S.run, cap = S.cr.rec.settings.battery_kwh;
+  once("now", `${k}|${S.rover}|${S.opts.truth}`, () => run.agencies.map((a) => {
+    const r = run.rover(a, k), info = run.steps[Math.min(k + 1, run.steps.length - 1)].info[a];
+    const docked = info.act === DOCKED;
+    const tp = run.poses.truth[a][k];
+    const err = Math.hypot(r.estimate[0] - tp[0], r.estimate[1] - tp[1]);
+    const so = info.sortie;
+    const e = info.energy, soc = e != null && cap ? e / cap : null;
+    const d = S.cr.rec.dock, ex = r.estimate[0] - d.x, ey = r.estimate[1] - d.y;
+    return `<div class="rv ${a === S.rover ? "sel" : ""}" data-rover="${a}">
+      <div class="rv-head"><i class="dot" style="background:${scol(a)}"></i>Scout ${a}<span class="doing">${esc(activityOf(a, k))}</span></div>
+      <div class="rv-obj">${so ? `Sortie ${esc(so.sortie_id)}, launched ${fmtDay(so.t_start)}` : "Charging or waiting at the dock"}</div>
+      ${docked ? "" : `<div class="stats">
+        <div class="stat"><b>${fmtNum(e, 2)}</b><span>kWh left</span>${soc == null ? "" : `<div class="batt"><i style="width:${Math.max(0, Math.min(100, 100 * soc))}%;background:${soc < S.cr.rec.settings.reserve_frac + 0.05 ? "var(--neg)" : "var(--pos)"}"></i></div>`}</div>
+        <div class="stat"><b>±${fmtNum(r.sigma, 1)}</b><span>m bound, 95%</span></div>
+        <div class="stat truth"><b>${fmtNum(err, 1)}</b><span>m true error</span></div>
+      </div>
+      <div class="rv-pos">Thinks it is ${fmtNum(Math.abs(ex), 0)} m ${ex >= 0 ? "east" : "west"}, ${fmtNum(Math.abs(ey), 0)} m ${ey >= 0 ? "north" : "south"} of the dock; really ${fmtNum(err, 1)} m from there.</div>`}
+    </div>`;
+  }).join(""));
+  $("now").querySelectorAll(".rv").forEach((el) => (el.onclick = () => setRover(el.dataset.rover)));
+  once("navt", `${k}`, () => {
+    const rows = run.agencies.map((a) => {
+      const r = run.rover(a, k), tp = run.poses.truth[a][k];
+      const docked = activityOf(a, k).includes("dock");
+      const err = Math.hypot(r.estimate[0] - tp[0], r.estimate[1] - tp[1]);
+      const by = docked ? "docked" : !run.hasPipeline ? "not logged" : r.rims.length ? `${r.rims.length} rim points` : "odometry";
+      return `<tr><td><i class="dot" style="background:${scol(a)}"></i>${a}</td><td>${by}</td><td>${docked ? "–" : `±${fmtNum(r.sigma, 1)} m`}</td><td class="truth">${docked ? "–" : `${fmtNum(err, 1)} m`}</td></tr>`;
+    }).join("");
+    return `<table class="navt"><thead><tr><th></th><th title="What the pipeline logged at this step">Steering by</th><th title="The Scout's own 95% position bound">Thinks within</th>` +
+      `<th class="truth" title="Distance from the estimate to the true position">Actually off</th></tr></thead><tbody>${rows}</tbody></table>` +
+      `<div class="hud-src">${esc(navLine())}</div>`;
+  });
+}
+
+function navLine() {
+  const nav = String(S.cr.rec.nav || "");
+  if (nav.startsWith("sampled")) return "Navigation in this record: sampled from ShadowNav's published errors, not the camera pipeline. Its rim points, particles and lidar come from the stand-in pipeline file.";
+  if (nav.startsWith("camera")) return "Navigation in this record: the camera pipeline (rims from vision, particle filter).";
+  return nav ? `Navigation: ${nav}` : "";
+}
+
+function renderFinds(t) {
+  const cr = S.cr;
+  const evs = cr.iceEvents.filter((e) => e.t <= t);
+  const finds = cr.findsFrom(evs);
+  $("finds-count").textContent = finds.length ? String(finds.length) : "";
+  once("finds", `${evs.length}|${S.opts.truth}`, () => finds.length ? finds.slice().reverse().map((f) => {
+    const starts = evs.filter((e) => e.type === "search_start" && e.find_id === f.find_id);
+    const rows = starts.map((s) => {
+      const end = f.searches.find((e) => e.sortie_id === s.sortie_id);
+      return `<li><i class="dot" style="background:${scol(s.scout)}"></i>${esc(s.scout)} searched within ${fmtNum(s.radius_m, 1)} m on ${esc(s.sortie_id)}: ${end ? `<span class="res ${end.result}">${end.result === "confirmed" ? "confirmed" : "not confirmed"}</span> <span class="hint">${esc(SEARCH_WHY[end.reason] || "")}</span>` : `<span class="hint">searching now</span>`}` +
+        (S.opts.truth && end ? ` <span class="truth">${end.truth_has_deposit ? "a deposit is there" : "no deposit there"}${end.false_confirmed ? ", a false confirmation" : ""}</span>` : "") + `</li>`;
+    });
+    if (!starts.length) rows.push(`<li class="hint">No second Scout has searched it yet.</li>`);
+    if (f.drill) rows.push(`<li><i class="dot" style="background:${scol(f.drill.scout)}"></i>${esc(f.drill.scout)} drilled it on ${esc(f.drill.sortie_id)}` +
+      (S.opts.truth ? ` <span class="truth">${fmtNum(f.drill.miss_m, 1)} m from the reading point, ${f.drill.hit ? "on a deposit" : "no deposit under the drill"}</span>` : "") + `</li>`);
+    const off = S.opts.truth && f.x != null ? ` <span class="truth">really ${fmtNum(Math.hypot(f.est[0] - f.x, f.est[1] - f.y), 1)} m off</span>` : "";
+    return `<div class="find" data-s="${esc(f.sortie_id)}" data-t="${f.t}"><div class="fh"><b>Find ${f.find_id}</b> <span class="hint">by ${esc(f.scout)} on ${esc(f.sortie_id)}, ${fmtDay(f.t)}</span>
+      <span class="st" style="color:${STATUS_COLOR[f.status]}">${esc(STATUS_WORD[f.status] || f.status)}</span></div>
+      <div class="small">${fmtNum(f.reading_wt, 1)} wt% · within ${fmtNum(f.bound95, 1)} m (95%)${off}</div><ul class="fl">${rows.join("")}</ul></div>`;
+  }).join("") : `<p class="hint">No finds yet. A reading above the ice threshold is logged as a find; another Scout later searches round it.</p>`);
+  $("finds").querySelectorAll(".find").forEach((el) => (el.onclick = () => {
+    const s = S.cr.sortieById[el.dataset.s], tt = Number(el.dataset.t) - 60;
+    if (s === S.sortie) { S.player.rewound(tt); S.t = Math.max(S.run.times[0], tt); render(true); } else openSortie(s, { t: tt });
+  }));
+}
+
+function renderCraterMap(t) {
+  const rec = S.cr.rec, added = rec.crater_map.added || [];
+  const known = added.filter((a) => (addedT.get(a.crater_id) ?? Infinity) <= t);
+  once("cmap", `${known.length}|${S.opts.truth}`, () => {
+    const by = new Map();
+    for (const a of known) by.set(a.after_sortie, (by.get(a.after_sortie) || 0) + 1);
+    const merges = [...by.entries()].slice(-8).reverse().map(([sid, n]) => `<li>after ${esc(sid)}: <b>+${n}</b></li>`).join("");
+    const mis = known.filter((a) => a.misplaced).length;
+    return `<div class="stats wide"><div class="stat"><b>${rec.crater_map.start.length}</b><span>from orbit</span></div>
+      <div class="stat"><b style="color:#7ddc7a">+${known.length}</b><span>added so far</span></div>
+      <div class="stat"><b>${added.length}</b><span>added by the end</span></div></div>
+      <p class="small hint">The dock merges what every Scout saw after each sortie: a crater seen ${rec.settings.sightings_to_add || 2} times or more, not on the map, joins it. Green on the map and on the ground; thicker for the latest merge.${rec.crater_map.scope ? ` Listed: ${esc(rec.crater_map.scope)}.` : ""}</p>
+      ${merges ? `<ol class="merges">${merges}</ol>` : ""}
+      ${S.opts.truth ? `<p class="small truth">Hidden truth: ${mis} of the added craters are misplaced (still effectively missing); red dashed circles on the map are true craters the map lacks.</p>` : ""}`;
+  });
+}
+
+function runInfo() {
+  const rec = S.cr.rec, sm = rec.summary || {}, st = rec.settings || {};
+  $("run-title").textContent = rec.run_id;
+  document.title = `Lantern Mission Control · ${rec.run_id}`;
+  const kv = (rows) => `<dl class="kv">${rows.filter(([, v]) => v != null && v !== "–").map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
+  const notes = [standinOf(rec), rec.showcase].filter(Boolean);
+  $("run-info").innerHTML = `<p class="small hint">Batch ${esc(S.batch)} · seed ${rec.seed} · made ${esc(String(rec.made_at || "").slice(0, 16).replace("T", " "))}</p>` +
+    `<div class="mini-h">Setup</div>` + kv([["Site", esc(rec.terrain && rec.terrain.site)], ["Scouts", st.n_scouts], ["Sorties per Scout", st.sorties_per_scout],
+      ["Check policy", esc(st.check_policy)], ["Map refinement", st.map_refinement == null ? null : st.map_refinement ? "on" : "off"],
+      ["Top speed", st.top_speed_mps ? `${fmtNum(st.top_speed_mps * 100, 0)} cm/s` : null], ["Battery", st.battery_kwh ? `${st.battery_kwh} kWh` : null],
+      ["Navigation", esc(String(rec.nav || "").split(":")[0])]]) +
+    `<div class="mini-h">Results</div>` + kv([["Sorties ok", sm.sorties != null ? `${sm.sorties_ok}/${sm.sorties}` : null], ["Scouts lost", sm.scouts_lost],
+      ["Finds", sm.finds], ["Confirmed", sm.confirmed], ["False confirmations", sm.false_confirmed], ["Deposits missed", sm.deposits_missed],
+      ["Wrong-match rate", sm.wrong_match_rate != null ? `${fmtNum(sm.wrong_match_rate * 100, 1)}%` : null],
+      ["Drill error p95", sm.drill_err_p95_m != null ? `${fmtNum(sm.drill_err_p95_m, 1)} m` : null], ["Area", sm.area_km2 != null ? `${fmtNum(sm.area_km2, 2)} km²` : null]]) +
+    (notes.length ? `<div class="standin"><b>Not real yet:</b> ${notes.map(esc).join(" ")}</div>` : "") +
+    `<p class="small"><a href="run.html?batch=${encodeURIComponent(S.batch)}&run=${encodeURIComponent(rec.run_id)}">Run map, sortie by sortie</a> · <a href="runs.html?batch=${encodeURIComponent(S.batch)}">All runs, as a table</a></p>`;
+}
+
+// One sentence on what is happening now, for someone who just walked up.
+function renderStory(t, k) {
+  const run = S.run, so = S.sortie, a = so.scout;
+  const act = activityOf(a, k);
+  const live = marks.filter((m) => t >= m.start.t && t <= (m.end ? m.end.t : m.start.t));
+  let html = `Sortie <b>${esc(so.sortie_id)}</b>: Scout ${esc(a)} is ${esc(act === "docked" ? "back at the dock" : act)}.`;
+  for (const m of live) html += ` ${esc(m.start.scout)} searches ${esc(m.find.scout)}'s find ${m.find.find_id}.`;
+  const known = (S.cr.rec.crater_map.added || []).filter((c) => (addedT.get(c.crater_id) ?? Infinity) <= t).length;
+  html += ` Dock map: ${S.cr.rec.crater_map.start.length} + <b>${known}</b> craters.`;
   if ($("story").dataset.html !== html) { $("story").innerHTML = html; $("story").dataset.html = html; }
+  // Stand-in banner: what is made up in what is on screen.
+  const bits = [];
+  if (S.cr.rec.standin) bits.push("stand-in record");
+  if (run.pipelineStandin) bits.push("stand-in pipeline data");
+  if (!run.hasPipeline) bits.push("no pipeline data: no rims, particles or lidar");
+  const b = bits.length ? `<b>Labelled:</b> ${bits.join(" · ")}` : "";
+  if ($("banner").dataset.html !== b) { $("banner").innerHTML = b; $("banner").dataset.html = b; $("banner").hidden = !b; $("banner").title = [standinOf(S.cr.rec), run.pipelineNote].filter(Boolean).join("\n\n"); }
 }
 
-function story(run, k, finds) {
-  const f = finds[0];
-  if (!f) return missionStory(run, k);
-  const other = run.agencies.find((x) => x !== f.agency);
-  // Short enough for two lines in the top bar at 1366 px (asked for: the story sits left of the rover picker).
-  const nm = (ag) => `${ROLE[ag] || "Rover"} ${ag}`;
-  if (f.status === "reported") return `${nm(f.agency)} posted a find at <b>±${f.sigma.toFixed(1)} m</b>. ${nm(other)}, another agency, reads it on chain and goes to check.`;
-  if (f.status === "confirmed") return `${nm(other)} measured ice at the reported spot. The find is <b>confirmed</b> on chain.`;
-  return `${nm(other)} found no ice there: ${f.agency}'s position was off. The find stays on record, <b>disputed</b>.`;
-}
-
-function missionStory(run, k) {
-  const name = (ag) => `${ROLE[ag] || "Rover"} ${ag}`;
-  const [sv, pr] = ["A", "B"].map((ag) => (run.agencies.includes(ag) ? ag : run.agencies[0]));
-  const phase = run.rover(sv, k).phase || "";
-  const m = /^(to|survey) (\S+)/.exec(phase);
-  const sites = (run.log.mission || {}).sites || [];
-  const at = m ? sites.findIndex((x) => x.id === m[2]) : -1;
-  const dry = sites.slice(0, Math.max(at, 0)).filter((x) => x.verdict === "dry").map((x) => x.id);
-  const before = dry.length ? `${dry.join(" and ")} ${dry.length > 1 ? "were" : "was"} dry. ` : "";
-  const doing = !m ? `${name(sv)} is ${esc(phase) || "driving"}.`
-    : m[1] === "to" ? `${name(sv)} drives to orbital candidate ${m[2]}.`
-    : `${name(sv)} surveys ${m[2]} for ice.`;
-  return `${before}${doing} ${name(pr)} waits for a find on chain.`;
-}
-
-// One line over the play bar: who is doing what, and how fast time runs.
-function renderToast(t) {
-  const run = S.run, el = $("toast");
-  let html;
-  if (S.focusEv) {
-    const ev = S.focusEv, a = ev.agency;
-    const what = instrumentNow(a, t, ev).toLowerCase() || (a === "A" ? "facing it" : "science");
-    const where = ev.kind === "hazard" ? `crater ${ev.target_id} (not on the orbital map)` : ev.target_id;
-    html = `<i class="dot ${a}"></i> <b>${ROLE[a]} ${a}</b> · ${esc(what)} at ${esc(where)}<span class="sp">${Math.round(focusSpeed(ev))}× for science</span>`;
-  } else if (t >= run.tEnd) {
-    const f = (run.log.final_finds || [])[0];
-    html = f ? `<b>Mission complete</b> · find #${f.id} ${esc(f.status)} on chain` : `<b>Mission complete</b>`;
-  } else if (!S.playing && t === 0) {
-    html = `Press <b>play</b> to start · drag to look around`;
-  } else {
-    const a = S.rover, st = stateAt(a, t);
-    // The Prospector driving a route planned around a flagged crater says so.
-    const plan = a === "B" ? ((S.run.log.states || {}).B || []).filter((q) => q.t <= t && q.state === "PLANNING").at(-1) : null;
-    const m = plan && st.state === "NAVIGATING" && /flags crater (H\d+)/.exec(plan.objective);
-    const extra = m ? ` · keeping clear of crater ${m[1]}, flagged by the Surveyor` : "";
-    html = `<i class="dot ${a}"></i> <b>${ROLE[a]} ${a}</b> · ${esc(DOING[st.state] || st.state)}${extra}<span class="sp">${S.playing ? S.speed + "×" : "Paused"}</span>`;
-  }
+let toastUntil = 0;
+function showToast(html) { $("toast").innerHTML = html; $("toast").hidden = false; toastUntil = performance.now() + 1200; }
+function renderToast(t, k) {
+  if (performance.now() < toastUntil) return;
+  const a = S.rover, el = $("toast");
+  const html = t >= S.run.tEnd && !S.playing ? `<b>Sortie ${esc(S.sortie.sortie_id)} over</b> · ${esc(OUTCOME_WORD[S.sortie.outcome] || S.sortie.outcome)}`
+    : !S.playing && t === S.run.times[0] ? `Press <b>play</b> to start · drag to look around`
+    : `<i class="dot" style="background:${scol(a)}"></i> <b>Scout ${esc(a)}</b> · ${esc(activityOf(a, k))}<span class="sp">${S.playing ? S.speed + "×" : "Paused"}</span>`;
   if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
   el.hidden = false;
 }
 
-async function evidence(cid) {
-  if (!cid) return null;
-  if (!evidenceCache.has(cid)) {
-    evidenceCache.set(cid, fetch(`${S.run.dir}evidence/${cid}.json`).then(async (res) => {
-      if (!res.ok) return null;
-      const buf = await res.arrayBuffer();
-      return { buf, json: JSON.parse(new TextDecoder().decode(buf)) };
-    }).catch(() => null));
-  }
-  return evidenceCache.get(cid);
-}
-
-function renderScience(t) {
-  const ev = S.focusEv || sci.filter((e) => e.t0 <= t).at(-1);
-  $("sci-empty").hidden = !!ev;
-  $("sci-body").hidden = !ev;
-  if (!ev) { $("sci-title").textContent = "Science"; return; }
-  const ph = ev.phases;
-  let cur = -1;
-  ph.forEach((p, i) => { if (t >= p.t0) cur = i; });
-  const finished = t >= ev.t1;
-  const what = ev.kind === "hazard" ? `crater ${esc(ev.target_id)}` : esc(ev.target_id);
-  $("sci-title").innerHTML = `<i class="dot ${ev.agency}"></i>${ROLE[ev.agency]} · ${what}`;
-  $("sci-phases").innerHTML = ph.map((p, i) =>
-    `<li class="${finished || i < cur ? "done" : i === cur ? "now" : ""}">${PHASE[p.name] || p.name}</li>`).join("");
-  if (ev.agency === "A") return renderSurveyPane(ev, t, cur, finished);
-  const rig = rigs[ev.agency];
-  const key = `${ev.record_id}|${cur}|${finished}|${Math.floor(rig.depthAt(t) * 10)}`;
-  if (S.lastPanel === key) return;
-  S.lastPanel = key;
-  const drillIdx = ph.findIndex((p) => p.name === "drill");
-  const pastDrill = cur > drillIdx || finished;
-  const depth = cur === drillIdx ? rig.depthAt(t) : pastDrill ? DRILL_DEPTH_M : 0;
-  evidence(ev.report_cid).then((e) => {
-    if (S.lastPanel !== key) return;
-    const bins = e ? e.json.measurements.water_wt_pct_by_depth : [];
-    const max = Math.max(1, ...bins.map((b) => b[1]));
-    $("sci-bins").innerHTML = bins.length ? bins.map(([d, w]) => {
-      const got = d <= depth + 1e-6;
-      const nowBin = got && d > depth - 0.1;
-      return `<div class="b ${got ? (nowBin && !pastDrill ? "now" : "") : "pending"}"><span>${(d * 100).toFixed(0)} cm</span><span class="bar2"><i style="width:${got ? (100 * w) / max : 0}%"></i></span><span>${got ? w.toFixed(2) + "%" : "…"}</span></div>`;
-    }).join("") : (pastDrill && ev.reading != null ? `<div class="hint">Core reading ${ev.reading.toFixed(2)}${esc(S.run.unit || "")}</div>` : "");
-    const analysed = ph.findIndex((p) => p.name === "analyze");
-    const done = finished || cur > analysed;
-    if (!done) {
-      $("sci-result").innerHTML = `<div class="hint">${cur < drillIdx ? "Getting ready" : cur === drillIdx ? `Drilling · ${(depth * 100).toFixed(0)} cm` : "Reading the core"}</div>`;
-      return;
-    }
-    const res = e ? e.json.result : { verdict: ev.verdict, reading_wt_pct: ev.reading };
-    const word = { ice: "Water ice", dry: "No ice", trace: "Trace only" }[res.verdict] || res.verdict;
-    const conf = res.confidence ? `${res.confidence.level} confidence` : "";
-    $("sci-result").innerHTML = `<div class="verdict ${res.verdict}">${word}<small>${esc(conf)}</small><span class="sim-tag" title="Simulated measurement, not NASA data">SIMULATED</span></div>
-      ${ev.report_cid ? `<div class="small hint" style="margin-top:4px">Report <a class="mono" href="${S.run.dir}evidence/${ev.report_cid}.json" target="_blank" rel="noopener">${short(ev.report_cid, 10, 6)}</a></div>` : ""}`;
-  });
-}
-
-// The Surveyor's stop: what its camera mapped, what its neutron dwell read,
-// and what it concluded. Numbers come from the report stored off chain.
-function renderSurveyPane(ev, t, cur, finished) {
-  const names = ev.phases.map((p) => p.name);
-  const done = (name) => finished || cur > names.indexOf(name);
-  const ph = phaseOf(ev, t) || { name: "", p: 0 };
-  const key = `${ev.record_id}|${cur}|${finished}|${Math.floor(ph.p * 7)}`;
-  if (S.lastPanel === key) return;
-  S.lastPanel = key;
-  evidence(ev.report_cid).then((e) => {
-    if (S.lastPanel !== key) return;
-    const j = e ? e.json : null;
-    const hz = ev.kind === "hazard";
-    const terr = j ? (hz ? j.hazard : j.measurements.terrain) : null;
-    let html = "";
-    if (terr && (done("terrain_map") || ph.name === "terrain_map")) {
-      const f = done("terrain_map") ? 1 : ph.p;
-      html += `<div class="mini-h">Terrain map</div><div class="stats wide">
-        <div class="stat"><b>${(terr.max_slope_deg * f).toFixed(0)}°</b><span>steepest</span></div>
-        <div class="stat"><b>${(terr.mean_slope_deg * f).toFixed(0)}°</b><span>average</span></div>
-        <div class="stat"><b>${Math.round(100 * terr.no_go_fraction * f)}%</b><span>no-go</span></div></div>`;
-    }
-    if (!hz && j && (done("neutron_dwell") || ph.name === "neutron_dwell")) {
-      const d = j.measurements.dwell, n = done("neutron_dwell") ? d.length : Math.floor(ph.p * d.length);
-      const max = Math.max(1.5, ...d.map((q) => q[2]));
-      html += `<div class="mini-h">Neutron dwell <span class="hint">water-equivalent, top 1 m</span></div>` + d.map(([dx, dy, w], i) =>
-        `<div class="b ${i < n ? "" : "pending"}"><span>${i ? `${Math.round((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360}°` : "centre"}</span><span class="bar2"><i style="width:${i < n ? (100 * w) / max : 0}%"></i></span><span>${i < n ? w.toFixed(2) + "%" : "…"}</span></div>`).join("");
-    }
-    if (!html && !j && cur >= 0) html = `<div class="hint">${esc(PHASE[names[cur]] || names[cur])}${ev.reading != null && finished ? ` · reading ${ev.reading.toFixed(2)}${esc(S.run.unit || "")}` : ""}</div>`;
-    if (!html) html = `<div class="hint">${names[cur] === "mast_pan" ? "Panning the camera across it" : "Stopping and turning to face it"}</div>`;
-    $("sci-bins").innerHTML = html;
-    const after = (name) => names.includes(name) && done(name);
-    if (!finished && !(after("photo") || (hz && ph.name === "flag") || (!j && after("analyze")))) { $("sci-result").innerHTML = ""; return; }
-    if (hz) {
-      const dtxt = terr && terr.crater_diameter_m ? `Crater ${terr.crater_diameter_m.toFixed(0)} m across, boulders on the rim` : "Boulder field";
-      $("sci-result").innerHTML = `<div class="verdict ice">Unsafe<small>flagged</small><span class="sim-tag">SIMULATED</span></div>
-        <div class="small">${dtxt}. It goes into the Surveyor's route report, so the Prospector plans around it.</div>
-        ${ev.report_cid ? `<div class="small hint" style="margin-top:4px">Hazard report <a class="mono" href="${S.run.dir}evidence/${ev.report_cid}.json" target="_blank" rel="noopener">${short(ev.report_cid, 10, 6)}</a></div>` : ""}`;
-      return;
-    }
-    const word = { ice: ["Hydrogen high", "worth a core"], trace: ["Some hydrogen", "below the threshold"], dry: ["Dry", "nothing to drill"] }[ev.verdict] || [ev.verdict, ""];
-    $("sci-result").innerHTML = `<div class="verdict ${ev.verdict}">${word[0]}<small>${word[1]}</small><span class="sim-tag" title="Simulated measurement, not NASA data">SIMULATED</span></div>
-      ${ev.verdict === "ice" ? `<div class="small hint">The Prospector drills it to confirm.</div>` : ""}
-      ${ev.report_cid ? `<div class="small hint" style="margin-top:4px">Report <a class="mono" href="${S.run.dir}evidence/${ev.report_cid}.json" target="_blank" rel="noopener">${short(ev.report_cid, 10, 6)}</a></div>` : ""}`;
-  });
-}
-
-function writeHtml(e) {
-  const R = S.run.log.registry || {};
-  const mode = e.mode || R.mode;
-  const [on, off] = SPLIT[e.call] || ["Hash", "Report"];
-  const exp = S.run.chain && S.run.chain.explorer;
-  const tx = exp ? `<a class="mono" href="${exp}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx, 6, 4)}</a>` : `<span class="mono">${short(e.tx, 6, 4)}</span>`;
-  return `<div class="chain-item">
-    <div class="what">${esc(CALL[e.call])} · ${esc(e.target_id)}${e.result ? ` <span class="res ${e.result}">${e.result}</span>` : ""}<span class="tag ${mode}" style="margin-left:auto">${esc(MODE_SHORT[mode] || mode)}</span></div>
-    <div class="split"><div><span class="k">On chain</span>${esc(on)}</div><div><span class="k">Off chain</span>${esc(off)}</div></div>
-    <div class="verify-row"><button class="btn verify-btn" data-cid="${e.report_cid}" data-hash="${e.evidence_hash}" title="Re-hash the off-chain report and compare with the chain">Verify</button><span class="verify"></span><span class="hint small" style="margin-left:auto">tx ${tx} · block ${e.block}</span></div>
-  </div>`;
-}
-
-// The chain feed: Kellen's postFind and checkFind calls from the mission log,
-// newest first. Recorded hashes unless ?key= posted them live in this play-through.
-function txLink(e) {
-  const run = S.run, ex = run.chain && run.chain.explorer;
-  if (ex && (e.live || !run.fakeTx)) return `<a class="mono" href="${ex.replace(/\/$/, "")}/tx/${e.tx}" target="_blank" rel="noopener">${short(e.tx, 6, 4)}</a>`;
-  return `<span class="mono">${short(e.tx, 6, 4)}</span> <span class="tag offline">${run.fakeTx ? "stand-in" : "recorded"}</span>`;
-}
-
-function chainHtml(e) {
-  const unit = S.run.unit || "";
-  const head = e.type === "find"
-    ? `postFind #${e.live ? e.live_find_id : e.find_id} · ${esc(e.site_id || "")}`
-    : `checkFind #${e.live ? e.live_find_id : e.find_id} · ${esc(e.site_id || "")} <span class="res ${e.agrees ? "Positive" : "Negative"}">${e.agrees ? "agrees" : "disagrees"}</span>`;
-  return `<div class="chain-item${e.live ? " live" : ""}">
-    <div class="what"><i class="dot ${e.agency}"></i> ${ROLE[e.agency]} ${e.agency} · ${head}${e.live ? `<span class="tag monad" style="margin-left:auto">Live</span>` : ""}</div>
-    <div class="split"><div><span class="k">Position</span>${e.x.toFixed(1)}, ${e.y.toFixed(1)} ± ${e.sigma.toFixed(2)} m</div><div><span class="k">Reading</span>${e.reading.toFixed(2)}${esc(unit)}</div></div>
-    <div class="verify-row"><span class="hint small">tx ${txLink(e)}${e.live_status ? ` · now <b>${esc(e.live_status)}</b>` : ""}</span></div>
-  </div>`;
-}
-
-function renderChain(t) {
-  const k = S.run.stepAt(t);
-  const done = S.run.events.filter((e) => e.k <= k);
-  const key = `chain|${done.length}|${done.map((e) => e.tx).join()}`;
-  if ($("chain-now").dataset.key === key) return;
-  $("chain-now").dataset.key = key;
-  $("chain-now").innerHTML = done.length ? [...done].reverse().map(chainHtml).join("")
-    : `<p class="hint">Nothing yet. The Surveyor posts a find when it measures ice; the Prospector posts its check.</p>`;
-  $("txs").innerHTML = "";
-  if (done.length > (S.lastChainN || 0) && S.playing) document.querySelector('.rail [data-tab="chain"]').classList.add("live");
-  S.lastChainN = done.length;
-}
-
-function bindVerify(root) {
-  root.querySelectorAll(".verify-btn").forEach((b) => (b.onclick = async () => {
-    const out = b.nextElementSibling;
-    out.textContent = "Hashing…";
-    const e = await evidence(b.dataset.cid);
-    if (!e) { out.innerHTML = `<span class="bad">Report not found</span>`; return; }
-    const got = "0x" + keccak256(e.buf);
-    const ok = got.toLowerCase() === (b.dataset.hash || "").toLowerCase();
-    out.innerHTML = ok ? `<span class="ok">✓ Matches the chain</span>` : `<span class="bad">✕ Does not match</span>`;
-    out.title = ok ? "keccak256 of the report file equals the hash stored on chain" : `${got} vs ${b.dataset.hash}`;
-  }));
-}
-
-function renderRegistry(t) {
-  const run = S.run, k = run.stepAt(t);
-  const sites = (run.log.mission || {}).sites || [];
-  const evs = run.events.filter((e) => e.k <= k);
-  const key = `sites|${sites.map((x) => siteVerdict(x.id, t)).join()}|${evs.length}`;
-  if ($("reg-body").dataset.key === key) return;
-  $("reg-body").dataset.key = key;
-  $("reg-count").textContent = sites.length ? String(sites.length) : "";
-  $("reg-body").innerHTML = sites.map((x) => {
-    const v = siteVerdict(x.id, t);
-    const find = evs.find((e) => e.type === "find" && e.site_id === x.id);
-    const chk = evs.find((e) => e.type === "check" && e.site_id === x.id);
-    const sv = v === "ice" ? `<span class="res Positive">ice</span>` : v === "dry" ? `<span class="res Negative">dry</span>` : `<span class="hint">pending</span>`;
-    const pv = chk ? `<span class="res ${chk.agrees ? "Positive" : "Negative"}">${chk.agrees ? "confirmed" : "disputed"}</span>` : find ? `<span class="hint">queued</span>` : "–";
-    return `<tr><td><b>${esc(x.id)}</b></td><td>${find ? `find #${find.find_id}` : "–"}</td><td>${sv}</td><td>${pv}</td></tr>`;
-  }).join("") || `<tr><td colspan="4" class="hint">No sites.</td></tr>`;
-  const finds = run.findsAt ? run.findsAt(k) : [];
-  $("finds").innerHTML = finds.length ? finds.map((f) => `<div class="find"><b>Find #${f.find_id}</b> at ${esc(f.site_id || "")} · ${ROLE[f.agency] || f.agency} ${f.agency} · ±${f.sigma.toFixed(2)} m · ${f.reading.toFixed(2)}${esc(run.unit || "")}` +
-    ` · <span class="res ${f.status === "confirmed" ? "Positive" : f.status === "disputed" ? "Negative" : "Inconclusive"}">${esc(f.status)}</span></div>`).join("")
-    : `<p class="hint">No finds yet.</p>`;
-}
-
-async function openSite(sid) {
-  const site = (S.run.log.registry_sites || []).find((s) => s.site_id === sid);
-  const writes = reg.filter((e) => e.site_id === sid && e.t <= S.t);
+// ------------------------------------------------------------- runs list
+// Every run with its setup and results; clicking one loads it here.
+function openRuns() {
   $("drawer").hidden = false;
-  $("dr-title").textContent = `Site ${writes[0]?.target_id || ""}`;
-  const known = new Set(writes.map((w) => w.report_id));
-  const reps = (site ? site.reports : []).filter((r) => known.has(r.report_id));
-  const body = reps.map((r) => {
-    const w = writes.find((x) => x.report_id === r.report_id) || {};
-    return `<div class="rep ${r.result}">
-      <div><b>Report #${r.report_id}</b> · ${esc(r.stage)} · <span class="res ${r.result}">${r.result === "Unknown" ? "candidate" : r.result}</span>${r.parent_report_id ? ` · follows #${r.parent_report_id}` : ""}</div>
-      <dl class="kv"><dt>Hash</dt><dd class="mono">${esc(r.evidence_hash)}</dd>
-      <dt>Report</dt><dd class="mono"><a href="${S.run.dir}evidence/${r.report_cid}.json" target="_blank" rel="noopener">${esc(r.report_cid)}</a></dd>
-      ${r.route_cid ? `<dt>Route</dt><dd class="mono"><a href="${S.run.dir}evidence/${r.route_cid}.json" target="_blank" rel="noopener">${esc(r.route_cid)}</a></dd>` : ""}
-      <dt>Tx</dt><dd class="mono">${esc(w.tx || "")} (block ${w.block ?? "–"})</dd>
-      <dt>By</dt><dd class="mono">${esc(r.submitter)}</dd></dl>
-      <div class="verify-row"><button class="btn verify-btn" data-cid="${r.report_cid}" data-hash="${r.evidence_hash}">Verify</button><span class="verify"></span></div>
-      <details style="margin-top:8px"><summary class="hint">Show the report</summary><pre class="json" data-cid="${r.report_cid}">Loading…</pre></details>
-    </div>`;
-  }).join("");
-  $("dr-body").innerHTML = (body || `<p class="hint">Nothing published for this site yet.</p>`) +
-    `<p class="hint small">Each report is a new record that names the one before it; nothing on chain is edited.</p>`;
-  bindVerify($("dr-body"));
-  $("dr-body").querySelectorAll("details").forEach((d) => (d.ontoggle = async () => {
-    const pre = d.querySelector("pre");
-    const e = await evidence(pre.dataset.cid);
-    pre.textContent = e ? JSON.stringify(e.json, null, 1) : "Not found.";
-  }));
+  $("dr-title").textContent = "Runs";
+  const batches = S.index.filter((b) => b.runs.some((r) => r.map));
+  const cur = batches.find((b) => b.batch_id === S.batch) || batches[0];
+  $("dr-body").innerHTML = `<label class="small">Batch <select id="dr-batch">${batches.map((b) => `<option value="${esc(b.batch_id)}"${b === cur ? " selected" : ""}>${esc(b.batch_id)} (${b.runs.filter((r) => r.map).length})</option>`).join("")}</select></label>
+    <div id="dr-about" class="small hint"></div><div class="runs-wrap"><table class="runs"><thead><tr><th>Run</th><th>Site</th><th title="Scouts">Sc.</th><th title="Sorties ok of all">Sorties</th><th>Finds</th><th title="Confirmed by a second Scout">Conf.</th><th title="Wrong-match rate">Wrong</th><th title="Per-step pipeline data for the first-person, lidar and particle views">Views</th></tr></thead><tbody id="dr-runs"></tbody></table></div>
+    <p class="small"><a href="runs.html">Every column, as a table</a></p>`;
+  const fill = (b) => {
+    $("dr-about").textContent = [b.standin, b.showcase].filter(Boolean).join(" ").slice(0, 400);
+    $("dr-runs").innerHTML = b.runs.filter((r) => r.map).slice(0, 400).map((r) => `<tr data-b="${esc(b.batch_id)}" data-r="${esc(r.run_id)}" class="${b.batch_id === S.batch && r.run_id === S.cr.rec.run_id ? "cur" : ""}">
+      <td class="mono">${esc(r.run_id)}</td><td>${esc(r.site || "")}</td><td>${r.n_scouts ?? "–"}</td><td>${r.sorties != null ? `${r.sorties_ok}/${r.sorties}` : "–"}</td>
+      <td>${r.finds ?? "–"}</td><td>${r.confirmed ?? "–"}</td><td>${r.wrong_match_rate != null ? fmtNum(r.wrong_match_rate * 100, 0) + "%" : "–"}</td>
+      <td>${r.pipeline ? `<span class="tag">${esc(r.pipeline)}</span>` : `<span class="hint">3D, map</span>`}</td></tr>`).join("");
+    $("dr-runs").querySelectorAll("tr").forEach((tr) => (tr.onclick = () => { location.search = `?batch=${encodeURIComponent(tr.dataset.b)}&run=${encodeURIComponent(tr.dataset.r)}`; }));
+  };
+  fill(cur);
+  $("dr-batch").onchange = (e) => fill(batches.find((b) => b.batch_id === e.target.value));
 }
 
 main();

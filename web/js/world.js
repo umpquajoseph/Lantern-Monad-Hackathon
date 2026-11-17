@@ -12,12 +12,14 @@ import { regolith, lampIntensity, fillIntensity, fillAmbient, TONE_GLSL } from "
 import { fetchF32 } from "./data.js";
 import { frostPatch } from "./frost.js";
 
-// ShadowNav (Atha et al. 2024, sections IV and V), as in sim/scene.py:
-// camera 2.5 m above the ground, lamp 0.2 m below it.
-const CAMERA_HEIGHT_M = 2.5;
+// As sim/scene.py: camera on the Scout's 1.6 m mast (sim/settings.py
+// camera_height_m, brief p.6), lamp 0.2 m below it (lamp_below_camera_m,
+// Atha et al. 2024 sec. IV). The hackathon rover used 2.5 m.
+export const CAMERA_HEIGHT_M = 1.6;
 const LAMP_BELOW_CAMERA_M = 0.2;
 // The rest match sim/scene.py's assumed values so both views agree.
-const CAMERA_PITCH_DEG = 15;   // scene.py, assumed
+export const CAMERA_PITCH_DEG = 15;   // scene.py CAMERA_PITCH_DEG, assumed
+export const CAMERA_HFOV_DEG = 60;    // scene.py HFOV_DEG (Atha et al. 2024 sec. IV)
 const LAMP_INNER_DEG = 15;     // scene.py:76 (step-6-scene 2c8af7e), assumed
 const LAMP_OUTER_DEG = 32;     // scene.py:77 (2c8af7e), assumed; was 30/45
 const LAMP_FADE_END_M = 80;    // scene.py, assumed

@@ -228,6 +228,9 @@ export class MapView {
     const X = (x) => W / 2 + (x - cx) * s;
     const Y = (y) => H / 2 - (y - cy) * s;
 
+    // Ground beyond the drive area (a page may set groundLayers: [{img, x0, y0, x1, y1}], world rect).
+    for (const L of this.groundLayers || []) c.drawImage(L.img, X(L.x0), Y(L.y1), (L.x1 - L.x0) * s, (L.y1 - L.y0) * s);
+
     // Hillshade: pixel j at x0 + j*1 m; the image is north up.
     const m = this.terrain.meta, g = this.terrain.coarse;
     if (this.img.complete && this.img.naturalWidth) {
@@ -246,8 +249,11 @@ export class MapView {
       c.globalAlpha = 1;
     }
 
+    // A page's own layer under the tracks (Mission Control: the Scouts' crater map).
+    if (this.drawUnder) this.drawUnder(c, X, Y, s, W, H);
+
     // Mapped craters (the rover's orbital map) once zoomed in enough to read.
-    if (s > 2.2) {
+    if (this.opts.terrainCraters !== false && s > 2.2) {
       c.strokeStyle = "rgba(160, 200, 255, 0.28)";
       c.lineWidth = 1;
       const x0 = cx - W / 2 / s, x1 = cx + W / 2 / s, y0 = cy - H / 2 / s, y1 = cy + H / 2 / s;

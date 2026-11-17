@@ -1,7 +1,7 @@
 # Brief: `control` (Mission Control)
 
 Branch `lantern-workflow-web`, worktree `C:\Monad-Hackathon-workflow-web`,
-from `lantern-workflow` `d9d887a`. You own `web/`. Do not edit `sim/`,
+from `lantern-workflow`. You own `web/`. Do not edit `sim/`,
 which `workflow` owns.
 
 Read only these: `docs/campaign-spec.md` (rewritten 17 Nov), this brief,

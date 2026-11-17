@@ -1,7 +1,7 @@
 # Brief: `workflow` (the simulation)
 
 Branch `lantern-workflow-sim`, worktree `C:\Monad-Hackathon-workflow-sim`,
-from `lantern-workflow` `d9d887a`. You own `sim/` and `scripts/`. Do not edit
+from `lantern-workflow`. You own `sim/` and `scripts/`. Do not edit
 `web/`, which `control` owns.
 
 Read only these: `docs/campaign-spec.md` (rewritten 17 Nov), this brief,

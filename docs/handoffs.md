@@ -161,7 +161,7 @@ this log. One folder per run, `data/runs/<run_id>/` in the main checkout
 - Stand-in until step 6: points on the near rims of mapped craters within 15 m
   of the true pose, with noise added and some missed.
 - Answer key (step 6 scoring, `sim/rim_truth.py`, details in
-  `docs/requests/rim-answer-key.md`): `rim_truth(scene, agency, depth)`
+  `_archive/docs/requests/rim-answer-key.md`): `rim_truth(scene, agency, depth)`
   gives the mapped rims in the frame: per point `xy` (rover frame
   `[x_forward, y_left]`), `uv` (pixels), `crater_id`, `near` (the half
   arc nearest the camera, Cauligi 2023 sec. 5A), `visible` (3-15 m, 60
@@ -306,7 +306,7 @@ After a run, one master file per run and its results on Monad, next to Lantern:
 ## Mission (`sim/roles.py`, `sim/mission.py`), gives
 
 The Surveyor and Prospector mission behind Mission Control (`web/mission.html`).
-Its parts and storage rules are in `docs/ARCHITECTURE.md` and `docs/storage.md`;
+Its parts and storage rules are in `_archive/docs/ARCHITECTURE.md` and `_archive/docs/storage.md`;
 this is only what crosses into other steps.
 
 - `python sim/roles.py run [--render] --publish-run data/runs` writes the

@@ -37,7 +37,7 @@ from scipy.spatial import cKDTree
 from sim.rim_truth import RIM_HALF_FOV_DEG, RIM_RANGE_M, rim_truth
 from sim.settings import WorldRanges
 from sim.terrain import DATA, load_terrain
-from sim.vision import Vision, contour_ok, rover_to_world
+from sim.vision import Vision, contour_arc_share, contour_ok, rover_to_world
 
 MAP_MATCH_M = 6.0      # assumed: a map row this close to a true crater is that crater (map error 2 m/axis)
 SOURCE_TOL_M = 1.0     # as sim/calibrate.py: a rim pixel within this of a crater's rim circle is that crater's
@@ -122,7 +122,7 @@ def census(run_dir, sortie=None, stride=10, max_render=None, display=None):
     return dict(run=str(run_dir), sortie=sid, site=rec["world"].get("site", rec["terrain"]["site"]),
                 density=rec["world"]["crater_n_ge10_per_km2"], ground=g, display=scene.display,
                 steps=len(st), rendered=rendered, mappable=int(len(big)), in_map=int(in_map.sum()),
-                stride=stride, rows=rows)
+                stride=stride, threshold_m=contour_arc_share() * cut, rows=rows)
 
 
 def table(c):
@@ -141,7 +141,7 @@ def table(c):
          f"| ... and visible in depth | {cnt(g, 'mapped_visible')} | {cnt(g, 'mappable_visible')} |",
          f"| ... and lamp-lit, casting a shadow | {cnt(g, 'mapped_lit')} | {cnt(g, 'mappable_lit')} |",
          f"| rim pixels detected on it, before the filter | {pos(g, 'det_mapped_px')} | {pos(g, 'det_mappable_px')} |",
-         f"| rim pixels kept after the 5.53 m filter | {pos(g, 'kept_mapped_px')} | {pos(g, 'kept_mappable_px')} |",
+         f"| rim pixels kept after the {c['threshold_m']:.2f} m filter | {pos(g, 'kept_mapped_px')} | {pos(g, 'kept_mappable_px')} |",
          f"| any rim pixels detected / kept (rendered in-view steps) | {pos(g, 'det_px')} / {pos(g, 'kept_px')} of {len(g)} | |",
          f"| any rim pixels detected / kept (sampled other steps) | {pos(o, 'det_px')} / {pos(o, 'kept_px')} of {len(o)} | |",
          f"| the run's own logged rims | {sum(1 for r in R if r['run_rim_points'] > 0)} steps | |"]
@@ -150,7 +150,7 @@ def table(c):
     if len(w):
         L.append(f"\nWidest mapped-crater contour per step ({len(w)} steps): median {np.median(w):.2f} m, "
                  f"quartiles {np.percentile(w, 25):.2f}-{np.percentile(w, 75):.2f} m, "
-                 f"{np.mean(w >= 4.0):.0%} at 4 m or more, {np.mean(w >= 5.53):.0%} at the 5.53 m threshold "
+                 f"{np.mean(w >= 4.0):.0%} at 4 m or more, {np.mean(w >= c['threshold_m']):.0%} at the {c['threshold_m']:.2f} m threshold "
                  f"or more; median range of those pixels {np.median(rr):.1f} m.")
     return "\n".join(L)
 

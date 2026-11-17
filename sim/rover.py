@@ -162,12 +162,16 @@ class SlopeMap:
         """
         import heapq
         ny, nx = self.deg.shape
-        m = int(math.ceil(MAP_MARGIN_M / self.b))
-        ok = self.deg <= SLOPE_LIMIT_DEG
+        if getattr(self, "_ok_base", None) is None:   # deg never changes: open cells and margin, once
+            m = int(math.ceil(MAP_MARGIN_M / self.b))
+            base = self.deg <= SLOPE_LIMIT_DEG
+            base[:m, :] = base[-m:, :] = False
+            base[:, :m] = base[:, -m:] = False
+            self._ok_base = base
         if blocked is not None:              # hazards the rover's camera found (2 m cells)
-            ok &= ~blocked
-        ok[:m, :] = ok[-m:, :] = False
-        ok[:, :m] = ok[:, -m:] = False
+            ok = self._ok_base & ~blocked
+        else:
+            ok = self._ok_base.copy()
 
         def cell(p):  # same floor convention as at(): cell j spans [x0 + j*b, x0 + (j+1)*b)
             return (int(np.clip(math.floor((p[1] - self.y0) / self.b), 0, ny - 1)),
@@ -461,9 +465,22 @@ class Rover:
             soft = kinds == "crater"
             self._mark(pts[~soft], self.haz_steep)
             self._mark(pts[soft], self.haz_crater)
-            self.haz_fine = self.haz_steep | self.haz_crater
+            # _mark sets cells only within r of a point: refresh haz_fine and
+            # its count in that window, not over the whole 0.25 m map (51M
+            # cells on a run ground; the whole-map OR and sum were most of a
+            # camera step). Same arrays and count as before.
+            c, (H, W) = self.slope.cell, self.haz_fine.shape
+            r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+            ci = np.rint((pts[:, 1] - self.slope.y0) / c).astype(int)
+            cj = np.rint((pts[:, 0] - self.slope.x0) / c).astype(int)
+            i0, i1 = max(int(ci.min()) - r, 0), min(int(ci.max()) + r + 1, H)
+            j0, j1 = max(int(cj.min()) - r, 0), min(int(cj.max()) + r + 1, W)
+            if i1 > i0 and j1 > j0:
+                win = (slice(i0, i1), slice(j0, j1))
+                before = int(self.haz_fine[win].sum())
+                np.logical_or(self.haz_steep[win], self.haz_crater[win], out=self.haz_fine[win])
+                self.n_hazard_cells += int(self.haz_fine[win].sum()) - before
             self._refresh_cells(pts)
-            self.n_hazard_cells = int(self.haz_fine.sum())
             return
         sm = self.slope
         c = sm.cell

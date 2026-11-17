@@ -5,7 +5,7 @@
 
 Each run: 3 Scouts x 3 sorties, map refinement on, camera navigation
 (Settings.nav = "camera", the default), on sites s89_134e, s89_014e and
-haynes, world seed --seed. Writes data/campaigns/<batch_id>/<run_id>/
+haynes, world seeds SEEDS (or --seed). Writes data/campaigns/<batch_id>/<run_id>/
 record.json, poses.npz, steps.npz (docs/handoffs.md, "Camera navigation"),
 plus summary.csv once all three finish.
 
@@ -25,6 +25,15 @@ from multiprocessing import Pool
 from pathlib import Path
 
 SITES = ("s89_134e", "s89_014e", "haynes")
+# World seed per site. Chosen, not drawn: the lowest seed whose world, run
+# with the sampled engine on this same plan (3 Scouts x 3 sorties, full
+# survey, density 336), makes at least 2 finds and at least 2 searches by a
+# second Scout (scan of seeds 1-120 per site, 16 Nov 2026). With 9 sorties
+# a run surveys about 0.6 km2, and most seeds' deposits lie elsewhere. The
+# camera runs drive their own paths, so finds are likely, not certain.
+SEEDS = {"s89_134e": 6, "s89_014e": 9, "haynes": 3}
+SEED_RULE = ("the lowest seed whose world, run with the sampled engine on the same plan, makes at least 2 finds "
+             "and 2 searches by a second Scout (sim/live_runs.py SEEDS)")
 BATCH_ID = "live-nav-first3"
 # Measured on the test campaign (docs in the commit that sets them): wall
 # seconds per Scout-step with one run alone on the machine, and Scout-steps
@@ -77,6 +86,10 @@ def _run(job):
     s = settings_for(site, n_scouts, sorties, extra)
     c = Campaign(seed, s, ranges_for(s)).run()
     root = c.save(batch_id)
+    rec_path = root / "record.json"
+    rec = json.loads(rec_path.read_text(encoding="utf-8"))
+    rec["seed_choice"] = (f"seed {seed} chosen for {site}, not drawn: " + SEED_RULE) if SEEDS.get(site) == seed         else f"seed {seed} given on the command line"
+    rec_path.write_text(json.dumps(rec, separators=(",", ":")), encoding="utf-8")
     sm = c.summary()
     (root / "row.json").write_text(json.dumps({"summary": sm, "by_sortie": c.by_sortie(),
                                                "wall_s": time.perf_counter() - t0}, default=str), encoding="utf-8")
@@ -85,7 +98,7 @@ def _run(job):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--seed", type=int, default=None, help="one world seed for every site (default: SEEDS)")
     ap.add_argument("--scouts", type=int, default=3)
     ap.add_argument("--sorties", type=int, default=3)
     ap.add_argument("--sites", default=",".join(SITES))
@@ -95,9 +108,10 @@ def main():
     ap.add_argument("--set", nargs="*", default=[], help="other Settings overrides, name=value (test runs)")
     a = ap.parse_args()
     sites = a.sites.split(",")
-    plans = [plan(site, a.seed, a.scouts, a.sorties, a.set) for site in sites]
+    seed = {site: a.seed if a.seed is not None else SEEDS.get(site, 1) for site in sites}
+    plans = [plan(site, seed[site], a.scouts, a.sorties, a.set) for site in sites]
     print(f"{len(sites)} runs, {a.scouts} Scouts x {a.sorties} sorties each, camera navigation, map refinement on, "
-          f"seed {a.seed}, batch {a.batch_id}")
+          f"seeds {seed}, batch {a.batch_id}")
     worst = 0.0
     for p in plans:
         line = (f"  {p['site']:9} {p['run_id']}: descent corridor {p['corridor_m']} m, "
@@ -115,7 +129,7 @@ def main():
         return
     t0 = time.perf_counter()
     rows = []
-    jobs = [(site, a.seed, a.scouts, a.sorties, a.batch_id, a.set) for site in sites]
+    jobs = [(site, seed[site], a.scouts, a.sorties, a.batch_id, a.set) for site in sites]
     with Pool(1 if a.serial else len(sites)) as pool:
         for site, root, sm, wall in pool.imap_unordered(_run, jobs):
             print(f"{site}: done in {wall / 3600:.2f} h -> {root}", flush=True)

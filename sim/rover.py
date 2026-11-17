@@ -12,6 +12,7 @@ local check each step that the next 2 m really is under the limit.
 from __future__ import annotations
 
 import math
+import os
 
 import numpy as np
 
@@ -23,9 +24,11 @@ SLOPE_BASELINE_M = 2.0
 # PROSPECT brief p.3: the Scout must average at least ~7.4 cm/s in the dark.
 SPEED_M_S = 0.074
 
+ASTAR_COMPILED = os.environ.get("LANTERN_ASTAR_COMPILED", "1") != "0"   # sim/astar_fast.py; 0 = Python loop
 STEP_M = 2.0                    # assumed: distance per sim step (one see-locate-plan-drive cycle)
 # The truth's odometer (sim/settings.py drift_frac, odom_*); the filter in
 # sim/nav.py has its own model (pf_*) and never reads these.
+from sim import astar_fast as _astar
 from sim.settings import Settings as _Settings
 ODOM_BIAS = _Settings().drift_frac            # C23 sec. 1: ~2% drift, applied as a scale bias (sign assumed)
 ODOM_NOISE = _Settings().odom_noise_frac      # assumed: per-step distance noise, fraction of the step
@@ -168,11 +171,6 @@ class SlopeMap:
             base[:m, :] = base[-m:, :] = False
             base[:, :m] = base[:, -m:] = False
             self._ok_base = base
-        if blocked is not None:              # hazards the rover's camera found (2 m cells)
-            ok = self._ok_base & ~blocked
-        else:
-            ok = self._ok_base.copy()
-
         def cell(p):  # same floor convention as at(): cell j spans [x0 + j*b, x0 + (j+1)*b)
             return (int(np.clip(math.floor((p[1] - self.y0) / self.b), 0, ny - 1)),
                     int(np.clip(math.floor((p[0] - self.x0) / self.b), 0, nx - 1)))
@@ -182,6 +180,32 @@ class SlopeMap:
             # A* would search every cell it can reach and then give up: the
             # same answer, without the search (seconds on a 2 km run ground).
             return [tuple(goal_xy)]
+        if (ASTAR_COMPILED and max_expand is not None and blocked is not None and cost is not None
+                and cost.dtype == np.float32 and _astar.available()):
+            # The sensing rover's local search, compiled (sim/astar_fast.py):
+            # the same float32 arithmetic and pop order as the loop below.
+            if getattr(self, "_astar_buf", None) is None:
+                N = ny * nx
+                self._astar_buf = dict(g=np.zeros(N, np.float32), came=np.zeros(N, np.int64),
+                                       stamp=np.zeros(N, np.int32), tag=0, hyp=_astar.hypot_table(ny, nx),
+                                       okb=np.ascontiguousarray(self._ok_base).reshape(-1))
+            B = self._astar_buf
+            B["tag"] += 1
+            st, fl = _astar.search(B["okb"], np.ascontiguousarray(blocked).reshape(-1),
+                                   np.ascontiguousarray(cost).reshape(-1), B["hyp"], ny, nx,
+                                   s[0] * nx + s[1], g[0] * nx + g[1], int(max_expand),
+                                   B["g"], B["came"], B["stamp"], B["tag"])
+            if st == 1:
+                return None
+            if len(fl) == 0:
+                return [tuple(goal_xy)]
+            path = [divmod(int(v), nx) for v in fl]
+            pts = [(self.x0 + (j + 0.5) * self.b, self.y0 + (i + 0.5) * self.b) for i, j in path[1:-1]]
+            return pts[::2] + [tuple(goal_xy)]
+        if blocked is not None:              # hazards the rover's camera found (2 m cells)
+            ok = self._ok_base & ~blocked
+        else:
+            ok = self._ok_base.copy()
         ok[s] = ok[g] = True
         # Cells are flat indices i * nx + j: heap ties then break in the same
         # (i, j) order as tuples, and lookups are on bytes and dicts, so the

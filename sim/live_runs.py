@@ -34,17 +34,35 @@ STEPS_PER_PLANNED_MEASURED = None
 PARALLEL_SLOWDOWN = None     # measured: s/step with 3 runs at once over s/step alone
 
 
-def settings_for(site, n_scouts, sorties):
+def settings_for(site, n_scouts, sorties, extra=()):
+    from sim.campaign import parse_value
     from sim.settings import Settings
-    return Settings(site=site, n_scouts=n_scouts, sorties_per_scout=sorties, map_refinement=True, nav="camera")
+    from dataclasses import fields
+    types = {f.name: f.type for f in fields(Settings)}
+    kw = dict(site=site, n_scouts=n_scouts, sorties_per_scout=sorties, map_refinement=True, nav="camera")
+    for p in extra:
+        k, v = p.split("=", 1)
+        kw[k] = parse_value(types[k], v)
+    return Settings(**kw)
 
 
-def plan(site, seed, n_scouts, sorties):
+def ranges_for(s):
+    """The world ranges of these runs: crater density fixed at the lunar
+    small-crater equilibrium (sim/terrain.py Params.n_ge10_per_km2, 336 per
+    km2 of 10 m and up, Minton et al. 2019 Fit 1), drift fixed at the
+    Settings value as a single run does. Every other range as WorldRanges."""
+    from sim.settings import WorldRanges
+    from sim.terrain import Params
+    n = float(Params().n_ge10_per_km2)
+    return WorldRanges(crater_n_ge10_per_km2=(n, n), drift_frac=(s.drift_frac, s.drift_frac))
+
+
+def plan(site, seed, n_scouts, sorties, extra=()):
     """Planned driving per run (m) and the Scout-steps it implies."""
     from sim.campaign import Campaign
     from sim.rover import STEP_M
-    s = settings_for(site, n_scouts, sorties)
-    c = Campaign(seed, s)
+    s = settings_for(site, n_scouts, sorties, extra)
+    c = Campaign(seed, s, ranges_for(s))
     per_sortie = 2 * c.corridor_len + s.survey_m
     metres = n_scouts * sorties * per_sortie
     steps = metres / STEP_M * (STEPS_PER_PLANNED_MEASURED or 1.0)
@@ -53,10 +71,11 @@ def plan(site, seed, n_scouts, sorties):
 
 
 def _run(job):
-    site, seed, n_scouts, sorties, batch_id = job
+    site, seed, n_scouts, sorties, batch_id, extra = job
     from sim.campaign import Campaign
     t0 = time.perf_counter()
-    c = Campaign(seed, settings_for(site, n_scouts, sorties)).run()
+    s = settings_for(site, n_scouts, sorties, extra)
+    c = Campaign(seed, s, ranges_for(s)).run()
     root = c.save(batch_id)
     sm = c.summary()
     (root / "row.json").write_text(json.dumps({"summary": sm, "by_sortie": c.by_sortie(),
@@ -72,9 +91,11 @@ def main():
     ap.add_argument("--sites", default=",".join(SITES))
     ap.add_argument("--batch-id", default=BATCH_ID)
     ap.add_argument("--dry-run", action="store_true", help="print the plan and expected wall time only")
+    ap.add_argument("--serial", action="store_true", help="one run at a time (about 1 GB) instead of all at once")
+    ap.add_argument("--set", nargs="*", default=[], help="other Settings overrides, name=value (test runs)")
     a = ap.parse_args()
     sites = a.sites.split(",")
-    plans = [plan(site, a.seed, a.scouts, a.sorties) for site in sites]
+    plans = [plan(site, a.seed, a.scouts, a.sorties, a.set) for site in sites]
     print(f"{len(sites)} runs, {a.scouts} Scouts x {a.sorties} sorties each, camera navigation, map refinement on, "
           f"seed {a.seed}, batch {a.batch_id}")
     worst = 0.0
@@ -94,9 +115,9 @@ def main():
         return
     t0 = time.perf_counter()
     rows = []
-    with Pool(len(sites)) as pool:
-        for site, root, sm, wall in pool.imap_unordered(
-                _run, [(site, a.seed, a.scouts, a.sorties, a.batch_id) for site in sites]):
+    jobs = [(site, a.seed, a.scouts, a.sorties, a.batch_id, a.set) for site in sites]
+    with Pool(1 if a.serial else len(sites)) as pool:
+        for site, root, sm, wall in pool.imap_unordered(_run, jobs):
             print(f"{site}: done in {wall / 3600:.2f} h -> {root}", flush=True)
             rows.append(sm)
     from sim.campaign import CAMPAIGN_DIR

@@ -175,7 +175,9 @@ class Settings:
                                               "(record labels and sightings only; the filter scores every point)")
     cam_pass_gap_steps: int = S(3, ASSUMED + "; a crater pass (one 'check' event) ends after this many steps "
                                              "without a matched rim")
-    cam_sighting_min_points: int = S(12, ASSUMED + "; unmatched rim points needed to fit a sighting circle")
+    cam_pass_max_steps: int = S(25, ASSUMED + "; a crater pass also ends after this many steps (50 m), so one "
+                                              "'check' is one stretch of matching, not a whole crater field")
+    cam_sighting_min_points: int = S(12, ASSUMED + "; unmatched rim points needed to fit a sighting circle, counted after thinning to 0.25 m cells")
     cam_sighting_fit_rms_m: float = S(0.5, ASSUMED + "; largest circle-fit residual (RMS) a sighting may have")
     cam_turn_rate_deg_s: float = S(5.0, ASSUMED + "; turn-in-place rate, for time and energy")
     cam_ground_margin_m: float = S(250.0, ASSUMED + "; fine ground built this far beyond the dock, corridor "

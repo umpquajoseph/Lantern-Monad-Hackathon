@@ -512,7 +512,8 @@ Record changes (additive unless marked):
   ground: a waypoint off it is skipped (event `waypoint_skipped`).
 - Events, camera only:
   - `check` is one **crater pass**: consecutive steps whose rims matched
-    mapped craters, ended by `Settings.cam_pass_gap_steps` steps without.
+    mapped craters, ended by `Settings.cam_pass_gap_steps` steps without, or
+    after `Settings.cam_pass_max_steps` steps.
     The filter itself corrects at every step with rims; a pass groups
     those steps for the timeline and the counts. Fields as above, with:
     `reason: "camera"`; `matched` (distinct map craters matched in the

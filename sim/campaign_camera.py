@@ -41,6 +41,8 @@ LIDAR_KEEP = 2               # steps.npz keeps every 2nd lidar beam row and colu
 PROGRESS_M = 0.5             # assumed: "getting closer" to a waypoint means by at least this much (cam_stuck_steps)
 BLOCKED_ARRIVE_M = 2.0       # run_demo.py BLOCKED_ARRIVE_M (assumed there): arrived, when the goal is on no-go ground
 SIGHT_LINK_M = 2.0           # assumed: unmatched rim points this close are one arc
+SIGHT_CELL_M = 0.25          # unmatched points are thinned to one per cell of this size before clustering (memory:
+                             # a long pass held 42k points and 5 GB of point pairs); the fit sees the cell means
 NEIGHBOURS = 4               # nearest craters checked per rim point (labels only)
 PROGRESS_EVERY = int(os.environ.get("LANTERN_CAM_PROGRESS", "0"))   # print a line every N Scout-steps (0: never)
 
@@ -429,6 +431,8 @@ class CameraSortie(Sortie):
             if (~m).any():
                 p["free"].append(lab["pw"][~m])
             self.gap = 0
+            if p["k1"] - p["k0"] + 1 >= self.s.cam_pass_max_steps:
+                self._end_pass()
         elif self.pass_ is not None:
             self.gap += 1
             if self.gap >= self.s.cam_pass_gap_steps:
@@ -476,6 +480,10 @@ class CameraSortie(Sortie):
         s = self.s
         if len(pts) < s.cam_sighting_min_points:
             return
+        key = np.floor(pts / SIGHT_CELL_M).astype(np.int64)
+        _, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+        inv = inv.ravel()
+        pts = np.column_stack([np.bincount(inv, pts[:, 0]), np.bincount(inv, pts[:, 1])]) / cnt[:, None]
         tree = cKDTree(pts)
         pairs = tree.query_pairs(SIGHT_LINK_M, output_type="ndarray")
         n = len(pts)

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
 
 import numpy as np
@@ -41,6 +42,7 @@ PROGRESS_M = 0.5             # assumed: "getting closer" to a waypoint means by 
 BLOCKED_ARRIVE_M = 2.0       # run_demo.py BLOCKED_ARRIVE_M (assumed there): arrived, when the goal is on no-go ground
 SIGHT_LINK_M = 2.0           # assumed: unmatched rim points this close are one arc
 NEIGHBOURS = 4               # nearest craters checked per rim point (labels only)
+PROGRESS_EVERY = int(os.environ.get("LANTERN_CAM_PROGRESS", "0"))   # print a line every N Scout-steps (0: never)
 
 
 def _edge_match(tree, craters, pts, tol):
@@ -194,7 +196,7 @@ class CameraSortie(Sortie):
     def __init__(self, camp, scout, n, t0):
         super().__init__(camp, scout, n, t0)
         from sim.lidar import Lidar
-        from sim.nav import SIGMA0_M, ParticleNav
+        from sim.nav import ParticleNav
         from sim.rover import Rover
         from sim.vision import Vision
         s, w, rig = self.s, self.w, camp.rig
@@ -211,7 +213,7 @@ class CameraSortie(Sortie):
         # The filter's start belief: the dock's registered position, spread to
         # the registration bound the Scouts believe (Settings.dock_reg_bound95_m),
         # not sim/nav.py's 1 m landing sigma. Particles are scaled about their mean.
-        k = (s.dock_reg_bound95_m / K95_2D) / SIGMA0_M
+        k = (s.dock_reg_bound95_m / K95_2D) / nav.noise.sigma0_m
         mu = nav.p.mean(axis=0)
         nav.p = mu + (nav.p - mu) * k
         _, r.sigma = nav.belief()
@@ -327,6 +329,12 @@ class CameraSortie(Sortie):
         if d == 0.0:
             self.point_turns += 1
         self.k += 1
+        if PROGRESS_EVERY and rig.steps % PROGRESS_EVERY == 0:
+            import psutil
+            mem = psutil.Process().memory_info().rss / 1e9
+            print(f"{self.sid} step {self.k} (run {rig.steps}): t {self.t / 3600:.2f} h, act {self.act}, "
+                  f"err {math.hypot(self.errx, self.erry):.2f} m, bound {self.bound:.2f} m, "
+                  f"{rig.s_per_step()}, rss {mem:.2f} GB", flush=True)
         self.err_prev = math.hypot(self.errx, self.erry)
         rims = self._sense_and_log(moved=True, odo=self._odometry(d, dh))
         dt = d / self.v if d > 0 else abs(dh) / math.radians(s.cam_turn_rate_deg_s)

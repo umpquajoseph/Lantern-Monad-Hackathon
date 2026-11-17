@@ -87,11 +87,13 @@ def bound95(sigma):
     return round(float(sigma) * K95, 3)
 
 
-def orbital_map(craters, seed=None):
+def orbital_map(craters, seed=None, mask=False):
     """The craters the Scouts' map holds: the campaign's own cut (sim/orbital_map.py), drawn
-    for this run's seed: resolved craters only, less a random share left out."""
+    for this run's seed: resolved craters only, less a random share left out, each with an
+    orbital pixel's error. mask=True: the truth rows that are in it instead."""
     seed = scenario("s89_134e")["seed"] if seed is None else seed
-    return _orbital_map(craters, np.random.default_rng([int(seed), 77]))[0]
+    m, in_map, _ = _orbital_map(craters, np.random.default_rng([int(seed), 77]))
+    return in_map if mask else m
 
 
 def to_record(run_id, steps, field, finds, ft, terrain, sensing, display, site):
@@ -168,8 +170,7 @@ def to_record(run_id, steps, field, finds, ft, terrain, sensing, display, site):
                         "time_s": {"drive": dur, "check": 0.0, "reading": 0.0, "drill": 0.0, "wait": 0.0},
                         "energy_end_kwh": round(float(p[-1, 7]), 3), "distance_m": round(dist, 1),
                         "checks": 0, "wrong_matches": 0})
-    in_map = {tuple(c) for c in np.round(orbital_map(craters, scn["seed"]), 6)}
-    small = np.array([c for c in craters if tuple(np.round(c, 6)) not in in_map]).reshape(-1, 3)
+    small = craters[~orbital_map(craters, scn["seed"], mask=True)]
     path = np.concatenate([p[:, 1:3] for p in poses.values()])[::4]
     near = np.zeros(len(small), bool)
     for i in range(0, len(path), 200):
@@ -203,7 +204,8 @@ def to_record(run_id, steps, field, finds, ft, terrain, sensing, display, site):
         "standins": [] if sensing else ["rims: stand-in rims from the crater map, no camera (--no-render)"],
         "crater_map": {"start": rnd(orbital_map(craters, scn["seed"])), "added": [],
                        "scope": f"the map the filter matches against: craters of {WorldRanges().orbital_map_min_d_m:g} m and up, "
-                                "less a random share left out (sim/orbital_map.py); truth.craters_missing lists "
+                                "less a random share left out, each placed with a 2 m orbital error (sim/orbital_map.py); "
+                                "truth.craters_missing lists "
                                 "the craters not in it within 30 m of a driven path"},
         "finds": [{"find_id": 1, "scout": "S1", "sortie_id": "S1-01", "est": find["est"], "bound95": find["bound95"],
                    "reading_wt": find["reading_wt"], "status": status}],

@@ -7,7 +7,8 @@ every worktree shares, and they are git-ignored:
     C:\Monad-Hackathon-Project\ops\mailboxes\<handle>\archive\
 
 Handles (workflow build, from 17 Nov 2026): `leader` (the lead session),
-`workflow` (simulation), `control` (Mission Control), `joseph`. Every earlier
+`workflow` (simulation), `control` (Mission Control), `ground` (terrain
+research), `joseph`. Every earlier
 handle is closed.
 
 ## First thing every session

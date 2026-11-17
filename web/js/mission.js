@@ -1332,7 +1332,10 @@ function runInfo() {
   $("run-title").textContent = rec.run_id;
   document.title = `Lantern Mission Control · ${rec.run_id}`;
   const kv = (rows) => `<dl class="kv">${rows.filter(([, v]) => v != null && v !== "–").map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
-  const notes = [standinOf(rec), rec.showcase, sensitivityOf(rec.settings) && `This run is a ${NO_ROUGH_NOTE}.`, supersededLong(S.batch)].filter(Boolean);
+  // Made-up parts ("Not real yet") apart from labels on a real run (a showcase,
+  // a sensitivity case, a superseded batch).
+  const notes = [standinOf(rec)].filter(Boolean);
+  const labels = [rec.showcase, sensitivityOf(rec.settings) && `This run is a ${NO_ROUGH_NOTE}.`, supersededLong(S.batch)].filter(Boolean);
   $("run-info").innerHTML = `<p class="small hint">Batch ${esc(S.batch)} · seed ${rec.seed} · made ${esc(String(rec.made_at || "").slice(0, 16).replace("T", " "))}</p>` +
     `<div class="mini-h">Setup</div>` + kv([["Site", esc(rec.terrain && rec.terrain.site)], ["Scouts", st.n_scouts], ["Sorties per Scout", st.sorties_per_scout],
       ["Check policy", esc(st.check_policy)], ["Map refinement", st.map_refinement == null ? null : st.map_refinement ? "on" : "off"],
@@ -1353,6 +1356,7 @@ function runInfo() {
         : [["Wrong-match rate", sm.wrong_match_rate != null ? `${fmtNum(sm.wrong_match_rate * 100, 1)}% <span class="hint">of position checks</span>` : null]]),
       ["Drill error p95", sm.drill_err_p95_m != null ? `${fmtNum(sm.drill_err_p95_m, 1)} m` : null], ["Area", sm.area_km2 != null ? `${fmtNum(sm.area_km2, 2)} km²` : null]]) +
     (notes.length ? `<div class="standin"><b>Not real yet:</b> ${notes.map(esc).join(" ")}</div>` : "") +
+    (labels.length ? `<div class="standin"><b>Labelled:</b> ${labels.map(esc).join(" ")}</div>` : "") +
     `<p class="small"><a href="run.html?batch=${encodeURIComponent(S.batch)}&run=${encodeURIComponent(rec.run_id)}">Run map, sortie by sortie</a> · <a href="runs.html?batch=${encodeURIComponent(S.batch)}">All runs, as a table</a></p>`;
 }
 

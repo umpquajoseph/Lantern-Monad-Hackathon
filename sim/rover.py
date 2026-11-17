@@ -154,35 +154,49 @@ class SlopeMap:
 
         s, g = cell(start_xy), cell(goal_xy)
         ok[s] = ok[g] = True
+        # Cells are flat indices i * nx + j: heap ties then break in the same
+        # (i, j) order as tuples, and lookups are on bytes and dicts, so the
+        # search, its float arithmetic and its result are as before, faster.
+        okb = np.ascontiguousarray(ok).tobytes()
+        costf = cost.ravel() if cost is not None else None
         nbrs = [(-1, -1, 1.4142), (-1, 0, 1.0), (-1, 1, 1.4142), (0, -1, 1.0),
                 (0, 1, 1.0), (1, -1, 1.4142), (1, 0, 1.0), (1, 1, 1.4142)]
-        gcost = {s: 0.0}
+        nbrs = [(di, dj, di * nx + dj, w) for di, dj, w in nbrs]
+        gi, gj = g
+        sf, gf = s[0] * nx + s[1], gi * nx + gj
+        gcost = {sf: 0.0}
         came = {}
-        heap = [(math.hypot(g[0] - s[0], g[1] - s[1]), s)]
+        heap = [(math.hypot(gi - s[0], gj - s[1]), sf)]
         expanded = 0
+        hypot, push, pop = math.hypot, heapq.heappush, heapq.heappop
         while heap:
-            _, c = heapq.heappop(heap)
+            _, c = pop(heap)
             expanded += 1
             if max_expand is not None and expanded > max_expand:
                 return None
-            if c == g:
+            if c == gf:
                 break
             gc = gcost[c]
-            for di, dj, w in nbrs:
-                n = (c[0] + di, c[1] + dj)
-                if not (0 <= n[0] < ny and 0 <= n[1] < nx) or not ok[n]:
+            ci, cj = divmod(c, nx)
+            for di, dj, dn, w in nbrs:
+                ni, nj = ci + di, cj + dj
+                if not (0 <= ni < ny and 0 <= nj < nx):
                     continue
-                ng = gc + (w * (1.0 + cost[n]) if cost is not None else w)
+                n = c + dn
+                if not okb[n]:
+                    continue
+                ng = gc + (w * (1.0 + costf[n]) if costf is not None else w)
                 if ng < gcost.get(n, 1e18):
                     gcost[n] = ng
                     came[n] = c
-                    heapq.heappush(heap, (ng + math.hypot(g[0] - n[0], g[1] - n[1]), n))
-        if g not in came and g != s:
+                    push(heap, (ng + hypot(gi - ni, gj - nj), n))
+        if gf not in came and gf != sf:
             return [tuple(goal_xy)]
-        path = [g]
-        while path[-1] != s:
+        path = [gf]
+        while path[-1] != sf:
             path.append(came[path[-1]])
         path.reverse()
+        path = [divmod(v, nx) for v in path]
         pts = [(self.x0 + (j + 0.5) * self.b, self.y0 + (i + 0.5) * self.b) for i, j in path[1:-1]]
         return pts[::2] + [tuple(goal_xy)]  # every other cell: waypoints 4 m apart
 

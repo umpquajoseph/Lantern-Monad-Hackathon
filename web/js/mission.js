@@ -452,6 +452,11 @@ function checkpointsFor(run) {
     if (e.type === "search_end") out.push({ t: e.t, label: `${e.scout}: ${finder(e.find_id)}'s find ${e.find_id} ${e.result === "confirmed" ? "confirmed" : "not confirmed"}`, say: SEARCH_WHY[e.reason] || "" });
     if (e.type === "drill") out.push({ t: e.t, label: `${e.scout} drills find ${e.find_id}`, say: `its position error ${fmtNum(e.true_err_m, 1)} m` });
   }
+  for (const e of S.cr.events) {
+    if (e.type !== "lost" || e.t <= T0 || e.t > T1 || !run.agencies.includes(e.scout)) continue;
+    // dist_m is the true distance (hidden truth), so it is not in the always-on card.
+    out.push({ t: e.t, label: `${e.scout} is lost`, say: `${LOST_WHY[e.reason] || "battery flat before the dock"}; the campaign goes on with one Scout fewer` });
+  }
   return out;
 }
 // ------------------------------------------------------------- drilling
@@ -519,6 +524,8 @@ const SEARCH_WHY = { match: "a matching reading inside the search area", no_read
 // and `why` in words. Neither: still searching at the record's end.
 const STOP_WHY = { time: "turned back for time", energy: "turned back on energy", fault: "turned back on a fault", lost: "lost before the dock" };
 const PARTIAL_WHY = { no_readings: "no readings so far", no_match: "no reading matched so far", bound_too_large: "the combined position bound was too large to judge" };
+// event `lost` reason (docs/handoffs.md): a flat battery, or the route ended far from the dock.
+const LOST_WHY = { battery: "battery flat before the dock", stranded: "stranded, its route ended far from the dock" };
 const searchEnds = new Map();
 function searchEnd(start) {
   if (searchEnds.has(start)) return searchEnds.get(start);
@@ -532,7 +539,7 @@ function searchEnd(start) {
       why = `${STOP_WHY[stop.reason] || stop.reason}${done}` + (stop.partial ? `; ${PARTIAL_WHY[stop.partial] || stop.partial}` : "");
     } else {
       stop = S.cr.events.find((x) => same(x) && (x.type === "turn_back" || x.type === "dock_arrive" || x.type === "lost")) || null;
-      if (stop) why = stop.type === "turn_back" ? STOP_WHY[stop.reason] || `turned back (${stop.reason})` : stop.type === "lost" ? "lost before the dock" : "back at the dock";
+      if (stop) why = stop.type === "turn_back" ? STOP_WHY[stop.reason] || `turned back (${stop.reason})` : stop.type === "lost" ? LOST_WHY[stop.reason] || "lost before the dock" : "back at the dock";
     }
   }
   const r = { end, stop, why, t1: end ? end.t : stop ? stop.t : Infinity };

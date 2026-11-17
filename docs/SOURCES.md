@@ -96,3 +96,12 @@ Never present these as measured.
 - Survey and drilling durations (`run_mission.py:80-81`).
 - The contract's reading unit, hundredths of wt% (`contracts/src/Lantern.sol:17-18`).
 - Mars rover models standing in for lunar rovers (`web/js/mission.js:262-264`).
+
+## Terrain position (`docs/terrain/position.md`, 17 Nov 2026)
+
+| Source | What it is | What it did for Lantern |
+|---|---|---|
+| Hemmi et al., 2025, "LROC NAC-derived Meter-scale Topography of the Moon's South Polar Landing Sites", PSJ 6:264. https://doi.org/10.3847/PSJ/ae10a4. Data: https://doi.org/10.5281/zenodo.17153447 (CC BY 4.0). `docs/sources/Hemmi-2025-south-pole-1m-DTMs.pdf` | Six 1 m shape-from-shading DTMs of sunlit south-pole sites. | The real ground the terrain pipeline is checked against at CR1 (`bench/terrain/slope_vs_baseline.py`). Sec. 4.2: smoothed below 10 m, so its 2 m slopes are a lower bound. Data in `data/hemmi2025/` (not in git). |
+| Rosenburg et al., 2011, "Global surface slopes and roughness of the Moon from the Lunar Orbiter Laser Altimeter", JGR 116, E02001. https://doi.org/10.1029/2010JE003716. `docs/sources/Rosenburg-2011-LOLA-slopes-roughness.pdf` (Caltech repository copy) | LOLA slopes and Hurst exponents, 17 m to 2.7 km. | Table 1, South Pole: median 17 m slope 7.6° (quartiles 4.2–12.4°), Hurst 0.95 (0.92–0.97). Agrees with Hemmi's sites (0.84–0.95). |
+| Minton et al., 2019, Icarus, arXiv:1902.07746. `docs/sources/Minton-2019-small-crater-equilibrium.pdf` | Small-crater equilibrium. | Sec. 1.2: geometric saturation 0.385 r⁻²; equilibrium 1–10% (Gault) or 0.69–3.9% (Xiao and Werner) of it; Fit 1 2.2%. Sets the recommended crater density range. |
+| Bluethmann, 2024, "VIPER Rover Overview and Mobility and Hardware", LSIC, 14 Nov 2024. NTRS 20240013903. `docs/sources/VIPER-mobility-LSIC-2024.pdf` | NASA slides on VIPER's mobility. | P.4: "Slopes up to 15 deg (reqt)", 50 cm wheels. The source behind the brief's 15° limit. Gives no baseline. |

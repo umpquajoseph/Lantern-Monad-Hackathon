@@ -1,0 +1,522 @@
+JOURNAL OF GEOPHYSICAL RESEARCH, VOL. 116, E02001, doi:10.1029/2010JE003716, 2011
+
+Global surface slopes and roughness of the Moon
+
+from the Lunar Orbiter Laser Altimeter
+
+M. A. Rosenburg,1 O. Aharonson,1 J. W. Head,2 M. A. Kreslavsky,3 E. Mazarico,4,5
+G. A. Neumann,4,5 D. E. Smith,4,5 M. H. Torrence,5 and M. T. Zuber4,5
+
+Received 23 August 2010; revised 3 November 2010; accepted 15 November 2010; published 3 February 2011.
+
+[1] The acquisition of new global elevation data from the Lunar Orbiter Laser Altimeter,
+carried on the Lunar Reconnaissance Orbiter, permits quantification of the surface
+roughness properties of the Moon at unprecedented scales and resolution. We map lunar
+surface roughness using a range of parameters: median absolute slope, both directional
+(along-track) and bidirectional (in two dimensions); median differential slope; and Hurst
+exponent, over baselines ranging from 17 m to 2.7 km. We find that the lunar highlands
+and the mare plains show vastly different roughness properties, with subtler variations
+within mare and highlands. Most of the surface exhibits fractal-like behavior, with a single
+or two different Hurst exponents over the given baseline range; when a transition exists,
+it typically occurs near the 1 km baseline, indicating a significant characteristic spatial
+scale for competing surface processes. The Hurst exponent is high within the lunar
+highlands, with a median value of 0.95, and lower in the maria (with a median value
+of 0.76). The median differential slope is a powerful tool for discriminating between
+roughness units and is useful in characterizing, among other things, the ejecta surrounding
+large basins, particularly Orientale, as well as the ray systems surrounding young,
+Copernican-age craters. In addition, it allows a quantitative exploration on mare surfaces
+of the evolution of surface roughness with age.
+
+Citation: Rosenburg, M. A., O. Aharonson, J. W. Head, M. A. Kreslavsky, E. Mazarico, G. A. Neumann, D. E. Smith, M. H.
+Torrence, and M. T. Zuber (2011), Global surface slopes and roughness of the Moon from the Lunar Orbiter Laser Altimeter,
+J. Geophys. Res., 116, E02001, doi:10.1029/2010JE003716.
+
+1. Introduction                                                              have spanned the decades between the Apollo era and the
+                                                                             present [Daniels, 1963; Moore and Tyler, 1973; Yokota
+  [2] As signatures of surface evolution processes acting                    et al., 2008], yet to date no comprehensive study of sur-
+over geologic time, surface slopes and slope distributions                   face slopes and slope distributions has been possible at high
+provide important clues to the morphologic history of a plan-                resolution and across many scales.
+etary surface in terms of both formation and modification
+mechanisms. Moreover, the comparison of surface regions                        [3] The Lunar Orbiter Laser Altimeter (LOLA) began col-
+based on quantitative measures of roughness and its scale                    lecting data in late June 2009, after the successful entry into
+dependence is a powerful tool for interpreting the relation-                 orbit of the Lunar Reconnaissance Orbiter (LRO) [Smith
+ships between geologic and topographic units and their                       et al., 2010a; Zuber et al., 2010]. With a ground track con-
+origins and has been successfully employed for various                       figuration consisting of five illuminated spots on the sur-
+planetary bodies, including Earth [e.g., Morris et al., 2008;                face arranged in a cross pattern (Figure 1), LOLA allows for
+Neumann and Forsyth, 1995; Smith and Jordan, 1988], Mars                     determination of slopes at multiple baselines, both between
+[e.g., Aharonson et al., 2001; Orosei et al., 2003; Kreslavsky               pairs of spots within each laser shot and between sequential
+and Head, 2000], and Venus [e.g., Sharpton and Head,                         shots. The high vertical precision (10 cm), accuracy (1 m),
+1985]. Attempts to study surface roughness on the Moon                       and high density (57 m along-track spacing) of LOLA mea-
+                                                                             surements permit an unprecedented opportunity for quantita-
+    1Division of Geological and Planetary Sciences, California Institute of  tive morphologic characterization of the lunar surface relevant
+Technology, Pasadena, California, USA.                                       to current and past surface processes as well as to future
+                                                                             lunar landing site selection. For comparison, the Mars Orbital
+    2Department of Geological Sciences, Brown University, Providence,        Laser Altimiter operated with a vertical precision of 1.5 m,
+Rhode Island, USA.                                                           a spatial accuracy of 100 m (including pointing errors), and
+                                                                             an along-track spacing of 300 m [Smith et al., 2001].
+    3Department of Earth and Planetary Sciences, University of California,
+Santa Cruz, California, USA.                                                 2. Topography Data
+
+    4Department of Earth, Atmospheric, and Planetary Science, Massachusetts    [4] LRO maintains a nearly circular, 50 km polar orbit
+Institute of Technology, Cambridge, Massachusetts, USA.                      that scans all longitudes of the Moon each month. We use
+
+    5NASA Goddard Space Flight Center, Greenbelt, Maryland, USA.
+
+Copyright 2011 by the American Geophysical Union.
+0148-0227/11/2010JE003716
+
+E02001                                                                                                                     1 of 11
+E02001  ROSENBURG ET AL.: LUNAR SURFACE SLOPES AND ROUGHNESS                                                      E02001
+
+                                                                 facilitate comparison with the literature. For one-dimensional
+                                                                 slopes, we examine the RMS slope, the median absolute
+                                                                 slope, and the median differential slope for a variety of hori-
+                                                                 zontal scales, as well as the Hurst exponent, which describes
+                                                                 how slopes scale with baseline (where the baseline is the
+                                                                 horizontal length scale over which the slope is measured). In
+                                                                 addition, LOLA's five-spot pattern allows for the calcula-
+                                                                 tion of two-dimensional slopes by fitting a plane to a set of
+                                                                 three points along the track, resulting in the magnitude and
+                                                                 direction of steepest descent.
+
+                                                                 3.1. RMS and Median Slopes
+
+                                                                   [6] The RMS slope is routinely calculated for the statis-
+                                                                 tical analysis of topography because radar reflection scatter
+                                                                 is often parameterized with this metric. In one dimension,
+                                                                 it is defined as the RMS difference in height, Dz, between
+                                                                 each pair of points (also known as the deviation, n) divided
+                                                                 by the distance between them, Dx:
+
+                                                                 sðDxÞ  ¼  ðDxÞ  ¼   1  D        À            E1  ð1Þ
+                                                                            Dx      Dx   ½zðxiÞ     zðxiÀ1Þ2 2;
+
+Figure 1. Plan view of two consecutive LOLA shots with           where the angle brackets indicate the mean. However,
+spot numbers labeled. The shot-to-shot distance is 57 m,         because the RMS slope depends on the square of the devi-
+and the smallest point-to-point baseline available is 25 m.      ation, this parameter is quite sensitive to outliers; this poses
+An example of a triangle used to calculate bidirectional         a significant problem because the slope-frequency distri-
+slopes is shaded in blue. Red circles indicate the illuminated   bution for natural surfaces is often non-Gaussian with strong
+footprint of each laser spot, while green circles represent the  tails. The median absolute slope is a more robust measure
+field of view of each detector.                                  of typical slopes, as it is less affected by long tails in the
+                                                                 distribution.
+3180 tracks from the commissioning and mapping mission
+phases, acquired from 17 September 2009 to 9 March 2010,           [7] To find the RMS and median slope in the along-track
+to compute and analyze a variety of parameters describing        direction, point-to-point slopes were calculated for each track,
+surface slopes and roughness. The data were processed to         stored at the midpoint, and averaged according to (1) within
+remove anomalous points (due to instrumental effects such        0.5° (15 km) sliding windows, each spaced 0.25° (7.5 km)
+as noise) and are spaced 57 m apart along track and on           apart. The LOLA lasers have a firing frequency of 28 Hz,
+average 3.8 km across track at the equator and closer at the     corresponding to a shot density of approximately 540 shots
+poles. Additional data have narrowed the cross-track spac-       per degree down track, or roughly 270 shots per window at
+ing to 1.8 km at the equator [Smith et al., 2010b].              best. However, owing to noise and instrument performance
+                                                                 issues, missing points are not uncommon. Since the RMS
+3. Global Surface Roughness of the Moon                          slope is sensitive to the number of points, N, included in
+                                                                 each window, uneven N across the surface can introduce var-
+  [5] Quantitative measures of surface roughness have been       iations in the RMS slope map that are not due to real rough-
+defined in the literature in a number of ways. Here we inves-    ness features. To minimize this bias, windows were only
+tigate several measures of surface roughness, both in the        considered valid if more than 250 measurements contributed to
+interest of robustness in characterizing roughness units and to  the average in that location. The median absolute (unsigned)
+                                                                 slope is far less sensitive to the number of points in each bin.
+                                                                 Given LOLA's ground spot pattern, the smallest baseline
+                                                                 available for slope calculations is about 25 m, the distance
+                                                                 on the surface from the center spot to any of the four corners
+                                                                 (Figure 1).
+
+                                                                   [8] One-dimensional slopes calculated along profile under-
+                                                                 estimate the true gradient of the surface wherever the
+                                                                 direction of steepest descent diverges from the along-track
+                                                                 direction. At the smallest scales, this ambiguity can be
+                                                                 resolved by computing the slopes in two dimensions from
+                                                                 multiple points within each laser shot. We use vector geom-
+                                                                 etry to compute the plane passing through three spots,
+                                                                 recording the magnitude and azimuth of the slope. One such
+                                                                 triangle appears as a shaded region in Figure 1. The effec-
+                                                                 tive baseline of the slope is taken to be the square root of the
+                                                                 area of the triangle. The slope values are then binned as
+
+        2 of 11
+E02001  ROSENBURG ET AL.: LUNAR SURFACE SLOPES AND ROUGHNESS                                                    E02001
+
+        Figure 2. Median bidirectional slope map at the 17 m effective baseline. Slopes are calculated by fit-
+        ting a plane between three elevation data points. Median slopes are reported for 0.5° windows spaced
+        0.25° apart. (a) The north pole, shown from 45°N and (b) the south pole from 45°S, both in a stereo-
+        graphic projection. (c) Cylindrical equidistant projection of the latitudes from 70°S to 70°N.
+
+before, and the median reported for 0.5° overlapping win-      would contribute their own roughness signature) has a
+dows spaced 0.25° apart.                                       median slope of 5.8°, nearly 2° lower than the median value
+                                                               for the highlands, 7.5°, although the distributions overlap
+  [9] A map of the median bidirectional slope at the 17 m      (see Table 1). Within the nearside mare plains, large-scale
+scale is shown in Figure 2. Note that while the results are    flow fronts and wrinkle ridges are delineated by subtle var-
+reported in units of degrees, the statistics are computed in   iations in slope, particularly evident within the Imbrium,
+gradient units (m/m). The maria are easily distinguishable     Serenetatis, and Crisium basins (Figure 3). Slopes rapidly
+from the highlands as smooth regions with median slopes        transition between the two major highland and mare rough-
+3°, while the steepest median slopes (10°) occur within        ness units at their boundaries, where mare basalts are often
+crater walls and the blocky ejecta blankets surrounding        tilted and deformed [e.g., Solomon and Head, 1980] and have
+major impact basins and young rayed craters. The multiring     only partially embayed the surrounding rougher terrain.
+structure of the Orientale impact basin is clearly visible in
+surface slopes at this scale, along with the topographically     [10] For isotropic topography, a relationship exists between
+expressed secondary crater chains emerging radially from       point-to-point and bidirectional slope distributions: given a
+the continuous ejecta deposit. The floor of the South Pole-    one-dimensional slope distribution, the equivalent distribu-
+Aitken basin appears as a region of subdued slope; a sam-      tion of two-dimensional slopes can be found by applying a
+pling of the basin floor (excluding mare deposits, which       statistical correction. The probability distribution functions
+
+        3 of 11
+E02001                       ROSENBURG ET AL.: LUNAR SURFACE SLOPES AND ROUGHNESS                                                                          E02001
+
+        Figure 3. Median bidirectional slope, as described in Figure 2, with a color stretch designed to
+        emphasize the subtle variations in slope within the lunar maria. Large-scale flow fronts and tectonic
+        features such as wrinkle ridges appear as long, continuous regions of slopes higher than the surrounding
+        plains and are most evident within the Imbrium, Crisium, and Serenetatis basins.
+
+of the 1-D slopes, F(p), and 2-D slopes, F(s), are related by                                           our slope measurements occurs when triangles with high
+                                                                                                        aspect ratios are used for plane fitting. LRO's orbital con-
+[Aharonson and Schorghofer, 2006]                                                                       figuration creates a preferred direction for the long axis of
+                                                                                                        these triangles, and because slopes are generally shallower
+        F     Z               pffiFffiffiffiðffiffisffiffiÞffiffiffiffiffiffi ds:                  ð2Þ  at longer baselines, the azimuthal distribution is skewed to
+           ¼                 j pj s2 À p2                                                               favor the perpendicular to the down-track direction. To
+                                                                                                        minimize this effect, we included only triangles with low
+In practice, this integral equation may be discretized and                                              aspect ratios, using spots 1, 3, and 4. While some anisotropy
+                                                                                                        remains, this consideration improves the agreement by
+inverted. Figure 4 is a global comparison of our measured                                               nearly a factor of 2. Part of the discrepancy is also due to the
+slopes in one and two dimensions and the adjusted point-to-                                             fact that comparing slopes at similar baselines is rendered
+point slope histogram. We find moderately good agreement                                                difficult by instrument constraints. The minimum baseline
+                                                                                                        for point-to-point slopes (25 m) is larger than the effective
+between measured bidirectional slopes and those predicted                                               baseline of our preferred triangles (17 m). As a result,
+from the 1-D slope distribution, although the 2-D measured                                              bidirectional slopes have a tendency to be larger than their
+slopes are slightly steeper than predicted from the 1-D
+distribution, typically by 25%. We can place constraints on
+two factors that contribute to this discrepancy. Anisotropy in
+
+Table 1. Statistical Estimators of Surface Roughness Properties for Major Lunar Geographic Regionsa
+
+                             Highlands                                             Maria           South Pole-Aitken  South Pole-Aitken  South Pole         North Pole
+                                                                                                        Basin: All       Basin: Floor
+                                                                                                                                                              6.9-+31.18.5
+Median slope at the 17 m        7.5+-41.22.3                                        2.0-+14..01       7.2-+31.20.0       5.8-+31.00.5       7.6-+142.2.4
+   effective baseline (deg)                                                                                                                                  0.94+-00..9916
+                               0.95+-00..9927                                      0.76-+00..8653    0.95+-00..9937     0.94+-00..9917     0.95+-00..9972    0.97-+01..7132
+Median Hurst exponent          0.98-+01..7143                                      0.53+-00..9274    1.01+-01..8114     1.01+-01..8125     1.01+-10..1759  Monofractal,
+Median breakover scale (km)  Monofractal,                                          Complex         Monofractal,       Monofractal,       Monofractal,        bilinear,
+Typical deviogram shape(s)      bilinear                                                              bilinear          bilinear,           bilinear         complex
+                                                                                                                        complex
+
+aThe median value is reported along with the 25% and 75% percentile points as a measure of the width of each distribution.
+
+                                                                                                   4 of 11
+E02001              ROSENBURG ET AL.: LUNAR SURFACE SLOPES AND ROUGHNESS                                               E02001
+
+        Figure 4. Global slope histograms for the Moon. The red (dashed) line shows the distribution of mea-
+        sured point-to-point slopes at the 25 m baseline. This distribution is recalculated to the green (solid) line
+        using the method of Aharonson and Schorghofer [2006] to predict bidirectional slopes from the one-
+        dimensional slope histogram. Measured bidirectional slopes at the 17 m scale are shown in blue (dot-
+
+        dashed line). All distributions are normalized such that the integral of the probability density function is
+
+        equal to 1. Assuming that the topography is indeed isotropic, the remaining discrepancy in the measured
+        and derived distributions is due to the geometry of the triangles used to measure 2-D slopes and to the
+
+        mismatch in scales over which the slopes are measured in each case. Both effects are constrained by
+        LRO's orbital configuration and instrument limitations.
+
+1-D counterparts, where a component of this difference is        involves calculating the position of each slope midpoint
+due solely to the mismatch in baselines. A slightly better       along the track length and interpolating the slope midpoints
+agreement can be obtained by using a local Hurst exponent        at the longer baseline to the points occupied by the smaller-
+(defined in section 3.3) to scale the slope distribution to a    baseline slope profile to accomplish the subtraction at the
+common horizontal baseline. However, this demands addi-          correct location. This method ensures that the two slope
+tional assumptions and the improvement is not large.             profiles are always aligned correctly, thereby avoiding errors
+                                                                 in the value of the differential slope calculated. This pro-
+3.2. Median Differential Slope                                   cedure is identical to the detrending process described in
+                                                                 section 3.3 and illustrated in Figure 6, except that the ratio of
+  [11] The median differential slope is a measure introduced     baselines is always 2.
+by Kreslavsky and Head [2000] to disentangle small- and
+large-scale contributions to surface roughness. For the            [13] Differential slopes were calculated in this manner for
+baseline of interest, L, it isolates roughness features on the   all baselines ranging from one shot spacing apart (57 m) to
+order of L by subtracting the point-to-point slope at twice      25 shot spacings apart (1.4 km). Only profiles involving a
+the given baseline:                                              single laser spot were considered for the calculation, so that
+                                                                 the slopes over multiple baselines would be computed along
+        sd  ¼  zL   À zÀL       À  zL  À zÀL  :  ð3Þ             the same direction. Figure 5 shows a composite color map
+                 2           2         2L                        of the lunar surface which presents roughness at three dif-
+                    L                                            ferent scales, 560 m (10 shot spacings) in the red channel,
+                                                                 220 m (4 shot spacings) in green, and 57 m (1 shot
+The resulting value, sd, is a measure of slopes at a certain     spacing) in blue. Variations in the roughness properties
+scale with respect to longer-wavelength features.                across the surface are apparent and substantial, showing
+                                                                 intriguing characteristic signatures for several terrain types.
+  [12] As with the RMS and median bidirectional slopes,          The lunar maria are roughest at the smallest scale and
+median differential slopes were calculated in 0.5° windows       smoother at large scales, making them easily distinguishable
+spaced 0.25° apart, and only those windows with more than        by their blue tones in the composite image. A comparison of
+250 measurements were retained. Following the work of            mare ages [Hiesinger et al., 2010] with Figure 5 shows that
+Kreslavsky and Head [2000], differential slopes at a given       flows of different ages have different roughness signatures;
+baseline were calculated according to (3) by subtracting         the youngest (e.g., those within Oceanus Procellarum and
+slopes calculated at two different baselines. Practically, this
+
+                                                 5 of 11
+E02001  ROSENBURG ET AL.: LUNAR SURFACE SLOPES AND ROUGHNESS                                                      E02001
+
+        Figure 5. Composite color map of median differential slope. Differential slopes at three different base-
+
+        lines were calculated according to (2). The blue channel corresponds to roughness at the smallest scale
+        considered, one shot spacing, or 57 m. Green represents roughness at the 220 m baseline, and red
+        the 560 m baseline. Map projections are the same as in Figure 2.
+
+Mare Imbrium) are rough only at the smallest scale, while         chains and clusters that often populate crater rays [e.g.,
+successively older flows (e.g., Mare Tranquilitatis and Mare      Oberbeck, 1975; Pieters et al., 1985]. As a result, they are
+Marginis) increase in roughness at larger scales. At the          clearly expressed as star-shaped yellow to orange halos
+smallest scale, roughness remains approximately constant          surrounding each feature (Figure 6). Other, subtler variations,
+with age, potentially indicating that saturation on small scales  not obviously related to a single geologic feature, occur
+occurs on relatively short timescales. In the composite map,      across much of the surface. The region spanning latitudes
+these age variations correspond to a transition in color from     30°S to 60°N and longitudes 160°E to 240°E, representing a
+deep blue to blue-green. The ejecta surrounding major basins      large uninterrupted stretch of lunar highlands, appears rel-
+(particularly around Orientale, but also older basins) are        atively bright and with a mottled appearance, consistent with
+roughest at the longest scale, causing these regions to appear    an old surface saturated with craters at many different scales.
+orange or red. Young, Copernican-age craters appear white         The South Pole-Aitken basin is somewhat redder than its
+because they are bright in all channels; the least modified       surroundings, except for the patches of mare within super-
+features on the Moon, they are rough at all scales. Moreover,     imposed craters.
+the ray systems related to these craters, so evident in albedo
+maps but not obviously expressed as topographic relief, are         [14] As a diagnostic tool for distinguishing unique rough-
+roughest at the intermediate scale, probably reflecting crater    ness units, the median differential slope is a useful measure
+                                                                  of surface roughness. However, because it involves measur-
+
+        6 of 11
+E02001  ROSENBURG ET AL.: LUNAR SURFACE SLOPES AND ROUGHNESS                                                        E02001
+
+        Figure 6. Lunar far-side crater Jackson and its ray system, centered at 19°E and 22.4°N, shown in
+        (a) the 750 nm Clementine albedo map [e.g., McEwen and Robinson, 1997], (b) the median differen-
+        tial slope map, as in Figure 5, and (c) the topography [Smith et al., 2010b]. Rays of young, Copernican-
+        age craters are clearly expressed as streaks of high albedo relative to the background. Though they do not
+        add obvious relief to the topography, the rays are distinctly rougher at the 220 m and 560 m baselines
+        compared to the highlands, making them appear yellow to orange in the composite roughness map.
+
+ing small-scale roughness with respect to long-wavelength           [16] The Hurst exponent describes the power law behavior
+roughness features, it can be more difficult to interpret physi-  of surface slopes when they are scaled to different horizontal
+cally as a slope characteristic. For this reason, the median      baselines:
+absolute slope at a given scale is a more intuitive parameter.
+                                                                                Dx   H  À1     ðDxÞ
+3.3. Hurst Exponent                                                             Dx0             Dx
+                                                                  sðDxÞ  ¼  s0              ¼        :              ð4Þ
+  [15] Topography is often considered a nonstationary ran-
+dom field with self-affine fractal-like properties [Turcotte,     Written as such, it is clear that the deviation n(Dx) / (Dx)H.
+1997]. Self-affinity implies a scaling behavior such that an      H can thus be estimated as the slope of a best-fit line to
+increase of factor r in the horizontal length scale corre-        log[n(Dx)] versus log(Dx) [Orosei et al., 2003].
+sponds to an increase in the vertical length scale of rH,
+where H is known as the Hurst exponent and falls between 0          [17] We calculate the RMS deviation for a range of
+and 1 for real surfaces [e.g., Turcotte, 1997; Orosei et al.,     baselines from 57 m to 2.7 km (1 to 50 shot spacings) and
+2003]. The Hurst exponent is directly related to both the         analyze the deviogram, or structure function, n(Dx). As
+fractal dimension of the surface, D = 1 + d - H, and the          in the previous calculations, the deviation values were cal-
+slope of the power spectrum, b = 2H + d, where in each case
+d is the number of spatial dimensions: 1 for a profile or 2 for   culated along track in overlapping windows. However,
+a surface [Schroeder, 1991].
+                                                                  Shepard et al. [2001] showed that errors can be introduced
+
+                                                                  when the range over which the Hurst exponent is fit exceeds
+
+                                                                  10% of the topographic profile length (the window size).
+
+        Figure 7. Method of detrending slope data. Slopes measured at the 30 km baseline (in blue) are sub-
+        tracted from 1.2 km slopes (red), leaving a detrended slope profile behind (green) and avoiding large-
+        scale tilts in the topography.
+
+                                                                          7 of 11
+E02001  ROSENBURG ET AL.: LUNAR SURFACE SLOPES AND ROUGHNESS                                                      E02001
+
+        Figure 8. Hurst exponent map. For each 0.5° pixel, the Hurst exponent is computed as the slope of the
+        best fit line to the deviogram, over the baseline range beginning at one shot spacing (57 m) and extend-
+        ing to the breakover point for that location, Dx0. The color scale was chosen to emphasize the dynamic
+        range of the variations from 0.8 to 1, although substantially smaller H is common in the maria. Map pro-
+        jections are the same as in Figure 2.
+
+                                                                          8 of 11
+E02001  ROSENBURG ET AL.: LUNAR SURFACE SLOPES AND ROUGHNESS                                                      E02001
+
+        Figure 9. Observed deviogram shapes. Though many deviograms are monofractal over the baseline
+        range explored (from 1 to 50 shot spacings, or 57 m to 2.7 km), most are bilinear, breaking over to
+        a shallower slope at a certain breakover baseline. Many others exhibit complex behavior that is not well
+        characterized by a line over a given portion of the baseline range.
+
+Therefore, we use 1° (30 km) windows for this calculation,        related to the density of impact craters in these regions and
+spaced 0.5° (15 km) apart. We use only shot-to-shot profiles      the absence of competing morphologic processes to trans-
+of laser spot 3, selected for its consistency.                    port fine material downhill. Hurst exponents within the lunar
+                                                                  maria are lower than those within the highlands, with a
+  [18] To remove roughness features on the order of our           median value of 0.76, indicating smoother topography at
+window size, we detrend each deviogram at the 30 km scale.        large scales relative to small scales.
+This process deemphasizes large-scale roughness features
+in favor of small-scale features of more interest to this study,    [21] To classify deviogram shapes, we use a method sim-
+and it avoids biases due to long-wavelength trends that are       ilar to that of Main et al. [1999] that establishes whether a
+undersampled within each window [Shepard et al., 2001].           given deviogram is best fit by one line or by two, or whether
+Figure 7 shows how the detrending is accomplished. Slopes
+measured at the 30 km baseline are subtracted from small-         Figure 10. Abundance of deviogram shapes by surface
+scale slopes, leaving a slope profile with a mean near zero       area, sorted by region. The most common deviogram shape
+within the window. Slopes at scales less than 3 km are only       is bilinear (59%), with monofractal (17%) and complex
+slightly affected by the detrending process, except where         (24%) making up the remaining area. The highlands are
+long-wavelength slopes are high, for example, those near          almost entirely bilinear and monofractal, while the maria
+mountain ranges.                                                  contain primarily complex deviograms.
+
+  [19] In some cases, the deviograms are well characterized
+by a single log-log slope (exponent), but many others tran-
+sition to a different slope at a certain length scale. This
+behavior is well documented in the literature for other
+planetary surfaces [e.g., Shepard et al., 2001; Morris et al.,
+2008] and is often attributed to surface processes acting at
+small and large scales. For the Hurst exponent fit within
+each window along the track, we use baselines ranging from
+one shot spacing (57 m) to the breakover scale (the point
+where the deviogram diverges from a straight line, Dx0) for
+that location. Figure 8 is a map of the Hurst exponent cal-
+culated in this way. Although the baseline range used in this
+map varies over the surface, this method avoids including
+fits to nonlinear sections of each deviogram and thus pre-
+sents a more accurate estimate of the Hurst exponent at the
+smallest available scales.
+
+  [20] The highest Hurst exponents on the Moon are found
+in the highlands within crater walls and the rims and ejecta
+of large basins, and in these regions values above 0.95 are
+not uncommon. This result is surprising, given that typical
+Hurst exponents for topographic surfaces on the Earth and
+Mars are lower, between 0.7 and 0.9 [Kreslavsky and Head,
+2000; Orosei et al., 2003; Morris et al., 2008]. A Hurst
+exponent of 1 implies self-similar topography, meaning the
+roughness at small scales is exactly replicated at large scales.
+The high values observed for the lunar highlands may be
+
+        9 of 11
+E02001  ROSENBURG ET AL.: LUNAR SURFACE SLOPES AND ROUGHNESS                                                        E02001
+
+        Figure 11. Breakover point histogram, sorted by region. Whereas the maria exhibit a broad range of
+        breakover points, reflecting the complexity of deviograms in these regions, the other regions have a
+        strongly peaked distribution of breakover points near 1 km. This characteristic baseline indicates a tran-
+        sition between two surface processes and may tell us about the Moon's surface history.
+
+the deviogram is poorly fit by any linear model. We com-          ing the north and south poles and the South Pole-Aitken
+pute the least squares fits in each case and compare the sums     basin, behave much like the lunar highlands. This parti-
+of the residuals, adding a penalty when additional param-         tioning indicates a profound difference in character between
+eters are introduced into the fit (i.e., three parameters are     the two major units; on the one hand, highland deviograms
+required for a line, five for two lines). This method classifies  behave as nearly self-similar fractals, whereas mare topog-
+each deviogram by its shape (Figure 9) and yields the rel-        raphy diverges from fractal behavior altogether at the break-
+evant slope(s) of the deviogram, an estimate of the break-        over point.
+over baseline, Dx0, and confidence intervals on all of the
+above.                                                              [23] Within areas that adhere to fractal behavior, the
+                                                                  baseline at which the breakover occurs, Dx0, is a significant
+  [22] Figure 10 shows the distribution of deviogram shapes       parameter constrained by the two-line fit to the deviogram
+across the surface of the Moon and how they partition among       because it has a physical meaning related to the surface
+major topographic regions. Polygons defining the lunar            processes that contribute to the evolution of the Moon's
+maria were taken from the U.S. Geological Survey series of        topography. Formation and modification mechanisms act over
+geologic maps of the Moon [Wilhelms and McCauley, 1971;           a range of scales and may have distinct Hurst exponents.
+Wilhelms and El-Baz, 1977; Scott et al., 1977; Lucchitta,         The breakover point is thus an estimate of the scale at which
+1977; Stuart-Alexander, 1978; Wilhelms et al., 1979] and          surface processes acting at longer scales are overtaken by
+used to select data within the mare plains. The rim of the        those acting on smaller scales. In other words, it represents
+South Pole-Aitken basin was defined using the best-fit ellipse    the baseline at which competing surface processes are equal
+from the work of Garrick-Bethell and Zuber [2009]. The            contributors to the topography.
+polar regions included latitudes from 60° to the pole, exclud-
+ing patches of mare basalts and the South Pole-Aitken basin         [24] Figure 11 is a stacked histogram showing the dis-
+region. All areas falling outside these regions were desig-       tribution of breakover points for all deviograms and their
+nated highlands. By surface area, most deviograms are best        locations within the major geographic regions. Within the
+characterized by two lines (59%), with the remainder of the       maria, breakover points are broadly distributed, reflecting
+surface nearly evenly divided between monofractal (17%)           the complex nature of the deviograms found there. All other
+and complex (24%) deviogram shapes, in which the slope            regions, however, have a strong peak at 1 km, suggesting a
+changes continuously and rapidly with baseline, often alter-      significant transition between surface processes acting
+nating sign. Complex deviograms are mainly found in the           above and below this scale. Impact cratering and mare basalt
+lunar maria, whereas the highlands exhibit primarily mono-        emplacement are most likely responsible for many of the
+fractal or bifractal behavior. Other geographic regions, includ-  key differences between the lunar highlands and the maria.
+                                                                  Other processes that may have contributed to the observed
+
+        10 of 11
+E02001  ROSENBURG ET AL.: LUNAR SURFACE SLOPES AND ROUGHNESS                    E02001
+
+roughness properties remain to be identified and quantified,                    Morris, A. R., F. S. Anderson, P. J. Mouginis-Mark, A. F. C. Haldemann,
+but likely candidates for exploration include mass wasting,                       B. A. Brooks, and J. Foster (2008), Roughness of Hawaiian volcanic ter-
+perhaps due to seismic shaking, ejecta mantling, and                              rains, J. Geophys. Res., 113, E12007, doi:10.1029/2008JE003079.
+micrometeorite gardening.
+                                                                                Neumann, G. A., and D. W. Forsyth (1995), High resolution statistical esti-
+4. Conclusions                                                                    mation of seafloor morphology: Oblique and orthogonal fabric on the
+                                                                                  flanks of the Mid-Atlantic Ridge, 34°­35.5°S, Mar. Geophys. Res., 17,
+  [25] New altimetry data from LOLA allow a unique                                221­250, doi:10.1007/BF01203464.
+opportunity to quantify the surface roughness properties of
+the Moon. We find that topography within the highlands and                      Oberbeck, V. R. (1975), The role of ballistic erosion and sedimentation in
+the mare plains exhibits substantially different behaviors,                       lunar stratigraphy, Rev. Geophys., 13, 337­362.
+while other geographic regions show more subtle variations.
+Table 1 presents a summary of the most important rough-                         Orosei, R., R. Bianchi, A. Coradini, S. Espinasse, C. Federico, A. Ferriccioni,
+ness characteristics for each major region. For each                              and A. I. Gavrishin (2003), Self-affine behavior of Martian topography
+parameter, the median is reported, as it best reflects a typical                  at kilometer scale from Mars Orbiter Laser Altimeter data, J. Geophys.
+value for the region, along with the 25% and 75% percentile                       Res., 108(E4), 8023, doi:10.1029/2002JE001883.
+points, which indicate the shoulders of each distribution and
+hence provide an estimate of the width. We find that most of                    Pieters, C. M., J. B. Adams, M. O. Smith, P. J. Mouginis-Mark, and S. H.
+the surface is characterized by fractal-like behavior with                        Zisk (1985), The nature of crater rays: The Copernicus example, J. Geo-
+either one or two Hurst exponents over the baseline range                         phys. Res., 90, 12,393­12,413, doi:10.1029/JB090iB14p12393.
+covered, from 57 m to 2.7 km, with a strong tendency to
+break over near the 1 km scale. The Hurst exponent is                           Schroeder, M. (1991), Fractals, Chaos, and Power Laws: Minutes From an
+generally high in the lunar highlands, reflecting nearly self-                    Infinite Paradise, 1st ed., 429 pp., W. H. Freeman, New York.
+similar topography in these regions. Within the maria,
+however, deviograms transition from fractal at small scales                     Scott, D. H., J. F. McCauley, and M. N. West (1977), Geologic map of the
+to complex at a range of breakover points, and the Hurst                          west side of the Moon, U.S. Geol. Surv. Misc. Invest. Map, I-1034, scale
+exponent is both lower and more diverse.                                          1:5,000,000.
+
+  [26] Acknowledgments. The authors would like to acknowledge the               Sharpton, V. L., and J. W. Head (1985), Analysis of regional slope charac-
+                                                                                  teristics on Venus and Earth, J. Geophys. Res., 90, 3733­3740,
+LRO and LOLA engineering teams, without whom the data presented here              doi:10.1029/JB090iB05p03733.
+would not have been possible. The research was partially funded by NASA
+grants NNX08AZ54G and NNG09EK06C:1.                                             Shepard, M. K., B. A. Campbell, M. H. Bulmer, T. G. Farr, L. R. Gaddis,
+                                                                                  and J. J. Plaut (2001), The roughness of natural terrain: A planetary and
+References                                                                        remote sensing perspective, J. Geophys. Res., 106, 32,777­32,796,
+                                                                                  doi:10.1029/2000JE001429.
+Aharonson, O., and N. Schorghofer (2006), Subsurface ice on Mars with
+  rough topography, J. Geophys. Res., 111, E11007, doi:10.1029/                 Smith, D. E., et al. (2001), Mars Orbiter Laser Altimeter: Experiment sum-
+  2005JE002636.                                                                   mary after the first year of global mapping of Mars, J. Geophys. Res.,
+                                                                                  106, 23,689­23,722, doi:10.1029/2000JE001364.
+Aharonson, O., M. T. Zuber, and D. H. Rothman (2001), Statistics of Mars'
+  topography from the Mars Orbiter Laser Altimeter: Slopes, correlations,       Smith, D. E., et al. (2010a), The Lunar Orbiter Laser Altimeter investiga-
+  and physical models, J. Geophys. Res., 106, 23,723­23,736,                      tion on the Lunar Reconnaissance Orbiter Mission, Space Sci. Rev.,
+  doi:10.1029/2000JE001403.                                                       150, 209­241, doi:10.1007/s11214-009-9512-y.
+
+Daniels, F. B. (1963), Radar determination of the root mean square slope of     Smith, D. E., et al. (2010b), Initial observations from the Lunar Orbiter
+  the lunar surface, J. Geophys. Res., 68, 449­453, doi:10.1029/                  Laser Altimeter (LOLA), Geophys. Res. Lett., 37, L18204, doi:10.1029/
+  JZ068i002p00449.                                                                2010GL043751.
+
+Garrick-Bethell, I., and M. T. Zuber (2009), Elliptical structure of the lunar  Smith, D. K., and T. H. Jordan (1988), Seamount statistics in the Pacific
+  South Pole-Aitken basin, Icarus, 204, 399­408, doi:10.1016/j.icarus.            Ocean, J. Geophys. Res., 93, 2899­2918, doi:10.1029/
+  2009.05.032.                                                                    JB093iB04p02899.
+
+Hiesinger, H., J. W. Head, U. Wolf, R. Jaumann, and G. Neukum (2010),           Solomon, S. C., and J. W. Head (1980), Lunar mascon basins: Lava filling,
+  Ages and stratigraphy of lunar mare basalts in Mare Frigoris and other          tectonics, and evolution of the lithosphere, Rev. Geophys., 18, 107­141.
+  nearside maria based on crater size-frequency distribution measurements,
+  J. Geophys. Res., 115, E03003, doi:10.1029/2009JE003380.                      Stuart-Alexander, D. E. (1978), Geologic map of the central far side of the
+                                                                                  Moon, U.S. Geol. Surv. Misc. Invest. Map, I-1047, scale 1:5,000,000.
+Kreslavsky, M. A., and J. W. Head (2000), Kilometer-scale roughness of
+  Mars: Results from MOLA data analysis, J. Geophys. Res., 105,                 Turcotte, D. L. (1997), Fractals and Chaos in Geology and Geophysics,
+  26,695­26,712, doi:10.1029/2000JE001259.                                        2nd ed., 398 pp., Cambridge Univ. Press, Cambridge, U. K.
+
+Lucchitta, B. K. (1977), Geologic map of the north side of the Moon, U.S.       Wilhelms, D. E., and F. El-Baz (1977), Geologic map of the near side of
+  Geol. Surv. Misc. Invest. Map, I-1062, scale 1:5,000,000.                       the Moon, U.S. Geol. Surv. Misc. Invest. Map, I-703, scale 1:5,000,000.
+
+Main, I. G., T. Leonard, O. Papasouliotis, C. G. Hatton, and P. G. Meredith     Wilhelms, D. E., and J. F. McCauley (1971), Geologic map of the east side
+  (1999), One slope or two? Detecting statistically significant breaks of         of the Moon, U.S. Geol. Surv. Misc. Invest. Map, I-948, scale
+  slope in geophysical data, with application to fracture scaling relation-       1:5,000,000.
+  ships, Geophys. Res. Lett., 26, 2801­2804, doi:10.1029/1999GL005372.
+                                                                                Wilhelms, D. E., K. A. Howard, and H. G. Wilshire (1979), Geologic map
+McEwen, A. S., and M. S. Robinson (1997), Mapping of the moon by                  of the south side of the Moon, U.S. Geol. Surv. Misc. Invest. Map,
+  Clementine, Adv. Space Res., 19, 1523­1533, doi:10.1016/S0273-1177              I-1162, scale 1:5,000,000.
+  (97)00365-7.
+                                                                                Yokota, Y., et al. (2008), Mapping of lunar topographic roughness by dig-
+Moore, H. J., and G. L. Tyler (Eds.) (1973), Apollo 17: Preliminary science       ital terrain model, Lunar Planet. Sci., XXXIX, Abstract 1921.
+  report, NASA SP-330.
+                                                                                Zuber, M. T., et al. (2010), The Lunar Reconnaissance Orbiter Laser Rang-
+                                                                                  ing investigation, Space Sci. Rev., 150, 63­80, doi:10.1007/s11214-009-
+                                                                                  9511-z.
+
+                                                                                  O. Aharonson and M. A. Rosenburg, Division of Geological and
+                                                                                Planetary Sciences, MC 150-21, California Institute of Technology,
+                                                                                Pasadena, CA 91125, USA. (megr@gps.caltech.edu)
+
+                                                                                  J. W. Head, Department of Geological Sciences, Brown University,
+                                                                                Providence, RI 02912, USA.
+
+                                                                                  M. A. Kreslavsky, Department of Earth and Planetary Sciences,
+                                                                                University of California, Santa Cruz, CA 95064, USA.
+
+                                                                                  E. Mazarico, G. A. Neumann, D. E. Smith, and M. T. Zuber, Department
+                                                                                of Earth, Atmospheric, and Planetary Science, Massachusetts Institute of
+                                                                                Technology, Cambridge, MA 02139, USA.
+
+                                                                                  M. H. Torrence, NASA Goddard Space Flight Center, Greenbelt, MD
+                                                                                20770, USA.
+
+        11 of 11
+

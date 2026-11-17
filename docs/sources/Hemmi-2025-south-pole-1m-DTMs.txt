@@ -1,0 +1,991 @@
+The Planetary Science Journal, 6:264 (25pp), 2025 November                             https://doi.org/10.3847/PSJ/ae10a4
+
+© 2025. The Author(s). Published by the American Astronomical Society.                                          aaaaaaa
+
+LROC NAC-derived Meter-scale Topography of the Moon's South Polar Landing Sites:
+                     Digital Terrain Models and Their Quality Assessments
+
+    Ryodo Hemmi1aa, Hiroka Inoue1aa, Hiroshi Kikuchi2aa, Hiroyuki Sato1, Hideaki Miyamoto3aa, Hisashi Otake1aa, and
+                                                                   Mitsuo Yamamoto1
+
+               1 Institute of Space and Astronautical Science, Japan Aerospace Exploration Agency, Kanagawa 252-5210, Japan; hemmi.ryodo@jaxa.jp
+                                                                      2 Gakushuin University, Tokyo 171-8588, Japan
+                                                                      3 University of Tokyo, Tokyo 113-8656, Japan
+
+                                Received 2025 July 17; revised 2025 September 28; accepted 2025 October 6; published 2025 November 14
+
+                                                               Abstract
+
+High-quality digital terrain models (DTMs) are essential for lunar polar missions, aiding mission planning and
+surface operations. The horizontal resolution and vertical accuracy of DTMs are generally limited by factors such
+as source image resolution, image noise, the precision of ground control points (GCPs), and data processing
+techniques. In this study, we produced advanced DTMs for the lunar south pole region by integrating seamless
+mosaics generated from multiple Lunar Reconnaissance Orbiter Camera Narrow Angle Camera image pairs
+captured under various illumination azimuths. To enhance accuracy and reduce artifacts, we employed bundle
+adjustment with hundreds of meticulously selected image-to-image tie points and precise GCPs, combined with
+an advanced multiview shape-from-shading technique. This technique, which utilizes multiple viewpoints to
+resolve topographic details with higher precision, significantly improves vertical accuracy and resolution. Our
+methodology achieves a spatial resolution of 1 m pixel-1 and vertical precision of ±1.0 m, enabling clearer
+delineation of meter-scale lunar topographic features compared to previous models. These DTMs are expected to
+significantly support the Lunar Polar Exploration project and other forthcoming lunar exploration missions.
+
+Unified Astronomy Thesaurus concepts: Photogrammetry (1226); Remote sensing (2191); Lunar surface (974)
+
+                            1. Introduction                                            the safety of landing and roving activities (H. Inoue & S. Adachi
+                                                                                       2021; S. Sathyan et al. 2024). Accurate characterization of
+ 1.1. Significance of Surface Topography in Lunar Missions                             surface geometry at prospective landing sites is essential
+                                                                                       for mission planning. In this context, two primary data
+   The preservation of volatiles, especially water ice, in the lunar                   products have been in high demand prior to landing
+polar regions remains uncertain at extremely low surface                               operations: gridded topographic datasets--commonly referred
+temperatures (typically below -150°C). Permanently shadowed                            to as digital terrain models (DTMs) or, equivalently, digital
+regions and cold traps have been recognized as among the                               elevation models (DEMs)--and three-dimensional point-cloud
+most promising locations for water storage for decades (e.g.,                          datasets. For instance, DTMs played an important role in
+W. C. Feldman et al. 2000; A. B. Sanin et al. 2017; N. Schorghofer                     autonomous entry, descent, landing, and hazard avoidance
+& J.-P. Williams 2020; N. Schörghofer et al. 2024). In the quest to                    based on terrain-relative navigation technology (A. E. Johnson
+find existing water for future resource exploration, conducting                        & J. F. Montgomery 2008). High-resolution DTMs also help
+in situ direct observations down to depths of several meters is                        robust self-localization of a lander/rover based on surrounding
+crucial. Several lunar polar exploration missions have therefore                       topographic features (e.g., D. Geromichalos et al. 2020;
+planned to launch between the 2020s and 2030s: e.g., Intuitive                         L. Matthies et al. 2022; S. Daftry et al. 2023) and support a
+Machines 2 (PRIME-1, launched in 2025 February but did not                             variety of analyses of accessible sites, waypoints, and paths,
+successfully land; J. Schonfeld 2023); Lunar Polar Exploration                         such as areas with potential resources (e.g., S. J. Boazman
+(LUPEX; T. Hoshino et al. 2020); the China Lunar Exploration                           et al. 2024) or detected water-ice signatures (S. Li et al. 2018;
+Program, including Chang'E-7 (C. Li et al. 2019; T. Hu et al.                          Figure 1). In the scope of mission planning and site selection,
+2023); Volatiles Investigating Polar Exploration Rover, initially                      the better spatial resolution, vertical precision/accuracy, and
+canceled in 2024 July but subsequently reinstated with a                               quality DTMs have, the better estimates of ground coordinates,
+late-2027 delivery commitment by Blue Origin (A. Colaprete                             slope characterization, local solar incidence angles, etc., are
+et al. 2020); and Artemis III (V. Angelopoulos 2011; C. Russell &                      available.
+V. Angelopoulos 2014; M. Smith et al. 2020; N. Kumari et al.
+2022). These missions deploy a lander and/or a rover at latitudes                           1.2. Overview of the Lunar South Pole DTMs/DEMs
+between 85°S and 90°S on the Moon. Such probes will face
+limited solar power and severe thermal conditions at low Sun                              DTMs are classified into two major categories: (1) those
+angles, along with irregular, topography-controlled shadowing and                      generated by interpolating range measurements from laser
+obstacles such as steep slopes, craters, and boulders. Therefore, the                  altimeters and (2) those derived through stereophotogramme-
+extraction of detailed surface topography is essential for assessing                   try using image pairs with sufficient convergence angles. The
+                                                                                       existing DTMs near the lunar south pole (called "SP DTMs"
+                   Original content from this work may be used under the terms         for short) fall into these three categories as well (see Figure 2
+                   of the Creative Commons Attribution 4.0 licence. Any further        for detailed illustrations).
+distribution of this work must maintain attribution to the author(s) and the title
+of the work, journal citation and DOI.
+
+                                                                                    1
+The Planetary Science Journal, 6:264 (25pp), 2025 November            Hemmi et al.
+
+Figure 1. Target ROIs (white polygons) pointed to by arrows with the site names of D. De Rosa et al. (2012). Pink dotted circles with labels represent named craters
+listed in the IAU nomenclature. Light blue dots show the distribution of the purported exposed water ice (S. Li et al. 2018b). The colorized shaded map is based on
+the LOLA DTM, gridded at 40 m resolution in south polar stereographic projection.
+
+   Altimeter-derived DTMs for the lunar south pole include the           2. mutually aligned, seamlessly blended SPLDEM2021
+following.                                                                  mosaics at 5 m pixel-1 (87°S­90°S)5 and at 10, 20, 30,
+                                                                            and 60 m pixel-1 covering 83°­90°, 80°­90°, 75°­90°,
+   1. Kaguya Laser Altimeter (LALT) DTM: gridded at                         and 60°­90°N/S (M. K. Barker et al. 2023, 2025),6
+      947.6 m × 236.9 m spatial resolution (Figure 2(a);                    respectively (see Figure 3 for the 10 m pixel-1 case).
+      H. Araki et al. 2009).
+                                                                         The SPLDEM2021 products show far fewer artifacts than
+   2. Chang'E-1 Laser Altimeter Mapper global DEM: 3 × 3 km           earlier gridded DTMs derived from LOLA altimeter measure-
+      spatial resolution (C. Li et al. 2010).                         ments, although some residual artifacts remain, and the 5 m
+                                                                      postspacing cannot fully resolve meter-scale surface features.
+   3. LRO (Lunar Reconnaissance Orbiter) Lunar Orbiter
+      Laser Altimeter (LOLA) "LDEM" products: Gridded                    Stereo-derived DTMs from multiple missions include
+      Data Record (GDR) DTMs at grid spacing of 30 m                     1. Clementine Ultraviolet/Visible DEMs at 1 km pixel-1
+      (75°S­90°S), 20 m (80°S­90°S), 10 m (85°S­90°S), and
+      5 m (87.°5S­90°S) (Figure 2(b); D. E. Smith et al.                    (M. R. Rosiek et al. 1999);
+      2010a, 2010b, 2017).                                               2. SELENE (Kaguya) Terrain Camera (TC) Ortho DTM
+
+   While these laser altimetry DEMs offer modest vertical                   (ID: SLN-L-TC-4-DTM-ORTHO-V3.0), gridded at
+accuracy on a global scale, they exhibit distinctive vertical               10 m for 60°S­90°S (Figure 2(d); J. Haruyama et al.
+artifacts--knob- and hole-like features aligned along the                   2008, 2014);
+original ground tracks (Figure 2(b)). M. K. Barker et al.                3. Chang'E-1 CCD stereo DEMs at 500 m grid spacing
+(2021) demonstrated that targeted track adjustments and                     (J. J. Liu et al. 2009; Z. Ouyang et al. 2010; C. Li 2013;
+automated cleaning processes can substantially reduce these                 C. Li et al. 2016);
+artifacts. Their workflow yielded                                        4. Chang'E-2 CCD stereo DEMs with 20 m pixel-1 scale
+                                                                            and 7 m pixel-1 orthophotos (CE2TMap2015, initially
+   1. 5 m pixel-1 LOLA elevation maps refined at several south              CE2DEM2014; Figure 2(i); X. Ren et al. 2014; C. L. Li
+      pole landing sites (Figure 2(c)),4 hereafter abbreviated as           et al. 2015; C. Li et al. 2018; X. Xin et al. 2020); and
+       "SPLDEM2021," and
+                                                                      5 https://pgda.gsfc.nasa.gov/products/81
+4 https://pgda.gsfc.nasa.gov/products/78                              6 https://pgda.gsfc.nasa.gov/products/90
+
+                                                                   2
+The Planetary Science Journal, 6:264 (25pp), 2025 November          Hemmi et al.
+
+Figure 2. Comparison of SP DTMs in the vicinity of CR1. Each dataset is presented as a shaded-relief image in a south polar stereographic projection with an
+illumination altitude of 30° and an azimuth of 315° clockwise from north. The DTMs shown are as follows. (a) LALT DTM (ID: LALT_GT_SP_NUM; regridded at
+~236.90 × 236.90 m). (b) LDEM (ID: LDEM_875S_5M_FLOAT; we used this product as a vertical source of controlled DTMs as described later). (c) One of
+SPLDEM2021 (ID: Site01_final_adj_5mpp_surf). (d) DTM TC ORTHO (each product shows NoData holes from per-scene coverage and shadow masking), four
+overlapping DTMs without manual georeferencing (see Table 2 for IDs of CR1; we used this product as a vertical source of controlled DTMs as described later). (e)
+DEM TC ORTHO (each of them is a composite product that gap-fills across scenes but can introduce horizontal/vertical offsets at joins), ID:
+DTMTCOw01_00570S897E1937PS. (f) SLDEM2013, 41 DTMs (products with IDs between DTM_MAP_01_S89E200S90E201SC and DTM_MAP_01_-
+S89E240S90E241SC in sequential order). (g) LROC DTM produced by the ESA lander mission (ID: NAC_DTM_ESALL_CR1). (h) LROC DTM produced by the
+USGS (ID: MOON_LRO_NAC_DEM_89S210E_4mp). (i) CE2 CCD stereo global DEM (ID: CE2_GRAS_DEM_20m_N001_87S000W_A). DTMs around the
+CR1 region that contain many NoData pixels, have insufficient spatial resolutions, or are publicly inaccessible are not included.
+
+5. Lunar Reconnaissance Orbiter Camera (LROC) Narrow                   These stereo-based DTMs have higher spatial resolutions
+   Angle Camera (NAC) stereo DTMs (input NAC image                  than the former DTMs; however, their qualities are readily
+   pixel scales 0.5­2.0 m pixel-1; output DTM resolution            reduced by imaging noises, limited positional accuracies of
+   2­5 m pixel-1), produced by the Arizona State University/        source images (R. V. Wagner et al. 2024), processing flaws
+   LROC team with USGS support (M. S. Robinson et al.               (e.g., seams between LROC NAC-Left and NAC-Right,
+   2010; K. N. Burns et al. 2012; M. R. Henriksen et al. 2017).     hereafter "NACL" and "NACR," respectively, images after
+        For potential south pole landing sites, two specialized     mosaicking), poor coregistration of image-to-image tie points,
+   LROC NAC stereo DTMs are available:                              and poor automatic triangulation for stereo processing. Despite
+  5.1 2 m pixel-1 DTMs by the ESA Lunar Lander project,             offering the highest native resolution among existing DTMs
+       released as part of the NAC team suite (Figure 2(g);         (2 m pixel-1), these products can--at best--only resolve
+       J. Oberst et al. 2010), and                                  features down to 6 m (3 pixels), which remains too coarse
+  5.2 the "Moon LRO South Pole DEM" (4 m pixel-1), a                to reliably identify landing site hazards.
+       mosaic of 57 NAC stereo models generated by USGS
+       (Figure 2(h); M. R. Rosiek 2013; M. R. Rosiek et al.            For the sunlit areas of polar regions, under low solar
+       2012, 2013).                                                 illumination and variable incidence angles, surface visibility is
+                                                                    greatly diminished, particularly for the appearance of pixels with
+
+                                                                 3
+The Planetary Science Journal, 6:264 (25pp), 2025 November               Hemmi et al.
+
+Figure 3. Close-up views of the six target sites, represented by color-coded elevation of the 10 m pixel-1 SPLDEM2021 mosaic (M. K. Barker et al. 2023) combined
+with shaded relief. (a) CR1, (b) GR1, (c) GR2, (d) LP1, (e) MP1, (f) MP2. The relative height range of 55 m is divided into 11 5 m intervals. White polygons indicate
+areas we identify as suitable for future landing/roving. The shaded relief is visually enhanced with 10× vertical exaggeration and overhead illumination.
+
+near-zero digital-number values--later flagged as NoData--in             by several groups (e.g., R. A. Beyer et al. 2023, 2025;
+shadowed regions (Figures 2(d), (g), and (h)). Generating high-          B. D. Boatwright & J. W. Head 2024; J. Qian et al. 2025;
+resolution, seamless DTMs from NAC stereo alone is challenged            Z. Ye et al. 2025). We therefore consider SfS DTMs alongside
+at polar latitudes by low illumination (which hinders feature            laser altimeter and stereo products.
+matching), extensive shadow coverage, and temporal variations in
+surface appearance between different orbital passes (e.g., P. Gläser        To overcome the previous limitations regarding altimetry/
+et al. 2013; M. R. Rosiek et al. 2013; Y. Zhang et al. 2023)--           stereo-based DTMs, we developed a three-step NAC-DTM
+challenges that our novel hybrid workflow directly addresses.            workflow:
+
+   Stereo-derived DTMs rely on image-based feature matching                 1. extract tie points and control points by manually
+while using altimetry data for control, whereas some products                  registering NACL and NACR images to reference DTMs
+explicitly merge stereo-based DTMs with altimeter-derived                      (hereafter "controlled DTMs"),
+models to deliver seamless coverage. For example,
+                                                                            2. generate seamless 1 m pixel-1 NAC mosaics by stitching
+   1. a composite of Clementine polar stereo DEMs and                          corrected NACL and NACR pairs using those control
+      Clementine laser altimeter DEM data (A. C. Cook                          points, and
+      et al. 2000);
+                                                                            3. reconstruct high-resolution topography via multiview SfS
+   2. the "DEM TC Ortho" product (ID: SLN-L-TC-4-DEM-                          (also known as photoclinometry) applied to six controlled
+      ORTHO-V1.0): Kaguya TC scene DEMs (single and                            NAC mosaics (O. Alexandrov & R. A. Beyer 2018).
+      stereo), Multi-band Imager (MI) observations, and
+      LOLA altimetry gridded to 10 m pixel-1 for 60°S­90°S                  This data processing scheme enabled us to create theoreti-
+      (Figure 2(e)); and                                                 cally the best-resolution (1 m pixel-1) DTMs with many fewer
+                                                                         artifacts than the ones included in previous DTMs (hereafter
+   3. the "SLDEM2013" mosaic (ID: SLN-L-TC-5-SLDEM2                      DEMs/DTMs are referred to simply as DTMs).
+      013-V1.0): map-projected 10 m tiles combining Kaguya TC
+      DTMs, MI DTMs, and LOLA data (Figure 2(f); J. Haruy-                                 1.3. Contributions of This Work
+      ama et al. 2014).
+                                                                            Relative to prior south pole SfS pipelines and the Ames
+   These mosaic products of different instrument-based DTMs              Stereo Pipeline (ASP) manual recipe (e.g., M. O'Connor &
+have much larger spatial coverage than stereo-only-derived               R. A. Beyer 2021; B. D. Boatwright & J. W. Head 2024; P. Liu
+DTMs; however, they embrace vertical offsets that are found              et al. 2024),7 our workflow introduces (1) manual, subpixel
+near boundaries and NoData areas of their own source DTMs                NACL/NACR seam registration and local radiometric normal-
+(Figure 2(e)), and their orthomosaics include horizontal                 ization to remove pairwise seams before SfS; (2) six-azimuth
+misalignments as well.                                                   NAC mosaics per region of interest (ROI) to mitigate shadow/
+                                                                         phase limitations; (3) a two-stage iterative closest point (ICP)
+   A third, long-standing class comprises photoclinometry/
+shape-from-shading (SfS) DTMs, now used at the lunar poles               7 https://stereopipeline.readthedocs.io/en/latest/sfs_usage.html
+
+                                                                      4
+The Planetary Science Journal, 6:264 (25pp), 2025 November                                                      Hemmi et al.
+
+                                                           Table 1                                           Line Resolution
+                                              List of Source Image Datasets                                    (m pixel-1)
+
+ROI  Center coordinate (Latitude, Longitude)  LROC NAC ID             Subsolar Longitude  Sample Resolution        0.522
+                                                                                              (m pixel-1)          0.431
+                                                                      (deg)                                        0.598
+                                                                                                  1.044            0.557
+CR1  89.°4679S, 222.°5890E                    M130413987              255.799                     0.862            0.562
+                                              M131418183              113.498                     1.196            0.552
+GR1  88.°6952S, 291.°7154E                    M132632632              301.948                     1.114            0.568
+                                              M134396598               52.185                     1.125            0.497
+GR2  89.°0073S, 265.°2364E                    M139811097                                          1.104            0.579
+                                              M143780066                 6.982                    1.136            0.458
+LP1  85.°4596S, 31.°78053E                    M129647142              167.215                     0.994            0.582
+                                              M138264280                                          1.158            0.436
+MP1  85.°9756S, 357.°8876E                    M141405746                 4.098                    0.916            0.570
+                                              M145354371              225.566                     1.165            0.547
+MP2  86.°0265S, 2.°757964E                    M146121156              141.875                     0.872            0.464
+                                              M193023270              305.632                     1.139            0.551
+                                              M129701439              197.607                     1.095            0.556
+                                              M132042242               61.707                     0.928            0.563
+                                              M140781507              356.440                     1.102            0.352
+                                              M141446469               25.299                     1.111            0.350
+                                              M143807204              230.149                     1.126            0.414
+                                              M146155065              136.120                     0.704            0.473
+                                              M1098753609             163.382                     0.700            0.545
+                                              M1103475755             192.822                     0.827            0.495
+                                              M1156113997             331.384                     0.947            0.481
+                                              M1157708411              24.069                     1.091            0.490
+                                              M1252470864             159.890                     0.989            0.527
+                                              M177476016              294.584                     0.962            0.506
+                                              M128106739              243.897                     0.980            0.513
+                                              M132836066               93.277                     1.054            0.466
+                                              M136384859              221.939                     1.011            0.532
+                                              M139919591              273.189                     1.026            0.501
+                                              M141093708              130.989                     0.932            0.501
+                                              M147016300              351.701                     1.065            0.500
+                                              M129287651              186.000                     1.003            0.481
+                                              M136357718               71.429                     1.001            0.487
+                                              M141066563               54.812                     0.999
+                                              M145775171              134.832                     0.962
+                                              M150482299              189.840                     0.975
+                                              M170601473              246.407
+                                                                      303.949
+                                                                      342.718
+
+alignment to LOLA Reduced Data Record (RDR) datasets                  six sites of SPLDEM2021, Site01, Site11, SL3, Site20, Site23,
+(regional and ROI-specific) with the transforms propagated            and Site23,8 respectively. Within each ROI, we also specified a
+back to camera poses for consistent map projection; (4) strict        continuous, high-elevation area (represented as white polygons
+shadow masking using per-image thresholds; (5) 1 m pixel-1            in Figure 3). The recent study of the CR1 and GR1 sites closed
+map projection onto the final SfS DTM to ensure meter-scale           by the same polygonal areas showed the suitability of roving
+geodetic fidelity; and (6) a unified quality assessment that          activities in terms of hazards, Earth visibility, slopes, and
+combines ASP per-pixel height-error probing with rms slope­           thermal conditions (S. J. Boazman et al. 2024).
+baseline diagnostics.
+                                                                                2.2. Preparation of Control Source Datasets
+                     2. Materials and Methods
+                                                                         For horizontal (x, y) and vertical (z) controls of LROC NAC
+                          2.1. Targeted ROIs                          images as described in the next section, we first prepared
+                                                                      reference mosaics of DTMs and orthoimages, both of which are
+   Within the ROIs proposed by the ESA Lunar Lander project           stitched, georeferenced, and aligned to LOLA data points
+(B. Vanoutryve et al. 2010; D. De Rosa et al. 2012), we focused       altogether (see Figure 4 for their detailed workflow). These
+on the six ROIs near the lunar south pole, which we refer to by       mosaics are equivalent to the semicontrolled mosaics that were
+their existing IDs: CR1, GR1, GR2, LP1, MP1, and MP2                  previously proposed (J. R. Laura & R. A. Beyer 2021); however,
+(Figure 1, Table 1; the original vector polygon data representing     for convenience, we call our final vertical and horizontal control
+the ROIs' geometries are provided in the Supplementary                sources controlled DTM mosaics and controlled orthomosaics,
+Materials Data S1). In the south pole map, these regions have         respectively. To produce them, we made use of four or more pairs
+been selected as target areas for analyses in other papers            of 10 m pixel-1 "DTM TC Ortho" products (ID: SLN-L-TC-4-
+(E. Mazarico et al. 2011; J. Flahaut et al. 2020) because they        DTM-ORTHO-V3.0; Figure 2(d)) of both 10 m pixel-1 DTMs
+exhibit high illumination ratios and strong Earth visibility,
+conditions that allow longer operational time for missions with       8 https://pgda.gsfc.nasa.gov/products/78
+direct Earth communications. These six ROIs are equivalent to
+
+                                                                   5
+The Planetary Science Journal, 6:264 (25pp), 2025 November         Hemmi et al.
+
+Figure 4. Pipeline to prepare datasets of horizontal and vertical control sources (controlled TC DTMs and controlled TCOrtho mosaics). For CR1 and GR2, we used
+the smoothed LDEMs for vertical controls. Application boxes include commands with specific arguments that were required in its processing.
+
+and orthoimages called TCOrtho (e.g., Figure 2(d); see Table 2     horizontal and vertical offsets, as mentioned above. Instead, we
+for Kaguya TC IDs). We did not use "DEM TC Ortho" products         had to perform coregistration of individual "DTM TC Ortho"
+(ID: SLN-L-TC-4-DEM-ORTHO-V1.0; Figure 2(e)) due to their          datasets with QGIS by hand (and mosaicking them) as follows.
+
+                                                                6
+The Planetary Science Journal, 6:264 (25pp), 2025 November                                                                                                Hemmi et al.
+
+                                        Table 2                                2.3. Preprocessing of LROC NAC Images (before SfS)
+List of Source TC Datasets (TC DTM and TCOrtho) Covering Each ROI
+                                                                              We summarize the pre-SfS NAC mosaicking in Figure 5; the
+     SLN-L-TC-4-DTM-ORTHO-V3.0 Product ID                                  full command-level flow is provided in Appendix Figure A1. For
+                                                                           each ROI, we selected six NACL/NACR pairs spanning diverse
+ROI  (without suffix "_DTM"/"_IMG")                                        subsolar longitudes (Table 1) and converted the Planetary Data
+                                                                           System Experiment Data Record datasets to ISIS cubes with full
+CR1  DTMTCO_03_00367S892E1774PS                                            radiometric calibration and echo-artifact removal. We then built a
+                                                                           single control network tying all 12 images and assigned 50­80
+     DTMTCO_03_00570S897E1937PS                                            GCPs from the controlled TCOrtho+TC DTM (or TCOrtho
+                                                                           +LDEM where the TC DTM was incomplete). Bundle
+     DTMTCO_03_00683S896E2165PS                                            adjustment (ISIS's jigsaw) solved camera angles and spacecraft
+                                                                           position/velocity, iterated to sigma0 0.4 (Table 3), and
+     DTMTCO_03_00719S898E1942PS                                            produced distortion-corrected cubes (ISIS's noproj).
+
+GR1  DTMTCO_03_00570S887E2908PS                                               Here, sigma0 ( 0) denotes the a posteriori standard deviation of
+                                                                           unit weight (square root of the reduced 2) for the bundle
+     DTMTCO_03_00582S883E2718PS                                            adjustment and is dimensionless. It is computed from the weighted
+                                                                           residuals of all observations--image tie-point measurements
+     DTMTCO_03_00774S881E2895PS                                            (pixels) and GCP position constraints (meters)--after each
+                                                                           residual is normalized by its a priori standard deviation. Thus,
+     DTMTCO_03_01112S888E2989PS
+                                                                            0  1 indicates residuals consistent with the assumed uncertain-
+GR2  DTMTCO_03_00570S887E2908PS                                            ties, values <1 reflect conservative a priori sigmas, and values >1
+                                                                           suggest underestimated noise or remaining mismodeling. Impor-
+     DTMTCO_03_00672S894E2351PS                                            tantly, 0 is not the spatial spread of triangulated GCP positions;
+                                                                           that spread is assessed separately from the GCP residuals (in
+     DTMTCO_03_00899S892E3027PS                                            meters) and their rms. Our threshold of 0.4 reflects conservative
+                                                                           a priori sigmas and ensures a stable, tightly constrained solution.
+     DTMTCO_03_01129S890E2733PS
+                                                                              The default mosaicking/normalization (ASP's lronac2mosaic.
+     DTMTCO_03_01802S882E2494PS                                            py) can leave small misregistrations at NACL/NACR seams
+                                                                           (Figure 6(a)). We further found that applying the tool's default
+LP1  DTMTCO_03_00656S851E0301PS                                            normalization can introduce radiometric (tone/contrast) mis-
+                                                                           matches between NACL and NACR (not shown). We therefore
+     DTMTCO_03_00656S864E0294PS                                            replaced those steps with (i) subpixel seam-line tie-point
+                                                                           extraction (ISIS's coreg, adaptive Gruen) across the nominal
+     DTMTCO_03_00811S851E0412PS                                            135 pixel overlap, (ii) ISIS's slither-based line/sample trans-
+                                                                           formation of NACR to NACL, and (iii) local ratio-based
+     DTMTCO_03_00823S847E0326PS                                            normalization using the median of the NACL/NACR overlap.
+                                                                           This NACL+NACR merge yields a seamless NAC mosaic per
+     DTMTCO_03_00829S848E0278PS                                            image pair. Visual inspection confirms near-perfect removal of
+                                                                           seams (Figure 6(b)). By construction, the mosaic inherits the
+     DTMTCO_03_01658S851E0309PS                                            exterior orientation (ephemeris/pose) of the bundle-adjusted
+                                                                           NACL image. For brevity, we refer to each registered-and-
+     DTMTCO_03_02648S855E0458PS                                            normalized NACL+NACR merge as an "NAC mosaic."
+                                                                           Command and parameter details appear in Figure 5.
+     DTMTCO_03_04830S845E0343PS
+                                                                                               2.4. Multiview SfS Overview
+     DTMTCO_03_04832S860E0353PS
+                                                                              We refine an initial DEM h0(x,y) using the ASP's multiview
+     DTMTCO_03_04840S855E0272PS                                            SfS (O. Alexandrov & R. A. Beyer 2018). The unknowns are
+                                                                           the terrain height field h(x,y), a per-pixel albedo A(x,y), and a
+MP1  DTMTCO_03_00683S863E3590PS                                            per-image exposure/scale Tk. For each image k, intensities
+                                                                           predicted by a Lunar­Lambert reflectance Rk depend on the
+     DTMTCO_03_00851S855E0046PS                                            local surface normal derived from the height gradients. The
+                                                                           SfS solution minimizes the spatially integrated cost:
+     DTMTCO_03_01688S860E3562PS
+
+     DTMTCO_03_02683S857E0008PS
+
+MP2  DTMTCO_03_00683S863E3590PS
+
+     DTMTCO_03_00851S855E0046PS
+
+     DTMTCO_03_01688S860E3562PS
+
+     DTMTCO_03_02683S857E0008PS
+
+   In georeferencing steps of horizontal sources, we first                 (h, A, Tk) =    [Ik (h(x, y)) Tk A(x, y)Rk (h(x, y))]2
+transformed Kaguya TCOrtho images to be seamless between
+each other by the linear algorithm with tie points that we manually                      k
+acquired using the QGIS's plug-in, georeferencer (QGIS
+Contributors 2022). Their transformation results were also applied         + µ2 2h(x, y) 2 + 2 [h(x, y) h0(x, y)]2 dxdy.
+to their paired TC DTMs, and then a group of transformed
+TCOrtho images and that of transformed DTMs were respectively                 Here Ik(h) denotes the image k sampled at the camera
+mosaicked using Geospatial Data Abstraction Library (GDAL;                 projection of the current surface h. The first term enforces
+E. Rouault et al. 2025) and ASP version 2.6.2_post (R. A. Beyer
+et al. 2018; R. Beyer et al. 2019). After that, for vertical controls,
+we finally applied alignment (rotational transformation) to each
+TC DTM mosaic to best fit with millions of LOLA RDR points
+observed before 2021 by ICP algorithm. For ICP-based alignment,
+we used the ASP's tool, pc_align (R. A. Beyer et al. 2014), which
+prevents outliers of LOLA RDR point coordinates by default. We
+finally named the final products as controlled TC DTM mosaics
+and controlled TCOrtho mosaics. As an exception, when the
+controlled TC DTM mosaic was unsuitable as the reference DTM
+because it contained a nonnegligible number of NoData pixels
+(i.e., CR1 and GR2), we used 5m pixel-1 polar LDEM
+(D. E. Smith et al. 2010a, 2010b) as the reference DTM
+instead. Unless noted otherwise, we used the Moon (2015) South
+Polar Stereographic (latitude_of_origin = -90, central_meri-
+dian = 0, scale_factor = 1), whose equivalent IAU code is
+"IAU_2015:30135,"9 as a spatial reference for map projection
+throughout this study.
+
+9 Available at https://spatialreference.org/ref/iau_2015/30135/.
+
+                                                                        7
+The Planetary Science Journal, 6:264 (25pp), 2025 November           Hemmi et al.
+
+Figure 5. Workflow overview. The pipeline has three stages. (1) Inputs and controls: build controlled TC DTM/LDEM and orthomosaics and assemble a control
+network with GCPs tied to LOLA. (2) NAC pair processing: seam-aware NACL/NACR coregistration, NACR transform, and local ratio-based normalization yield a
+seamless NAC mosaic per pair. (3) Multiview SfS and geodetic control: ASP's parallel_sfs refines the initial DEM using six NAC mosaics; the SfS result is aligned
+to LOLA (globally and locally), and all NAC orthos are map-projected onto the final SfS DTM at 1 m pixel-1 to form the controlled orthomosaic. A full command-
+level flowchart appears in the Appendix, which is a full-resolution vector version for zoom-in viewing.
+
+brightness consistency between observed and modeled                  integrability constraint), which has been found sufficient and
+ntensities; the second term--weighted by --is the smooth-            slightly more robust in practice (O. Alexandrov & R. A. Beyer
+ness regularizer (sum of squares of second-order partials)           2018). We process tiles in parallel with ASP's parallel_sfs and
+that stabilizes short-baseline behavior; and the third               mosaic the results; mapping to the final geodetic frame and
+term--weighted by --penalizes deviation from the initial             orthomosaic creation are described below.
+DEM, anchoring large-scale shape and absolute height
+(B. K. P. Horn 1990; O. Alexandrov & R. A. Beyer 2018).                 As summarized in the SfS block of Figure 5, we applied
+In our usage, all camera poses are fixed after bundle                multiview SfS to the six NAC mosaics with a smoothed
+adjustment (but floated again at SfS); shadow/saturated pixels       controlled TC DTM or LDEM as the initial DEM. We refine
+are masked, and we supply multiple NAC mosaics under                 an initial DTM (either a smoothed controlled TC DTM or a
+different illumination azimuths to resolve the single-image SfS      smoothed LDEM) by minimizing an objective that balances (a)
+ambiguity and better constrain local slopes. ASP solves directly     image-formation residuals between observed intensities and
+for heights h (rather than optimizing gradients p, q with an         those predicted by a Lunar­Lambert photometric model, (b)
+                                                                     surface smoothness, and (c) deviation from the initial DEM.
+
+                                                                  8
+The Planetary Science Journal, 6:264 (25pp), 2025 November             Hemmi et al.
+
+Figure 6. Close-ups of an NACL/NACR seam treated by two methods. (a) Default ASP lronac2mosaic.py mosaicking leaves a visible seam. (b) Our seam-aware
+registration plus local ratio normalization produces a seamless merge. The width of each panel is 260 pixels (~224 m). Orange arrows indicate small craters
+straddling the seam whose shapes are corrected after the NACR transform. Black arrows show a horizontal (sample) position of the same seam of each mosaic. An
+image coordinate of the upper left corner pixel (sample, line) is (2340, 17685). LROC NAC ID M131418183 (a CR1 source image).
+
+                                         Table 3                       constraint weight  of 1.0E-12, and the Lunar­Lambert model
+     Summary of Bundle-adjustment Results Processed by ISIS Jigsaw     (A. S. McEwen 1991; V. Lohse et al. 2006; W. C. Liu &
+                                                                       B. Wu 2021)--which yielded successful topographic results,
+ROI                    CR1 GR1 GR2 LP1 MP1 MP2                         as shown by the preliminary study (R. Hemmi et al. 2020).
+
+Images                  12     12     12     12     12       12           We chose a smoothness weight  = 0.12 and a small
+Points                  57     77     55     48     63       62        initial-DEM constraint weight  = 1.0 × 10-12 after a grid
+Total measures          164    220    168    154    208      187       search on representative tiles. Here,  specifies how tightly the
+Total observations      328    440    336    308    416      374       SfS solution is constrained to the initial DEM: a smaller 
+Good observations       328    440    336    308    416      374       allows greater deviation and finer local detail, whereas a larger
+Rejected observations    0      0      0      0      0        0         keeps the solution closer to the initial DEM. The final
+Constrained point       171    231    165    144    189      186       heights are tied globally by our two-stage ICP to the LOLA
+                                                                       RDR data points. As expected from the SfS cost, a smaller 
+   parameters           108    108    108    108    108      108       yields a sharper topographic representation but also tends to
+Constrained image                                                      pass through high-frequency inconsistencies from residual
+                        279    339    273    252    297      294       interimage misregistration. In an independent product using
+   parameters           328    440    336    308    416      374        = 0.08 (B. D. Boatwright & J. W. Head 2024), we observe
+Unknowns                 4             4      4      4        4        noncircular crater outlines and seamlike features consistent
+Degrees of freedom     0.293    5    0.366  0.404  0.279    0.337      with slight pose errors (see Figure 19(e)), whereas our product
+Iterations                    0.348                                    (with  = 0.12 and seam-aware preregistration) suppresses
+Sigma0                                                                 these artifacts (see Figure 19(d)).
+
+We use parallel_sfs to process tiled regions in parallel and then         To exclude deep-shadow pixels from the SfS calculations,
+mosaic the resulting point-cloud tiles. We used a set of input         we determined per-image shadow thresholds (Table 4)
+parameters--a smoothness weight  of 0.12, an initial DEM
+
+                                                                    9
+The Planetary Science Journal, 6:264 (25pp), 2025 November                                                                                                 Hemmi et al.
+
+                                          Table 4                           mosaicking six orthoimages (e.g., Figure 7), we encountered
+List of Shadow Threshold Values Manually Extracted from Individual NAC      areas where two or more valid orthoimage pixels overlap (see
+                                                                            Figure 8). In these cases, we assigned the highest pixel value
+                                           Images                           among them to each corresponding pixel in the resulting
+                                                                            orthomosaic. Referring to the shadow thresholds listed in
+Site ROI  LROC NAC ID  Shadow Thresholds                                    Table 4, we treated orthoimage pixels of 0.004 or less to be
+                                                                            NoData (invalid) pixels to minimize the erroneous pixels of
+CR1       M130413987   0.00378017                                           the resulting DTM. For each ROI, we produced a pair of a
+                                                                            controlled DTM (our DTM of each ROI, which we call "SfS
+          M131418183   0.00206924                                           DTM" for short) and a controlled orthomosaic, both of which
+                                                                            are map-projected with a pixel scale of 1 m. We chose 32 bit
+          M132632632   0.00372376                                           floating-point GeoTIFF as our output format to preserve
+                                                                            precision and metadata during postprocessing. All NAC
+          M134396598   0.00314338                                           orthoimages in the final controlled orthomosaic are map-
+                                                                            projected onto the final, controlled SfS DTM at 1 m pixel-1,
+          M139811097   0.00184182                                           ensuring that meter-scale features are placed without distor-
+                                                                            tions from a lower-resolution DTM.
+          M143780066   0.00463776
+                                                                               Throughout this workflow, we employed either LOLA RDR
+GR1       M129647142   0.00150166                                           point data or gridded LDEMs as reference sources for horizontal
+                                                                            and vertical coregistration and alignment steps, rather than
+          M138264280   0.000895249                                          SPLDEM2021. While the latter is recommended to enhance the
+                                                                            accuracy of derived DTMs, our primary goal was to develop a
+          M141405746   0.00104612                                           more generalized pipeline applicable to shadowed regions outside
+                                                                            the coverage of SPLDEM2021--such as mid-to-high-latitude
+          M145354371   0.00129584                                           regions (up to 87°S), the north polar regions, and so forth.
+
+          M146121156   0.00216187                                                                          3. Results
+
+          M193023270   0.00181605                                                     3.1. Multiview SfS DTMs and Orthomosaics
+
+GR2       M129701439   0.00476716                                              For the six individual ROI pairs of the six NAC mosaics, we
+                                                                            successfully produced six DTMs (Figure 9) and their
+          M132042242   0.00335909                                           associated orthomosaics (Figure 10) at 1 × 1 m pixel-1 using
+                                                                            mutiview SfS. The GeoTIFF source data corresponding to the
+          M140781507   0.00306782                                           generated DTMs and orthomosaics are provided in Supple-
+                                                                            mentary Materials (Data S1). Figure 9 shows these DTMs as
+          M141446469   0.0045189                                            color-coded, shaded-relief maps to enhance local topography.
+                                                                            NoData pixels are commonly found at local-scale topographic
+          M143807204   0.00498395                                           lows, which likely correspond to less solar-illuminated regions
+                                                                            (mostly in shadow), as they do not surpass the shadow
+          M146155065   0.00674418                                           threshold of orthomosaics (0.004) in any of the six input NAC
+                                                                            orthoimages gained at six different subsolar longitudes and did
+LP1       M1098753609  0.00849038                                           not contribute to multiview SfS.
+
+          M1103475755  0.00472239                                              Following C. Heipke et al. (2007), we compared our NAC
+                                                                            orthomosaics with shaded-relief images derived from the
+          M1156113997  0.005229                                             DTMs (Figure 11) as an initial qualitative assessment of fine-
+                                                                            scale feature resolution. Across all ROIs, craters larger than 10
+          M1157708411  0.00179749                                           m in diameter are consistently delineated in the shaded reliefs,
+                                                                            suggesting that our DTMs reliably capture surface features on
+          M1252470864  0.00633709                                           the order of 20 m. In contrast, smaller craters (<10 m) that are
+                                                                            evident in the orthomosaics are not always reproduced in
+          M177476016   0.00280096                                           the corresponding shaded-relief renderings. This qualitative
+                                                                            observation is consistent with the theoretical analysis of W.
+MP1       M128106739   0.00184625                                           C. Liu & B. Wu (2021), who showed that when the solar
+                                                                            incidence angle exceeds 60°, rms-slope error curves depart
+          M132836066   0.00118133                                           from a monotonic decrease and instead increase and fluctuate
+                                                                            on steeper crater walls. For shallower craters, they found that
+          M136384859   0.00138284                                           errors continued to decline up to 75° before rising again--a
+                                                                            behavior they attributed to enlarged shadows obscuring crater
+          M139919591   0.00389505                                           bottoms and thus amplifying depth-determination errors. To
+                                                                            quantify this effective resolution more rigorously, we analyze
+          M141093708   0.00123161                                           height-uncertainty differences and surface-roughness metrics
+                                                                            in Section 4.
+          M147016300   0.00194536
+
+MP2       M129287651   0.00279028
+
+          M136357718   0.00203932
+
+          M141066563   0.00224148
+
+          M145775171   0.00162002
+
+          M150482299   0.00209989
+
+          M170601473   0.00240526
+
+interactively with ASP's stereo_gui. For each NAC image, we
+navigated to representative deep-shadow areas, clicked several
+shadow pixels, recorded the normalized intensities, and adopted
+the maximum sampled value as that image's threshold.
+
+   Where available, SPLDEM2021 offers the best vertical
+control; however, for building our GCP network, we required
+coregistered orthomosaics to supply reliable planimetric
+(horizontal) control. We therefore used LDEM/TC DTM as
+the initial surface in those ROIs because matching orthomo-
+saics were available. Although LDEM/TC DTM has lower
+vertical accuracy than SPLDEM2021, its long-wavelength
+biases are removed later by the two-stage ICP to LOLA, and
+the small  prevents imprinting their short-scale artifacts into
+the SfS solution.
+
+   An output point cloud was aligned to the LOLA RDR points
+without outliers using ASP's pc_align, converted to a DTM
+(from a point-cloud output format). We cropped each DTM by
+a rectangular shape to enclose the selected ROI area (outlined
+by white polylines in Figure 3), aligned it to the LOLA RDR
+points inside the ROI area using ASP's pc_align, and finally
+converted the resulting point cloud to a gridded DTM. We also
+applied the equivalent transformation matrices to orthoimage
+poses in order to fit their corresponding DTMs perfectly. When
+
+                                                                        10
+The Planetary Science Journal, 6:264 (25pp), 2025 November       Hemmi et al.
+
+Figure 7. Six source orthoimages of CR1. The spatial extent and a white ROI polygon in each view are the same as those of CR1 in Figure 9(a). NoData pixels
+(orthoimage pixel values 0.004) are not rendered, allowing the blue backgrounds to remain visible. An original NAC image ID is shown at the bottom of each
+panel.
+
+Figure 8. The total population of valid overlapping pixels among individual orthoimages. (a) CR1, (b) GR1, (c) GR2, (d) LP1, (e) MP1, (f) MP2. Each of the
+orthomosaics in Figure 10 was produced from these orthoimage pixels. The spatial extents and white polygons are the same as those in Figure 9. NoData pixels of
+DTMs in Figure 9 (orthoimage pixel values 0.004) are counted as zero.
+
+   We do not observe the linear seam artifacts reported for      artifacts adjacent to NoData boundaries (Figure 12). These
+some earlier LROC DTMs (e.g., bumps along misaligned             features colocate with persistent shadow edges across the six
+NACL­NACR seams), but we find weak, gently curved                inputs and occur most frequently where the valid-image count
+
+                                                             11
+The Planetary Science Journal, 6:264 (25pp), 2025 November             Hemmi et al.
+
+Figure 9. SfS DTMs gridded with 1 m pixel-1. They are color-coded by their elevations (50% opacity) overlaid on their own shaded reliefs. (a) CR1, (b) GR1, (c)
+GR2, (d) LP1, (e) MP1, (f) MP2. The spatial extent of each panel is the same as that in Figure 3. The relative height with a range of 55 m is coded with 11 colors, so
+that each color represents an interval of 5 m in height. Individual color bars of elevation values include both upper and lower limits, which were used to stretch the
+colors in each map, and are exactly the same as those of the LDEMs in Figure 3 for comparison. NoData pixels are not rendered, allowing the black backgrounds to
+remain visible. White closed polylines show our specified areas that are suitable for future landing/roving activities. The shaded-relief base map of each DTM is
+visually enhanced with 10× vertical exaggeration and light illumination from above each DTM.
+
+is 2 (compare the overlap map in Figure 8). Our masking of             perturbed pixel) and the predicted reflectance therefore change
+deep-shadow pixels (per-image thresholds; Table 4) and a               with the test offset. The unperturbed mismatch sets a 2×
+conservative smoothness weight ( = 0.12) help minimize                 threshold, and the search stops early once any simulated image
+these effects; further reductions could come from more                 exceeds it, so most pixels use fewer than the maximum trials.10
+overlapping images and/or more conservative settings (higher
+, stricter thresholds) at the cost of topographic sharpness and           Figure 13 shows height-uncertainty maps derived from the
+with greater sensitivity to any residual image misregistration.        six SfS DTMs using the height perturbation. The original data
+                                                                       for the height-uncertainty maps are provided in the
+                             4. Discussion                             Supplementary Materials (Data S1). Regardless of ROIs,
+                                                                       most of the areas have much lower values than 0.50 m. For
+ 4.1. Height Uncertainties Estimated by Height Perturbation            the DTMs other than the LP1 DTM, relatively large height
+                                                                       uncertainties are spatially concentrated near the NoData
+   Regarding the aforementioned DTM qualities, here we                 areas, which is consistent with the presence of artifacts next
+evaluate the height uncertainties of our DTMs. The ASP's               to the NoData pixels in Figure 12. Compared to the other
+multiview SfS tool (sfs or its parallel-processing, parallel_sfs)      DTMs, the higher height-uncertainty pixels of the MP2 DTM
+offers the option to compute height uncertainties that can be          are distributed along a 500 m wide crater rim within its
+invoked by the argument ­estimate-height-errors (available on          polygonal area. In fact, the fraction of height uncertainties
+ASP version 3.0.0 or later; R. Beyer et al. 2021) with its             <0.1 m is 88% for MP2, whereas that of the other ROIs
+parameter setting (­height-error-params).                              shows over 92% (Figure 14). Interestingly, in terms of height
+                                                                       uncertainties 3.0 m, MP2 obviously has the lowest popula-
+   With "­height-error-params 5.0 500," the SfS height-error           tion of pixels among the six ROIs. This lowers the standard
+probe samples up to 500 height offsets per pixel in the [0, 5 m]
+range (0.01 m spacing). At each pixel, the algorithm perturbs          10 For more information, see https://stereopipeline.readthedocs.io/en/latest/
+only that pixel's height while holding neighbors fixed; the local      tools/sfs.html.
+surface normal (computed via finite differences that involve the
+
+                                                                   12
+The Planetary Science Journal, 6:264 (25pp), 2025 November                Hemmi et al.
+
+Figure 10. The orthomosaics of our SfS DTMs. Image resolution is ~1 m pixel-1. (a) CR1, (b) GR1, (c) GR2, (d) LP1, (e) MP1, (f) MP2. NoData pixels are not
+rendered, allowing the light blue backgrounds to remain visible. Each orthomosaic is contrast-enhanced. The spatial extents and white polygons are the same as those
+in Figure 9.
+
+deviation of MP2, which is lower than that of LP1 and                       4.2. Height Uncertainties Estimated by rms Bidirectional
+comparable to that of MP1 (Figure 14). Overall, the average                                                 Slopes
+height uncertainty is less than 0.050 m, and the mean
+absolute deviation (from that mean) is less than 0.040 m.                    Besides the height perturbation method described in the
+On the whole, over 97% of the height uncertainties of each                previous section, earlier studies employing DTM-derived bidir-
+DTM are constrained to be less than 0.20 m (see cumulative                ectional slopes (e.g., R. L. Kirk et al. 2003, 2008, 2018,
+fraction values at [0.1, 0.2) in Figure 14), and 50% of them              2020, 2021; C. Heipke et al. 2007; R. A. Beyer & R. L. Kirk
+are 0.020 m or fewer (see median of median absolute                       2012) demonstrated that plotting rms slopes against varying
+deviation in Table 5).                                                    baseline lengths provides valuable insights into how reliably
+                                                                          small-scale features are resolved in DTMs. Compared with true
+   These per-pixel height-error values are a sensitivity diagnostic,      topographic slopes, artificially introduced local noise or smooth-
+not a posterior standard deviation. The algorithm perturbs only           ing in the source DTMs can respectively increase or decrease
+the pixel of interest and reports the offset at which the image-          slope values (R. L. Kirk et al. 2018, 2020, 2021).
+brightness misfit doubles; as such, the values should be read as
+approximate lower bounds on vertical uncertainty. Care is needed             Based on these findings, we calculated rms bidirectional
+when interpreting these maps. They omit spatial correlations              slopes from our own DTMs. We compute rms slopes along the
+among pixels and do not capture errors in albedo, the photometric         image sample (horizontal) and line (vertical) directions. For a
+function, any residual image coregistration, or uncertainty in the        baseline of L pixels and map scale s (m pixel­1), the two-point
+initial DEM and camera model. They also depend on processing              slope angle at location p is
+choices (, ), masks, and illumination, so changing those
+settings can shift the reported values. We therefore use these                      i = tan 1 ( z ( p + Le^) z ( p) /Ls) [degrees],
+maps primarily for relative, within-product comparisons (e.g., to
+flag shadow-adjacent or low-overlap areas) and interpret them             with e^ {sample, line}. We take the rms of i over all valid
+alongside external checks against LOLA and the rms slope­                 pairs (both elevations  NoData) to obtain the rms slope
+baseline diagnostics.                                                     (degrees). Implementation follows the released script (gdal_-
+                                                                          baseline_bidir.py): baselines are evaluated as powers of two
+
+                                                                      13
+The Planetary Science Journal, 6:264 (25pp), 2025 November        Hemmi et al.
+
+Figure 11. Close-up comparisons of the orthomosaic and shaded-relief renderings for the six newly generated DTMs. Shaded-relief maps were produced using
+illumination from directly overhead (solar altitude = 90°). For each map, we inverted the color ramp from black-to-white to white-to-black to better approximate the
+visual appearance of the orthomosaics derived from NAC orthoimages acquired under multidirectional illumination. Craters visible in both the orthomosaic and
+shaded relief are highlighted with green circles, while those discernible only in the orthomosaic are marked with red circles. The white lines correspond to the
+segments of the white polygons depicted in Figure 9. NoData pixels have been omitted to preserve the light blue background.
+
+between Lmin and Lmax. The exact script is archived with the      without relying on an assumption of ergodicity across multiple
+dataset, which is available at the author's repositories,
+Zenodo,11 and GitHub. The script operates in the spatial          profiles (R. L. Kirk et al. 2003).
+domain rather than the frequency domain adopted in previous          Figure 15 illustrates the rms bidirectional slopes derived
+works. Although a spatial-domain approach requires longer
+computation times than a fast-Fourier-transform-based fre-        from six SfS DTMs, with baseline lengths corresponding to
+quency-domain approach, it produces equally reliable results      powers of 2 pixels, ranging from 1 × 1 to 512 × 512 pixels
+                                                                  for our six DTMs and from 1 × 1 to 256 × 256 pixels for the
+11 doi: 10.5281/zenodo.17153447.                                  two existing 5 m pixel-1 DEMs at CR1. For fractal terrains,
+                                                                  the rms slope increases as the baseline decreases. Our SfS
+                                                                  DTMs follow this trend for baselines 10 m; at shorter
+                                                                  baselines (<10 m), the curves gently flatten, consistent with
+                                                                  modest short-baseline smoothing. This behavior departs from
+
+                                                              14
+The Planetary Science Journal, 6:264 (25pp), 2025 November            Hemmi et al.
+
+Figure 12. Examples of artifacts included in DTMs. The shaded-relief base maps are the same as those in Figure 9. The close-up views have been cropped to
+highlight the artifacts. Pink arrowheads outline the artifacts. White lines are part of the white polygons in Figure 9. Such artifacts were not identified on the shaded-
+relief map of LP1. NoData pixels are not rendered, allowing the light blue backgrounds to remain visible. The shaded-relief base map of each DTM is visually
+enhanced by using GDAL application gdaldem with 10× vertical exaggeration and light illumination from above each DTM.
+
+the straight-line relation in log­log space expected for fractal       4.3. Height Accuracies Compared to the LOLA RDR Points
+topography (e.g., M. K. Shepard et al. 2001), underscoring
+that the SfS DTMs have reduced high-frequency noise but                  Next, we examined the height accuracy of our DTMs by
+also some smoothing at meter-scale baselines. The LDEM (at            calculating differences in elevation between the DTMs and
+CR1) curve rises at the shortest baselines, indicative of small-      LOLA RDR shot points (including outlier points; Figures 16
+scale noise. MP2 departs slightly from the common behavior,           and 17 and Table 6). Elevation differences of points within
+showing a more pronounced flattening at 1­4 m (Figure 15).            each ROI area are mostly from -2.0 to +2.0 m (see Figure 16
+This likely reflects the larger fraction of shadow-adjacent/          for spatial distribution and Figure 17 for counts). Those at the
+low-overlap areas in MP2 (valid-image count 2; Figure 8)              middle of the GR1 ROI and those along the rim of a larger
+in combination with our conservative masking and  = 0.12,             crater of the MP2 ROI, however, show value ranges of +2.0 to
+rather than a fundamental difference in roughness. We                 +6.0 m (Figure 16(b)) and -8.0 to +2.0 m (Figure 16(f)),
+therefore interpret the MP2 short-baseline slopes with                respectively. As for MP2, its histogram shows a relatively high
+caution. These findings suggest that both our SfS DTMs                elevation difference at a range of 5 m or more (Figure 17),
+and SPLDEM2021 are less sensitive to local noise artifacts            which is consistent with the points with elevation differences
+compared to the LDEM. Although rms-slope plots alone                  over 10 m located inside the rim of a large crater in
+cannot quantitatively assess the meter-scale effective resolu-        Figure 16(f). For both LP1 and MP1, their histograms show
+tion of our DTMs, the models nevertheless resolve surface             similar larger counts at over 5 m in elevation difference, which
+features on the order of 10 m, as qualitatively demonstrated          could cause slightly positive mean/median values (Table 6). In
+by the depiction of 10 m-scale craters in Figure 11. Adding           principle, the ASP's pc_align algorithm (Figure 5) should
+much more controlled NAC images with a variety of subsolar            achieve an optimal coregistration of each DTM to the LOLA
+longitudes may increase rms slopes at baselines down to               point cloud, such that any remaining large residuals are
+2­8 m.                                                                because of unfiltered LOLA outliers rather than misalignment
+                                                                      of our models. Thus, these extreme elevation differences arise
+
+                                                                  15
+The Planetary Science Journal, 6:264 (25pp), 2025 November          Hemmi et al.
+
+Figure 13. Height-uncertainty maps of the SfS DTMs. Height-uncertainty pixels are colorized in a range from 0 to 0.50 m at intervals of 0.05 m. NoData pixels are
+not rendered, allowing the black backgrounds to remain visible. The spatial extents and white polygons are the same as those in Figure 9.
+
+both from intrinsic DTM uncertainties--especially in areas                4.4. Height Accuracies Compared to SPLDEM2021
+built from few input images--and from positional errors in
+LOLA shot points caused by along-track orbital uncertainties           Finally, we assess the elevation accuracies of the SfS DTMs
+from the LRO spacecraft. This is because (1) errors in LRO          by comparing them to SPLDEM2021, which is consistent with
+orbit are estimated at 7/7/0.5 m in along-track/cross-track/        the elevation error introduced by C. Mauceri et al. (2025).
+radial directions (E. Mazarico et al. 2018), (2) these orbital      SPLDEM2021 is constructed from enhanced elevation data
+errors are responsible for a few meters of uncertainties in         based on the original LOLA RDRs and GDR, which exhibit
+LOLA RDR points' coordinates on average (M. K. Barker               fewer artifacts, as discussed in Section 1.2 (Figure 3).
+et al. 2021), and (3) the ASP pc_align-based alignments we          Figure 18 presents the elevation difference maps for individual
+used multiple times (Figure 5) automatically remove gross           ROIs. Across all ROIs, the elevation differences observed in
+outliers of input LOLA points based on the initial parameter        these maps predominantly fall within ±1.0 m, with larger
+setting by default during translation of each DTM. Therefore,       discrepancies typically occurring near NoData pixels or at the
+the clustering of large height-error points in regions with         peripheries of the polygonal areas. Specifically, for the CR1,
+limited input images for multiview SfS indicates intrinsic          GR1, and GR2 maps, including the pixels outside the
+DTM uncertainty, while outliers distributed along the original      polygons, the mean elevation differences are approximately
+LRO orbital tracks likely reflect LOLA shot-point errors            <0.5 ± 1.0 m, and the median values are roughly <0.3 ± 0.8 m
+arising from along-track orbital uncertainties.                     (Table 7). In contrast, the statistics for the other three ROI maps
+                                                                    (LP1, MP1, and MP2) show a mean range of 0.5­1.0 ±
+   Even though outliers remain in LOLA RDR points, most             1.5­2.6 m and a median range of 0.3 ± 1.0­1.6 m, with the
+of the points with large elevation differences are outside the      larger differences primarily attributed to pixels outside the
+ROI-targeted polygons (especially for LP1, MP1, and MP2 in          polygonal regions, where the elevation discrepancies exceed
+Figures 16(d), (e), and (f)). Moreover, the "median absolute        5.0 m. Within the polygonal areas, the CR1, GR1, and MP1 maps
+deviation from the median" (i.e., the robust measure of             (Figures 18(a), (b), and (d)) exhibit smaller elevation differences
+variability, much less sensitive to outliers) of the elevation      compared to the LP1, MP1, and MP2 maps (Figures 18(c), (e),
+differences is within 0.9­1.7 m (Table 6), which suggests           and (f)).
+that our DTMs are sufficiently accurate, at least for the
+application of landing site/roving waypoint selection.                 The most significant discrepancies are observed in the MP2
+                                                                    map, where elevation differences are comparable to those
+
+                                                                16
+The Planetary Science Journal, 6:264 (25pp), 2025 November                                                                   Hemmi et al.
+
+Figure 14. Histograms of height uncertainties of the SfS DTMs. All valid (non-NoData) pixels are counted from the individual DTMs (Figure 13; the pixels outside
+the white polygons are included in the histograms). Each of the major statistical values is summarized in Table 5. The count axis is log scale. Histogram bins are
+shown at intervals of 0.1 m. The MP2 cumulative fraction of height-error values at [0.0, 0.1) is 88.04%.
+
+                                                                            Table 5
+                                               Statistics of the Height Uncertainties of the SfS DTMs
+
+ROI                                               CR1          GR1                          GR2           LP1        MP1      MP2
+
+Number of pixels                               3,071,559    2,231,438                    1,123,121     1,601,708  2,208,221  980,603
+Minimum (m)                                      0.010        0.010                        0.010         0.010      0.010     0.010
+Maximum (m)                                      4.950        4.610                        4.900         4.970      4.970     4.770
+Mean (m)                                         0.038        0.032                        0.041         0.043      0.037     0.049
+Median (m)                                       0.020        0.020                        0.020         0.030      0.020     0.030
+Standard deviation (m)                           0.069        0.043                        0.063         0.082      0.065     0.064
+rms error (m)                                    0.079        0.053                        0.075         0.093      0.075     0.081
+Mean absolute deviation from the mean (m)        0.028        0.022                        0.031         0.033      0.026     0.036
+Median absolute deviation from the median (m)    0.010        0.010                        0.010         0.020      0.010     0.020
+
+Note. We used all valid (non-NoData) pixels of the height-uncertainty maps (Figure 18).
+
+observed in the LOLA RDR points (Figure 16). Pixels at the        those in both SPLDEM2021 at Site23 and the LOLA RDR
+rim of the 0.5 km diameter crater show discrepancies of           points.
+-4.0 m or more. This region is associated with substantial
+height uncertainties, up to approximately 0.3 m (Figure 13),         The stronger short-baseline flattening and local misfits seen
+despite the use of multiple input images for topographic          for MP2 likely reflect a combination of factors. We consider
+processing (Figure 8). Even if these uncertainties were           the following five not-mutually-exclusive explanations, listed
+doubled (i.e., 0.6 m), they cannot fully account for the          from most to least plausible given our current diagnostics.
+observed MP2 DTM elevations being -4.0 m or lower than
+                                                                     1. A priori DEM choice (SPLDEM2021 not used). In MP2,
+                                                                        the initial surface was TC DTM, selected to pair
+
+                                                              17
+The Planetary Science Journal, 6:264 (25pp), 2025 November          Hemmi et al.
+
+Figure 15. Log­log plots showing rms bidirectional slopes derived from each SfS DTM. Slopes are based on their elevation profiles in sample (left) and line (right)
+directions. The baseline lengths that we used to calculate slopes are 1, 2, 4, 8, 16, 32, 64, 128, 256, and 512 m for each SfS DTM and 5, 10, 20, 40, 80, 160, 320, 640,
+and 1280 m for a 5 m pixel-1 LDEM. As a reference to the slopes of CR1, we add those derived from both LDEM (LOLA GDR) and SPLDEM2021, two of which
+were clipped by the shape of CR1's polygonal ROI.
+
+   with available orthomosaics for horizontal GCP control.             5. Apparent differences because of higher local fidelity of
+   These products have lower vertical fidelity than                       SfS. In steep terrain and along narrow rims, the dense SfS
+   SPLDEM2021, so the prior term can anchor the solution                  surface may capture real, high-frequency relief that is
+   to a less accurate long-wavelength shape, leaving                      undersampled by LOLA RDR or smoothed in
+   residual tilt/bias that later ICP steps may not fully                  SPLDEM2021, producing apparent discrepancies when
+   remove under sparse/low-overlap conditions.                            those datasets are treated as ground truth.
+2. Initial DEM constraint too small (overfit risk). An overly
+   small prior weight  improves detail but can let the SfS             Taken together, items (1) and (2) appear most influential in
+   solution overfit image intensity, especially near persis-        low-overlap, shadow-rich ROIs (e.g., MP2), with items (3) and
+   tent shadows or where the valid-image count is low. This         (4) being plausible secondary contributors and item (5) being a
+   behavior is consistent with MP2's 1­4 m slope flattening         localized effect in steep terrain. To apportion and mitigate
+   and shadow-adjacent residuals.                                   these effects across all ROIs, we will (i) preferentially adopt
+3. Residual interimage misregistration. Incomplete correc-          SPLDEM2021 as the a priori DEM (or introduce it as an
+   tion of small camera pose/pointing errors can propagate          external constraint) wherever available, (ii) perform a modest
+   into SfS and manifest as seamlike curvature or subtle            increase of the prior weight --evaluated via a tile-wise grid
+   rim distortions, particularly where the valid-image count        search--so that the long-wavelength form is better anchored
+   is 2 (see Figure 8). Although our seam-aware                     without unduly smoothing the short-baseline relief, (iii)
+   preregistration mitigates this, minor residuals could still      broaden the set of input NAC images to improve illumination
+   contribute locally.                                              diversity and valid-image counts, and (iv) tighten bundle
+4. Vertical misalignment in the control DTM used for                adjustment/pose refinement to further reduce residual inter-
+   GCPs. If the controlled TC DTM used to place GCPs is             image misregistration. These measures are applicable to all
+   vertically offset relative to LOLA/SPLDEM2021 in the             sites and are expected to reduce shadow-related artifacts
+   MP2 area, a systematic bias can be introduced that               and long-wavelength biases while preserving meter-scale
+   survives into the SfS and ICP stages.                            sharpness.
+
+                                                                18
+The Planetary Science Journal, 6:264 (25pp), 2025 November               Hemmi et al.
+
+Figure 16. Differences in elevation between individual SfS DTM pixels and valid LOLA RDR points. (a) CR1, (b) GR1, (c) GR2, (d) LP1, (e) MP1, (f) MP2. Base
+maps are orthomosaics. NoData pixels are not rendered, allowing the light blue backgrounds to remain visible. Histograms of individual elevation differences are
+shown in Figure 17, and their statistics are listed in Table 6. The spatial extents and white polygons are the same as those in Figure 9.
+
+    4.5. Comparison to an Independent SfS DTM at MP1                     and lower right corners) broadly resembles that seen in our
+                                                                         comparison to SPLDEM2021 (Figure 18(e)), indicating that
+   We compared our MP1 SfS DTM to the Malapert Massif SfS                long-wavelength control and shadow treatment dominate the
+DTM of B. D. Boatwright & J. W. Head (2024; hereafter                    residual structure.
+"MMDTM2024"). Both models were coregistered to LOLA-
+based topography datasets over the common footprint using                   At finer scales, our surface appears slightly smoother
+identical control and then differenced with a spatial resolution of      (Figure 19(d)), whereas MMDTM2024 looks sharper
+1 m pixel-1 (ours minus MMDTM2024; N = 2,210,024 pixels).                (Figure 19(e))--consistent with a lower SfS smoothness
+The distribution of signed differences is narrow and slightly            weight used for MMDTM2024 ( = 0.08) than for ours
+positively biased: mean = +0.841 m, median = +0.518 m, std.              ( = 0.12). As expected, a lower  preserves high-frequency
+dev. = 1.929 m, with median absolute deviation about the                 detail but can also accentuate processing artifacts. This is
+median = 1.056 m, and the full range is [-4.47, +8.79] m. In             consistent with the trends of bidirectional rms slopes
+cumulative terms, 47.59% of the pixels lie within ±1 m,                  (Figure 20); the rms slopes of MMDTM2024 are higher than
+75.73% within ±2 m, and 86.96% within ±3 m.                              those of our DTM at each baseline in both the line and sample
+                                                                         directions.
+   Visual inspection of shaded-relief renders (Figure 19) shows
+that the two surfaces are closely similar in morphology, with a             In MMDTM2024, we observe localized shape distortions
+gentle long-wavelength trend consistent with a small relative            along some crater rims and seamlike features (see noncircular,
+tilt/rotation between them (Figures 19(a) and (b)).                      discontinuous crater rims in the lower half of Figure 19(e)),
+MMDTM2024 fills permanently shadowed crater floors using                 suggestive of minor interimage misregistration; our seam-
+LDEM values, whereas our product retains NoData in deep                  aware NACL/NACR registration plus local ratio normal-
+shadow. Also, the spatial pattern of signed differences                  ization suppresses these effects. Overall, the metrics above and
+(Figure 19(c); particularly large differences at the upper right         the close-up comparisons indicate good agreement at the meter
+                                                                         scale with small, interpretable differences attributable to (i)
+
+                                                                     19
+The Planetary Science Journal, 6:264 (25pp), 2025 November  Hemmi et al.
+
+Figure 17. Histogram of the difference in elevation between each DTM and LOLA RDR point. Each histogram corresponds to each of the ROI maps in Figure 16,
+including points outside its polygonal area. The width of each bin is 1.0 m.
+
+                                                                              20
+The Planetary Science Journal, 6:264 (25pp), 2025 November                                                                Hemmi et al.
+
+Figure 18. Differences in elevation between individual SfS DTMs and SPLDEM2021. (a) CR1 SfS DTM - SPLDEM2021 at Site01, (b) GR1 SfS
+DTM - SPLDEM2021 at Site11, (c) GR2 SfS DTM - SPLDEM2021 at SL3, (d) LP1 SfS DTM - SPLDEM2021 at Site20, (e) MP1 SfS DTM - SPLDEM2021 at
+Site23, (f) MP2 SfS DTM - SPLDEM2021 at Site23. NoData pixels are not rendered, allowing the black backgrounds to remain visible. Their statistics are listed in
+Table 7. The spatial extents and polygons are the same as those in Figure 9.
+
+                                                  Table 6
+     Statistics of Differences in Elevation between Our DTMs and LOLA RDR Points
+
+ROI                                            CR1          GR1                          GR2        LP1           MP1        MP2
+                                                                                                                 10,623      5291
+Number of LOLA points                          12,005       7019                         3302       5521          0.987      1.027
+Mean (m)                                       0.458        0.170                        0.046      0.685         0.259      0.181
+Median (m)                                     0.134        0.043                        0.052      0.184        10.046      7.924
+Standard deviation (m)                         2.493        1.691                        1.717      4.398         2.316      3.210
+Mean absolute deviation from the mean (m)      1.579        1.291                        1.319      1.939         1.064      1.666
+Median absolute deviation from the median (m)  0.887        0.982                        1.005      1.108
+                                                                                                                  MP1      MP2
+Note. We used all valid (non-NoData) pixels of the height-uncertainty maps (Figure 18).                        2,210,024  981,098
+
+                                              Table 7                                                            0.715     1.046
+     Statistics of the Height Differences between SfS DTMs and SPLDEM2021                                        0.343     0.344
+                                                                                                                 2.016     3.936
+ROI                                               CR1          GR1                          GR2        LP1       1.537     2.633
+                                                                                                                 1.112     1.568
+Number of pixels                               3,087,041    2,231,935                    1,134,486  1,637,093
+Mean (m)                                         0.495        0.196                        0.058      0.442
+Median (m)                                       0.295        0.175                        0.138      0.027
+Standard deviation (m)                           1.254        1.253                        1.423      2.160
+Mean absolute deviation from the mean (m)        0.890        0.966                        1.085      1.532
+Median absolute deviation from the median (m)    0.617        0.796                        0.828      1.002
+
+Note. We used all valid (non-NoData) pixels of the height-uncertainty maps (Figure 18).
+
+                                                            21
+The Planetary Science Journal, 6:264 (25pp), 2025 November            Hemmi et al.
+
+Figure 19. Comparison between our MP1 SfS DTM and MMDTM2024. (a) and (b) Colorized elevations underlain by shaded reliefs for (a) our DTM (same as
+Figure 9(e)) and (b) MMDTM2024 (malapert_massif-tile-0.tif; B. Boatwright 2024). (c) Signed difference (ours - MMDTM2024) with colorized intervals of 1 m.
+(d) and (e) Close-ups (red dashed boxes in panels (a) and (b)) of shaded relief for (d) our DTM and (e) MMDTM2024. The magenta polygon outlines the
+MP1's ROI.
+
+long-wavelength alignment/tilt, (ii) shadow-floor handling,           the processing techniques developed, may significantly aid
+and (iii) different smoothness regularization.                        the study of sub-meter-scale surface features near the lunar
+                                                                      poles.
+                            5. Conclusions
+   We present a complete pipeline for generating 1 m pixel-1             To further improve spatial coverage and minimize artifacts,
+DTMs from six LROC NAC stereo image pairs of lunar polar              future work should incorporate tens to hundreds of stereo
+regions. These areas, observed multiple times under varying           image pairs acquired under diverse illumination conditions
+subsolar longitudes, are of high interest for future exploration      (e.g., M. R. Rosiek et al. 2013; M. O'Connor & R. A. Beyer
+missions such as LUPEX. Key components of our pipeline                2021; P. Liu et al. 2024). This would require automated bundle
+include bundle adjustment with GCPs, careful coregistration           adjustment, robust image-to-image tie-point extraction (e.g.,
+and mosaicking of NACL-to-NACR images, application of a               W. C. Liu & B. Wu 2020; B. Xie et al. 2025), and large-scale
+state-of-the-art multiview SfS method, and precise alignment          DTM processing. Additionally, integrating images with a broader
+with Kaguya/LOLA datasets. The resulting DTMs demon-                  range of solar incidence angles--such as those from ShadowCam
+strate high effective spatial resolution, low height uncer-           on the Korea Pathfinder Lunar Orbiter (M. S. Robinson et al.
+tainty, and high vertical accuracy. These products, along with        2023; Z. Ye et al. 2025)--may help reduce residual artifacts near
+                                                                      persistently shadowed regions.
+
+                                                                  22
+The Planetary Science Journal, 6:264 (25pp), 2025 November                                         Hemmi et al.
+
+Figure 20. Log­log plots showing rms bidirectional slopes derived from our MP1 DTM and MMDTM2024.
+
+                          Acknowledgments                                                 Data Availability
+                                                                   The supplementary datasets and a source code (a Python
+   We thank the Kaguya (formerly SELENE) Project                script to compute rms bidirectional slopes) are archived under
+team, the LRO LROC Experiment team, the LRO LOLA                CC-BY-4.0 at Zenodo: doi: 10.5281/zenodo.17153447.
+Science Team, and the NASA Planetary Data System
+for their planning and data acquisition/processing. We                                         Appendix
+would also like to express our gratitude to the ASP                This Appendix includes a full command-level flowchart for
+development team and the ISIS development team, whose           six NAC image-pair processing, bundle adjustment, NACL­
+contributions were essential to the success of this study.      NACR mosaicking, multiview SfS, and point-cloud alignment
+This work was partially supported by JSPS KAKENHI               to the LOLA RDR data points (Figure A1).
+Grant No. 23H00279 and JAXA SSF Program Japan Grant
+No. JPJXSSF24MX17002.
+
+                                                            23
+The Planetary Science Journal, 6:264 (25pp), 2025 November                                                                    Hemmi et al.
+
+Figure A1. Full command-level flow for image preparation, multiview SfS, and control to LOLA (detailed version of Figure 5).
+
+                                                              24
+The Planetary Science Journal, 6:264 (25pp), 2025 November                                                                                                          Hemmi et al.
+
+                              ORCID iDs                                              Laura, J. R., & Beyer, R. A. 2021, PSJ, 2, 18
+                                                                                     Li, C. 2013, Acta Geodaetica et Cartographica Sinica, 42, 853, https://html.
+Ryodo Hemmiaa https://orcid.org/0000-0002-9638-6926
+Hiroka Inoueaa https://orcid.org/0000-0003-0420-2841                                    rhhz.net/CHXB/html/20110600.htm
+Hiroshi Kikuchiaa https://orcid.org/0000-0003-0067-4606                              Li, C., Liu, J., Mu, L., Ren, X., & Zuo, W. 2016, The Chang'E-1 Topographic
+Hideaki Miyamotoaa https://orcid.org/0000-0001-8013-6124
+Hisashi Otakeaa https://orcid.org/0009-0005-6702-8774                                   Atlas of the Moon (2nd ed.; Berlin: Springer)
+                                                                                     Li, C., Liu, J., Ren, X., et al. 2018, Geomatics and Information Science of
+                               References
+                                                                                        Wuhan University, 43, 485
+Alexandrov, O., & Beyer, R. A. 2018, E&SS, 5, 652                                    Li, C., Ren, X., Liu, J., et al. 2010, ScChD, 53, 1582
+Angelopoulos, V. 2011, SSRv, 165, 3                                                  Li, C., Wang, C., Wei, Y., & Lin, Y. 2019, Sci, 365, 238
+Araki, H., Tazawa, S., Noda, H., et al. 2009, Sci, 323, 897                          Li, C. L., Ren, X., Liu, J. J., et al. 2015, LPSC, 46, 1638
+Barker, M. K., Mazarico, E., Neumann, G. A., et al. 2021, P&SS, 203,                 Li, S., Lucey, P. G., Milliken, R. E., et al. 2018, PNAS, 115, 8907
+                                                                                     Liu, J. J., Ren, X., Mu, L. L., et al. 2009, LPSC, 40, 2570
+   105119                                                                            Liu, P., Geng, X., Li, T., et al. 2024, RemS, 16, 2097
+Barker, M. K., Mazarico, E., Neumann, G. A., et al. 2023, PSJ, 4, 183                Liu, W. C., & Wu, B. 2020, JPRS, 159, 153
+Barker, M. K., Mazarico, E., Neumann, G. A., et al. 2025, PSJ, 6, 83                 Liu, W. C., & Wu, B. 2021, JPRS, 182, 208
+Beyer, R., Alexandrov, O., & McMichael, S., 2019 NeoGeographyToolkit/                Lohse, V., Heipke, C., & Kirk, R. L. 2006, P&SS, 54, 661
+                                                                                     Matthies, L., Daftry, S., Tepsuporn, S., et al. 2022, in 2022 IEEE Aerospace
+   StereoPipeline: ASP, v2.6.2, Zenodo, doi:10.5281/zenodo.3247734
+Beyer, R., Alexandrov, O., McMichael, S., et al., 2021 NeoGeographyToolkit/             Conf. (AERO) (AIAA: IEEE),
+                                                                                     Mauceri, C., Cheng, Y., Iwashita, Y., & Ansar, A. 2025, in AIAA SCITECH
+   StereoPipeline, v3.0.0, Zenodo, doi:10.5281/zenodo.5140581
+Beyer, R. A., Alexandrov, O., Balaban, E., et al. 2023, LPSC, 54, 2377                  2025 Forum (Reston, VA: AIAA),
+Beyer, R. A., Shirley, M., Colaprete, A., et al. 2025, PSJ, 6, 236                   Mazarico, E., Neumann, G. A., Barker, M. K., et al. 2018, P&SS, 162, 2
+Beyer, R. A., Alexandrov, O., & McMichael, S. 2018, E&SS, 5, 537                     Mazarico, E., Neumann, G. A., Smith, D. E., Zuber, M. T., & Torrence, M. H.
+Beyer, R. A., Alexandrov, O., & Moratto, Z. M. 2014, LPSC, 45, 2902
+Beyer, R. A., & Kirk, R. L. 2012, SSRv, 170, 775                                        2011, Icar, 211, 1066
+Boatwright, B. 2024, SfS-Refined Digital Elevation Models of Malapert                McEwen, A. S. 1991, Icar, 92, 298
+                                                                                     O'Connor, M., & Beyer, R. A. 2021, Lunar LRO NAC Haworth
+   Massif and Mons Agnes, Moon, Harvard Dataverse, doi:10.7910/DVN/
+   FBHDLK                                                                               Photoclinometry DEM 1m, USGS Astrogeology Science Center https://
+Boatwright, B. D., & Head, J. W. 2024, PSJ, 5, 124                                      astrogeology.usgs.gov/search/map/lunar_lro_nac_haworth_
+Boazman, S. J., Heather, D., Inoue, H., & Ohtake, M. 2024, PSJ, 5, 279                  photoclinometry_dem_1m
+Burns, K. N., Speyerer, E. J., Robinson, M. S., et al. 2012, ISPAr, XXXIX-           Oberst, J., Scholten, F., Matz, K. D., et al. 2010, LPSC, 41, 2051
+   B4, 483                                                                           Ouyang, Z., Li, C., Zou, Y., et al. 2010, ScChD, 53, 1565
+Colaprete, A., Elphic, R. C., Shirley, M., et al. 2020, LPSC, 1, 2241                QGIS Contributors, 2022 QGIS, v3.22.3, Zenodo, doi:10.5281/zenodo.
+Cook, A. C., Watters, T. R., Robinson, M. S., Spudis, P. D., & Bussey, D. B. J.         5869837
+   2000, JGRE, 105, 12023                                                            Qian, J., Ye, Z., Qiu, S., et al. 2025, Icar, 431, 116494
+Daftry, S., Chen, Z., Cheng, Y., et al. 2023, in 2023 IEEE Aerospace Conf.           Ren, X., Liu, J. J., Wang, F. F., et al. 2014, EPSC, 9, 344
+   (Piscataway, NJ: IEEE),                                                           Robinson, M. S., Brylow, S. M., Tschimmel, M., et al. 2010, SSRv, 150, 81
+De Rosa, D., Bussey, B., Cahill, J. T., et al. 2012, P&SS, 74, 224                   Robinson, M. S., Brylow, S. M., Caplinger, M. A., et al. 2023, JASS, 40, 149
+Feldman, W. C., Lawrence, D. J., Elphic, R. C., et al. 2000, JGR, 105, 4175          Rosiek, M. R. 2013, Moon LRO South Pole DEM Verification and Validation
+Flahaut, J., Carpenter, J., Williams, J. P., et al. 2020, P&SS, 180, 104750             Report, USGS Astrogeology Science Center https://astrogeology.usgs.
+Geromichalos, D., Azkarate, M., Tsardoulias, E., et al. 2020, Journal of Field          gov/search/map/moon_lro_south_pole_dem_verification_and_
+   Robotics, 37, 830                                                                    validation_report
+Gläser, P., Haase, I., Oberst, J., & Neumann, G. A. 2013, P&SS, 89, 111              Rosiek, M. R., Kirk, R., & Howington-Kraus, A. 1999, LPSC, 30, 1853
+Haruyama, J., Matsunaga, T., Ohtake, M., et al. 2008, EP&S, 60, 243                  Rosiek, M. R., Lee, E. M., & Howington-Kraus, E. T. 2012, LPSC, 43, 2343
+Haruyama, J., Ohtake, M., Matsunaga, T., et al. 2014, LPSC, 45, 1304
+Heipke, C., Oberst, J., Albertz, J., et al. 2007, P&SS, 55, 2173                     Rosiek, M. R., Thomas, O., Howington-Kraus, E., & Foster, E. 2013, LPSC,
+Hemmi, R., Miyamoto, H., Inoue, H., et al. 2020, LPSC, 51, 1251                         44, 2583
+Henriksen, M. R., Manheim, M. R., Burns, K. N., et al. 2017, Icar, 283, 122
+Horn, B. K. P. 1990, International Journal of Computer Vision, 5, 37                 Rouault, E., Warmerdam, F., Schwehr, K., et al., 2025 GDAL, v3.10.1,
+Hoshino, T., Wakabayashi, S., Ohtake, M., et al. 2020, AcAau, 176, 52                   Zenodo, doi:10.5281/zenodo.14639689
+Hu, T., Yang, Z., Li, M., et al. 2023, P&SS, 227, 105623
+Inoue, H., & Adachi, S. 2021, Transactions of the Japan Society for                  Russell, C., & Angelopoulos, V. 2014, The ARTEMIS Mission (New York:
+   Aeronautical and Space Sciences, 64, 304                                             Springer)
+Johnson, A. E., & Montgomery, J. F. 2008, in 2008 IEEE Aerospace Conf.
+   (Piscataway, NJ: IEEE),                                                           Sanin, A. B., Mitrofanov, I. G., Litvak, M. L., et al. 2017, Icar, 283, 20
+Kirk, R. L., Fergason, R. L., Redding, B., et al. 2020, ISPAr, XLIII-B3-             Sathyan, S., Bhatt, M., Chowdhury, M., et al. 2024, Icar, 412, 115988
+   2020, 1129                                                                        Schonfeld, J. 2023, in 2023 IEEE Int. Conf. on Systems, Man, and Cybernetics
+Kirk, R. L., Howington-Kraus, E., Edmundson, K., et al. 2018, Community
+   Tools for Cartographic and Photogrammetric Processing of Mars Express                (SMC) (Piscataway, NJ: IEEE),
+   HRSC Images, in Planetary Remote Sensing and Mapping, ed. B. Wu et al.            Schorghofer, N., & Williams, J.-P. 2020, PSJ, 1, 54
+   (1st ed.; London: CRC Press), 107                                                 Schörghofer, N., Williams, J.-P., & Mazarico, E. 2024, PSJ, 5, 126
+Kirk, R. L., Howington-Kraus, E., Redding, B., et al. 2003, JGRE, 108, 8088          Shepard, M. K., Campbell, B. A., Bulmer, M. H., et al. 2001, JGR, 106, 32777
+Kirk, R. L., Howington-Kraus, E., Rosiek, M. R., et al. 2008, JGRE, 113,             Smith, D. E., Zuber, M. T., Jackson, G. B., et al. 2010a, SSRv, 150, 209
+   E00A24
+Kirk, R. L., Mayer, D. P., Fergason, R. L., et al. 2021, RemS, 13, 3511              Smith, D. E., Zuber, M. T., Neumann, G. A., et al. 2010b, GeoRL, 37, L18204
+Kumari, N., Bretzfelder, J. M., Ganesh, I., Lang, A., & Kring, D. A. 2022, PSJ,      Smith, D. E., Zuber, M. T., Neumann, G. A., et al. 2017, Icar, 283, 70
+   3, 224                                                                            Smith, M., Craig, D., Herrmann, N., et al. 2020, in 2020 IEEE Aerospace
+
+                                                                                        Conf. (Piscataway, NJ: IEEE),
+                                                                                     Vanoutryve, B., De Rosa, D., Fisackerly, R., et al. 2010, in 7th Int. Planetary
+
+                                                                                        Probe Workshop https://www.academia.edu/20467340/An_Analysis_of_
+                                                                                        Illumination_and_Communication_Conditions_near_Lunar_South_Pole_
+                                                                                        based_on_Kaguya_data
+                                                                                     Wagner, R. V., Henriksen, M. R., Manheim, M. R., et al. 2024, PSJ, 5, 157
+                                                                                     Xie, B., Liu, B., Di, K., et al. 2025, RemS, 17, 13
+                                                                                     Xin, X., Liu, B., Di, K., Yue, Z., & Gou, S. 2020, RemS, 12, 526
+                                                                                     Ye, Z., Qian, J., Xu, Y., et al. 2025, AJ, 170, 31
+                                                                                     Zhang, Y., Liu, B., Di, K., et al. 2023, RemS, 15, 5691
+
+                                                                                 25
+

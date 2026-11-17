@@ -1,13 +1,19 @@
 """The first camera-navigation runs: 3 runs, one per PSR site, in parallel.
 
     python -m sim.live_runs --dry-run     # print the plan and the expected wall time, run nothing
-    python -m sim.live_runs               # run them
+    python -m sim.live_runs               # run them (again: skips finished runs)
+    scripts/launch_first3.ps1             # the same, in its own window
 
 Each run: 3 Scouts x 3 sorties, map refinement on, camera navigation
 (Settings.nav = "camera", the default), on sites s89_134e, s89_014e and
 haynes, world seeds SEEDS (or --seed). Writes data/campaigns/<batch_id>/<run_id>/
 record.json, poses.npz, steps.npz (docs/handoffs.md, "Camera navigation"),
-plus summary.csv once all three finish.
+plus summary.csv once all three finish. Every line, each run's progress
+line (every --progress Scout-steps) included, also goes to
+data/campaigns/<batch_id>/launch.log, prefixed with the time and the site.
+
+Resume: a run whose row.json (written last) exists is finished and is
+skipped. A run that died part way starts over; its run ground is cached.
 
 The expected wall time is the planned driving distance divided by the step
 (sim/rover.py STEP_M), times the measured seconds per Scout-step
@@ -20,6 +26,9 @@ import argparse
 import csv
 import json
 import math
+import multiprocessing
+import os
+import sys
 import time
 from multiprocessing import Pool
 from pathlib import Path
@@ -84,21 +93,76 @@ def plan(site, seed, n_scouts, sorties, extra=()):
             "metres": round(metres), "scout_steps": round(steps)}
 
 
+class _Log:
+    """A process's stdout and stderr, line by line, to its console and to
+    the batch log, each line prefixed with the time and the run's site."""
+
+    def __init__(self, path, console, lock):
+        self.path, self.console, self.lock = path, console, lock
+        self.prefix, self.buf = "", ""
+
+    def write(self, text):
+        self.buf += text
+        while "\n" in self.buf:
+            line, self.buf = self.buf.split("\n", 1)
+            out = f"{time.strftime('%H:%M:%S')} {self.prefix}{line}\n"
+            with self.lock:
+                with open(self.path, "a", encoding="utf-8") as f:
+                    f.write(out)
+                if self.console is not None:
+                    self.console.write(out)
+                    self.console.flush()
+        return len(text)
+
+    def flush(self):
+        pass
+
+
+def _init_worker(lock, log_path):
+    import sys
+    if log_path:
+        sys.stdout = _Log(log_path, sys.__stdout__, lock)
+        sys.stderr = sys.stdout
+
+
+def _done(root):
+    """The run's row.json, written last, or None while the run is not finished."""
+    p = Path(root) / "row.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
 def _run(job):
+    import os
+    import sys
+    import traceback
     site, seed, n_scouts, sorties, batch_id, extra = job
-    from sim.campaign import Campaign
+    if isinstance(sys.stdout, _Log):
+        sys.stdout.prefix = f"[{site}] "
     t0 = time.perf_counter()
-    s = settings_for(site, n_scouts, sorties, extra)
-    c = Campaign(seed, s, ranges_for(s)).run()
-    root = c.save(batch_id)
-    rec_path = root / "record.json"
-    rec = json.loads(rec_path.read_text(encoding="utf-8"))
-    rec["seed_choice"] = (f"seed {seed} chosen for {site}, not drawn: " + SEED_RULE) if SEEDS.get(site) == seed         else f"seed {seed} given on the command line"
-    rec_path.write_text(json.dumps(rec, separators=(",", ":")), encoding="utf-8")
-    sm = c.summary()
-    (root / "row.json").write_text(json.dumps({"summary": sm, "by_sortie": c.by_sortie(),
-                                               "wall_s": time.perf_counter() - t0}, default=str), encoding="utf-8")
-    return site, str(root), sm, time.perf_counter() - t0
+    try:
+        from sim.campaign import Campaign
+        s = settings_for(site, n_scouts, sorties, extra)
+        c = Campaign(seed, s, ranges_for(s))
+        print(f"start {c.run_id}, seed {seed}, pid {os.getpid()}", flush=True)
+        c.run()
+        root = c.save(batch_id)
+        rec_path = root / "record.json"
+        rec = json.loads(rec_path.read_text(encoding="utf-8"))
+        if SEEDS.get(site) == seed:
+            rec["seed_choice"] = f"seed {seed} chosen for {site}, not drawn: " + SEED_RULE
+        else:
+            rec["seed_choice"] = f"seed {seed} given on the command line"
+        rec_path.write_text(json.dumps(rec, separators=(",", ":")), encoding="utf-8")
+        sm = c.summary()
+        wall = time.perf_counter() - t0
+        (root / "row.json").write_text(json.dumps({"summary": sm, "by_sortie": c.by_sortie(), "wall_s": wall},
+                                                  default=str), encoding="utf-8")
+        print(f"done in {wall / 3600:.2f} h -> {root}", flush=True)
+        return site, str(root), sm, wall
+    except Exception:
+        wall = time.perf_counter() - t0
+        print(f"FAILED after {wall / 3600:.2f} h:\n{traceback.format_exc()}", flush=True)
+        return site, None, None, wall
 
 
 def main():
@@ -110,12 +174,23 @@ def main():
     ap.add_argument("--batch-id", default=BATCH_ID)
     ap.add_argument("--dry-run", action="store_true", help="print the plan and expected wall time only")
     ap.add_argument("--serial", action="store_true", help="one run at a time (about 1 GB) instead of all at once")
+    ap.add_argument("--progress", type=int, default=500, help="a progress line every N Scout-steps of each run")
     ap.add_argument("--set", nargs="*", default=[], help="other Settings overrides, name=value (test runs)")
     a = ap.parse_args()
+    from sim.campaign import CAMPAIGN_DIR
+    batch = CAMPAIGN_DIR / a.batch_id
+    log_path = None
+    lock = multiprocessing.Lock()
+    if not a.dry_run:
+        batch.mkdir(parents=True, exist_ok=True)
+        log_path = batch / "launch.log"
+        _init_worker(lock, log_path)          # this process too: the plan and the outcome go in the log
+        print(f"---- launch {time.strftime('%Y-%m-%d %H:%M:%S')}, pid {os.getpid()}, log {log_path}", flush=True)
     sites = a.sites.split(",")
     seed = {site: a.seed if a.seed is not None else SEEDS.get(site, 1) for site in sites}
     plans = [plan(site, seed[site], a.scouts, a.sorties, a.set) for site in sites]
-    print(f"{len(sites)} runs, {a.scouts} Scouts x {a.sorties} sorties each, camera navigation, map refinement on, "
+    nav = settings_for(sites[0], a.scouts, a.sorties, a.set).nav
+    print(f"{len(sites)} runs, {a.scouts} Scouts x {a.sorties} sorties each, {nav} navigation, map refinement on, "
           f"seeds {seed}, batch {a.batch_id}")
     worst = 0.0
     for p in plans:
@@ -125,6 +200,8 @@ def main():
             sec = p["scout_steps"] * S_PER_STEP_MEASURED * (PARALLEL_SLOWDOWN or 1.0)
             worst = max(worst, sec)
             line += f", about {sec / 3600:.1f} h"
+        if _done(batch / p["run_id"]):
+            line += "  [finished: skipped]"
         print(line)
     if S_PER_STEP_MEASURED:
         print(f"expected wall time: about {worst / 3600:.1f} h with the runs in parallel "
@@ -132,21 +209,37 @@ def main():
               f"for {len(sites)} at once, x{STEPS_PER_PLANNED_MEASURED or 1.0:.2f} steps per planned step)")
     if a.dry_run:
         return
+    rows, jobs = {}, []
+    for site, p in zip(sites, plans):
+        row = _done(batch / p["run_id"])
+        if row:
+            rows[site] = row["summary"]
+        else:
+            jobs.append((site, seed[site], a.scouts, a.sorties, a.batch_id, a.set))
+    os.environ["LANTERN_CAM_PROGRESS"] = str(a.progress)   # sim/campaign_camera.py reads it at import, in each worker
     t0 = time.perf_counter()
-    rows = []
-    jobs = [(site, seed[site], a.scouts, a.sorties, a.batch_id, a.set) for site in sites]
-    with Pool(1 if a.serial else len(sites)) as pool:
-        for site, root, sm, wall in pool.imap_unordered(_run, jobs):
-            print(f"{site}: done in {wall / 3600:.2f} h -> {root}", flush=True)
-            rows.append(sm)
-    from sim.campaign import CAMPAIGN_DIR
-    out = CAMPAIGN_DIR / a.batch_id / "summary.csv"
-    keys = list(dict.fromkeys(k for r in rows for k in r))
+    failed = []
+    if jobs:
+        with Pool(1 if a.serial else len(jobs), initializer=_init_worker, initargs=(lock, log_path),
+                  maxtasksperchild=1) as pool:
+            for site, root, sm, wall in pool.imap_unordered(_run, jobs):
+                if sm is None:
+                    failed.append(site)
+                else:
+                    rows[site] = sm
+    done_rows = [rows[x] for x in sites if x in rows]
+    out = batch / "summary.csv"
+    keys = list(dict.fromkeys(k for r in done_rows for k in r))
     with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, keys)
         w.writeheader()
-        w.writerows(rows)
-    print(f"all {len(sites)} runs in {(time.perf_counter() - t0) / 3600:.2f} h; wrote {out}")
+        w.writerows(done_rows)
+    msg = (f"{len(done_rows)} of {len(sites)} runs finished, {len(jobs)} run this time in "
+           f"{(time.perf_counter() - t0) / 3600:.2f} h; wrote {out}")
+    if failed:
+        msg += f". FAILED: {', '.join(failed)}; the same command again reruns only the unfinished runs"
+    print(msg, flush=True)
+    sys.exit(1 if failed else 0)
 
 
 if __name__ == "__main__":

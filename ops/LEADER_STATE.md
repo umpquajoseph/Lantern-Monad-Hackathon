@@ -575,3 +575,4 @@ killed three times today while batches ran.
 - All three workers paused by 13:44. Leader watcher not re-armed (no
   mail expected while paused). On resume: mail each "unpause" with its
   next step, in the order its WIP report gives.
+- 13:5x Product owner: the aim is a realistic sim of the paper's workflow, not Scouts that come home; stranded Scouts are a finding about ShadowNav. Spec e070a04 and ba22641 on lantern-workflow; fyi to all three workers. Beacons only as the brief proposes them (comms relays).

@@ -60,7 +60,7 @@ def crater_depths(craters, seed, p: Params = Params()):
 
 
 def build_ground(site, seed, x_lo, x_hi, y_lo, y_hi, ranges=None, g: GroundBuild = GroundBuild(),
-                 name=None, poses=None):
+                 name=None, poses=None, roughness=True):
     t0 = time.time()
     ranges = ranges or WorldRanges()
     d = load_site(site)
@@ -89,9 +89,12 @@ def build_ground(site, seed, x_lo, x_hi, y_lo, y_hi, ranges=None, g: GroundBuild
     height = upsample(z5, xc, yc, x, y, p.lola_smooth_px)
     # Roughness under two LOLA cells. The polar mosaics have no height-error
     # product, so the RMS is Params.synthetic_toterr_m x rough_frac_of_toterr.
-    rng = _world_rng(seed, 4)
-    rough_rms = p.rough_frac_of_toterr * p.synthetic_toterr_m
-    height += _fractal_noise(n, c, p.rough_beta, rng, k_lo=1.0 / p.rough_cutoff_m) * rough_rms
+    # roughness=False (Settings.ground_roughness): the labelled sensitivity
+    # case without this assumed layer.
+    rough_rms = p.rough_frac_of_toterr * p.synthetic_toterr_m if roughness else 0.0
+    if roughness:
+        rng = _world_rng(seed, 4)
+        height += _fractal_noise(n, c, p.rough_beta, rng, k_lo=1.0 / p.rough_cutoff_m) * rough_rms
 
     w = campaign_world(site, seed, ranges)
     depth = crater_depths(w.craters, seed, p)

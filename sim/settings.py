@@ -182,6 +182,10 @@ class Settings:
     cam_turn_rate_deg_s: float = S(5.0, ASSUMED + "; turn-in-place rate, for time and energy")
     cam_ground_margin_m: float = S(250.0, ASSUMED + "; fine ground built this far beyond the dock, corridor "
                                                     "and every lane the run could reserve")
+    ground_roughness: bool = S(True, ASSUMED + "; the run ground's roughness under two LOLA cells (sim/terrain.py "
+                                               "Params.rough_frac_of_toterr x synthetic_toterr_m, both assumed). "
+                                               "False is a labelled sensitivity case: LOLA upsampled plus the "
+                                               "world's craters only (workflow, 17 Nov 2026)")
     cam_display: str = S("off", "sim/scene.py DISPLAY_MODES: 'off' = the run ground as built (no display "
                                 "assets exist for a run ground)")
     # Batch runs with nav='sampled' never read the fields below.

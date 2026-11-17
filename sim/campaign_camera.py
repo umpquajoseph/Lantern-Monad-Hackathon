@@ -228,12 +228,15 @@ class CameraRig:
                     from scipy.spatial import cKDTree
                     dist, _ = cKDTree(w.craters).query(carved[:, :3])
                     same_world = same_world and bool(np.all(dist < 1e-6))
-                if meta.get("box") == box and meta.get("seed") == camp.seed and meta.get("site") == w.site                         and same_world:
+                rough_ok = (float(meta.get("roughness_rms_m", 1.0)) > 0) == bool(s.ground_roughness)
+                if meta.get("box") == box and meta.get("seed") == camp.seed and meta.get("site") == w.site \
+                        and same_world and rough_ok:
                     return path, box
             except Exception:
                 pass
         # build_ground adds its own GroundBuild.margin_m; the box already holds ours.
-        out = build_ground(w.site, camp.seed, box[0], box[1], box[2], box[3], camp.ranges, name=name)
+        out = build_ground(w.site, camp.seed, box[0], box[1], box[2], box[3], camp.ranges, name=name,
+                           roughness=s.ground_roughness)
         return out, box
 
     def inside(self, x, y):
@@ -449,7 +452,16 @@ class CameraSortie(Sortie):
         error) and Settings' per-step noise; the filter never sees these."""
         s, rg = self.s, self.rng_odo
         d_o = d * (1.0 + self.drift_true) + (rg.normal(0.0, s.odom_noise_frac * d) if d > 0 else 0.0)
-        dh_o = dh + (rg.normal(0.0, s.odom_heading_noise_rad) if d > 0 else 0.0)
+        # With a star tracker (Settings.star_tracker, draft 4.6) the Scout's
+        # heading is measured, not dead-reckoned (A24 sec. III-A, the filter's
+        # pf_heading_walk_rad = 0), as the sampled engine already does
+        # (Sortie._advance adds heading drift only without one). The camera
+        # odometer added heading noise regardless, and the filter, which
+        # takes heading as known, drifted 0.7 deg (median) to 3.2 deg from
+        # the truth unseen (workflow-first3b/3c survey steps). The noise is
+        # still drawn, so the odometer's random stream is unchanged.
+        nh = rg.normal(0.0, s.odom_heading_noise_rad) if d > 0 else 0.0
+        dh_o = dh + (0.0 if s.star_tracker else nh)
         self.rover.distance += d
         return d_o, dh_o
 

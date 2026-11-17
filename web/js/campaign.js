@@ -213,7 +213,16 @@ export function fitPage() {
 
 // Every banner a record needs: the showcase note (sim/showcase.py), then what is a stand-in.
 export function bannersOf(rec, batch = null) {
-  return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec)) + oldHomingBanner(batch);
+  return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec)) + oldHomingBanner(batch) + standinBanner(sensitivityOf(rec.settings), "Sensitivity");
+}
+
+// Settings.ground_roughness false (workflow fyi 20261117-132516): the labelled
+// sensitivity case, run ground without its roughness layer. `s` is a record's
+// settings or a summary row; the column may be absent (older runs: roughness on).
+export const NO_ROUGH_NOTE = "sensitivity case: the run ground has no roughness layer (ground_roughness off), not the default world";
+export function sensitivityOf(s) {
+  const v = s && s.ground_roughness;
+  return v === false || v === "False" || v === "false" ? NO_ROUGH_NOTE : null;
 }
 
 export function oldHomingBanner(batch) {

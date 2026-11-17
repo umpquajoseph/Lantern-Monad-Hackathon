@@ -18,7 +18,7 @@ import { MissionPlayer, ensureStyles } from "./mission_player.js";
 import { ScienceRig, VERDICT_COLOR } from "./science_rig.js";
 import {
   CampaignRun, FleetRun, loadPipeline, groundEverywhere, loadIndex, assetsBase,
-  SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, ACTIVITY, OUTCOME_WORD, DOCKED, fmtNum, fmtDay, standinOf, esc, isUnreached, OLD_HOMING, OLD_HOMING_NOTE,
+  SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, ACTIVITY, OUTCOME_WORD, DOCKED, fmtNum, fmtDay, standinOf, esc, isUnreached, OLD_HOMING, OLD_HOMING_NOTE, sensitivityOf, NO_ROUGH_NOTE,
 } from "./campaign.js";
 
 const $ = (id) => document.getElementById(id);
@@ -111,10 +111,14 @@ async function main() {
 // hop home (OLD_HOMING) never wins over an honest one.
 function pickRun(index, batch, run) {
   if (batch && run) return { batch, run };
-  const withMap = index.flatMap((b) => b.runs.filter((r) => r.map).map((r) => ({ batch: b.batch_id, run: r.run_id, r, standin: !!b.standin })));
+  const withMap = index.flatMap((b) => b.runs.filter((r) => r.map).map((r) => ({ batch: b.batch_id, run: r.run_id, r, standin: !!b.standin, made: b.made })));
   const n = (v) => Number(v) || 0;
-  const reach = (r) => [n(r.confirmed), n(r.searches), n(r.finds), n(r.n_scouts) >= 2 ? 1 : 0, n(r.sorties_ok)];
-  const cmp = (p, q) => { const a = [OLD_HOMING.has(p.batch) ? 0 : 1, ...reach(p.r)], b = [OLD_HOMING.has(q.batch) ? 0 : 1, ...reach(q.r)]; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] - a[i]; return 0; };
+  const reach = (r) => [n(r.confirmed), n(r.searches), n(r.finds), n(r.sorties_ok)];
+  // Honest homing first, then the default world over a sensitivity case, then
+  // fleets that can corroborate (2+ Scouts), then the newest batch (leader's
+  // reply 20261117-131552: "the newest honest batch"), then reach.
+  const key = (x) => [OLD_HOMING.has(x.batch) ? 0 : 1, sensitivityOf(x.r) ? 0 : 1, n(x.r.n_scouts) >= 2 ? 1 : 0, n(Date.parse(x.made) || x.made), ...reach(x.r)];
+  const cmp = (p, q) => { const a = key(p), b = key(q); for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] - a[i]; return 0; };
   const cam = withMap.filter((x) => x.r.pipeline === "camera" && !x.standin).sort(cmp), piped = withMap.filter((x) => x.r.pipeline);
   const best = cam[0] || piped.find((x) => x.r.n_scouts >= 3) || piped[0] || withMap.find((x) => x.r.n_scouts >= 2) || withMap[0];
   return best ? { batch: best.batch, run: best.run } : null;
@@ -1325,7 +1329,7 @@ function runInfo() {
   $("run-title").textContent = rec.run_id;
   document.title = `Lantern Mission Control · ${rec.run_id}`;
   const kv = (rows) => `<dl class="kv">${rows.filter(([, v]) => v != null && v !== "–").map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
-  const notes = [standinOf(rec), rec.showcase, OLD_HOMING.has(S.batch) && `This batch's ${OLD_HOMING_NOTE}: a Scout shown reaching the dock may never have found its way home.`].filter(Boolean);
+  const notes = [standinOf(rec), rec.showcase, sensitivityOf(rec.settings) && `This run is a ${NO_ROUGH_NOTE}.`, OLD_HOMING.has(S.batch) &&`This batch's ${OLD_HOMING_NOTE}: a Scout shown reaching the dock may never have found its way home.`].filter(Boolean);
   $("run-info").innerHTML = `<p class="small hint">Batch ${esc(S.batch)} · seed ${rec.seed} · made ${esc(String(rec.made_at || "").slice(0, 16).replace("T", " "))}</p>` +
     `<div class="mini-h">Setup</div>` + kv([["Site", esc(rec.terrain && rec.terrain.site)], ["Scouts", st.n_scouts], ["Sorties per Scout", st.sorties_per_scout],
       ["Check policy", esc(st.check_policy)], ["Map refinement", st.map_refinement == null ? null : st.map_refinement ? "on" : "off"],
@@ -1365,6 +1369,7 @@ function renderStory(t, k) {
   if (run.pipelineStandin) bits.push("stand-in pipeline data");
   if (!run.hasPipeline) bits.push("sampled navigation, comparison only: no rims, particles or lidar logged");
   if (OLD_HOMING.has(S.batch)) bits.push(OLD_HOMING_NOTE);
+  if (sensitivityOf(S.cr.rec.settings)) bits.push("sensitivity case: no ground roughness");
   const b = bits.length ? `<b>Labelled:</b> ${bits.join(" · ")}` : "";
   if ($("banner").dataset.html !== b) { $("banner").innerHTML = b; $("banner").dataset.html = b; $("banner").hidden = !b; $("banner").title = [standinOf(S.cr.rec), run.pipelineNote].filter(Boolean).join("\n\n"); }
 }
@@ -1395,7 +1400,8 @@ function openRuns() {
   const old = (b) => (OLD_HOMING.has(b.batch_id) ? 1 : 0);   // superseded homing after the honest batches
   const batches = S.index.filter((b) => b.runs.some((r) => r.map)).sort((p, q) => rank(p) - rank(q) || old(p) - old(q));
   const cur = batches.find((b) => b.batch_id === S.batch) || batches[0];
-  const bword = (b) => ["camera vision", "stand-in views", "sampled navigation, comparison only"][rank(b)] + (OLD_HOMING.has(b.batch_id) ? `, ${OLD_HOMING_NOTE}` : "");
+  const bword = (b) => ["camera vision", "stand-in views", "sampled navigation, comparison only"][rank(b)] + (OLD_HOMING.has(b.batch_id) ? `, ${OLD_HOMING_NOTE}` : "")
+    + (b.runs.some((r) => sensitivityOf(r)) ? ", sensitivity case: no ground roughness" : "");
   $("dr-body").innerHTML = `<label class="small">Batch <select id="dr-batch">${batches.map((b) => `<option value="${esc(b.batch_id)}"${b === cur ? " selected" : ""}>${esc(b.batch_id)} (${b.runs.filter((r) => r.map).length}) · ${bword(b)}</option>`).join("")}</select></label>
     <div id="dr-about" class="small hint"></div><div class="runs-wrap"><table class="runs"><thead><tr><th>Run</th><th>Site</th><th title="Scouts">Sc.</th><th title="Sorties ok of all">Sorties</th><th>Finds</th><th title="Confirmed by a second Scout">Conf.</th><th title="Camera runs: false-match rate, of rim points paired with a mapped crater the share paired with the wrong one. Sampled runs: share of position checks that matched the wrong crater.">Wrong</th><th title="How the Scouts navigated, and what per-step data the views draw">Navigation</th></tr></thead><tbody id="dr-runs"></tbody></table></div>
     <p class="small"><a href="runs.html">Every column, as a table</a></p>`;

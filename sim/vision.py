@@ -83,10 +83,23 @@ MIN_POINTS_PER_CELL = 2         # assumed: cells with fewer depth points are unk
 STEP_USES_MAX = False           # assumed: a cell's height is its mean (the max picks up depth noise)
 
 
-def contour_ok(width_m, npx):
-    """A24 sec. III-D contour filter: enough pixels, and wide enough to be a mapped crater's rim."""
+def contour_arc_share(source="default"):
+    """Share of the leading arc the width threshold assumes. "c23": C23 sec. 1's 0.8;
+    "measured": Settings.rim_arc_share_measured (sim/arc_share.py); "default": measured
+    once it is set, else C23's."""
+    m = _S.rim_arc_share_measured
+    if source == "c23" or (source == "default" and not math.isfinite(m)):
+        return CONTOUR_ARC_SHARE
+    if not math.isfinite(m):
+        raise ValueError("Settings.rim_arc_share_measured is not set yet (python -m sim.arc_share)")
+    return m
+
+
+def contour_ok(width_m, npx, source="default"):
+    """A24 sec. III-D contour filter: enough pixels, and wide enough to be a mapped crater's rim:
+    width >= arc share x the map cut."""
     from sim.settings import WorldRanges
-    w_min = CONTOUR_ARC_SHARE * WorldRanges().orbital_map_min_d_m
+    w_min = contour_arc_share(source) * WorldRanges().orbital_map_min_d_m
     return (np.asarray(npx) >= CONTOUR_MIN_PX) & (np.asarray(width_m) >= w_min)
 
 

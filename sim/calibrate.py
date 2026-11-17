@@ -55,7 +55,9 @@ Configs, cumulative, the same seeds in each (common random numbers):
   all-mapped  after, with every true crater in the map (a control, not a map)
 From 16 Nov 2026 17:00 (the table the paper uses):
   no-filter after, plus an orbital pixel's map error (sim/orbital_map.py)
-  filter    no-filter, plus A24 sec. III-D's contour filter (sim/vision.py)
+  filter    no-filter, plus A24 sec. III-D's contour filter (sim/vision.py) with C23's
+            80% arc share (width >= 8 m)
+  filter-measured  the same filter with Lantern's measured arc share (sim/arc_share.py)
 Another grid (--terrain, --display-dir) gives the same traverse styles on
 other ground, e.g. one built at the equilibrium crater density.
 --combine writes combined.md from batches already run.
@@ -96,6 +98,8 @@ DISPLAY_DIR = DATA / "terrain" / f"display_{SITE}"
 OUT = DATA / "campaigns" / "calibration"
 
 SIGMA0_C23 = 3.0              # C23 sec. 6B: "initial belief distribution with sigma_0 = 3 m"
+MATCH_TOL_M = 1.0             # live-nav Settings.cam_match_tol_m (assumed there): a rim point is paired with a
+                              # map crater whose edge lies this close; for the second false-match column
 SOURCE_TOL_M = 1.0            # assumed: a rim point comes from a crater if it lies this close to its edge
                               # (2 x sim/rim_truth.py TOL_M; one 640 px row spans ~0.45 m of ground at 20 m)
 AVOID_D_M = 5.0               # assumed: routes go round craters this wide and wider
@@ -370,7 +374,9 @@ CONFIGS = {
     "all-mapped": dict(map="all", noise="own", depth="stereo", fixes=True),
     # From 16 Nov 2026 17:00: the map also carries an orbital pixel's error (sim/orbital_map.py).
     "no-filter": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour=False),
-    "filter":    dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour=True),
+    "filter":    dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="c23"),
+    # The same filter with Lantern's own measured arc share (sim/arc_share.py, held-out frames).
+    "filter-measured": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="measured"),
 }
 _W = {}
 
@@ -421,6 +427,7 @@ def run_one(task):
     errs = np.zeros(n)
     errs[0] = float(np.hypot(*start_err))
     counts = dict(right=0, wrong_mapped=0, unmapped=0, spurious=0)
+    tolc = dict(tol_right=0, tol_wrong=0, tol_unpaired=0)
     frames_used = 0
     for k in range(1, n):
         d = float(np.hypot(*(poses[k, :2] - poses[k - 1, :2])))
@@ -430,7 +437,7 @@ def run_one(task):
         a, b = D["off"][k], D["off"][k + 1]
         sel = np.arange(a, b)
         if cfg.get("contour", False):                   # A24 sec. III-D contour filter (sim/vision.py)
-            sel = sel[contour_ok(D["width_m"][a:b], D["npx"][a:b])]
+            sel = sel[contour_ok(D["width_m"][a:b], D["npx"][a:b], cfg["contour"])]
         pl = vis.place(D["v"][sel].astype(int), D["u"][sel].astype(int), D["r0"][sel])
         rims = pl["rims"]
         nav.predict(d_o, dh_o)
@@ -445,13 +452,19 @@ def run_one(task):
             idx = np.asarray(idx).reshape(len(w), kk)
             c = mp[idx]
             de = np.abs(np.hypot(c[..., 0] - w[:, 0:1], c[..., 1] - w[:, 1:2]) - c[..., 2] / 2)
-            paired = map_idx[idx[np.arange(len(w)), de.argmin(axis=1)]]
+            jmin = de.argmin(axis=1)
+            paired = map_idx[idx[np.arange(len(w)), jmin]]
+            near = de[np.arange(len(w)), jmin] <= MATCH_TOL_M
             src = D["src"][sel][pl["idx"]]
             in_map = np.isin(src, map_idx)
             counts["right"] += int(np.sum((src >= 0) & in_map & (paired == src)))
             counts["wrong_mapped"] += int(np.sum((src >= 0) & in_map & (paired != src)))
             counts["unmapped"] += int(np.sum((src >= 0) & ~in_map))
             counts["spurious"] += int(np.sum(src < 0))
+            ok_pair = (src >= 0) & in_map & (paired == src)
+            tolc["tol_right"] += int(np.sum(near & ok_pair))
+            tolc["tol_wrong"] += int(np.sum(near & ~ok_pair))
+            tolc["tol_unpaired"] += int(np.sum(~near))
             nav.correct(rims)
             frames_used += 1
         est, _ = nav.belief()
@@ -467,7 +480,7 @@ def run_one(task):
                 map_n=int(len(mp)), final_err_m=float(np.hypot(*e)), sigma_max_m=nav.sigma_max(),
                 sigma_trace_m=float(nav.belief()[1]), mahal=mahal, start_err_m=float(np.hypot(*start_err)),
                 rim_points=tot, false_match_rate=(1 - counts["right"] / tot) if tot else float("nan"),
-                **{f"n_{k}": v for k, v in counts.items()}, frames_with_rims=frames_used,
+                **{f"n_{k}": v for k, v in counts.items()}, **tolc, frames_with_rims=frames_used,
                 err_series=np.round(errs, 3).tolist())
 
 
@@ -491,7 +504,11 @@ def summarise(rows, routes_stats):
             share_over_5m=float(np.mean([r["final_err_m"] > 5 for r in rr])),
             false_match=(1 - cnt["right"] / tot) if tot else float("nan"),
             shares={k: (v / tot if tot else float("nan")) for k, v in cnt.items()},
-            rim_points_per_run=tot / max(len(rr), 1))
+            rim_points_per_run=tot / max(len(rr), 1),
+            # Within MATCH_TOL_M (the campaign labeller's rule): wrong share of paired points, unpaired share.
+            false_match_tol=(lambda p, w_: w_ / p if p else float("nan"))(
+                sum(r.get("tol_right", 0) + r.get("tol_wrong", 0) for r in rr), sum(r.get("tol_wrong", 0) for r in rr)),
+            unpaired_tol=(sum(r.get("tol_unpaired", 0) for r in rr) / tot) if tot else float("nan"))
     return out
 
 
@@ -590,22 +607,29 @@ def combine(specs):
     f = lambda m: f"{m[0]:.2f} ± {m[1]:.2f}"
     L = ["# Lantern camera navigation beside ShadowNav Table 2 (C23)", "",
          "Final error and reported uncertainty (sqrt of the largest covariance eigenvalue, C23 sec. 6B) in metres, "
-         "mean ± s.d. over seeds. False match: share of rim points the filter pairs with the wrong crater. "
-         "> 5 m: share of runs ending more than 5 m off.", ""]
+         "mean ± s.d. over seeds. > 5 m: share of runs ending more than 5 m off. "
+         "False match (draft sec. 4.2: rims 'paired with the wrong mapped crater'): of rim points paired with a "
+         "mapped crater, the share whose crater is not the rim's true one (a spurious rim that is paired counts "
+         "as wrong); unpaired points are left out of both and reported apart. Two pairings: **filter**, the "
+         "particle filter's own (Alg. 1 line 4, every point to its nearest mapped edge at the filter's mean pose "
+         "before the update, so none is unpaired); **1 m**, the campaign labeller's rule (paired only when that "
+         f"edge is within {MATCH_TOL_M:g} m).", ""]
     for label, batch, cfg, cal in cols:
         n = cal["summary"].get(f"T1|{cfg}", {}).get("n", "?")
         L.append(f"- **{label}**: batch `{batch}`, config `{cfg}`, terrain `{cal.get('terrain', 's89_134e.npz')}` "
                  f"({cal.get('n_craters', '?')} craters), {n} seeds per traverse. Made by `{cal['command']}`.")
     L += ["", "| Traverse | C23 error | C23 uncertainty | " + " | ".join(
-        f"{lb} error | {lb} uncertainty | {lb} false match | {lb} > 5 m" for lb, *_ in cols) + " |",
-          "|---|---|---|" + "---|" * (4 * len(cols))]
+        f"{lb} error | {lb} uncertainty | {lb} false match, filter | {lb} false match, 1 m (unpaired) | {lb} > 5 m"
+        for lb, *_ in cols) + " |",
+          "|---|---|---|" + "---|" * (5 * len(cols))]
     for name in ("T1", "T2", "T3"):
         c = C23[name]
         row = f"| {name} {TRAJ_NAMES[name]} | {c['err'][0]:.2f} ± {c['err'][1]:.2f} | {c['unc'][0]:.2f} ± {c['unc'][1]:.2f} |"
         for label, batch, cfg, cal in cols:
             s_ = cal["summary"].get(f"{name}|{cfg}")
-            row += (f" {f(s_['err'])} | {f(s_['unc'])} | {100 * s_['false_match']:.0f}% | {100 * s_['share_over_5m']:.0f}% |"
-                    if s_ else " | | | |")
+            row += (f" {f(s_['err'])} | {f(s_['unc'])} | {100 * s_['false_match']:.0f}% | "
+                    f"{100 * s_.get('false_match_tol', float('nan')):.0f}% ({100 * s_.get('unpaired_tol', float('nan')):.0f}%) | "
+                    f"{100 * s_['share_over_5m']:.0f}% |" if s_ else " | | | | |")
         L.append(row)
     L += ["", "False-match breakdown (share of rim points: right / wrong mapped crater / crater not in the map / "
           "spurious edge), and rim points per run:", ""]

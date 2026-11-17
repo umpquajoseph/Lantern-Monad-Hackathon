@@ -309,7 +309,7 @@ def source_ids(true_xy_rover, pose, tree, craters):
     return np.where(de[np.arange(len(w)), j] <= SOURCE_TOL_M, best, -1)
 
 
-def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR):
+def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, max_new=None):
     """Render every pose of every route once; keep the rim pixels and their range."""
     from sim.scene import Scene
     import cv2
@@ -324,6 +324,11 @@ def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR):
         if (out_dir / f"detections_{name}.npz").exists():
             print(f"{name}: detections already rendered", flush=True)
             continue
+        if max_new is not None:
+            if max_new <= 0:
+                print(f"{name}: not rendered yet (--max-render reached); run again to continue", flush=True)
+                continue
+            max_new -= 1
         V, U, R, S, W, NP, off = [], [], [], [], [], [], [0]
         t = time.perf_counter()
         for k, pose in enumerate(poses):
@@ -379,6 +384,8 @@ CONFIGS = {
     "filter-measured": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="measured"),
 }
 _W = {}
+# Bumped when run_one's counting changes, so saved runs from older code are run again.
+RUN_CODE = "e158a84-paired-false-match"
 
 
 def _init(out_dir, names, terrain_path):
@@ -655,6 +662,10 @@ def main():
                     help="first-person display layer the camera sees (sim/scene.py); full is what live runs use")
     ap.add_argument("--workers", type=int, default=3)
     ap.add_argument("--configs", default=",".join(CONFIGS))
+    ap.add_argument("--max-render", type=int, default=None,
+                    help="render at most this many traverses not yet rendered, then stop (run again to continue)")
+    ap.add_argument("--max-configs", type=int, default=None,
+                    help="run at most this many configs not yet saved, then stop (run again to continue)")
     ap.add_argument("--terrain", default=str(TERRAIN), help="the 0.25 m grid (sim/terrain.py build)")
     ap.add_argument("--display-dir", default=str(DISPLAY_DIR), help="its display layer (sim/terrain_display.py build)")
     ap.add_argument("--combine", nargs="+", metavar="LABEL=BATCH:CONFIG",
@@ -685,17 +696,39 @@ def main():
         blocked = _blocked(slope, craters)
         routes = {k: plan_route(slope, blocked, wps[k]) for k in names}
         del slope, blocked
-        render_routes(routes, terrain, out_dir, a.display, a.display_dir)
+        render_routes(routes, terrain, out_dir, a.display, a.display_dir, a.max_render)
+        if not all((out_dir / f"detections_{k}.npz").exists() for k in names):
+            return
     det = load_detections(out_dir, names)
     routes = {k: det[k]["poses"] for k in names}
     for k, st in rstats.items():
         print(k, json.dumps(st))
-    tasks = [(name, cfg, seed, ti) for ti, name in enumerate(sorted(routes))
-             for cfg in a.configs.split(",") for seed in range(a.seeds)]
-    t = time.perf_counter()
-    with Pool(a.workers, initializer=_init, initargs=(str(out_dir), names, a.terrain)) as pool:
-        rows = pool.map(run_one, tasks, chunksize=4)
-    print(f"{len(rows)} runs in {time.perf_counter() - t:.0f} s", flush=True)
+    # One file of runs per config (runs_<config>.json), so a long table runs in chunks:
+    # a config already run with the same seeds is read back, not run again.
+    rows = []
+    for cfg in a.configs.split(","):
+        rp = out_dir / f"runs_{cfg}.json"
+        if rp.exists():
+            saved = json.loads(rp.read_text(encoding="utf8"))
+            if saved["seeds"] == a.seeds and saved.get("code") == RUN_CODE:
+                rows += saved["rows"]
+                print(f"{cfg}: {len(saved['rows'])} runs read from {rp.name}", flush=True)
+                continue
+        if a.max_configs is not None and a.max_configs <= 0:
+            print(f"{cfg}: not run yet (--max-configs reached); run again to continue", flush=True)
+            continue
+        tasks = [(name, cfg, seed, ti) for ti, name in enumerate(sorted(routes)) for seed in range(a.seeds)]
+        t = time.perf_counter()
+        with Pool(a.workers, initializer=_init, initargs=(str(out_dir), names, a.terrain)) as pool:
+            got = pool.map(run_one, tasks, chunksize=4)
+        rp.write_text(json.dumps({"seeds": a.seeds, "code": RUN_CODE, "rows": got}), encoding="utf8")
+        print(f"{cfg}: {len(got)} runs in {time.perf_counter() - t:.0f} s", flush=True)
+        rows += got
+        if a.max_configs is not None:
+            a.max_configs -= 1
+    done = {r["config"] for r in rows}
+    if not all(c in done for c in a.configs.split(",")):
+        return
     summary = summarise(rows, rstats)
     cmd = "python -m sim.calibrate " + " ".join(os.sys.argv[1:])
     (out_dir / "calibration.json").write_text(json.dumps(

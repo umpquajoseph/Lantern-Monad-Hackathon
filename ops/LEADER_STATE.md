@@ -430,3 +430,148 @@ Read mail, then `mv` it to `leader/archive/`.
 - Hosting off until approved; new Vercel project later; never republish lantern-teal.
 
 - 2026-11-16 14:03 Joseph: the leader leads intent and the paper concept; technical specs are the workers' job. Workers told their settings and record details are theirs to change.
+
+## 2026-11-16 18:12 PST: camera-vision campaign, paused (lead session monad-hackathon-project-e5)
+
+Paused on request. All three workers stopped; nothing runs.
+
+| handle | branch, worktree | session to resume | state |
+|---|---|---|---|
+| live-nav | campaign-live-nav, C:\Monad-Hackathon-live-nav | 4fedc8d6-5051-4cf0-9256-242a44c86c90 | camera loop in the campaign; first camera run done 18:10 at data/campaigns/live-nav/w00001-bcce1993 (2 Scouts x 2 short sorties); about 0.85 s per Scout-step (planner 0.46, render 0.35); error 10-33 m against a 1-5 m bound |
+| realism | campaign-realism, C:\Monad-Hackathon-realism | cc978a92-c5da-46d8-9f61-5653559d5231 | 3 fixes done; 2-seed calibration 10-20 m vs ShadowNav 1.7-3.8 m; leader reply UNREAD in inbox (A24 III-D contour filter, 1 px map error, source the small-crater density, 100-seed table) |
+| mission | campaign-mission, C:\Monad-Hackathon-mission | ef3d489e-fdd1-4b9f-9f40-9d20acf4a63c | Mission Control plays stand-in campaign runs in every view; leader reply UNREAD (keep true pose, wire drill animation, play live-nav's camera run) |
+
+Base branch campaign-live (spec intent f1aed12, briefs bf6c492). Nothing on main.
+
+On resume: launch each with
+`wt -w new -d <worktree> claude --resume <id> --model opus --permission-mode bypassPermissions "<prompt>"`
+and make the prompt's FIRST step "read your inbox, follow PROTOCOL.md, arm the inbox watcher". Those sessions cannot receive SendMessage, so the watcher is the only way they hear the leader. Arm the leader's inbox and commit monitors. Then run the 3 runs (3 Scouts x 3 sorties, s89_134e, s89_014e, haynes) once realism's fixes are merged.
+
+## 2026-11-16 18:58 PST: resumed at 18:44, lead session monad-hackathon-project-3b [11bfc3]
+
+Doorbells: the "lantern <handle>" names do not resolve; send to the pipe
+address instead. realism `uds:\.\pipe\LOCAL\cc-msg-625c0967198b1766877daa0fe5c0d9ca`,
+live-nav `uds:\.\pipe\LOCAL\cc-msg-42fcfc5ef8b5fc16968fe325ef063fa2`,
+mission not yet known. Worker PIDs: live-nav 11024, realism 3896, mission 20596.
+Leader watch script: scratchpad watch_lantern.sh (mail, commits, exits, stalls).
+mission pipe: uds:\.\pipe\LOCAL\cc-msg-03a44d4c477df57406b77ec56d673de6
+
+## 2026-11-16 20:46 render worker started
+live-nav stopped (clean at 9af3ad0). New dedicated worker `render` (worktree C:\Monad-Hackathon-render, branch campaign-render from 9af3ad0), PID 18168, wt window. Brief: research render-speed solutions and precedent; target 3 runs in 10 min. Fyi due in 15 min, report in 2 h.
+- render doorbell: uds:\.\pipe\LOCAL\cc-msg-2429645cb4feeba765dbb0c88ab2e0e1
+
+## 2026-11-16 23:01 overnight plan
+Product owner asleep. When render mails "ready" (hash, ms/step), launch the 3 runs from a clean detached worktree C:\Monad-Hackathon-runs at that commit: wt.exe -w new -d C:\Monad-Hackathon-runs powershell -NoExit -File scripts\launch_first3.ps1. Fallback cron 88f4a3d0 at 03:03 launches from last pushed origin/campaign-render. No other work after launch.
+
+## 2026-11-16 23:08 3 runs launched
+From C:\Monad-Hackathon-runs (detached at 9108d1c, clean), wt window. Batch live-nav-first3. PIDs: s89_134e w00006 16904, s89_014e w00009 30140, haynes w00003 33212. The launcher printed 3.7 h from the stale 0.20 s constant; render measured 20.8 ms/step alone. Fallback cron deleted.
+
+## 2026-11-16 23:25 handoff (leader stops here)
+
+**State.** The first 3 camera runs ran from C:\Monad-Hackathon-runs, a clean worktree detached at 9108d1c on campaign-render. Batch data/campaigns/live-nav-first3, log launch.log.
+- s89_014e w00009: done in 7 min. All 3 Scouts were lost on sortie 1: energy ran out at 32 h, about 42% of steps were point turns, and 108-117 waypoints were skipped as blocked.
+- haynes w00003: done in 16 min, 9 sorties. 4 ok, 4 below_reserve, 1 lost (S3-03), 0 drills. Point turns were 10-40% of steps.
+- s89_134e w00006: still running at 23:25 (S1-03, err 30 m, bound 23.5 m).
+
+**Open: is the stuck pattern a bug?** Not fixed, by decision. The A/B was started at 23:22: the s89_014e 1x1 sortie on the old code (C:\Monad-Hackathon-live-nav, 9af3ad0) against the new code (C:\Monad-Hackathon-runs, 9108d1c).
+- Logs and npz are at C:\Users\umpqu\AppData\Local\Temp\claude\51cc54f31e136fd0\e6de354c-f51f-4e47-b2a8-7ab3655c71d4\scratchpad\{old,new}_s89_014e.{log,npz}. The script is sortie_site.py, in the same folder.
+- If the old and new outcomes match, the speed-ups are clean and the turning is older planner behaviour. If they differ, a speed-up is the bug. render checked identity only on haynes.
+
+**Speed (render, all exact-output):** 0.20 to 0.021 s per Scout-step.
+- 306cf92: render gate.
+- f0f2fa0: GPU shading, CuPy.
+- d35afa9: GPU lidar.
+- 41a6a87: local hazard and planner updates.
+- cfdf408: batched checks.
+- 9108d1c: numba A*.
+
+The runs need CuPy and numba in the shared Python. Leave the LANTERN_* switches unset. live_runs still prints the old 0.20 s estimate, so it is wrong.
+
+**Branches, none merged to main:**
+- campaign-render 9108d1c: the speed-ups, on top of live-nav 9af3ad0.
+- campaign-realism 2d74763: route threshold 4.76 m, noisy stereo depth, calibration table, slope check.
+- campaign-live-nav 9af3ad0.
+- campaign-mission 69b4d88: Mission Control, not yet fed these runs.
+
+**Workers:** live-nav, realism and render are idle with empty inboxes. mission is idle. Doorbells: realism ...625c09, live-nav ...42fcfc, mission ...03a44d, render ...242964 (full addresses above).
+
+**Open questions for the product owner:**
+- a confirmation success-rate sweep against navigation accuracy;
+- whether to drop the draft 4.6 sentences "not a source of performance figures" and "errors published in [2] are sampled as inputs".
+
+**Not done:**
+- Mission Control playing these runs.
+- The campaign-render merge into live-nav and mission.
+- 23:26 all 3 runs finished in 0.32 h total; summary.csv written. s89_134e w00006 outcomes: see summary.csv.
+- s89_134e w00006: 7 sorties, 3 ok, 2 below_reserve, 2 lost, 0 drills.
+- 00:0x A/B done: s89_014e 1x1 sortie, old 9af3ad0 vs new 9108d1c: same outcome (lost, 2,103 point turns, 120 skipped, 44 fixes), 1,949 s vs 66 s. The stuck pattern predates the speed-ups.
+
+## 2026-11-17 08:27 PST: workflow build (new lead session)
+
+The 16 Nov spec draft (d2be7f9, unapproved, sampled navigation) misled the
+first build. The spec is rewritten from the product owner's words: "upgrade
+hackathon's lantern to what our paper proposes, which is a fundamental
+workflow for these rovers to map, corroborate, and discover resources."
+He approved two things: live camera navigation, and paper numbers from runs.
+
+- Base `lantern-workflow` 5310b51 = campaign-render + campaign-realism +
+  campaign-mission, the new spec, briefs workflow.md and control.md. Old
+  briefs are in _archive/briefs/. Pushed.
+- Workers, opened by the product owner: `workflow` (sim/, branch
+  lantern-workflow-sim, C:\Monad-Hackathon-workflow-sim) and `control`
+  (web/, branch lantern-workflow-web, C:\Monad-Hackathon-workflow-web).
+  Handoff mail 20261117-082712 in each inbox. No doorbells; mail only.
+- Decided: with truth hidden, views draw each Scout's believed pose.
+
+## 2026-11-17 13:43 PST: pause ordered (workflow build)
+
+Pause mail 20261117-134306 sent to workflow, control and ground: stop at
+a safe point, push, send a WIP report, wait for an unpause mail.
+
+State when paused:
+- workflow (lantern-workflow-sim): fixed the back-and-forth guard, judged
+  cut-short searches, stranded rule (no free hop home), and the star
+  tracker heading bug (survey error p50/p95 about 12/23 m to 6/9.5 m;
+  bound95 holds 100%). Batches workflow-first3d (defaults) and
+  -norough (sensitivity) were next. Every run id changed with the
+  ground_roughness setting. No confirmed find yet in any real run.
+- control (lantern-workflow-web): Mission Control defaults to the newest
+  honest batch, plays find, search, abandoned and judged events. Asked
+  to keep superseded-batch labels in one list in web/.
+- ground (lantern-ground, 2c7e5f6): CR1 comparison with Hemmi 2025 done
+  (LOLA upsampled defensible; roughness about 2x too strong; crater
+  density top end not lunar). Sent back at 13:39 to add the
+  lunar-simulator precedent survey and the position statement (brief
+  22650c5). Its four decisions wait for that.
+- Decided today: 6 m confirm rule kept, assumed; corridor planned on
+  LOLA slope; truth hidden draws the believed pose; honest batches are
+  the default in Mission Control.
+- Open for the product owner: ground's terrain decisions; how many runs
+  the paper needs (about 6 camera runs fit in memory at once).
+
+On resume: read the WIP reports in leader/inbox, then mail each worker
+"unpause" with its next step. Memory is tight: the inbox watcher was
+killed three times today while batches ran.
+- 13:43 control paused, WIP report 20261117-134343, f978277 clean. Default
+  run workflow-first3d w00003-48c549e0: find within 7.0 m (truly 0.8 m off,
+  deposit there) judged not confirmed, bound too large. Next on unpause:
+  check the norough picker label; tell workflow summary.csv lacks
+  ground_roughness.
+- 13:43 workflow paused, WIP report 20261117-134358, efcc674 clean.
+  first3d haynes: 5 of 7 sorties home; one search found the deposit
+  (13 of 13 readings) but combined bound95 14.5 m > 6 m. Filter bound is
+  now about 4.5x the true error (true p50 5.2 m, bound p50 23.6 m).
+  first3d-norough finishing about 13:52. Next on unpause, its order:
+  read norough; s89_134e battery losses with no turn_back; why the bound
+  is so cautious; beacons (brief p.6 "relay beacons every ~0.8 km") only
+  if the product owner approves an assumed beacon rule.
+- 13:44 ground paused, WIP report 20261117-134400, db5a6cd pushed.
+  Precedent survey mostly done (ShadowNav, VIPER, Allan 2019, Barker
+  2021, DLES, OmniLRS, PANGU); position.md not yet rewritten with it; its
+  next steps 1-4 are in the report. Provisional decisions: roughness by
+  per-site spectrum extension (0.03-0.06 m) or one CR1 value 0.035 m;
+  crater density 106-1,540 per km2; keep slope widening; rocks added or
+  stated as not modelled.
+- All three workers paused by 13:44. Leader watcher not re-armed (no
+  mail expected while paused). On resume: mail each "unpause" with its
+  next step, in the order its WIP report gives.

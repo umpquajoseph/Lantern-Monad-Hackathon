@@ -52,13 +52,12 @@ BATCH_ID = "live-nav-first3"
 # Measured on the test campaign (docs in the commit that sets them): wall
 # seconds per Scout-step with one run alone on the machine, and Scout-steps
 # taken per planned 2 m of driving.
-# Smoke rerun, 16 Nov 19:16 (realism 455bc93 merged, planner c1021c7): 2,500
-# Scout-steps in about 23 min (render 0.38, lidar 0.035, vision 0.007,
-# planner 0.010, filter 0.0004 s a step; the rest is logging and labels).
-S_PER_STEP_MEASURED = 0.55
-# Smoke w00001-bcce1993: 7,725 steps for 3,940 planned 2 m steps (detours,
-# turns in place, transit to lanes).
-STEPS_PER_PLANNED_MEASURED = 1.96
+# Check run live-nav-check2 w00003-c44d133e, 16 Nov 19:52 (realism 139f8c7,
+# dock clear zone be88151): haynes, 1 Scout x 1 sortie, 2,149 Scout-steps in
+# 436 s (render 0.178, lidar 0.014, planner 0.006, vision 0.003, filter
+# 0.0002 s a step), for 1,817 m planned = 909 planned 2 m steps.
+S_PER_STEP_MEASURED = 0.20
+STEPS_PER_PLANNED_MEASURED = 2.37
 PARALLEL_SLOWDOWN = None     # not measured: s/step with 3 runs at once over s/step alone
 
 

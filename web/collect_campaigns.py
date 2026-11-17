@@ -123,6 +123,26 @@ def convert_steps(npz: Path, dst: Path) -> None:
     (out / "index.json").write_text(json.dumps({"sorties": sorted(by_sortie), **shared}), encoding="utf8")
 
 
+def false_match(npz: Path) -> dict:
+    """The false-match rate as sim/calibrate.py (branch campaign-live-nav)
+    defines it: the share of rim points not paired with their own crater.
+    A point counts as right when it lies on a true crater (rim_true >= 0),
+    pairs with a mapped crater (rim_map >= 0), and that crater is its own
+    (rim_wrong == 0). Spurious points, points on craters missing from the map
+    and points paired with no crater within cam_match_tol_m are false. From
+    the logged steps.npz, so a point the engine left unpaired counts as false
+    where calibrate.py would pair it with the nearest crater."""
+    z = np.load(npz)
+    right = total = 0
+    for key in z.files:
+        if key.endswith(".rim_map"):
+            sid = key[: -len(".rim_map")]
+            m, w, t = z[key], z[sid + ".rim_wrong"], z[sid + ".rim_true"]
+            right += int(np.sum((m >= 0) & (w == 0) & (t >= 0)))
+            total += len(m)
+    return {"false_match_rate": round(1 - right / total, 4) if total else None, "rim_points": total}
+
+
 def copy_run(src: Path, dst: Path) -> None:
     dst.mkdir(parents=True, exist_ok=True)
     if stale(src / "record.json", dst / "record.json"):
@@ -233,6 +253,8 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
             # "camera" (the engine's steps.npz), or absent.
             if r["map"] and (by_name[r["run_id"]] / "steps.npz").exists():
                 r["pipeline"] = "standin" if "standin" in np.load(by_name[r["run_id"]] / "steps.npz").files else "camera"
+                if r["pipeline"] == "camera":
+                    r.update(false_match(by_name[r["run_id"]] / "steps.npz"))
         rows = rows[: max_runs or None]
         if copy:
             for r in rows:

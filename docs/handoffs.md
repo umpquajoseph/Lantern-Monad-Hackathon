@@ -612,6 +612,12 @@ the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
   --run-ground <batch>/<run_id>` from `DATA/terrain/<ground.file>`; without
   it, the site's grid. It plays each `drill` event as the hackathon's drill
   rig over the `settings.drill_h` hours before the event's `t`.
+- `web/campaigns/index.json` rows of camera runs add `false_match_rate`
+  and `rim_points` (web/collect_campaigns.py `false_match`): the share of
+  steps.npz rim points not paired with their own mapped crater (right:
+  `rim_true >= 0`, `rim_map >= 0`, `rim_wrong == 0`), sim/calibrate.py's
+  definition on `campaign-live-nav`. Mission Control shows it as the run's
+  one wrong-match number; a sampled run shows `wrong_match_rate` (checks).
 - Until camera runs exist, `web/make_standin_pipeline.py` writes a
   stand-in `steps.npz` in exactly that format, with a top-level `standin`
   string, beside copies of `standin` records in the batch

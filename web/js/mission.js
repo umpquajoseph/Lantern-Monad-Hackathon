@@ -68,6 +68,7 @@ async function main() {
   // The index says whether the run logged per-step data; an old index (no row) still asks.
   const row = (S.index.find((b) => b.batch_id === pick.batch)?.runs || []).find((r) => r.run_id === pick.run);
   S.cr.hasSteps = !row || !!row.pipeline;
+  S.row = row || {};
   $("loading").textContent = "Loading terrain";
   try {
     terrain = await Terrain.load(await assetsBase(rec));
@@ -763,7 +764,13 @@ function firstPerson(k, t) {
   const x = R.left - C.left, y = C.bottom - R.bottom;
   if (docked) {
     r3.setScissorTest(true); r3.setScissor(x, y, R.width, R.height); r3.setClearColor(0x050506, 1); r3.clear(); r3.setScissorTest(false);
-    ov.getContext("2d").clearRect(0, 0, ov.width, ov.height);
+    const g = ov.getContext("2d");
+    g.clearRect(0, 0, ov.width, ov.height);
+    if (full) {   // the inset says so in its own note; the full window says it here
+      g.fillStyle = "#9aa3ad"; g.font = "600 18px Barlow, Helvetica, Arial, sans-serif"; g.textAlign = "center";
+      g.fillText(`Scout ${a} is at the dock`, ov.width / 2, ov.height / 2);
+      g.textAlign = "start";
+    }
     return;
   }
   const [px, py, ph] = run.poseAt(a, t);
@@ -1273,7 +1280,13 @@ function runInfo() {
       ["Navigation", esc(String(rec.nav || "").split(":")[0])]]) +
     `<div class="mini-h">Results</div>` + kv([["Sorties ok", sm.sorties != null ? `${sm.sorties_ok}/${sm.sorties}` : null], ["Scouts lost", sm.scouts_lost],
       ["Finds", sm.finds], ["Confirmed", sm.confirmed], ["False confirmations", sm.false_confirmed], ["Deposits missed", sm.deposits_missed],
-      ["Wrong-match rate", sm.wrong_match_rate != null ? `${fmtNum(sm.wrong_match_rate * 100, 1)}%` : null],
+      // One wrong-match number. A camera run: the false-match rate the paper quotes (sim/calibrate.py's
+      // definition, counted over steps.npz by web/collect_campaigns.py). A sampled run: its share of
+      // position checks that matched the wrong crater.
+      S.row.false_match_rate != null
+        ? [`<span title="Share of rim points the filter paired with the wrong crater: a spurious edge, a crater missing from the map, or another mapped crater (sim/calibrate.py's definition, counted over this run's steps.npz)">False-match rate</span>`,
+          `${fmtNum(S.row.false_match_rate * 100, 1)}% <span class="hint">of ${Number(S.row.rim_points).toLocaleString("en")} rim points</span>`]
+        : ["Wrong-match rate", sm.wrong_match_rate != null ? `${fmtNum(sm.wrong_match_rate * 100, 1)}% <span class="hint">of position checks</span>` : null],
       ["Drill error p95", sm.drill_err_p95_m != null ? `${fmtNum(sm.drill_err_p95_m, 1)} m` : null], ["Area", sm.area_km2 != null ? `${fmtNum(sm.area_km2, 2)} km²` : null]]) +
     (notes.length ? `<div class="standin"><b>Not real yet:</b> ${notes.map(esc).join(" ")}</div>` : "") +
     `<p class="small"><a href="run.html?batch=${encodeURIComponent(S.batch)}&run=${encodeURIComponent(rec.run_id)}">Run map, sortie by sortie</a> · <a href="runs.html?batch=${encodeURIComponent(S.batch)}">All runs, as a table</a></p>`;
@@ -1325,13 +1338,13 @@ function openRuns() {
   const cur = batches.find((b) => b.batch_id === S.batch) || batches[0];
   const bword = (b) => ["camera vision", "stand-in views", "sampled navigation, comparison only"][rank(b)];
   $("dr-body").innerHTML = `<label class="small">Batch <select id="dr-batch">${batches.map((b) => `<option value="${esc(b.batch_id)}"${b === cur ? " selected" : ""}>${esc(b.batch_id)} (${b.runs.filter((r) => r.map).length}) · ${bword(b)}</option>`).join("")}</select></label>
-    <div id="dr-about" class="small hint"></div><div class="runs-wrap"><table class="runs"><thead><tr><th>Run</th><th>Site</th><th title="Scouts">Sc.</th><th title="Sorties ok of all">Sorties</th><th>Finds</th><th title="Confirmed by a second Scout">Conf.</th><th title="Wrong-match rate">Wrong</th><th title="How the Scouts navigated, and what per-step data the views draw">Navigation</th></tr></thead><tbody id="dr-runs"></tbody></table></div>
+    <div id="dr-about" class="small hint"></div><div class="runs-wrap"><table class="runs"><thead><tr><th>Run</th><th>Site</th><th title="Scouts">Sc.</th><th title="Sorties ok of all">Sorties</th><th>Finds</th><th title="Confirmed by a second Scout">Conf.</th><th title="Camera runs: false-match rate, the share of rim points paired with the wrong crater (sim/calibrate.py). Sampled runs: share of position checks that matched the wrong crater.">Wrong</th><th title="How the Scouts navigated, and what per-step data the views draw">Navigation</th></tr></thead><tbody id="dr-runs"></tbody></table></div>
     <p class="small"><a href="runs.html">Every column, as a table</a></p>`;
   const fill = (b) => {
     $("dr-about").textContent = [b.standin, b.showcase].filter(Boolean).join(" ").slice(0, 400);
     $("dr-runs").innerHTML = b.runs.filter((r) => r.map).slice(0, 400).map((r) => `<tr data-b="${esc(b.batch_id)}" data-r="${esc(r.run_id)}" class="${b.batch_id === S.batch && r.run_id === S.cr.rec.run_id ? "cur" : ""}">
       <td class="mono">${esc(r.run_id)}</td><td>${esc(r.site || "")}</td><td>${r.n_scouts ?? "–"}</td><td>${r.sorties != null ? `${r.sorties_ok}/${r.sorties}` : "–"}</td>
-      <td>${r.finds ?? "–"}</td><td>${r.confirmed ?? "–"}</td><td>${r.wrong_match_rate != null ? fmtNum(r.wrong_match_rate * 100, 0) + "%" : "–"}</td>
+      <td>${r.finds ?? "–"}</td><td>${r.confirmed ?? "–"}</td><td>${r.false_match_rate != null ? `<span title="False-match rate: rim points paired with the wrong crater">${fmtNum(r.false_match_rate * 100, 0)}% of rims</span>` : r.wrong_match_rate != null ? `<span title="Position checks that matched the wrong crater">${fmtNum(r.wrong_match_rate * 100, 0)}% of checks</span>` : "–"}</td>
       <td>${r.pipeline === "camera" ? `<span class="tag" title="Navigated by camera vision; rim points, particles and lidar logged per step">camera vision</span>`
         : r.pipeline ? `<span class="tag" title="Sampled navigation; its rim points, particles and lidar are a labelled stand-in">sampled, stand-in views</span>`
         : `<span class="hint" title="Navigation sampled from ShadowNav's published errors; no per-step data, so 3D and map only">sampled navigation, comparison only</span>`}</td></tr>`).join("");

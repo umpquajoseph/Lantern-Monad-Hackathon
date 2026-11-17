@@ -385,7 +385,7 @@ kbd { font: 500 12px var(--mono); background: rgba(255,255,255,.08); border: 1px
 #in-fp .inset-view { background: transparent; }
 #in-fp figcaption { background: var(--glass); }
 .inset-none { pointer-events: none; }
-.inset.full { position: fixed; left: 0; right: 0; top: 0; bottom: calc(var(--bar-h) + 28px); width: auto; border-radius: 0; z-index: 3; }
+.inset.full { position: fixed; left: 0; right: 0; top: 0; bottom: 0; padding-bottom: calc(var(--bar-h) + 28px); background: #0b0c0e; width: auto; border-radius: 0; z-index: 3; }
 .inset.full .inset-view { aspect-ratio: auto; height: calc(100% - 30px); }
 body.map-full .insets { z-index: 3; }
 body.map-full .topline { display: none; }

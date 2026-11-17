@@ -233,6 +233,15 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
             # "camera" (the engine's steps.npz), or absent.
             if r["map"] and (by_name[r["run_id"]] / "steps.npz").exists():
                 r["pipeline"] = "standin" if "standin" in np.load(by_name[r["run_id"]] / "steps.npz").files else "camera"
+                # Settings.ground_roughness (off = the labelled sensitivity case). The site's
+                # labels and default pick read it from the row; summary.csv may not carry it yet.
+                if "ground_roughness" not in r:
+                    try:
+                        st = json.loads((by_name[r["run_id"]] / "record.json").read_text(encoding="utf8")).get("settings") or {}
+                        if "ground_roughness" in st:
+                            r["ground_roughness"] = st["ground_roughness"]
+                    except (OSError, ValueError):
+                        pass
         rows = rows[: max_runs or None]
         if copy:
             for r in rows:

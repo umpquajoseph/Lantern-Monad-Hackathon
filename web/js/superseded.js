@@ -9,14 +9,18 @@
 
 const HOMING = "homing used the old free last hop: a Scout shown reaching the dock may never have found its way home (workflow fyi 20261117-130402)";
 
+const HEADING = "heading drifted from the truth: the camera odometer added heading noise with the star tracker on, about doubling survey error (workflow fyi 20261117-132516)";
+
 export const SUPERSEDED = {
-  "live-nav": [HOMING],
-  "live-nav-check": [HOMING],
-  "live-nav-check2": [HOMING],
-  "live-nav-first3": [HOMING],
-  "workflow-check1": [HOMING],
-  "workflow-first3": [HOMING],
-  "workflow-first3b": [HOMING],
+  "live-nav": [HOMING, HEADING],
+  "live-nav-check": [HOMING, HEADING],
+  "live-nav-check2": [HOMING, HEADING],
+  "live-nav-first3": [HOMING, HEADING],
+  "workflow-check1": [HOMING, HEADING],
+  "workflow-check2": [HEADING],
+  "workflow-first3": [HOMING, HEADING],
+  "workflow-first3b": [HOMING, HEADING],
+  "workflow-first3c": [HEADING],
 };
 
 export const reasonsOf = (batch) => SUPERSEDED[batch] || [];

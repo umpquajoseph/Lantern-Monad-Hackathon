@@ -13,7 +13,7 @@ Definitions, from ShadowNav (docs/sources/ShadowNav-Cauligi-2023.pdf):
   resolution of the DEM" (sec. 5A, p. 7), averaged over detections; and by
   the "percent of front arc detected" (sec. 5A, p. 7).
 
-Output format: docs/requests/rim-answer-key.md. Rover frame as in
+Output format: _archive/docs/requests/rim-answer-key.md. Rover frame as in
 docs/handoffs.md "Steps 3 and 6 rim points": [x_forward, y_left] metres
 from the rover (the camera sits above the rover origin).
 

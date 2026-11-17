@@ -22,8 +22,8 @@ it, or from old mail.
   interfaces between parts. Read it before writing any function another
   part calls.
 - `sim/settings.py`: every constant, each with its source or `assumed`.
-- `docs/terrain/position.md` (from branch `lantern-ground`): the approved
-  terrain position and its sources.
+- `docs/terrain/position.md`: the approved terrain position and its
+  sources.
 - `docs/SOURCES.md` and `docs/sources/`: every source, with copies. The
   team's area 3 draft is unpublished and lives outside this repo; never
   copy it in.

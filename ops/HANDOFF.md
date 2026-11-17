@@ -33,7 +33,7 @@ Moon. It is wrong when its purpose is a better outcome.
 | `lantern-workflow` | de465bc | Base, checked out in `C:\Monad-Hackathon-Project`: spec, briefs, this handoff; stale docs in `_archive/` |
 | `lantern-workflow-sim` | 8dcf209 | Simulation fixes and approved terrain defaults; has `lantern-ground` merged |
 | `lantern-workflow-web` | dc5a81f | Mission Control: real runs by default, workflow checkpoints, superseded list |
-| `lantern-ground` | 38e94a6 | `docs/terrain/position.md`, `docs/SOURCES.md`, 15 new source PDFs |
+| `lantern-ground` | 38e94a6 | Retired; its docs, sources and scripts are copied into `lantern-workflow` |
 
 ## Workers (mailboxes in `ops/mailboxes/`)
 
@@ -41,7 +41,7 @@ Moon. It is wrong when its purpose is a better outcome.
 |---|---|---|
 | `workflow` | `C:\Monad-Hackathon-workflow-sim` | Running the approved-terrain main case and 7 test cases, one batch at a time, done about 16:05 (`data/campaigns/workflow-terrain-*`) |
 | `control` | `C:\Monad-Hackathon-workflow-web` | Waiting for those batches: mark older batches superseded, play the main case |
-| `ground` | `C:\Monad-Hackathon-ground` | Done; idle |
+| `ground` | retired 17 Nov 14:58 | Its work is in this branch: `docs/terrain/`, `docs/SOURCES.md`, `docs/sources/`, `bench/terrain/` |
 
 Mission Control runs at http://localhost:8050/ from `control`'s folder.
 
@@ -76,7 +76,7 @@ Mission Control runs at http://localhost:8050/ from `control`'s folder.
    position checks (`check_policy` "fixed", draft Table 1 spacing, 5 min
    stops). If not, build them. Scouts may only be fixing position when a
    crater happens into view. This must come before any paper numbers.
-2. `ground`: source the ice sensor's false-alarm rate (3 of 5 recent finds
+2. A new research worker: source the ice sensor's false-alarm rate (3 of 5 recent finds
    were on no deposit) and map crater position error in shadow (about
    20 m per Mazarico 2025, against the assumed 2 m).
 3. Leader: merge the four branches into one base.
@@ -90,6 +90,14 @@ Mission Control runs at http://localhost:8050/ from `control`'s folder.
 
 - Run count (step 4).
 - Approve steps 1-3.
+
+## Retiring workers
+
+A worker retires when its brief is done: its work merged or copied into
+`lantern-workflow`, its brief moved to `_archive/briefs/`, its mailbox to
+`ops/mailboxes/_old/`, its handle struck from `ops/PROTOCOL.md`. A new job
+gets a new worker with a fresh brief. `workflow` and `control` retire after
+the approved-terrain batches are reported and labelled.
 
 ## How to resume a worker
 

@@ -1,5 +1,5 @@
 import sys, time, numpy as np, cupy as cp
-sys.path.insert(0, r"C:\Monad-Hackathon-render"); sys.path.insert(0, r"C:\Users\umpqu\AppData\Local\Temp\claude\646ef6c61f8dd376\d2b0ef5b-4874-4ba2-92cf-a139a8382f89\scratchpad")
+sys.path.insert(0, r"C:\Monad-Hackathon-render"); sys.path.insert(0, __import__("os").path.dirname(__file__))
 from sim.terrain import load_terrain
 from sim.scene import Scene
 from gpu_fp import GpuShade

@@ -1,5 +1,5 @@
 // Runs list: every run in web/campaigns/index.json with its setup and results.
-import { loadIndex, fmtNum, standinBanner, esc } from "./campaign.js";
+import { loadIndex, fmtNum, standinBanner, oldHomingBanner, esc } from "./campaign.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -110,7 +110,7 @@ function fillFilters() {
   $("f-policy").innerHTML = opts(runs.map((r) => r.check_policy), (v) => v);
   $("f-refine").innerHTML = opts(runs.map((r) => String(r.map_refinement)), (v) => (v === "true" ? "on" : "off"));
   state.f = { scouts: "", policy: "", refine: "", q: $("f-q").value.trim().toLowerCase() };
-  $("standin-slot").innerHTML = standinBanner(state.batch.showcase, "Showcase") + standinBanner(state.batch.standin);
+  $("standin-slot").innerHTML = standinBanner(state.batch.showcase, "Showcase") + standinBanner(state.batch.standin) + oldHomingBanner(state.batch.batch_id);
 }
 
 function head() {

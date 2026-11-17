@@ -188,8 +188,10 @@ class Settings:
     # Second and last measurement (rule "route", sim/arc_share.py): headings over the
     # whole field of view, as route frames see craters. NaN until measured; then it is
     # rim_arc_share_measured, the share the runs use.
-    rim_arc_share_route: float = S(float("nan"), "pending: python -m sim.arc_share --rule route "
-                                                 "(rule committed before measuring)")
+    rim_arc_share_route: float = S(0.476, "sim/arc_share.py rule route (commits b356a4d, 12a0ac0), batch "
+                                          "campaigns/calibration/arcshare-route, `python -m sim.arc_share --rule "
+                                          "route --batch arcshare-route --frames 120`: median of 96 held-out frames "
+                                          "on s89_014e_s2027 (quartiles 0.337-0.540); width threshold 4.76 m")
     rim_arc_share_headon: float = S(0.553, "sim/arc_share.py rule (commit 89a6d8a), batch "
                                              "campaigns/calibration/arcshare-1, `python -m sim.arc_share --batch "
                                              "arcshare-1 --frames 120`: median of 120 held-out frames (quartiles "

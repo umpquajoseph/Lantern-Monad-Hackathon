@@ -42,7 +42,7 @@ streams: the truth's odometer drift (WorldRanges.drift_frac, 1-4%, either
 sign) and noise (Settings odom_*, as sim/rover.py), the start error (C23
 sec. 6B sigma_0 = 3 m), the map (sim/orbital_map.py), the stereo noise on
 every rim point and the filter's own draws. Frames are not saved; the
-detected rim pixels are cached (detections.npz) so the filter can run again.
+detected rim pixels are cached (detections_<T>.npz) so the filter can run again.
 
 Configs, cumulative, the same seeds in each (common random numbers):
   before    map: every crater of 10 m and up; filter noise copied from the
@@ -51,6 +51,9 @@ Configs, cumulative, the same seeds in each (common random numbers):
   +filter   filter: its own model (nav.PFNoise defaults, A24 eqs. 3-6)
   after     depth: stereo (vision.py, A24 rig and Table 1); all three fixes
   odometry  after, with fixes off (dead reckoning), for scale
+  all-mapped  after, but the map holds every true crater (a control, not
+            a realistic map): what the same frames give when every rim
+            vision sees has its crater in the map
 
 Nothing here is tuned to C23's numbers.
 
@@ -304,8 +307,11 @@ def render_routes(routes, terrain, out_dir, display):
     print(f"scene ({scene.display}) built in {time.perf_counter() - t:.0f} s", flush=True)
     vis = Vision(scene, np.random.default_rng(0))
     tree = cKDTree(craters[:, :2])
-    det = {"camera_model": scene.camera_model(), "display": scene.display}
+    (out_dir / "camera.json").write_text(json.dumps({"camera_model": scene.camera_model(), "display": scene.display}))
     for name, poses in routes.items():
+        if (out_dir / f"detections_{name}.npz").exists():
+            print(f"{name}: detections already rendered", flush=True)
+            continue
         V, U, R, S, off = [], [], [], [], [0]
         t = time.perf_counter()
         for k, pose in enumerate(poses):
@@ -329,23 +335,17 @@ def render_routes(routes, terrain, out_dir, display):
                 cv2.imwrite(str(out_dir / f"frame_{name}.png"), cv2.cvtColor(show, cv2.COLOR_RGB2BGR))
             if k % 50 == 0:
                 print(f"  {name} frame {k}/{len(poses)}: {len(v)} rim px, {time.perf_counter() - t:.0f} s", flush=True)
-        det[name] = dict(poses=np.asarray(poses), v=np.concatenate(V), u=np.concatenate(U),
-                         r0=np.concatenate(R), src=np.concatenate(S), off=np.asarray(off))
+        np.savez_compressed(out_dir / f"detections_{name}.npz", poses=np.asarray(poses), v=np.concatenate(V),
+                            u=np.concatenate(U), r0=np.concatenate(R), src=np.concatenate(S), off=np.asarray(off))
         print(f"{name}: {len(poses)} frames in {time.perf_counter() - t:.0f} s", flush=True)
-    flat = {"camera_model": json.dumps(det["camera_model"]), "display": det["display"]}
-    for name in routes:
-        for kk, vv in det[name].items():
-            flat[f"{name}__{kk}"] = vv
-    np.savez_compressed(out_dir / "detections.npz", **flat)
 
 
-def load_detections(path):
-    z = np.load(path, allow_pickle=False)
-    det = {"camera_model": json.loads(str(z["camera_model"])), "display": str(z["display"])}
-    for key in z.files:
-        if "__" in key:
-            name, kk = key.split("__", 1)
-            det.setdefault(name, {})[kk] = z[key]
+def load_detections(out_dir, names):
+    out_dir = Path(out_dir)
+    det = json.loads((out_dir / "camera.json").read_text())
+    for name in names:
+        z = np.load(out_dir / f"detections_{name}.npz")
+        det[name] = {k: z[k] for k in z.files}
     return det
 
 
@@ -356,12 +356,13 @@ CONFIGS = {
     "+filter":  dict(map="new", noise="own", depth="old", fixes=True),
     "after":    dict(map="new", noise="own", depth="stereo", fixes=True),
     "odometry": dict(map="new", noise="own", depth="stereo", fixes=False),
+    "all-mapped": dict(map="all", noise="own", depth="stereo", fixes=True),
 }
 _W = {}
 
 
-def _init(det_path, terrain_path):
-    _W["det"] = load_detections(det_path)
+def _init(out_dir, names, terrain_path):
+    _W["det"] = load_detections(out_dir, names)
     _W["craters"] = np.asarray(load_terrain(terrain_path)[1], float)
 
 
@@ -387,6 +388,9 @@ def run_one(task):
     m_new, mask_new, share = orbital_map(craters, g_map)
     if cfg["map"] == "old":
         mask = craters[:, 2] >= wr.orbital_map_min_d_m
+        share = 0.0
+    elif cfg["map"] == "all":     # control, not a realistic map: every true crater, down to 2.3 m
+        mask = np.ones(len(craters), bool)
         share = 0.0
     else:
         mask = mask_new
@@ -560,10 +564,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--seeds", type=int, default=100)
     ap.add_argument("--batch", default=None, help="folder under campaigns/calibration (default: a new stamp)")
-    ap.add_argument("--reuse", action="store_true", help="reuse routes.json and detections.npz in the batch")
+    ap.add_argument("--reuse", action="store_true", help="reuse the batch's routes.json (traverses already "
+                    "rendered, detections_<T>.npz, are always reused)")
     ap.add_argument("--display", choices=("full", "detail", "off"), default="full",
                     help="first-person display layer the camera sees (sim/scene.py); full is what live runs use")
-    ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--workers", type=int, default=3)
     ap.add_argument("--configs", default=",".join(CONFIGS))
     a = ap.parse_args()
     batch = a.batch or ("cal-" + datetime.now().strftime("%Y%m%d-%H%M"))
@@ -582,21 +587,21 @@ def main():
         print(f"routes found in {time.perf_counter() - t:.0f} s: {sorted(wps)}", flush=True)
         rj.write_text(json.dumps({"waypoints": wps, "stats": rstats}, indent=1))
     slope = None
-    routes = {}
-    if not (a.reuse and (out_dir / "detections.npz").exists()):
+    names = sorted(wps)
+    if not all((out_dir / f"detections_{k}.npz").exists() for k in names):
         slope = SlopeMap(height, x0, y0, cell)
         blocked = _blocked(slope, craters)
-        routes = {k: plan_route(slope, blocked, wps[k]) for k in sorted(wps)}
-        del slope
+        routes = {k: plan_route(slope, blocked, wps[k]) for k in names}
+        del slope, blocked
         render_routes(routes, terrain, out_dir, a.display)
-    det = load_detections(out_dir / "detections.npz")
-    routes = {k: det[k]["poses"] for k in sorted(wps)}
+    det = load_detections(out_dir, names)
+    routes = {k: det[k]["poses"] for k in names}
     for k, st in rstats.items():
         print(k, json.dumps(st))
     tasks = [(name, cfg, seed, ti) for ti, name in enumerate(sorted(routes))
              for cfg in a.configs.split(",") for seed in range(a.seeds)]
     t = time.perf_counter()
-    with Pool(a.workers, initializer=_init, initargs=(str(out_dir / "detections.npz"), str(TERRAIN))) as pool:
+    with Pool(a.workers, initializer=_init, initargs=(str(out_dir), names, str(TERRAIN))) as pool:
         rows = pool.map(run_one, tasks, chunksize=4)
     print(f"{len(rows)} runs in {time.perf_counter() - t:.0f} s", flush=True)
     summary = summarise(rows, rstats)

@@ -12,9 +12,13 @@ history and do not set scope.
 
 ## Goal
 
-Decide what the paper and the sim should do about terrain, so that every
-terrain choice can be defended to a reviewer. The product owner: terrain
-"largely dictates the results so surely it should be defensible."
+Work out what position Lantern and the paper take on terrain generation
+and terrain detail: how the ground is made, and how much detail it has at
+each scale. Get there by deep research into sources and into current
+precedent in lunar simulators. The product owner: terrain "largely
+dictates the results so surely it should be defensible."
+
+The position is the deliverable. Settings values follow from it.
 
 ## Why now
 
@@ -26,20 +30,30 @@ on 0-9% of that ground. Its report is
 Navigation error also depends on terrain, through the small-crater density
 and the orbital map cut.
 
-## What to cover
+## What to research
 
-Every terrain choice that moves the results, with its current value and
-source as `sim/settings.py` gives it. At least these:
+1. **Precedent.** How do current lunar simulators and simulation-based
+   lunar rover studies generate terrain and fine detail? Include
+   ShadowNav (Atha 2024 sec. IV, Cauligi 2023, in `docs/sources/`), and
+   other planetary navigation and traverse-planning work and lunar
+   simulators. Note what each one generates, from what data, at what
+   scale, and how it justifies that. Say which are peer-reviewed.
+2. **Measurements.** What published lunar data constrain the ground at
+   each scale, from orbital elevation maps down to the meter scale a
+   Scout drives on: slopes, roughness, crater and rock populations,
+   ideally for south-polar shadowed craters.
+3. **Lantern today.** Every terrain choice that moves the results, with
+   its current value and source as `sim/settings.py` gives it. At least
+   these:
 - the LOLA product and resolution, and how it is upsampled;
 - the small-scale roughness added on top;
 - the crater density, size distribution and shapes, and the map cut of
   craters a Scout knows from orbit;
 - the slope limit the planner uses, and the scale it is measured on.
 
-For each one, find what ShadowNav did (Atha 2024, Cauligi 2023, in
-`docs/sources/`) and what published lunar measurements say, ideally for
-south-polar shadowed craters. One lead, from memory and unverified:
-Rosenburg et al. 2011, lunar slopes and roughness from LOLA.
+One lead, from memory and unverified: Rosenburg et al. 2011, lunar slopes
+and roughness from LOLA. Search wide. Do not stop at the first source that
+fits.
 
 ## Rules
 
@@ -53,8 +67,14 @@ Rosenburg et al. 2011, lunar slopes and roughness from LOLA.
 
 ## Done when
 
-`docs/terrain/position.md` holds one row per terrain choice. Each row
-gives the current value, the recommended value, its source, and the
-sentence the paper would say. It also lists which choices need a
-sensitivity case in the paper. Mail `leader` a report that ends with the
-decisions the product owner must make.
+`docs/terrain/position.md` holds:
+1. The position in a few sentences: how Lantern generates terrain and
+   detail, and why that is defensible, with the precedent it follows.
+2. A precedent table: each simulator or study, its terrain method and
+   scale, and its source.
+3. One row per terrain choice: current value, recommended value, source,
+   and the sentence the paper would say.
+4. Which choices need a sensitivity case in the paper.
+
+Mail `leader` a report that ends with the decisions the product owner
+must make.

@@ -38,9 +38,14 @@ BATCH_ID = "live-nav-first3"
 # Measured on the test campaign (docs in the commit that sets them): wall
 # seconds per Scout-step with one run alone on the machine, and Scout-steps
 # taken per planned 2 m of driving.
-S_PER_STEP_MEASURED = None
-STEPS_PER_PLANNED_MEASURED = None
-PARALLEL_SLOWDOWN = None     # measured: s/step with 3 runs at once over s/step alone
+# Smoke rerun, 16 Nov 19:16 (realism 455bc93 merged, planner c1021c7): 2,500
+# Scout-steps in about 23 min (render 0.38, lidar 0.035, vision 0.007,
+# planner 0.010, filter 0.0004 s a step; the rest is logging and labels).
+S_PER_STEP_MEASURED = 0.55
+# Smoke w00001-bcce1993: 7,725 steps for 3,940 planned 2 m steps (detours,
+# turns in place, transit to lanes).
+STEPS_PER_PLANNED_MEASURED = 1.96
+PARALLEL_SLOWDOWN = None     # not measured: s/step with 3 runs at once over s/step alone
 
 
 def settings_for(site, n_scouts, sorties, extra=()):

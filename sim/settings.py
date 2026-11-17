@@ -2,7 +2,8 @@
 
 A run is (world seed, Settings). `Settings` holds the design choices that are
 swept on purpose plus the fixed constants; `WorldRanges` holds the ranges the
-random world is drawn from, one draw per seed (docs/campaign-spec.md sec. 4).
+random world is drawn from, one draw per seed (docs/campaign-spec.md, "Two
+decisions": the paper's numbers come from many seeded runs).
 
 Source tags, one per field, in `metadata["source"]`:
 
@@ -48,8 +49,9 @@ class Settings:
     # ----------------------------------------------------------------- site
     site: str = S("s89_134e", "sim/psr_sites.py SITES: 'haynes', 's89_014e', 's89_134e' (real LOLA 5 m PSR "
                               "windows), 'nobile' (LOLA 10 m, 84.5-87 S; docs/handoffs.md Part 3), or 'shoemaker' (engine stand-in, not PSR "
-                              "floor). Swept for the site table (spec 5.3). Default: the site with 100% of "
-                              "survey poses on PSR floor (terrain fyi 20261116-145039)")
+                              "floor). Swept for the site table. Default: the site whose median sortie had 100% of its "
+                              "survey poses on PSR floor (measured 16 Nov 2026: the sampled Campaign, 3 Scouts x "
+                              "16 sorties on each site)")
 
     # ---------------------------------------------------------------- fleet
     n_scouts: int = S(3, "brief p.5 baseline 'two to three Scouts sharing one charging dock'. "
@@ -165,7 +167,7 @@ class Settings:
     swap_downtime_h: float = S(24.0, ASSUMED)
 
     # ------------------------------------------------- camera navigation
-    nav: str = S("camera", "docs/campaign-spec.md sec. 1: 'Every run navigates by camera vision'. "
+    nav: str = S("camera", "docs/campaign-spec.md, 'Two decisions': 'Rovers navigate by their live camera.' "
                            "'camera': render, rims, particle filter, lidar, planner at every step "
                            "(sim/campaign.py CameraSortie); 'sampled': error drawn from C23 Table 2, "
                            "the paper's comparison column only")
@@ -182,10 +184,27 @@ class Settings:
     cam_turn_rate_deg_s: float = S(5.0, ASSUMED + "; turn-in-place rate, for time and energy")
     cam_ground_margin_m: float = S(250.0, ASSUMED + "; fine ground built this far beyond the dock, corridor "
                                                     "and every lane the run could reserve")
-    ground_roughness: bool = S(True, ASSUMED + "; the run ground's roughness under two LOLA cells (sim/terrain.py "
-                                               "Params.rough_frac_of_toterr x synthetic_toterr_m, both assumed). "
-                                               "False is a labelled sensitivity case: LOLA upsampled plus the "
-                                               "world's craters only (workflow, 17 Nov 2026)")
+    # The run ground (sim/site_ground.py), docs/terrain/position.md. Rocks are
+    # not modelled (row 11): the ground has none and the lidar detects none
+    # (sim/lidar.py DETECT_ROCKS), so driving and stranding omit rock avoidance.
+    ground_roughness: bool = S(True, "docs/terrain/position.md row 3: fractal relief under 10 m is in every "
+                                     "lunar rover simulator read there. False is a labelled sensitivity case: "
+                                     "LOLA upsampled plus the world's craters only")
+    ground_rough_rms_m: float = S(0.035, "docs/terrain/position.md row 3: rms of that relief (Hurst 1, Barker 2021 "
+                                         "sec. 4). 0.035 m puts as much ground over 15 deg at CR1 as Hemmi 2025's "
+                                         "1 m DTM of it; 0.021 and 0.048 m, the ends of that comparison, are "
+                                         "labelled test cases")
+    slope_test_widened: bool = S(True, "docs/terrain/position.md row 9: slope across 2 m, widened by the rover's "
+                                       "0.83 m half width (a modelling choice; no source states it). False is a "
+                                       "labelled test case: slope at the point, no widening, for the planner "
+                                       "and the lidar hazards alike")
+    crater_n_ge10_per_km2: float = S(336.0, "Minton 2019 sec. 1.2, Fit 1 (Apollo 15): docs/terrain/position.md "
+                                            "row 4. A single run's density (camera runs); drawn batches draw "
+                                            "WorldRanges.crater_n_ge10_per_km2. 106 and 1,540 are labelled test cases")
+    orbital_map_cut_m: float = S(10.0, "C23 sec. 4A 'LROC has enough resolution to resolve craters of around "
+                                       "10 m'; docs/terrain/position.md row 7. A single run's starting-map cut "
+                                       "(WorldRanges.orbital_resolve_px pinned to it); 18 m, where ShadowCam "
+                                       "counts in polar shadow are complete (Mazarico 2025), is a labelled test case")
     cam_display: str = S("off", "sim/scene.py DISPLAY_MODES: 'off' = the run ground as built (no display "
                                 "assets exist for a run ground)")
     # Batch runs with nav='sampled' never read the fields below.
@@ -236,8 +255,9 @@ class Settings:
                                         "Per axis, in x and y, times the step length")
     pf_heading_walk_rad: float = S(0.0, "A24 sec. III-A: heading from the star tracker, the filter "
                                         "estimates '2D position' only; so no heading spread")
-    pf_scale_walk: float = S(0.001, ASSUMED + "; per-step jitter of each particle's scale error, so "
-                                              "resampled copies spread again (no source; not from the truth)")
+    pf_scale_walk: float = S(0.0, "A24 sec. III-E1 eqs. (3)-(6): particles move by the odometry plus zero-mean "
+                                  "additive noise, with no walk in scale. 0.001 per step (the earlier default, "
+                                  "assumed) is a labelled test case")
     pf_sigma0_m: float = S(1.0, "C23 sec. 1 'initial 3-sigma uncertainty of 3 m'. C23 sec. 6B ran "
                                 "Table 2 with sigma_0 = 3 m; sim/calibrate.py uses that")
 
@@ -276,17 +296,18 @@ class Settings:
     lane_reach_m: float = S(3000.0, ASSUMED + "; survey lanes on PSR floor within this straight-line distance of "
                                     "the descent end, on an approach under the slope limit. Nearest lanes go "
                                     "first; this only matters once nearer floor is surveyed (Nobile: 6.0 km2 of "
-                                    "floor within 3 km driving, terrain fyi 20261116-151941)")
+                                    "floor within 3 km driving, docs/paper-findings.md, the Nobile finding)")
     lane_segment_m: float = S(200.0, ASSUMED + "; lanes are planned in pieces this long")
     find_sep_m: float = S(25.0, ASSUMED + "; a reading this close to a known find adds to it, not a new find")
-    # Stand-in world, used until part 3's campaign_world lands (spec 11.1).
+    # Stand-in world (site 'shoemaker'), the engine's test ground; not PSR floor.
     standin_window_px: tuple = S((2400, 2800, 1200), "code: scan of Shoemaker_final_adj_5mpp_slp.tif, the 6 km "
                                                      "window (row0, col0, size px) with most ground under 15 deg "
-                                                     "(98.8%); not PSR floor (spec 11.1)")
+                                                     "(98.8%); not PSR floor")
     standin_crater_d_min_m: float = S(7.5, "A24 p.10 Fig. 6 text: 'craters of diameters between 7.5 m and "
                                            "20 m can be detected reliably'; smaller ones are not modelled")
     standin_crater_d_max_m: float = S(20.0, "A24 p.10 Fig. 6 text (upper end); code sim/terrain.py:104")
-    standin_crater_sfd_b: float = S(2.0, "code sim/terrain.py:106 (assumed there)")
+    standin_crater_sfd_b: float = S(2.0, "Minton 2019 sec. 1.2: the small-crater equilibrium slope is about 2 "
+                                          "(code sim/terrain.py:106)")
 
     # ------------------------------------------------------------- helpers
     def key(self) -> str:
@@ -308,9 +329,11 @@ class Settings:
 @dataclass(frozen=True)
 class WorldRanges:
     """What the world seed draws, uniform over each range unless noted."""
-    crater_n_ge10_per_km2: tuple = S((100.0, 10000.0),
-                                     "A24 sec. I: mean spacing of 10 m craters 100 m (fresh) to 10 m (old) "
-                                     "-> 100 to 10,000 per km^2; drawn log-uniform. Sweep axis of Figure 1a")
+    crater_n_ge10_per_km2: tuple = S((106.0, 1540.0),
+                                     "Minton 2019 sec. 1.2: small-crater equilibrium is 0.69-10% of geometric "
+                                     "saturation (0.385 r^-2), so 106 to 1,540 per km^2 of 10 m and up; drawn "
+                                     "log-uniform. Sweep axis of Figure 1a. Replaces A24 sec. I's 100-10,000, "
+                                     "whose top is 65% of saturation (docs/terrain/position.md row 4)")
     # The Scouts' starting map is what the orbital product resolves
     # (sim/orbital_map.py, used by the campaign and every camera run): a
     # crater is in it when it spans orbital_resolve_px pixels of the orbital
@@ -318,9 +341,10 @@ class WorldRanges:
     orbital_dem_px_m: float = S(2.0, ASSUMED + "; inside C23 sec. 1 'LROC provides DEMs with a resolution "
                                                "between 0.5 m-5 m per pixel ... there are some DEMs within PSRs' "
                                                "(draft 4.3 cites the same)")
-    orbital_resolve_px: float = S(5.0, ASSUMED + "; pixels across for a crater to be mapped. With 2 m pixels "
-                                                 "the cut is 10 m, as C23 sec. 4A 'LROC has enough resolution "
-                                                 "to resolve craters of around 10 m'")
+    orbital_resolve_px: float = S(5.0, "pixels across for a crater to be mapped. With 2 m pixels the cut is "
+                                       "10 m, as C23 sec. 4A 'LROC has enough resolution to resolve craters of "
+                                       "around 10 m' (docs/terrain/position.md row 7; Hemmi 2025 sec. 4.2 agrees). "
+                                       "A single run pins it to Settings.orbital_map_cut_m")
     missing_share_large: tuple = S((0.0, 0.2), ASSUMED + "; share of resolved craters also absent")
     orbital_pos_err_px: float = S(1.0, ASSUMED + "; 1-sigma error per axis of a mapped crater's centre, in "
                                                  "orbital DEM pixels (2 m). C23 sec. 1 and 4A give the pixel, "
@@ -337,7 +361,8 @@ class WorldRanges:
     # is a share of craters a Scout could have matched.
     crater_d_m: tuple = S((7.5, 20.0), "A24 sec. V-B 'craters of diameters between 7.5 m and 20 m can be "
                                        "detected reliably'")
-    crater_sfd_b: float = S(2.0, ASSUMED + "; cumulative N(>D) ~ D^-b (code sim/terrain.py:106)")
+    crater_sfd_b: float = S(2.0, "Minton 2019 sec. 1.2: cumulative N(>D) ~ D^-b, equilibrium slope about 2 "
+                                  "(Fit 2 gives 1.8); docs/terrain/position.md row 5")
     ice_reach_m: float = S(3000.0, ASSUMED + "; hidden deposits lie on PSR floor within this driving "
                                             "distance of the dock (1.5 km descent + half the 4 km survey, "
                                             "brief p.6)")
@@ -391,7 +416,7 @@ def sources(obj) -> list[tuple[str, object, str]]:
 
 
 def unlabelled(obj) -> list[str]:
-    """Fields with no source tag. Must be empty (spec sec. 9 item 2)."""
+    """Fields with no source tag. Must be empty (CLAUDE.md, 'Assert only what is grounded')."""
     return [n for n, _, s in sources(obj) if not s]
 
 

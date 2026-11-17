@@ -80,6 +80,12 @@ LIDAR_KEEP = 2               # steps.npz keeps every 2nd lidar beam row and colu
 PROGRESS_M = 0.5             # assumed: "getting closer" to a waypoint means by at least this much (cam_stuck_steps)
 DOCK_SIGHT_M = 25.0          # assumed: the dock is found within this of the Scout's believed area (GATE_RANGE_M's view range)
 PROGRESS_MIN_M = 50.0       # assumed: progress measured before CameraSortie.overhead() replaces 1 (the corridor alone is ~900 m)
+# A Scout whose battery runs flat within STUCK_RADIUS_M of every true
+# position it held for the last STUCK_MIN_H was stuck, not short of energy.
+# Both assumed: in an hour a moving Scout covers about 1 km (top speed), and
+# the s89_134e Scouts of workflow-first3d sat within 2 m for 17-24 h.
+STUCK_RADIUS_M = 10.0
+STUCK_MIN_H = 1.0
 BLOCKED_ARRIVE_M = 2.0       # run_demo.py BLOCKED_ARRIVE_M (assumed there): arrived, when the goal is on no-go ground
 SIGHT_LINK_M = 2.0           # assumed: unmatched rim points this close are one arc
 SIGHT_CELL_M = 0.25          # unmatched points are thinned to one per cell of this size before clustering (memory:
@@ -168,7 +174,8 @@ class CameraRig:
         from sim.terrain import load_terrain
         h, cr, x0, y0, cell = load_terrain(self.ground_path)
         self.scene = Scene(h, cr, x0, y0, cell, display=s.cam_display)
-        self.slope = SlopeMap(h, x0, y0, cell)
+        # docs/terrain/position.md row 9: widened by the half width, or the test case without.
+        self.slope = SlopeMap(h, x0, y0, cell, widen_m=None if s.slope_test_widened else 0.0)
         n = h.shape[0]
         self.ground = {"file": f"run_ground/{self.ground_path.name}", "x0": float(x0), "y0": float(y0),
                        "cell": float(cell), "bounds": [rnd(x0 - cell / 2, 2), rnd(y0 - cell / 2, 2),
@@ -228,7 +235,8 @@ class CameraRig:
                     from scipy.spatial import cKDTree
                     dist, _ = cKDTree(w.craters).query(carved[:, :3])
                     same_world = same_world and bool(np.all(dist < 1e-6))
-                rough_ok = (float(meta.get("roughness_rms_m", 1.0)) > 0) == bool(s.ground_roughness)
+                want = float(s.ground_rough_rms_m) if s.ground_roughness else 0.0
+                rough_ok = abs(float(meta.get("roughness_rms_m", -1.0)) - want) < 1e-9
                 if meta.get("box") == box and meta.get("seed") == camp.seed and meta.get("site") == w.site \
                         and same_world and rough_ok:
                     return path, box
@@ -236,7 +244,7 @@ class CameraRig:
                 pass
         # build_ground adds its own GroundBuild.margin_m; the box already holds ours.
         out = build_ground(w.site, camp.seed, box[0], box[1], box[2], box[3], camp.ranges, name=name,
-                           roughness=s.ground_roughness)
+                           roughness=s.ground_roughness, rough_rms_m=s.ground_rough_rms_m)
         return out, box
 
     def inside(self, x, y):
@@ -305,14 +313,18 @@ class CameraSortie(Sortie):
     def __init__(self, camp, scout, n, t0):
         super().__init__(camp, scout, n, t0)
         from sim.lidar import Lidar
-        from sim.nav import ParticleNav
+        from sim.nav import ParticleNav, PFNoise
         from sim.rover import Rover
         from sim.vision import Vision
         s, w, rig = self.s, self.w, camp.rig
         self.rig = rig
         si = camp.scouts.index(scout)
         self.rng_odo = rng_for(camp.seed, 8, si, n)
-        nav = ParticleNav(True, rng_for(camp.seed, 5, si, n), camp.map_arr)
+        # The filter's motion model from this run's Settings (pf_*), not
+        # sim/nav.py's import-time defaults, so a --set of them takes effect.
+        noise = PFNoise(drift_sigma=s.pf_drift_sigma, step_noise_frac=s.pf_step_noise_frac,
+                        heading_walk_rad=s.pf_heading_walk_rad, scale_walk=s.pf_scale_walk, sigma0_m=s.pf_sigma0_m)
+        nav = ParticleNav(True, rng_for(camp.seed, 5, si, n), camp.map_arr, noise=noise)
         reg = w.draws["dock_reg_err"]
         nav.err = np.array([float(reg[0]), float(reg[1])])      # the hidden registration error: est0 = dock + err
         wx, wy = camp.corridor[1] if len(camp.corridor) > 1 else camp.entry
@@ -623,6 +635,22 @@ class CameraSortie(Sortie):
         finds the dock (lit) when the dock lies inside the area it believes
         it is in, widened by what its lamp-lit camera sees."""
         return d_home <= self.bound + DOCK_SIGHT_M
+
+    def _flat_reason(self):
+        """"stuck" when the battery ran flat with the Scout held within
+        STUCK_RADIUS_M of where it died for at least STUCK_MIN_H, else
+        "battery". stuck_h: hours since it was last farther than that. The
+        Scout's true positions decide it; this labels the loss and changes
+        nothing the Scout does."""
+        st = np.asarray(self.st["step"], float)
+        if len(st) == 0:
+            return {"reason": "battery"}
+        far = np.hypot(st[:, 1] - st[-1, 1], st[:, 2] - st[-1, 2]) > STUCK_RADIUS_M
+        t_left = st[np.nonzero(far)[0][-1] + 1, 0] if far.any() else self.t_launch
+        held_h = (self.t - t_left) / 3600.0
+        if held_h >= STUCK_MIN_H:
+            return {"reason": "stuck", "stuck_h": rnd(held_h, 2)}
+        return {"reason": "battery"}
 
     def _end_pass(self):
         s, c = self.s, self.c

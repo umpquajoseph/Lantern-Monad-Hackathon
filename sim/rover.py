@@ -97,8 +97,13 @@ class SlopeMap:
     between samples, so the rover drove into craters steeper than 15 deg.
     """
 
-    def __init__(self, height, x0, y0, cell):
+    def __init__(self, height, x0, y0, cell, widen_m=None):
+        """widen_m: the margin each slope is widened by, the rover's half width
+        by default (docs/terrain/position.md row 9); 0 is the labelled test
+        case, slope at the point only. The lidar hazards a sensing Rover marks
+        (add_hazards) are widened by the same margin."""
         from scipy.ndimage import maximum_filter
+        self.widen_m = ROVER_HALF_WIDTH_M if widen_m is None else float(widen_m)
         k = max(1, int(round(SLOPE_BASELINE_M / cell)))
         b = k * cell
         h = np.asarray(height, dtype=np.float32)
@@ -110,8 +115,9 @@ class SlopeMap:
         del hp, gx, gy
         # Widen by the rover's half width, so a cell is blocked if any part of
         # the rover standing in it would be on a steep spot.
-        r = int(math.ceil(ROVER_HALF_WIDTH_M / cell))
-        fine = maximum_filter(fine, size=2 * r + 1, mode="nearest")
+        r = int(math.ceil(self.widen_m / cell))
+        if r > 0:
+            fine = maximum_filter(fine, size=2 * r + 1, mode="nearest")
         # The A* grid: 2 m cell [i, j] spans x0 + j*b .. x0 + (j+1)*b (the
         # floor convention of plan()); it takes the widened slope at its
         # centre, x0 + (j + 0.5)*b, where plan() puts its waypoints. Every
@@ -531,7 +537,7 @@ class Rover:
             # cells on a run ground; the whole-map OR and sum were most of a
             # camera step). Same arrays and count as before.
             c, (H, W) = self.slope.cell, self.haz_fine.shape
-            r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+            r = int(math.ceil(self.slope.widen_m / c))
             ci = np.rint((pts[:, 1] - self.slope.y0) / c).astype(int)
             cj = np.rint((pts[:, 0] - self.slope.x0) / c).astype(int)
             i0, i1 = max(int(ci.min()) - r, 0), min(int(ci.max()) + r + 1, H)
@@ -546,7 +552,7 @@ class Rover:
         sm = self.slope
         c = sm.cell
         H, W = self.haz_fine.shape
-        r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+        r = int(math.ceil(self.slope.widen_m / c))
         ci = np.rint((pts[:, 1] - sm.y0) / c).astype(int)
         cj = np.rint((pts[:, 0] - sm.x0) / c).astype(int)
         for di in range(-r, r + 1):
@@ -570,7 +576,7 @@ class Rover:
             return
         sm, c = self.slope, self.slope.cell
         H, W = grid.shape
-        r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+        r = int(math.ceil(self.slope.widen_m / c))
         ci = np.rint((pts[:, 1] - sm.y0) / c).astype(int)
         cj = np.rint((pts[:, 0] - sm.x0) / c).astype(int)
         for di in range(-r, r + 1):
@@ -584,7 +590,7 @@ class Rover:
         sm, c = self.slope, self.slope.cell
         H, W = self.haz_steep.shape
         k = int(round(sm.b / c))
-        r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+        r = int(math.ceil(self.slope.widen_m / c))
         ci = np.rint((pts[:, 1] - sm.y0) / c).astype(int)
         cj = np.rint((pts[:, 0] - sm.x0) / c).astype(int)
         i0, i1 = max(ci.min() - r, 0) // k * k, min(ci.max() + r + k, H) // k * k

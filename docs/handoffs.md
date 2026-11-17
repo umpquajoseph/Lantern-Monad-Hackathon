@@ -406,7 +406,10 @@ batch draws drift from `WorldRanges.drift_frac` per world.
 on different sites never share a folder, and it is a summary.csv column.
 
 A run is named `w<seed:05d>-<Settings.key()>`. Same seed and same key give
-the same record, byte for byte apart from `made_at`.
+the same record, byte for byte apart from `made_at`. A single run's world
+ranges come from its Settings (sim/campaign.py `single_run_ranges`: drift,
+crater density, map cut), so they are in the key; a drawn batch passes its
+own ranges, which are not.
 
 ### Run record (part 1 writes it; parts 2-4 read it)
 
@@ -479,7 +482,7 @@ Event `type`s and their extra fields:
 | `fault` | `module`: `camera` / `lamp` / `neutron` |
 | `swap` | `module`, `downtime_h` |
 | `contact_lost`, `contact_regained` | none; `sortie_id` and `scout` are null |
-| `lost` | `energy_kwh` (0): battery empty before the dock. Since 17 Nov 2026 also `reason`: `battery` (that case) or `stranded` (camera: its return route driven, the dock lies farther than its `bound95` + 25 m, sim/campaign_camera.py `DOCK_SIGHT_M`, assumed; `energy_kwh` is what it had left, `dist_m` the true distance to the dock). Before, the last hop to the dock was driven free whatever its length (up to 2,355 m in live-nav-first3), so those sorties read `ok` or `below_reserve` |
+| `lost` | `energy_kwh` (0): battery empty before the dock. Since 17 Nov 2026 also `reason`: `battery` (that case) or `stranded` (camera: its return route driven, the dock lies farther than its `bound95` + 25 m, sim/campaign_camera.py `DOCK_SIGHT_M`, assumed; `energy_kwh` is what it had left, `dist_m` the true distance to the dock). Before, the last hop to the dock was driven free whatever its length (up to 2,355 m in live-nav-first3), so those sorties read `ok` or `below_reserve`. Also `stuck` (camera, added later on 17 Nov 2026): the battery ran flat with the Scout's true position within 10 m of where it died for at least 1 h (sim/campaign_camera.py `STUCK_RADIUS_M`, `STUCK_MIN_H`, assumed), plus `stuck_h`, the hours since it was last farther. Earlier records call those losses `battery` |
 
 Part 1 also writes (2026-11-16, additive):
 

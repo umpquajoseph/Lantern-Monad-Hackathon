@@ -37,7 +37,7 @@ import math
 import os
 import time
 from collections import deque
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace as dc_replace
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -136,7 +136,7 @@ def draw_world_values(seed: int, ranges: WorldRanges, rng) -> dict:
 def standin_world(seed: int, s: Settings, ranges: WorldRanges) -> World:
     """Shoemaker LOLA window with seeded craters and ice. Stand-in for part 3.
 
-    The window is not PSR floor (spec 11.1). The dock sits 300 m inside the
+    The window is not PSR floor. The dock sits 300 m inside the
     west edge; "floor" is every cell at least descent_m from the dock and
     50 m inside the window, so the descent corridor is about descent_m long.
     """
@@ -588,7 +588,7 @@ class Sortie:
                 self._fault(mod)
         if self.energy <= 0:
             self.lost = True
-            self.event("lost", energy_kwh=0.0, reason="battery")
+            self.event("lost", energy_kwh=0.0, **self._flat_reason())
             return
         if self.act == ACT["survey"] and self.d_read >= s.reading_spacing_m:
             self.d_read = 0.0
@@ -889,6 +889,12 @@ class Sortie:
         exactly, so d_home is its navigation error and it always can."""
         return True
 
+    def _flat_reason(self):
+        """The lost event's reason when the battery runs flat on the way:
+        "battery". A camera Scout may instead have been "stuck"
+        (sim/campaign_camera.py CameraSortie._flat_reason)."""
+        return {"reason": "battery"}
+
     # ------------------------------------------------------------ the sortie
     def run(self, searches, drills, lanes):
         s, c = self.s, self.c
@@ -973,10 +979,20 @@ class Sortie:
 
 # =================================================================== campaign
 
+def single_run_ranges(s: Settings) -> WorldRanges:
+    """A single run's world ranges: odometer drift, crater density and the
+    starting-map cut pinned to their Settings values, so each is in the run
+    id; every other range as WorldRanges. Drawn batches pass their own."""
+    base = WorldRanges()
+    return dc_replace(base, drift_frac=(s.drift_frac, s.drift_frac),
+                      crater_n_ge10_per_km2=(s.crater_n_ge10_per_km2, s.crater_n_ge10_per_km2),
+                      orbital_resolve_px=s.orbital_map_cut_m / base.orbital_dem_px_m)
+
+
 class Campaign:
     def __init__(self, seed: int, s: Settings, ranges: WorldRanges | None = None, site: str | None = None):
         self.seed, self.s = int(seed), s
-        self.ranges = ranges or WorldRanges(drift_frac=(s.drift_frac, s.drift_frac))
+        self.ranges = ranges or single_run_ranges(s)
         self.world = make_world(seed, s, self.ranges, site)
         w = self.world
         self.energy = energy_model(s)
@@ -1564,10 +1580,13 @@ class Campaign:
         return root
 
 
-# Design choices swept on purpose (spec sec. 4); every one goes in summary.csv.
+# Design choices swept on purpose; every one goes in summary.csv.
 SWEPT = ["site", "nav", "n_scouts", "check_policy", "map_refinement", "top_speed_mps", "check_stop_s", "drill_limit_m",
-         "avg_load_w", "sightings_to_add", "drift_mode", "star_tracker", "ground_roughness",
-         # assumed inputs swept for sensitivity (spec 4a item 3)
+         "avg_load_w", "sightings_to_add", "drift_mode", "star_tracker",
+         # the ground and the filter (docs/terrain/position.md; A24 eqs. 3-6), main case and test cases
+         "ground_roughness", "ground_rough_rms_m", "slope_test_widened", "crater_n_ge10_per_km2",
+         "orbital_map_cut_m", "pf_scale_walk",
+         # assumed inputs swept for sensitivity
          "p_wrong_per_missing", "confirm_bound_max_m", "bound_model"]
 
 

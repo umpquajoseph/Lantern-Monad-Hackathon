@@ -16,9 +16,10 @@ Resume: a run whose row.json (written last) exists is finished and is
 skipped. A run that died part way starts over; its run ground is cached.
 
 The expected wall time is the planned driving distance divided by the step
-(sim/rover.py STEP_M), times the measured seconds per Scout-step
-(S_PER_STEP_MEASURED), times a factor for detours, turns in place and
-skipped waypoints measured on the test campaign (STEPS_PER_PLANNED_MEASURED).
+(sim/rover.py STEP_M), times Scout-steps per planned step and wall seconds
+per Scout-step, both measured on the newest finished camera runs under
+data/campaigns (measured_rates), as they ran (several at once). With none
+finished it falls back to the 16 Nov check run's numbers below.
 """
 from __future__ import annotations
 
@@ -56,9 +57,46 @@ BATCH_ID = "live-nav-first3"
 # dock clear zone be88151): haynes, 1 Scout x 1 sortie, 2,149 Scout-steps in
 # 436 s (render 0.178, lidar 0.014, planner 0.006, vision 0.003, filter
 # 0.0002 s a step), for 1,817 m planned = 909 planned 2 m steps.
-S_PER_STEP_MEASURED = 0.20
-STEPS_PER_PLANNED_MEASURED = 2.37
-PARALLEL_SLOWDOWN = None     # not measured: s/step with 3 runs at once over s/step alone
+S_PER_STEP_FALLBACK = 0.20
+STEPS_PER_PLANNED_FALLBACK = 2.37
+RATE_RUNS = 6                # newest finished camera runs the estimate is measured on
+# Settings read once at import by sim/scene.py, sim/vision.py and
+# sim/mission.py, not from the run's Settings: a --set of these would be
+# ignored, so it is refused.
+IMPORT_TIME_FIELDS = {"camera_height_m", "lamp_below_camera_m", "stereo_baseline_m", "stereo_hfov_deg",
+                      "stereo_width_px", "stereo_disparity_sigma_px", "rim_arc_share_headon",
+                      "rim_arc_share_route"}
+
+
+def measured_rates(n=RATE_RUNS):
+    """(wall s per Scout-step, Scout-steps per planned 2 m step, note) from
+    the n newest finished camera runs' row.json and record.json, or the
+    fallback constants when none is finished."""
+    from sim.campaign import CAMPAIGN_DIR
+    from sim.rover import STEP_M
+    rows = sorted(CAMPAIGN_DIR.glob("*/*/row.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    wall = steps = planned = 0.0
+    used = []
+    for p in rows:
+        try:
+            row = json.loads(p.read_text(encoding="utf-8"))
+            rec = json.loads((p.parent / "record.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        s = rec.get("settings", {})
+        if s.get("nav") != "camera" or not row.get("wall_s") or not row["summary"].get("steps"):
+            continue
+        cor = rec.get("corridor") or []
+        clen = sum(math.dist(a, b) for a, b in zip(cor[:-1], cor[1:]))
+        wall += row["wall_s"]
+        steps += row["summary"]["steps"]
+        planned += s["n_scouts"] * s["sorties_per_scout"] * (2 * clen + s["survey_m"]) / STEP_M
+        used.append(f"{p.parent.parent.name}/{p.parent.name}")
+        if len(used) >= n:
+            break
+    if not used or planned <= 0:
+        return S_PER_STEP_FALLBACK, STEPS_PER_PLANNED_FALLBACK, "no finished camera run: 16 Nov check-run constants"
+    return wall / steps, steps / planned, f"measured on the {len(used)} newest finished runs ({used[0]} first)"
 
 
 def settings_for(site, n_scouts, sorties, extra=()):
@@ -69,22 +107,23 @@ def settings_for(site, n_scouts, sorties, extra=()):
     kw = dict(site=site, n_scouts=n_scouts, sorties_per_scout=sorties, map_refinement=True, nav="camera")
     for p in extra:
         k, v = p.split("=", 1)
+        if k in IMPORT_TIME_FIELDS:
+            raise SystemExit(f"--set {k}: read once at import (sim/live_runs.py IMPORT_TIME_FIELDS), so a run "
+                             f"would ignore it")
         kw[k] = parse_value(types[k], v)
     return Settings(**kw)
 
 
 def ranges_for(s):
-    """The world ranges of these runs: crater density fixed at the lunar
-    small-crater equilibrium (sim/terrain.py Params.n_ge10_per_km2, 336 per
-    km2 of 10 m and up, Minton et al. 2019 Fit 1), drift fixed at the
-    Settings value as a single run does. Every other range as WorldRanges."""
-    from sim.settings import WorldRanges
-    from sim.terrain import Params
-    n = float(Params().n_ge10_per_km2)
-    return WorldRanges(crater_n_ge10_per_km2=(n, n), drift_frac=(s.drift_frac, s.drift_frac))
+    """The world ranges of these runs, as any single run's
+    (sim/campaign.py single_run_ranges): drift, crater density
+    (Settings.crater_n_ge10_per_km2, 336 per km2 by default) and the map
+    cut pinned to the Settings values. Every other range as WorldRanges."""
+    from sim.campaign import single_run_ranges
+    return single_run_ranges(s)
 
 
-def plan(site, seed, n_scouts, sorties, extra=()):
+def plan(site, seed, n_scouts, sorties, extra=(), steps_per_planned=STEPS_PER_PLANNED_FALLBACK):
     """Planned driving per run (m) and the Scout-steps it implies."""
     from sim.campaign import Campaign
     from sim.rover import STEP_M
@@ -92,7 +131,7 @@ def plan(site, seed, n_scouts, sorties, extra=()):
     c = Campaign(seed, s, ranges_for(s))
     per_sortie = 2 * c.corridor_len + s.survey_m
     metres = n_scouts * sorties * per_sortie
-    steps = metres / STEP_M * (STEPS_PER_PLANNED_MEASURED or 1.0)
+    steps = metres / STEP_M * steps_per_planned
     return {"site": site, "run_id": c.run_id, "corridor_m": round(c.corridor_len), "per_sortie_m": round(per_sortie),
             "metres": round(metres), "scout_steps": round(steps)}
 
@@ -194,7 +233,8 @@ def main():
         print(f"---- launch {time.strftime('%Y-%m-%d %H:%M:%S')}, pid {os.getpid()}, log {log_path}", flush=True)
     sites = a.sites.split(",")
     seed = {site: a.seed if a.seed is not None else SEEDS.get(site, 1) for site in sites}
-    plans = [plan(site, seed[site], a.scouts, a.sorties, a.set) for site in sites]
+    s_per_step, steps_per_planned, rate_note = measured_rates()
+    plans = [plan(site, seed[site], a.scouts, a.sorties, a.set, steps_per_planned) for site in sites]
     nav = settings_for(sites[0], a.scouts, a.sorties, a.set).nav
     print(f"{len(sites)} runs, {a.scouts} Scouts x {a.sorties} sorties each, {nav} navigation, map refinement on, "
           f"seeds {seed}, batch {a.batch_id}")
@@ -202,17 +242,14 @@ def main():
     for p in plans:
         line = (f"  {p['site']:9} {p['run_id']}: descent corridor {p['corridor_m']} m, "
                 f"{p['per_sortie_m']} m planned per sortie, about {p['scout_steps']} Scout-steps")
-        if S_PER_STEP_MEASURED:
-            sec = p["scout_steps"] * S_PER_STEP_MEASURED * (PARALLEL_SLOWDOWN or 1.0)
-            worst = max(worst, sec)
-            line += f", about {sec / 3600:.1f} h"
+        sec = p["scout_steps"] * s_per_step
+        worst = max(worst, sec)
+        line += f", about {sec / 60:.0f} min"
         if _done(batch / p["run_id"]):
             line += "  [finished: skipped]"
         print(line)
-    if S_PER_STEP_MEASURED:
-        print(f"expected wall time: about {worst / 3600:.1f} h with the runs in parallel "
-              f"({S_PER_STEP_MEASURED:.2f} s per Scout-step measured alone, x{PARALLEL_SLOWDOWN or 1.0:.2f} "
-              f"for {len(sites)} at once, x{STEPS_PER_PLANNED_MEASURED or 1.0:.2f} steps per planned step)")
+    print(f"expected wall time: about {worst / 60:.0f} min with the runs in parallel ({s_per_step:.3f} s per "
+          f"Scout-step and {steps_per_planned:.2f} Scout-steps per planned step, {rate_note})")
     if a.dry_run:
         return
     rows, jobs = {}, []
@@ -243,7 +280,9 @@ def main():
     lines = [f"# Batch {a.batch_id}", "", PAPER_NOTE, "",
              f"Seeds: {', '.join(f'{x} {seed[x]}' for x in sites)}; " + SEED_RULE + ".", "",
              f"{a.scouts} Scouts x {a.sorties} sorties per run, {nav} navigation, map refinement on, "
-             f"crater density fixed at the 336 per km2 equilibrium. Launch log: launch.log. Rows: summary.csv.", "",
+             f"crater density {settings_for(sites[0], a.scouts, a.sorties, a.set).crater_n_ge10_per_km2:g} per km2 "
+             f"of 10 m and up. Overrides: {' '.join(a.set) or 'none (main case)'}. Launch log: launch.log. "
+             f"Rows: summary.csv.", "",
              "| site | run | finds | confirmed | false-match rate | sorties ok |", "|---|---|---|---|---|---|"]
     for x in sites:
         r = rows.get(x)

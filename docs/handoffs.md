@@ -479,7 +479,7 @@ Event `type`s and their extra fields:
 | `fault` | `module`: `camera` / `lamp` / `neutron` |
 | `swap` | `module`, `downtime_h` |
 | `contact_lost`, `contact_regained` | none; `sortie_id` and `scout` are null |
-| `lost` | `energy_kwh` (0): battery empty before the dock |
+| `lost` | `energy_kwh` (0): battery empty before the dock. Since 17 Nov 2026 also `reason`: `battery` (that case) or `stranded` (camera: its return route driven, the dock lies farther than its `bound95` + 25 m, sim/campaign_camera.py `DOCK_SIGHT_M`, assumed; `energy_kwh` is what it had left, `dist_m` the true distance to the dock). Before, the last hop to the dock was driven free whatever its length (up to 2,355 m in live-nav-first3), so those sorties read `ok` or `below_reserve` |
 
 Part 1 also writes (2026-11-16, additive):
 
@@ -579,7 +579,11 @@ Record changes (additive unless marked):
     `combined_bound95` (when started). No `search_end` follows; the find
     keeps `status: "find"` and a later sortie may search it. A search cut
     short whose readings so far already confirm ends with a normal
-    `search_end` instead. Summary adds `searches_abandoned`.
+    `search_end` instead. Summary adds `searches_abandoned`. Batch
+    `workflow-first3` (commit 68e2047) wrote the earlier name
+    `search_unreached` (`find_id`, `dist_m`, `radius_m`) and summary column
+    `searches_unreached`; read them as `search_abandoned` with reason
+    `unreached`.
 - `time_s.check` is 0: a camera Scout does not stop to fix.
   `Settings.check_policy`, `check_stop_s`, `drift_mode` and the sampled
   fix-error fields are not used. The truth's odometer is a scale error of

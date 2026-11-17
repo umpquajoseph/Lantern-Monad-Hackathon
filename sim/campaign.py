@@ -588,7 +588,7 @@ class Sortie:
                 self._fault(mod)
         if self.energy <= 0:
             self.lost = True
-            self.event("lost", energy_kwh=0.0)
+            self.event("lost", energy_kwh=0.0, reason="battery")
             return
         if self.act == ACT["survey"] and self.d_read >= s.reading_spacing_m:
             self.d_read = 0.0
@@ -883,6 +883,12 @@ class Sortie:
     def _before_dock(self):
         """Hook: the last thing a sortie does before closing on the dock."""
 
+    def _can_home(self, d_home):
+        """Whether the Scout, its route driven, can close the last d_home
+        metres (true) to the dock. The sampled engine drives its route
+        exactly, so d_home is its navigation error and it always can."""
+        return True
+
     # ------------------------------------------------------------ the sortie
     def run(self, searches, drills, lanes):
         s, c = self.s, self.c
@@ -935,7 +941,10 @@ class Sortie:
         if not self.lost:
             # Home on the dock itself: drive the true remaining distance.
             d_home = math.hypot(self.tx - self.w.dock[0], self.ty - self.w.dock[1])
-            if d_home > 0:
+            if not self._can_home(d_home):
+                self.lost = True
+                self.event("lost", energy_kwh=rnd(self.energy, 4), reason="stranded", dist_m=rnd(d_home, 1))
+            elif d_home > 0:
                 self.act = ACT["return"]
                 dt = d_home / self.v
                 self.t += dt
@@ -946,7 +955,7 @@ class Sortie:
             self.errx = self.erry = 0.0
             if self.energy <= 0:
                 self.lost = True
-                self.event("lost", energy_kwh=0.0)
+                self.event("lost", energy_kwh=0.0, reason="battery")
         if self.lost:
             outcome = "lost"
         else:

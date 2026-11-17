@@ -78,7 +78,8 @@ from sim.crossing import R95_2D
 CAM = "cam"                  # the scene's one agency: only the sortie being simulated is in it
 LIDAR_KEEP = 2               # steps.npz keeps every 2nd lidar beam row and column (record size, not physics)
 PROGRESS_M = 0.5             # assumed: "getting closer" to a waypoint means by at least this much (cam_stuck_steps)
-PROGRESS_MIN_M = 50.0        # assumed: progress measured before CameraSortie.overhead() replaces 1 (the corridor alone is ~900 m)
+DOCK_SIGHT_M = 25.0          # assumed: the dock is found within this of the Scout's believed area (GATE_RANGE_M's view range)
+PROGRESS_MIN_M = 50.0       # assumed: progress measured before CameraSortie.overhead() replaces 1 (the corridor alone is ~900 m)
 BLOCKED_ARRIVE_M = 2.0       # run_demo.py BLOCKED_ARRIVE_M (assumed there): arrived, when the goal is on no-go ground
 SIGHT_LINK_M = 2.0           # assumed: unmatched rim points this close are one arc
 SIGHT_CELL_M = 0.25          # unmatched points are thinned to one per cell of this size before clustering (memory:
@@ -602,6 +603,14 @@ class CameraSortie(Sortie):
     def _before_dock(self):
         if self.pass_ is not None:
             self._end_pass()
+
+    def _can_home(self, d_home):
+        """A camera Scout skips return waypoints it cannot reach, so the end
+        of its route is not the dock: on live-nav-first3 and
+        workflow-first3b the last hop, driven free, was up to 2,355 m. It
+        finds the dock (lit) when the dock lies inside the area it believes
+        it is in, widened by what its lamp-lit camera sees."""
+        return d_home <= self.bound + DOCK_SIGHT_M
 
     def _end_pass(self):
         s, c = self.s, self.c

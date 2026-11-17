@@ -104,7 +104,7 @@ def measure(n_frames, routes_path, out_dir, chunk=None, rule="head-on"):
     height, craters, x0, y0, cell = terrain
     slope = SlopeMap(height, x0, y0, cell)
     if own_grid:
-        tp = np.array([[np.inf, np.inf]])
+        tp = np.array([[-1e9, -1e9]])          # far from everything
     else:
         blocked = _blocked(slope, craters)
         routes = json.loads(Path(routes_path).read_text())

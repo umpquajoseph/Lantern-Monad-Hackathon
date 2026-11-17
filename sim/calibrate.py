@@ -90,7 +90,7 @@ from sim.orbital_map import orbital_map
 from sim.rover import STEP_M, SlopeMap
 from sim.settings import C23_TRAJ1_FALSE_MATCH, C23_TRAJ2, C23_TRAJ3, Settings, WorldRanges
 from sim.terrain import DATA, load_terrain
-from sim.vision import Vision, contour_ok, rover_to_world
+from sim.vision import SHADOW_PROBE_PX, Vision, contour_ok, contour_stats, depth_jump_ok, rover_to_world
 
 SITE = "s89_134e"
 TERRAIN = DATA / "terrain" / f"{SITE}.npz"
@@ -330,11 +330,25 @@ def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, ma
                 continue
             max_new -= 1
         V, U, R, S, W, NP, off = [], [], [], [], [], [], [0]
+        # Edge candidates before the depth-jump test (image only), with the renderer's range
+        # at the three pixels the depth steps read: 3 px below and above the edge, and the
+        # placed pixel. run_one draws one stereo noise field per frame over these.
+        EV, EU, RB, RA, RP, ES, eoff = [], [], [], [], [], [], [0]
+        kp = SHADOW_PROBE_PX
         t = time.perf_counter()
         for k, pose in enumerate(poses):
             scene.set_rover("A", pose)
             img, depth = scene.first_person("A")
-            v, u, wid, npx = vis.detect_contours(img, depth)   # before A24's contour filter
+            ve, ue = vis.edge_candidates(img)
+            vp = Vision.placed_row(ve, depth.shape[0])
+            rp = depth[vp, ue].astype(np.float32)
+            tp = vis._rover_points(rp.astype(np.float64), vp, ue) if len(ve) else np.zeros((0, 2))
+            EV.append(ve.astype(np.int16)); EU.append(ue.astype(np.int16)); RP.append(rp)
+            RB.append(depth[ve + kp, ue].astype(np.float32)); RA.append(depth[ve - kp, ue].astype(np.float32))
+            ES.append(source_ids(tp, pose, tree, craters).astype(np.int32))
+            eoff.append(eoff[-1] + len(ve))
+            # The noiseless detections, as before (configs without noisy_detect).
+            v, u, wid, npx = vis.detect_contours(img, depth, nd=depth)   # before A24's contour filter
             r0 = depth[v, u].astype(np.float32)
             true = vis._rover_points(r0.astype(np.float64), v, u) if len(v) else np.zeros((0, 2))
             src = source_ids(true, pose, tree, craters)
@@ -356,7 +370,10 @@ def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, ma
                 print(f"  {name} frame {k}/{len(poses)}: {len(v)} rim px, {time.perf_counter() - t:.0f} s", flush=True)
         np.savez_compressed(out_dir / f"detections_{name}.npz", poses=np.asarray(poses), v=np.concatenate(V),
                             u=np.concatenate(U), r0=np.concatenate(R), src=np.concatenate(S), off=np.asarray(off),
-                            width_m=np.concatenate(W), npx=np.concatenate(NP))
+                            width_m=np.concatenate(W), npx=np.concatenate(NP),
+                            ev=np.concatenate(EV), eu=np.concatenate(EU), rb=np.concatenate(RB),
+                            ra=np.concatenate(RA), rp=np.concatenate(RP), esrc=np.concatenate(ES),
+                            eoff=np.asarray(eoff))
         print(f"{name}: {len(poses)} frames in {time.perf_counter() - t:.0f} s", flush=True)
 
 
@@ -382,6 +399,10 @@ CONFIGS = {
     "filter":    dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="c23"),
     # The same filter with Lantern's own measured arc share (sim/arc_share.py, held-out frames).
     "filter-measured": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="measured"),
+    # The same, with every depth step reading one noisy stereo depth per frame: the
+    # depth-jump test and the contour width as well as placement (16 Nov 2026, 20:00).
+    "filter-measured-nd": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
+                               contour="measured", noisy_detect=True),
 }
 _W = {}
 # Bumped when run_one's counting changes, so saved runs from older code are run again.
@@ -430,6 +451,11 @@ def run_one(task):
     noise = replace(noise, sigma0_m=SIGMA0_C23)
     nav = ParticleNav(cfg["fixes"], g_nav, mp, noise=noise)
     vis = Vision(_Cam(det["camera_model"]), g_vis, depth_model=cfg["depth"])
+    noisy_detect = cfg.get("noisy_detect", False)
+    if noisy_detect and "ev" not in D:
+        raise ValueError("noisy_detect needs detections rendered with edge candidates (render again)")
+    g_sd = np.random.default_rng([seed, ti, 4])     # one stereo noise field per frame, common to configs
+    Hc, Wc = det["camera_model"]["height"], det["camera_model"]["width"]
     nav.start(poses[0, :2] + start_err, poses[0, 2])
     errs = np.zeros(n)
     errs[0] = float(np.hypot(*start_err))
@@ -441,11 +467,30 @@ def run_one(task):
         dh = float((poses[k, 2] - poses[k - 1, 2] + np.pi) % (2 * np.pi) - np.pi)
         d_o = d * (1.0 + drift) + s.odom_noise_frac * d * w_d[k]
         dh_o = dh + s.odom_heading_noise_rad * w_h[k]
-        a, b = D["off"][k], D["off"][k + 1]
-        sel = np.arange(a, b)
-        if cfg.get("contour", False):                   # A24 sec. III-D contour filter (sim/vision.py)
-            sel = sel[contour_ok(D["width_m"][a:b], D["npx"][a:b], cfg["contour"])]
-        pl = vis.place(D["v"][sel].astype(int), D["u"][sel].astype(int), D["r0"][sel])
+        if noisy_detect:
+            # sim/vision.py detect_contours() and rims_detail() on one noisy depth per frame.
+            nf = g_sd.standard_normal((Hc, Wc))
+            a, b = D["eoff"][k], D["eoff"][k + 1]
+            ve, ue = D["ev"][a:b].astype(int), D["eu"][a:b].astype(int)
+            kp = SHADOW_PROBE_PX
+            vp = Vision.placed_row(ve, Hc)
+            cs = vis._cos
+            nb = vis.noisy_range(D["rb"][a:b], cs[ve + kp, ue], nf[ve + kp, ue])
+            na = vis.noisy_range(D["ra"][a:b], cs[ve - kp, ue], nf[ve - kp, ue])
+            npl = vis.noisy_range(D["rp"][a:b], cs[vp, ue], nf[vp, ue])
+            sel = np.flatnonzero(depth_jump_ok(nb, na))
+            if cfg.get("contour", False) and len(sel):
+                wid, npx = contour_stats(vp[sel], ue[sel], npl[sel], (Hc, Wc), det["camera_model"]["fx"])
+                sel = sel[contour_ok(wid, npx, cfg["contour"])]
+            pl = vis.place(vp[sel], ue[sel], D["rp"][a:b][sel], r_noisy=npl[sel])
+            src_pl = D["esrc"][a:b][sel][pl["idx"]]
+        else:
+            a, b = D["off"][k], D["off"][k + 1]
+            sel = np.arange(a, b)
+            if cfg.get("contour", False):                   # A24 sec. III-D contour filter (sim/vision.py)
+                sel = sel[contour_ok(D["width_m"][a:b], D["npx"][a:b], cfg["contour"])]
+            pl = vis.place(D["v"][sel].astype(int), D["u"][sel].astype(int), D["r0"][sel])
+            src_pl = D["src"][sel][pl["idx"]]
         rims = pl["rims"]
         nav.predict(d_o, dh_o)
         if cfg["fixes"] and len(rims):
@@ -462,7 +507,7 @@ def run_one(task):
             jmin = de.argmin(axis=1)
             paired = map_idx[idx[np.arange(len(w)), jmin]]
             near = de[np.arange(len(w)), jmin] <= MATCH_TOL_M
-            src = D["src"][sel][pl["idx"]]
+            src = src_pl
             in_map = np.isin(src, map_idx)
             counts["right"] += int(np.sum((src >= 0) & in_map & (paired == src)))
             counts["wrong_mapped"] += int(np.sum((src >= 0) & in_map & (paired != src)))

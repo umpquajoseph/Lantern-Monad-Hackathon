@@ -16,8 +16,12 @@ Depth noise is stereo's (sim/settings.py stereo_*): the camera is ShadowNav's
 field rig (A24 sec. IV-B: 0.26 m baseline, 5120 px across a 60 deg view), and
 each pixel's disparity carries Gaussian noise of stereo_disparity_sigma_px.
 Depth is Z = f B / disparity, so its error grows as Z^2 (about 0.13 m at 5 m,
-1.15 m at 15 m, 2 m at 20 m). The shadow test above reads the noiseless
-depth: it compares pixels 3 px apart, whose stereo errors are correlated.
+1.15 m at 15 m, 2 m at 20 m). One noisy range image is drawn per frame
+(Vision.noisy_depth) and every step reads it: the depth-jump test, the
+contour width, rim placement and the hazard points. The renderer's own
+depth is read only by the scoring outputs ("true" placements). Each pixel's
+noise is drawn independently (assumed: a stereo matcher's errors are
+correlated over its window, which this ignores).
 
 Obstacles: the depth is turned into rover-frame points, binned into a small
 height grid ahead of the rover, and a cell is a hazard if the ground steps
@@ -83,6 +87,38 @@ MIN_POINTS_PER_CELL = 2         # assumed: cells with fewer depth points are unk
 STEP_USES_MAX = False           # assumed: a cell's height is its mean (the max picks up depth noise)
 
 
+def depth_jump_ok(d_before, d_beyond):
+    """The shadow test's depth rule: the ground just beyond the edge is further away
+    (or has no depth). d_before, d_beyond: ranges 3 px below and above the edge."""
+    d_before, d_beyond = np.asarray(d_before), np.asarray(d_beyond)
+    return np.isfinite(d_before) & (~np.isfinite(d_beyond) | (d_beyond - d_before > DEPTH_JUMP_M))
+
+
+def contour_stats(v, u, r, shape, fx):
+    """A24 sec. III-D contours of rim pixels (v, u): close the pixel mask, label the
+    pieces, and give every pixel its contour's width (m, Eq. 1, from the contour's mean
+    range over r, the ranges at (v, u)) and pixel count. NaN ranges are left out of the mean."""
+    h, w = shape
+    mask = np.zeros((h, w), np.uint8)
+    mask[v, u] = 1
+    k = np.ones((CONTOUR_CLOSE_PX, CONTOUR_CLOSE_PX), np.uint8)
+    closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k)
+    n, lab, _, _ = cv2.connectedComponentsWithStats(closed, connectivity=8)
+    comp = lab[v, u]
+    npx = np.bincount(comp, minlength=n)
+    r = np.asarray(r, np.float64)
+    fin = np.isfinite(r)
+    nr = np.bincount(comp[fin], minlength=n)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rm = np.bincount(comp[fin], weights=r[fin], minlength=n) / nr
+    umin = np.full(n, w, int)
+    umax = np.full(n, -1, int)
+    np.minimum.at(umin, comp, u)
+    np.maximum.at(umax, comp, u)
+    width_m = np.nan_to_num((umax - umin + 1) * rm / fx, nan=0.0)          # A24 Eq. (1)
+    return width_m[comp], npx[comp]
+
+
 def contour_arc_share(source="default"):
     """Share of the leading arc the width threshold assumes. "c23": C23 sec. 1's 0.8;
     "measured": Settings.rim_arc_share_measured (sim/arc_share.py); "default": measured
@@ -125,10 +161,11 @@ class Vision:
         self._cos = 1.0 / np.sqrt(1.0 + U * U + V * V)   # depth along the optical axis / range along the ray
 
     # -- helpers ------------------------------------------------------------
-    def noisy_range(self, rng_m, cos):
-        """Range along each pixel ray with depth noise. rng_m, cos: same shape."""
+    def noisy_range(self, rng_m, cos, n=None):
+        """Range along each pixel ray with depth noise. rng_m, cos: same shape.
+        n: the standard normal draws to use (default: drawn here)."""
         r = np.asarray(rng_m, np.float64)
-        n = self.rng.standard_normal(r.shape)
+        n = self.rng.standard_normal(r.shape) if n is None else np.asarray(n, np.float64)
         if self.depth_model == "old":
             return r * (1.0 + DEPTH_NOISE_FRAC_OLD * n)
         z = r * cos
@@ -137,9 +174,15 @@ class Vision:
             zn = np.where(disp > 0, STEREO_FB_PX_M / disp, np.nan)  # no match beyond infinity
         return zn / cos
 
-    def points(self, depth):
-        """(h, w, 3) rover-frame points [x_fwd, y_left, z_up] from the camera, with stereo depth noise."""
-        noisy = self.noisy_range(depth.astype(np.float64), self._cos)
+    def noisy_depth(self, depth):
+        """One frame's range image with stereo noise (NaN where no match): drawn once per
+        frame, and every step of that frame reads it."""
+        return self.noisy_range(depth.astype(np.float64), self._cos)
+
+    def points(self, depth, nd=None):
+        """(h, w, 3) rover-frame points [x_fwd, y_left, z_up] from the camera, with stereo depth
+        noise. nd: the frame's noisy_depth(), if already drawn."""
+        noisy = self.noisy_depth(depth) if nd is None else nd
         return self.scene.depth_to_rover(noisy.astype(np.float32))
 
     def _rover_points(self, rng_m, v, u):
@@ -152,43 +195,45 @@ class Vision:
         return np.column_stack([z_eye * (math.cos(p) + V * math.sin(p)), -z_eye * U])
 
     # -- rims -------------------------------------------------------------------
-    def rims(self, img, depth, P=None):
-        """Rim points (M, 2) [x_forward, y_left] in metres."""
-        return self.rims_detail(img, depth, P)["rims"]
+    def rims(self, img, depth, P=None, nd=None):
+        """Rim points (M, 2) [x_forward, y_left] in metres. nd: the frame's noisy_depth(),
+        if already drawn (drawn here otherwise)."""
+        return self.rims_detail(img, depth, P, nd=nd)["rims"]
 
-    def detect(self, img, depth):
-        """Rim pixels (v, u), before placement: deterministic, no noise drawn."""
-        v, u, width_m, npx = self.detect_contours(img, depth)
+    def detect(self, img, depth, nd=None):
+        """Rim pixels (v, u), before placement, from the frame's noisy depth nd (drawn
+        here if not given; pass nd=depth for the renderer's noiseless depth)."""
+        v, u, width_m, npx = self.detect_contours(img, depth, nd)
         if self.contour_filter and len(v):
             ok = contour_ok(width_m, npx)
             v, u = v[ok], u[ok]
         return v, u
 
-    def detect_contours(self, img, depth):
+    def detect_contours(self, img, depth, nd=None):
         """Rim pixels (v, u) before A24's contour filter, with their contour's estimated
-        width (m, Eq. 1) and pixel count, per pixel. Mean range is the renderer's depth:
-        a contour averages tens of pixels, so its stereo noise is small."""
-        v, u = self._shadow_edges(img, depth)
+        width (m, Eq. 1) and pixel count, per pixel. Both the depth-jump test and the
+        contour's mean range read nd, the frame's noisy depth (drawn here if not given)."""
+        nd = self.noisy_depth(depth) if nd is None else nd
+        ve, u = self.edge_candidates(img)
+        if len(ve) == 0:
+            return ve, u, np.zeros(0), np.zeros(0, int)
+        k = SHADOW_PROBE_PX
+        ok = depth_jump_ok(nd[ve + k, u], nd[ve - k, u])
+        v, u = self.placed_row(ve[ok], nd.shape[0]), u[ok]
         if len(v) == 0:
             return v, u, np.zeros(0), np.zeros(0, int)
-        h, w = depth.shape
-        mask = np.zeros((h, w), np.uint8)
-        mask[v, u] = 1
-        k = np.ones((CONTOUR_CLOSE_PX, CONTOUR_CLOSE_PX), np.uint8)
-        closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k)
-        n, lab, _, _ = cv2.connectedComponentsWithStats(closed, connectivity=8)
-        comp = lab[v, u]
-        npx = np.bincount(comp, minlength=n)
-        r = np.bincount(comp, weights=depth[v, u].astype(np.float64), minlength=n) / np.maximum(npx, 1)
-        umin = np.full(n, w, int)
-        umax = np.full(n, -1, int)
-        np.minimum.at(umin, comp, u)
-        np.maximum.at(umax, comp, u)
-        width_m = (umax - umin + 1) * r / self.cam["fx"]          # A24 Eq. (1)
-        return v, u, width_m[comp], npx[comp]
+        width_m, npx = contour_stats(v, u, nd[v, u], nd.shape, self.cam["fx"])
+        return v, u, width_m, npx
 
-    def _shadow_edges(self, img, depth):
-        """Canny edges kept by the lamp-shadow and depth-jump tests (the rim pixels)."""
+    @staticmethod
+    def placed_row(ve, h):
+        """The rim is the lit edge: it is placed one row below the Canny edge, on the
+        ground just before the shadow."""
+        return np.minimum(ve + 1, h - 1)
+
+    def edge_candidates(self, img):
+        """Canny edges, long enough, darker just beyond than before (the lamp-shadow test).
+        The image alone: the depth-jump test is applied by detect_contours()."""
         g = img[..., 0] if img.ndim == 3 else img
         g = cv2.GaussianBlur(g, (3, 3), 0)
         edges = cv2.Canny(g, CANNY_LO, CANNY_HI) > 0
@@ -207,28 +252,29 @@ class Vision:
         gi = g.astype(np.int16)
         before = gi[v + k, u]          # nearer ground (lower in the image)
         beyond = gi[v - k, u]          # further ground (higher in the image)
-        d_before = depth[v + k, u]
-        d_beyond = depth[v - k, u]
         ok = (before - beyond >= SHADOW_CONTRAST)
-        ok &= np.isfinite(d_before) & (~np.isfinite(d_beyond) | (d_beyond - d_before > DEPTH_JUMP_M))
-        # The rim is the lit edge: it is placed with the depth just before the shadow.
-        return np.minimum(v[ok] + 1, h - 1), u[ok]
+        return v[ok], u[ok]
 
-    def rims_detail(self, img, depth, P=None, pixels=None):
+    def rims_detail(self, img, depth, P=None, pixels=None, nd=None):
         """dict: rims (M, 2) as rims() returns; true (M, 2) the same pixels placed with the
         renderer's depth (no noise; for scoring only); uv (M, 2) their pixels.
-        pixels: detect()'s output, if already computed for this frame."""
-        v, u = self.detect(img, depth) if pixels is None else pixels
-        return self.place(v, u, depth[v, u], P)
+        nd: the frame's noisy_depth() (drawn here if not given); detection and placement
+        both read it. pixels: detect()'s output for this nd, if already computed."""
+        nd = self.noisy_depth(depth) if nd is None else nd
+        v, u = self.detect(img, depth, nd) if pixels is None else pixels
+        return self.place(v, u, depth[v, u], r_noisy=nd[v, u])
 
-    def place(self, v, u, r0, P=None):
-        """Place detected rim pixels (v, u), whose renderer range is r0, with depth noise:
-        range cut, subsample, as rims_detail() returns. P: noisy points to use instead."""
+    def place(self, v, u, r0, P=None, r_noisy=None):
+        """Place detected rim pixels (v, u), whose renderer range is r0: range cut, subsample,
+        as rims_detail() returns. r_noisy: their noisy ranges from the frame's noisy depth;
+        P: noisy points to use instead; neither: noise drawn here."""
         if len(v) == 0:
             return {"rims": np.zeros((0, 2)), "true": np.zeros((0, 2)), "uv": np.zeros((0, 2), int),
                     "idx": np.zeros(0, int)}
         r0 = np.asarray(r0, np.float64)
-        if P is None:
+        if r_noisy is not None:
+            pts = self._rover_points(np.asarray(r_noisy, np.float64), v, u)
+        elif P is None:
             pts = self._rover_points(self.noisy_range(r0, self._cos[v, u]), v, u)
         else:
             pts = P[v, u][:, :2]
@@ -290,9 +336,10 @@ class Vision:
         return centres, reasons
 
     def process(self, img, depth):
-        """(rims (M, 2), hazards (K, 2), reasons) for one frame."""
-        P = self.points(depth)
-        return self.rims(img, depth, P), *self.hazards(depth, P)
+        """(rims (M, 2), hazards (K, 2), reasons) for one frame, all from one noisy depth draw."""
+        nd = self.noisy_depth(depth)
+        P = self.points(depth, nd)
+        return self.rims(img, depth, P, nd), *self.hazards(depth, P)
 
 
 def rover_to_world(pts, pose):

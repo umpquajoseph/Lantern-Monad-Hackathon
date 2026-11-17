@@ -2,7 +2,7 @@
 // uncertainty circle, finds with status, and the real ice when the log has it.
 import { COLORS } from "./world.js";
 
-const PLAN_CSS = "rgba(255, 200, 60, 0.95)";   // the camera view's plan colour (main.js drawPlan)
+const PLAN_CSS = "rgba(255, 200, 60, 0.95)";   // the camera view's plan colour (the hackathon page's drawPlan, now mission.js drawFpOverlay)
 
 const hex = (c) => "#" + c.toString(16).padStart(6, "0");
 
@@ -228,6 +228,9 @@ export class MapView {
     const X = (x) => W / 2 + (x - cx) * s;
     const Y = (y) => H / 2 - (y - cy) * s;
 
+    // Ground beyond the drive area (a page may set groundLayers: [{img, x0, y0, x1, y1}], world rect).
+    for (const L of this.groundLayers || []) c.drawImage(L.img, X(L.x0), Y(L.y1), (L.x1 - L.x0) * s, (L.y1 - L.y0) * s);
+
     // Hillshade: pixel j at x0 + j*1 m; the image is north up.
     const m = this.terrain.meta, g = this.terrain.coarse;
     if (this.img.complete && this.img.naturalWidth) {
@@ -246,8 +249,11 @@ export class MapView {
       c.globalAlpha = 1;
     }
 
+    // A page's own layer under the tracks (Mission Control: the Scouts' crater map).
+    if (this.drawUnder) this.drawUnder(c, X, Y, s, W, H);
+
     // Mapped craters (the rover's orbital map) once zoomed in enough to read.
-    if (s > 2.2) {
+    if (this.opts.terrainCraters !== false && s > 2.2) {
       c.strokeStyle = "rgba(160, 200, 255, 0.28)";
       c.lineWidth = 1;
       const x0 = cx - W / 2 / s, x1 = cx + W / 2 / s, y0 = cy - H / 2 / s, y1 = cy + H / 2 / s;
@@ -289,7 +295,7 @@ export class MapView {
     }
 
     // Planned route (logged per step as "plan", world xy from the rover
-    // forward): amber dashes, as on the camera image (main.js drawPlan).
+    // forward): amber dashes, as on the camera image (the hackathon page's drawPlan, now mission.js drawFpOverlay).
     for (const a of run.agencies) {
       const plan = run.rover(a, k).plan;
       if (!plan || plan.length < 2) continue;
@@ -324,6 +330,7 @@ export class MapView {
 
     // Finds: circle of the finder's sigma, coloured by status.
     c.font = "600 11px Helvetica Neue, Helvetica, Arial, sans-serif";
+    const placed = [];   // label boxes drawn so far: a label that would overlap one is left off (its circle stays)
     for (const f of run.findsAt(k)) {
       const col = hex(COLORS[f.status]);
       const px = X(f.x), py = Y(f.y), r = Math.max(4, f.sigma * s);
@@ -341,6 +348,9 @@ export class MapView {
       const tw = c.measureText(text).width;
       // Put the label on whichever side has room.
       const lx = px + r + 4 + tw + 10 < W ? px + r + 4 : px - r - 4 - tw - 10;
+      const box = [lx, py - 9, lx + tw + 10, py + 8];
+      if (placed.some((b) => box[0] < b[2] && b[0] < box[2] && box[1] < b[3] && b[1] < box[3])) continue;
+      placed.push(box);
       c.fillRect(lx, py - 9, tw + 10, 17);
       c.fillStyle = col;
       c.fillText(text, lx + 5, py + 4);

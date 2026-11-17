@@ -773,3 +773,37 @@ the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
   only), `crater_map.added[].true_crater` as an index into the cut
   `truth.craters_missing`, and fits the map to `terrain.bounds`
   (all three confirmed by the engine, 16 Nov).
+- Mission Control (`web/index.html`, `web/js/mission.js`, worker mission,
+  16 Nov) plays a whole run sortie by sortie from the same record and
+  poses, and reads a camera run's `steps.npz` (format under "Camera
+  navigation" above) for the first-person box, rim points, particle cloud,
+  planned route and both lidar views. `web/serve.py` (and
+  `collect_campaigns.py convert_steps`) serves it as
+  `campaigns/<batch>/<run>/steps/index.json` (`sorties`, `map_craters`,
+  `true_craters`, `lidar_el_deg`, `lidar_az_deg`, `standin`) plus one
+  `steps/<sortie_id>.bin` and `.json` per sortie: each array little-endian,
+  4-byte aligned, float16 widened to float32, the .json mapping each name
+  to `[dtype, shape, byte offset]`. `campaigns/index.json` marks such runs
+  `"pipeline": "camera"`, or `"standin"` when steps.npz holds a `standin`
+  string. A run without steps.npz plays in 3D and on the map, and those
+  views say no pipeline data was logged. Mission Control also reads
+  event `crater_added` `crater_id` and `t` (when an added crater appears) and
+  event `drill` `miss_m` and `hit` when present.
+- Mission Control draws a camera run on the ground its cameras saw: it
+  reads the record's `ground` (`file`, `run_id`) and loads
+  `web/assets/terrain/runs/<run_id>/`, built by `python web/build_assets.py
+  --run-ground <batch>/<run_id>` from `DATA/terrain/<ground.file>`; without
+  it, the site's grid. It plays each `drill` event as the hackathon's drill
+  rig over the `settings.drill_h` hours before the event's `t`.
+- Mission Control shows a camera run's summary `false_match_rate` as
+  "False-match rate (paired rims)" and `unpaired_share` beside it (definition
+  under "False-match rate" on campaign-live-nav, 5fc6744); a camera record
+  without them says "not in this run's summary". A sampled run shows
+  `wrong_match_rate` (checks). In the first-person box a rim is drawn as on a
+  map crater when `rim_map_m` <= `cam_match_tol_m`, as `rim_matched` counts.
+- Until camera runs exist, `web/make_standin_pipeline.py` writes a
+  stand-in `steps.npz` in exactly that format, with a top-level `standin`
+  string, beside copies of `standin` records in the batch
+  `mission-standin`: one step per pose row, rims placed from the true
+  craters, particles drawn round the logged estimate, the range image
+  ray-marched over the heights. The viewer labels it on every view.

@@ -3,43 +3,225 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lantern runs</title>
-<meta name="description" content="Campaign runs of the PROSPECT Scouts' workflow: setup and results of each run.">
+<title>Lantern Mission Control</title>
+<meta name="description" content="Scouts survey a shadowed lunar crater from one dock, sortie by sortie: their ice finds, cross-checks and a crater map that grows.">
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="campaign.css">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mission.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
 </head>
 <body>
-<header class="top">
-  <a class="wm" href="index.html"><b>Lantern</b><span>Scout campaigns</span></a>
-  <div class="crumbs"><span class="here">Runs</span></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.1-5M5 4.5V8h3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 5h5v5M10 19H5v-5M19 5l-6 6M5 19l6-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 4l8 4-8 4-8-4zM4 12l8 4 8-4M4 16l8 4 8-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5.5M12 7.6v.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-rover" viewBox="0 0 24 24"><path d="M5 13h14v3H5zM8 13V9h8v4M11 9V6h2M7 18.5a1.5 1.5 0 1 0 0 .01M17 18.5a1.5 1.5 0 1 0 0 .01M12 18.5a1.5 1.5 0 1 0 0 .01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10.5" r="2.2" fill="currentColor"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 7h3M4 12h7M4 17h5M10 7h10M14 12h6M12 17h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-crater" viewBox="0 0 24 24"><circle cx="9" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16.5" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2 1.6"/></symbol>
+  <symbol id="i-run" viewBox="0 0 24 24"><path d="M5 5h14v14H5zM5 10h14M10 10v9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<!-- The 3D scene fills the window; everything else floats on top of it. The
+     first-person box is drawn into the same canvas, under its inset. -->
+<main class="viewport" id="viewport" aria-label="3D view of the campaign"></main>
+<div class="fp" id="fp" hidden>
+  <div class="fp-box" id="fp-box"><canvas id="fp-ov" width="640" height="480"></canvas>
+    <div class="fp-note">Drawn view, not a camera frame: the 3D ground from the Scout's camera pose, with the rim points, route and lidar its pipeline logged.</div></div>
+</div>
+<div class="loading" id="loading">Loading the run</div>
+
+<header class="brand">
+  <div class="wm"><span class="l1">Lantern</span><span class="l2">Mission Control</span></div>
 </header>
-<div id="standin-slot"></div>
-<main class="page" id="body">
-  <section class="pick" aria-label="Campaign batch">
-    <label for="batch">Campaign batch</label>
-    <select id="batch"></select>
-    <p id="batch-about"></p>
+
+<div class="rover-pick seg" id="rover-seg" role="tablist" aria-label="Follow Scout"></div>
+
+<div class="top-right">
+  <button class="btn runs-btn" id="runs-btn" title="Every run, its setup and results">Runs</button>
+  <div class="pop-wrap">
+    <button class="ib" id="layers-btn" aria-label="Layers" aria-expanded="false" title="Layers"><svg><use href="#i-layers"/></svg></button>
+    <div class="pop" id="layers" hidden>
+      <label class="ck" title="F"><input type="checkbox" id="opt-fill"> Fill light <span class="hint">(F)</span></label>
+      <label class="ck"><input type="checkbox" id="opt-routes" checked> Routes <span class="hint">(paths, estimates, plan)</span></label>
+      <label class="ck"><input type="checkbox" id="opt-particles" checked> Particles <span class="hint">(position guesses)</span></label>
+      <label class="ck"><input type="checkbox" id="opt-rims" checked> Rim points <span class="hint">(first person)</span></label>
+      <label class="ck"><input type="checkbox" id="opt-hazards" checked> Lidar hazards <span class="hint">(first person)</span></label>
+      <label class="ck"><input type="checkbox" id="opt-nogo" checked> Steep ground <span class="hint">(over 15&deg;, no-go)</span></label>
+      <label class="ck"><input type="checkbox" id="opt-craters" checked> Crater map <span class="hint">(added craters marked)</span></label>
+      <label class="ck truth-ck" title="T"><input type="checkbox" id="opt-truth"> Hidden truth <span class="hint">(the Scouts can't see it) (T)</span></label>
+    </div>
+  </div>
+  <button class="ib" id="info-btn" aria-label="About this view" title="About"><svg><use href="#i-info"/></svg></button>
+  <button class="ib" id="full-btn" aria-label="Full screen" title="Full screen"><svg><use href="#i-full"/></svg></button>
+</div>
+
+<aside class="panel" id="panel">
+  <nav class="rail" role="tablist" aria-label="Panels">
+    <button data-tab="sorties" aria-selected="true" title="Sorties"><svg><use href="#i-list"/></svg></button>
+    <button data-tab="scouts" title="Scouts"><svg><use href="#i-rover"/></svg></button>
+    <button data-tab="finds" title="Finds"><svg><use href="#i-pin"/></svg></button>
+    <button data-tab="map" title="Crater map"><svg><use href="#i-crater"/></svg></button>
+    <button data-tab="run" title="This run"><svg><use href="#i-run"/></svg></button>
+  </nav>
+  <div class="pane-wrap">
+    <section class="pane" data-pane="sorties">
+      <h2>Sorties <span class="hint" id="so-count"></span></h2>
+      <div class="gantt" id="gantt"></div>
+      <ol class="so-list" id="so-list"></ol>
+      <label class="ck small"><input type="checkbox" id="opt-next" checked> Play on into the next sortie</label>
+    </section>
+    <section class="pane" data-pane="scouts" hidden>
+      <div id="now"></div>
+      <h2>Navigation</h2><div id="navt"></div>
+      <div class="standin" id="standin" hidden></div>
+      <div class="credit"><a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">Navigation after ShadowNav, JPL 2023</a></div>
+    </section>
+    <section class="pane" data-pane="finds" hidden>
+      <h2>Finds <span class="hint" id="finds-count"></span></h2>
+      <div id="finds"></div>
+    </section>
+    <section class="pane" data-pane="map" hidden>
+      <h2>Crater map</h2>
+      <div id="cmap"></div>
+    </section>
+    <section class="pane" data-pane="run" hidden>
+      <h2 id="run-title">Run</h2>
+      <div id="run-info"></div>
+    </section>
+  </div>
+  <button class="collapse" id="collapse" aria-label="Hide panel" title="Hide panel" aria-expanded="true"><svg><use href="#i-chev"/></svg></button>
+</aside>
+
+<div class="insets" id="insets">
+  <figure class="inset" id="in-fp">
+    <div class="inset-view fp-mini" id="fp-mini"><canvas id="fpi-ov" width="640" height="480"></canvas><div class="inset-none" id="fpi-none" hidden>At the dock</div></div>
+    <figcaption><span id="fpi-cap" title="Drawn from the 3D ground at the Scout's camera pose, with what its pipeline logged. Not a camera frame.">First person, drawn</span><button class="ib sm" data-expand="first" aria-label="First person full window" title="Full window (1)"><svg><use href="#i-expand"/></svg></button></figcaption>
+  </figure>
+  <figure class="inset" id="in-map">
+    <div class="inset-view"><canvas id="map-cv"></canvas></div>
+    <figcaption><span id="map-cap">Satellite map</span><button class="ib sm" data-expand="overhead" aria-label="Satellite map full window" title="Full window (2)"><svg><use href="#i-expand"/></svg></button></figcaption>
+  </figure>
+  <figure class="inset" id="in-lidar">
+    <div class="inset-view lidar-mini"><canvas id="lid-cv" width="800" height="280"></canvas><div class="inset-none" id="lid-none" hidden>No scan yet</div></div>
+    <figcaption><span id="lid-cap">Lidar</span><span class="lk-seg" id="lid-seg"><button data-lk="top" aria-pressed="true">Top-down</button><button data-lk="fp" aria-pressed="false">First person</button></span></figcaption>
+  </figure>
+</div>
+<button class="back-chip" id="back-chip" hidden>Back to Scout view</button>
+
+<div class="toast" id="toast" hidden></div>
+<div class="topline"><div class="story" id="story"></div><div class="vnote" id="vnote" hidden>Fill light added so you can see the ground. The Scouts see only their lamps.</div></div>
+<div class="checkpoint cp-float" id="checkpoint" hidden></div>
+<div class="banner" id="banner" hidden></div>
+
+<footer class="playbar">
+  <button class="play" id="play" aria-label="Play" title="Play (Space)"><svg><use href="#i-play"/></svg></button>
+  <button class="ib" id="restart" aria-label="Back to the sortie's start" title="Back to the sortie's start"><svg><use href="#i-reset"/></svg></button>
+  <button class="ib step" id="step-back" aria-label="Step back" title="One step back (Left arrow)">&#8249;</button>
+  <button class="ib step" id="step-fwd" aria-label="Step forward" title="One step forward (Right arrow)">&#8250;</button>
+  <select id="sortie-pick" aria-label="Sortie" title="Sortie ([ and ] for the one before or after)"></select>
+  <div class="clock" id="clock">T+00:00:00</div>
+  <div class="tl-track" id="tl-track">
+    <div class="tl-acts" id="tl-acts"></div>
+    <div class="tl-fill" id="tl-fill"></div>
+    <div class="tl-marks" id="tl-marks"></div>
+    <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Sortie time">
+  </div>
+  <div class="pb-group">
+    <select id="speed" aria-label="Speed" title="Speed">
+      <option value="10">10×</option>
+      <option value="60">60×</option>
+      <option value="200">200×</option>
+      <option value="600" selected>600×</option>
+    </select>
+    <div class="zoom">
+      <button class="ib" id="zoom-out" aria-label="Zoom out" title="Zoom out"><svg><use href="#i-minus"/></svg></button>
+      <button class="ib" id="zoom-in" aria-label="Zoom in" title="Zoom in"><svg><use href="#i-plus"/></svg></button>
+    </div>
+  </div>
+</footer>
+
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer-head"><h2 id="dr-title">Runs</h2><button class="ib" id="dr-close" aria-label="Close">✕</button></div>
+  <div id="dr-body"></div>
+</div>
+
+<dialog class="about" id="about">
+  <div class="about-head">
+    <h2>How to read this</h2>
+    <form method="dialog"><button class="ib" aria-label="Close">✕</button></form>
+  </div>
+
+  <section>
+    <h3>A campaign</h3>
+    <p>One dock and one to five identical Scouts. Each sortie, one Scout drives down from the dock into a shadowed crater, surveys lines with its neutron sensor, and drives home to charge. A reading above the ice threshold is a <b>find</b>. Another Scout later searches the area round it: a matching reading there <b>confirms</b> it, and a confirmed find can be <b>drilled</b>. Craters a Scout sees that are not on its map are merged into the dock's shared <b>crater map</b> after each sortie. A run is one campaign, played sortie by sortie: pick a sortie on the left and press play.</p>
   </section>
-  <p class="dim" style="margin:0 0 14px;max-width:880px">Each run is one campaign: one world, drawn at random from its seed, and one set of design choices. One to five identical Scouts share a dock and fly sorties into a shadowed crater. They log ice finds with their position bounds, check each other's finds, and add newly seen craters to a shared map. Click a run to see its map grow sortie by sortie.</p>
-  <div class="filters">
-    <label>Scouts <select id="f-scouts"></select></label>
-    <label>Check policy <select id="f-policy"></select></label>
-    <label>Map refinement <select id="f-refine"></select></label>
-    <label>Run <input type="search" id="f-q" placeholder="w00042" size="14"></label>
-    <span class="count" id="count"></span>
-  </div>
-  <div id="elsewhere"></div>
-  <div class="tablewrap">
-    <table class="runs">
-      <thead id="thead"></thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
-  <p class="foot">After each position fix, a Scout's error is drawn from ShadowNav's Table 2 (<a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">Cauligi et al. 2023</a>), the final error over whole simulated traverses; using it per fix is the team's modelling choice. Every setting carries its source or is marked assumed in <code>sim/settings.py</code>. Click a column to sort.</p>
-</main>
-<script type="module" src="js/runs.js"></script>
+
+  <section>
+    <h3>On the ground and on the map</h3>
+    <ul class="legend">
+      <li><i class="sw line" style="--c:#5aa7ff"></i><b>Coloured line</b><span>Where a Scout thinks it drove (its estimate); the dot and ring are its estimate now and its 95% position bound</span></li>
+      <li><i class="sw line" style="--c:#e9ecef"></i><b>White line</b><span>Where it really drove</span></li>
+      <li><i class="sw" style="--c:#5aa7ff"></i><b>Dots round a Scout</b><span>Its navigation particles: where it might be</span></li>
+      <li><i class="sw line" style="--c:#ffc83c"></i><b>Amber dashes</b><span>The route it plans to drive next</span></li>
+      <li><i class="sw ring" style="--c:#e0b84a"></i><b>Find ring</b><span>A find with its 95% bound: amber not yet checked, green confirmed, grey not confirmed, blue drilled</span></li>
+      <li><i class="sw ring dash" style="--c:#5aa7ff"></i><b>Dashed ring</b><span>A second Scout searching round another Scout's find</span></li>
+      <li><i class="sw ring" style="--c:#c7d2df"></i><b>Grey circles</b><span>On the map: the Scouts' starting crater map, from orbit</span></li>
+      <li><i class="sw ring" style="--c:#7ddc7a"></i><b>Green circles</b><span>Craters the Scouts added; thicker when added after the last sortie</span></li>
+      <li><i class="sw" style="--c:#e5574f"></i><b>Red ground</b><span>Steeper than 15&deg; across 2 m: no-go for the planner</span></li>
+      <li><i class="sw ring dash" style="--c:#d8f3ff"></i><b>Hidden truth</b><span>Behind its toggle: the real ice, craters missing from the map, and which rim matches were wrong</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>First person and lidar</h3>
+    <p>Sensor frames are rendered live in the simulation and not saved. The first-person box is <b>drawn here</b> from the 3D ground at the Scout's camera pose (2.5 m up, 15&deg; down, 60&deg; wide, lamp only), with what its pipeline logged at that step on top: the crater-rim points it navigated by (squares; hollow when no mapped crater matched), the route it planned, and the hazard cells its lidar marked. The lidar box shows the logged scan: <b>top-down</b>, forward up, rings every 5 m; <b>first person</b>, the same 120&deg; wedge drawn from the 3D ground with the logged hazards coloured in.</p>
+    <ul class="legend">
+      <li><i class="sw" style="--c:#5f6268"></i><b>Grey</b><span>Ground the lidar judged safe</span></li>
+      <li><i class="sw" style="--c:#f0a028"></i><b>Amber</b><span>Crater floor; the planner avoids it</span></li>
+      <li><i class="sw" style="--c:#e63228"></i><b>Red</b><span>Steeper than 15&deg;: no-go</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>Navigation</h3>
+    <p>In a dark crater a Scout finds its position from the shadows its own lamp casts at crater rims, after JPL's ShadowNav (<a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">Cauligi et al. 2023, arXiv:2301.04630</a>): a particle filter on wheel odometry and the rims it matches to its crater map. The Scout cards show where each Scout thinks it is against where it is.</p>
+  </section>
+
+  <section>
+    <h3>Controls</h3>
+    <dl class="keys">
+      <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
+      <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>One step back or forward</dd>
+      <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Sortie before or after</dd>
+      <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom in or out</dd>
+      <dt>Drag</dt><dd>Look around</dd>
+      <dt><kbd>1</kbd> <kbd>2</kbd></dt><dd>First person or satellite map full window (again to go back)</dd>
+      <dt><kbd>L</kbd></dt><dd>Lidar: top-down or first person</dd>
+      <dt><kbd>F</kbd></dt><dd>Fill light on or off</dd>
+      <dt><kbd>T</kbd></dt><dd>Hidden truth on or off</dd>
+    </dl>
+  </section>
+
+  <p class="about-foot" id="about-notes">Ice and readings are simulated. <span id="model-credit"></span></p>
+</dialog>
+
+<script type="module" src="js/mission.js"></script>
 </body>
 </html>

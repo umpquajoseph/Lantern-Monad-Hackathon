@@ -23,7 +23,7 @@ WEB = Path(__file__).resolve().parent
 sys.path.insert(0, str(WEB))
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 CONVERT = threading.Lock()   # one conversion at a time: poses.bin and poses.json are asked for together
-RUN_FILE = re.compile(r"^/campaigns/([A-Za-z0-9][A-Za-z0-9_.-]*)/([A-Za-z0-9][A-Za-z0-9_.-]*)/(record\.json|poses\.bin|poses\.json|fp/[A-Za-z0-9_.-]+\.jpg)$")
+RUN_FILE = re.compile(r"^/campaigns/([A-Za-z0-9][A-Za-z0-9_.-]*)/([A-Za-z0-9][A-Za-z0-9_.-]*)/(record\.json|poses\.bin|poses\.json|fp/[A-Za-z0-9_.-]+\.jpg|steps/[A-Za-z0-9_.-]+\.(?:json|bin))$")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -34,14 +34,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def translate_path(self, path):
         m = RUN_FILE.match(path.split("?", 1)[0])
         if m:
-            from collect_campaigns import SRC, DST, convert_poses
+            from collect_campaigns import SRC, DST, convert_poses, convert_steps
             batch, run, name = m.groups()
             src = SRC / batch / run
             if (src / "record.json").exists():
                 if name == "record.json" or name.startswith("fp/"):   # fp/: the showcase's frames
                     return str(src / name)
                 with CONVERT:
-                    convert_poses(src / "poses.npz", DST / batch / run)
+                    if name.startswith("steps/"):
+                        if (src / "steps.npz").exists():
+                            convert_steps(src / "steps.npz", DST / batch / run)
+                    else:
+                        convert_poses(src / "poses.npz", DST / batch / run)
                 return str(DST / batch / run / name)
         return super().translate_path(path)
 

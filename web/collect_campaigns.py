@@ -85,6 +85,44 @@ def convert_poses(npz: Path, dst: Path) -> None:
     (dst / "poses.json").write_text(json.dumps({"columns": POSE_COLUMNS, "sorties": index}), encoding="utf8")
 
 
+def convert_steps(npz: Path, dst: Path) -> None:
+    """steps.npz -> steps/<sortie_id>.bin + .json in dst, if older than the source.
+
+    One flat little-endian file per sortie, each array 4-byte aligned, float16
+    widened to float32 (a browser has no Float16Array everywhere). The .json
+    lists every array: {name: [dtype, shape, byte offset]}, plus the shared
+    arrays (map_craters, true_craters, lidar angles) and the standin note.
+    """
+    out = dst / "steps"
+    if not stale(npz, out / "index.json"):
+        return
+    out.mkdir(parents=True, exist_ok=True)
+    z = np.load(npz)
+    by_sortie, shared = {}, {}
+    for key in z.files:
+        sid, _, name = key.rpartition(".")
+        if sid:
+            by_sortie.setdefault(sid, {})[name] = z[key]
+        elif key == "standin":
+            shared["standin"] = str(z[key])
+        else:
+            shared[key] = np.asarray(z[key], np.float32).tolist()
+    for sid, arrs in by_sortie.items():
+        index, blob, off = {}, bytearray(), 0
+        for name, a in arrs.items():
+            a = np.asarray(a)
+            if a.dtype == np.float16 or a.dtype == np.float64:
+                a = a.astype(np.float32)
+            a = a.astype(a.dtype.newbyteorder("<"))
+            b = a.tobytes()
+            index[name] = [a.dtype.name, list(a.shape), off]
+            blob += b + bytes((-len(b)) % 4)
+            off = len(blob)
+        (out / f"{sid}.bin").write_bytes(bytes(blob))
+        (out / f"{sid}.json").write_text(json.dumps(index), encoding="utf8")
+    (out / "index.json").write_text(json.dumps({"sorties": sorted(by_sortie), **shared}), encoding="utf8")
+
+
 def copy_run(src: Path, dst: Path) -> None:
     dst.mkdir(parents=True, exist_ok=True)
     if stale(src / "record.json", dst / "record.json"):
@@ -92,6 +130,8 @@ def copy_run(src: Path, dst: Path) -> None:
     convert_poses(src / "poses.npz", dst)
     if (src / "fp").is_dir():   # the showcase run's first-person frames (sim/showcase.py)
         shutil.copytree(src / "fp", dst / "fp", dirs_exist_ok=True)
+    if (src / "steps.npz").exists():   # camera runs: every Scout-step the pipeline ran (docs/handoffs.md steps.npz)
+        convert_steps(src / "steps.npz", dst)
 
 
 def has_record(d: Path) -> bool:
@@ -189,6 +229,10 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
                 rows.append({**r, "map": False})
         for r in rows:
             r.setdefault("map", r["run_id"] in by_name)
+            # Per-step pipeline data for Mission Control's views: "standin" (web/make_standin_pipeline.py),
+            # "camera" (the engine's steps.npz), or absent.
+            if r["map"] and (by_name[r["run_id"]] / "steps.npz").exists():
+                r["pipeline"] = "standin" if "standin" in np.load(by_name[r["run_id"]] / "steps.npz").files else "camera"
         rows = rows[: max_runs or None]
         if copy:
             for r in rows:

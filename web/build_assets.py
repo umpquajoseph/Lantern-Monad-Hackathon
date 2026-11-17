@@ -19,12 +19,22 @@ edge (rows run north), as in docs/handoffs.md.
 
     python web/build_assets.py                   # Shoemaker drive area -> web/assets/terrain/
     python web/build_assets.py --site s89_134e   # a PSR site -> web/assets/terrain/s89_134e/
+    python web/build_assets.py --run-ground live-nav/w00001-bcce1993
+                                                 # a camera run's own ground -> web/assets/terrain/runs/<run_id>/
 
 For a PSR site (terrain's sim/psr_sites.py) the grid is data/terrain/<site>.npz,
 the display layer data/terrain/display_<site>/, and the backdrops come from
 the site's own 5 m LOLA window (data/terrain/psr_sites/<site>.npz): native as
 backdrop_near, averaged to 20 m as backdrop. Its display layer's own
 backdrops, if any, are not used (terrain: cut from the wrong tile).
+
+A camera run's record names the ground its cameras and lidar saw
+(`ground.file`, docs/handoffs.md "Camera navigation"): a 1 m grid built by
+sim/site_ground.py for that run. --run-ground builds the viewer's ground from
+that grid, so the 3D view and the drawn first-person box show what the
+cameras saw. Backdrops and the Hapke and detail parameters still come from
+the run's site; rim lips, rocks and the site albedo are left out, because
+they belong to the site grid, not to this one.
 """
 from __future__ import annotations
 
@@ -126,19 +136,26 @@ def site_backdrops(site):
             {"height": h, "x0": x0, "y0": y0, "cell": c})
 
 
-def main(site=None):
+def main(site=None, run_ground=None):
     global OUT
-    if site:
+    ground_rec = None
+    if run_ground:
+        rec = json.loads((DATA.parent / "campaigns" / run_ground / "record.json").read_text())
+        ground_rec = rec["ground"]
+        site = rec["terrain"]["site"]
+        OUT = OUT / "runs" / rec["run_id"]
+    elif site:
         OUT = OUT / site
     OUT.mkdir(parents=True, exist_ok=True)
-    height, craters, x0, y0, cell = load_terrain(DATA / f"{site or 'shoemaker'}.npz")
+    src = DATA / ground_rec["file"] if ground_rec else DATA / f"{site or 'shoemaker'}.npz"
+    height, craters, x0, y0, cell = load_terrain(src)
     H, W = height.shape
     # The planner works on the sim grid as is, so the no-go layer does too.
     nogo = nogo_png(height, x0, y0, cell, OUT / "nogo.png")
     disp = DATA / (f"display_{site}" if site else "display")
     dj = disp / "display.json"
     d = json.loads(dj.read_text()) if dj.exists() else None
-    if d is not None and (disp / "lips.npy").exists():
+    if d is not None and (disp / "lips.npy").exists() and not ground_rec:
         height = add_lips(height, craters, np.load(disp / "lips.npy"), x0, y0, cell, d["params"]["strength"])
     hmin = float(height.min()) - 1.0
     hscale = (float(height.max()) + 1.0 - hmin) / 65535.0
@@ -163,9 +180,11 @@ def main(site=None):
     (OUT / "craters.json").write_text(json.dumps(np.round(craters, 2).tolist(), separators=(",", ":")))
 
     meta = {
-        "source": (f"{site}.npz (sim/terrain.py build --site {site}: LOLA 5 m, upsampled, with stamped small craters)" if site
+        "source": (f"{ground_rec['file']} (the run's own ground, sim/site_ground.py build_ground: {ground_rec.get('note', '')})" if ground_rec
+                   else f"{site}.npz (sim/terrain.py build --site {site}: LOLA 5 m, upsampled, with stamped small craters)" if site
                    else "shoemaker.npz (step 2: LOLA Shoemaker 5 m window, upsampled, with stamped small craters)"),
         "site": site or "shoemaker",
+        **({"run_ground": ground_rec["file"]} if ground_rec else {}),
         "x0": x0, "y0": y0, "cell": cell, "rows": H, "cols": W,
         "hmin": hmin, "hscale": hscale,
         "coarse": {"file": "coarse.bin", "step": COARSE, "rows": coarse.shape[0], "cols": coarse.shape[1]},
@@ -179,7 +198,7 @@ def main(site=None):
         P = d["params"]
         meta["display"] = {"real": d.get("real", []), "made_up": d.get("made_up", []),
                            "detail_period_m": P["tile_period_m"], "strength": P["strength"],
-                           "lips": "baked into the heights above (display only)",
+                           "lips": "none: the run's own ground" if ground_rec else "baked into the heights above (display only)",
                            "moon_radius_m": d.get("moon_radius_m", 1737400.0)}
         # Hapke [X20] parameters, from display.json (terrain worker's sources).
         meta["hapke"] = {k: P[k] for k in ("hapke_w", "hapke_b", "hapke_bs0", "hapke_hs")}
@@ -211,7 +230,7 @@ def main(site=None):
             imwrite(OUT / "far_normal.png", far_normal(fz, P["far_tile_cell_m"])[..., ::-1])
             meta["far_detail"] = {"normal": "far_normal.png", "period_m": fz.shape[0] * P["far_tile_cell_m"],
                                   "note": "made-up sub-5 m relief for the backdrops"}
-        if (disp / "rocks.npy").exists():
+        if (disp / "rocks.npy").exists() and not ground_rec:
             rk = np.load(disp / "rocks.npy").astype("<f4")
             rk = rk[: int(round(P["strength"] * len(rk)))]
             # Relative to the grid origin so float32 keeps millimetres.
@@ -224,16 +243,18 @@ def main(site=None):
                              "rock_albedo": P["rock_albedo"], "sink_frac": P["rock_sink_frac"]}
         # Rim lips, for the viewer's fine patch near each rover: lips are a few
         # cm wide, finer than the 0.25 m tiles they are also baked into.
-        lp = np.load(disp / "lips.npy")
-        lt = np.column_stack([craters[:, 0] - x0, craters[:, 1] - y0, craters[:, 2],
+        lp = np.load(disp / "lips.npy") if not ground_rec else None
+        lt = None if lp is None else np.column_stack([craters[:, 0] - x0, craters[:, 1] - y0, craters[:, 2],
                               P["strength"] * lp[:, 0], lp[:, 1]]).astype(np.float32)
-        (OUT / "lips.bin").write_bytes(gzip.compress(np.ascontiguousarray(lt).tobytes(), 9))
-        meta["lips"] = {"file": "lips.bin", "count": len(lt), "cols": 5,
-                        "layout": "[x - x0, y - y0, diameter_m, lip_height_m * strength, lip_width_m] float32",
-                        "formula": "h += lip_height * exp(-((r - D/2) / lip_width)^2), already in the tiles"}
-        alb = cv2.imread(str(disp / "albedo.png"), cv2.IMREAD_UNCHANGED)[::-1]
-        imwrite(OUT / "albedo.png", alb)
-        meta["albedo"] = {"file": "albedo.png", "factor": "value / 128", "north_up": True}
+        if lt is not None:
+            (OUT / "lips.bin").write_bytes(gzip.compress(np.ascontiguousarray(lt).tobytes(), 9))
+            meta["lips"] = {"file": "lips.bin", "count": len(lt), "cols": 5,
+                            "layout": "[x - x0, y - y0, diameter_m, lip_height_m * strength, lip_width_m] float32",
+                            "formula": "h += lip_height * exp(-((r - D/2) / lip_width)^2), already in the tiles"}
+        if not ground_rec:
+            alb = cv2.imread(str(disp / "albedo.png"), cv2.IMREAD_UNCHANGED)[::-1]
+            imwrite(OUT / "albedo.png", alb)
+            meta["albedo"] = {"file": "albedo.png", "factor": "value / 128", "north_up": True}
         for name in ("detail_normal.png", "detail_albedo.png"):
             im = cv2.imread(str(disp / name), cv2.IMREAD_UNCHANGED)
             im = cv2.resize(im, (1024, 1024), interpolation=cv2.INTER_AREA)[::-1]
@@ -250,4 +271,6 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--site", help="a PSR site with data/terrain/<site>.npz (default: the Shoemaker drive area)")
-    main(ap.parse_args().site)
+    ap.add_argument("--run-ground", help="<batch>/<run_id> of a camera run: build from the ground its record names")
+    a = ap.parse_args()
+    main(a.site, a.run_ground)

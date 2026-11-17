@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern runs</title>
+<meta name="description" content="Campaign runs of the PROSPECT Scouts' workflow: setup and results of each run.">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="campaign.css">
+</head>
+<body>
+<header class="top">
+  <a class="wm" href="index.html"><b>Lantern</b><span>Mission Control</span></a>
+  <div class="crumbs"><span class="here">Runs</span></div>
+</header>
+<div id="standin-slot"></div>
+<main class="page" id="body">
+  <section class="pick" aria-label="Campaign batch">
+    <label for="batch">Campaign batch</label>
+    <select id="batch"></select>
+    <p id="batch-about"></p>
+  </section>
+  <p class="dim" style="margin:0 0 14px;max-width:880px">Each run is one campaign: one world, drawn at random from its seed, and one set of design choices. One to five identical Scouts share a dock and fly sorties into a shadowed crater. They log ice finds with their position bounds, check each other's finds, and add newly seen craters to a shared map. Click a run to see its map grow sortie by sortie.</p>
+  <div class="filters">
+    <label>Scouts <select id="f-scouts"></select></label>
+    <label>Check policy <select id="f-policy"></select></label>
+    <label>Map refinement <select id="f-refine"></select></label>
+    <label>Run <input type="search" id="f-q" placeholder="w00042" size="14"></label>
+    <span class="count" id="count"></span>
+  </div>
+  <div id="elsewhere"></div>
+  <div class="tablewrap">
+    <table class="runs">
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <p class="foot">After each position fix, a Scout's error is drawn from ShadowNav's Table 2 (<a href="https://arxiv.org/abs/2301.04630" target="_blank" rel="noopener">Cauligi et al. 2023</a>), the final error over whole simulated traverses; using it per fix is the team's modelling choice. Every setting carries its source or is marked assumed in <code>sim/settings.py</code>. Click a column to sort.</p>
+</main>
+<script type="module" src="js/runs.js"></script>
+</body>
+</html>

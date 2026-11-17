@@ -146,7 +146,7 @@ function draw() {
   });
   for (const th of document.querySelectorAll("tr.cols th")) th.setAttribute("aria-sort", th.dataset.k === key ? (dir > 0 ? "ascending" : "descending") : "none");
   const b = encodeURIComponent(state.batch.batch_id);
-  $("tbody").innerHTML = runs.map((r) => `<tr ${r.map === false ? 'class="nomap" title="Results only: this run saved no record, so it has no map"' : `data-href="run.html?batch=${b}&run=${encodeURIComponent(r.run_id)}"`}>${COLS.map((c, i) =>
+  $("tbody").innerHTML = runs.map((r) => `<tr ${r.map === false ? 'class="nomap" title="Results only: this run saved no record, so it has no map"' : `data-href="index.html?batch=${b}&run=${encodeURIComponent(r.run_id)}"`}>${COLS.map((c, i) =>
     `<td class="${i === 0 ? "run" : ""}${i && c[2] !== COLS[i - 1][2] ? " gl" : ""}">${r[c[0]] == null && i ? "–" : c[3](r[c[0]], r)}</td>`).join("")}</tr>`).join("") ||
     `<tr><td colspan="${COLS.length}" class="empty">No run matches these filters.</td></tr>`;
   for (const tr of document.querySelectorAll("#tbody tr[data-href]")) tr.onclick = () => { location.href = tr.dataset.href; };

@@ -1,0 +1,268 @@
+  Reference draft for area 3, written with AI assistance on 16 Nov 2026. Under the team brief, no AI-written
+  sentence enters the proposal: rewrite it in your own words and log this use in the team AI log. Highlighted text
+  depends on an open item; the small number is that item in the future-work list on the final pages, which are not
+  part of the draft.
+
+4. Navigation and Autonomy in Permanent Shadow
+
+Orbital neutron data locate polar hydrogen at a resolution of 10 to 20 km, whereas planning extraction
+requires resource maps finer than 100 m, confirmed by measurements on the ground [1]. The Scouts must
+therefore cover several kilometres of the floor of a permanently shadowed region (PSR) on each battery
+charge and tie every measurement to a known position. PROSPECT uses an existing crater-based
+localization method [2] and adds three elements suited to a campaign run from a single dock: (1) a crater
+map refined over repeated sorties, (2) a resource map that records the position confidence of every
+measurement, and (3) localizability as a criterion for selecting the target crater.
+
+4.1 Speed and the Stop Budget
+
+VIPER's wheels were designed to turn at 10 cm/s, but because each drive segment is planned by operators
+on Earth, its average speed over a mission day is about 0.8 cm/s [ref]8. The Scouts instead operate in
+sorties, round trips from the charging dock on the crater rim into the PSR and back. A baseline sortie,
+consisting of a 1.5 km descent, a 4 km survey with drilling at two sites, and the return, covers about 7 km
+in 22 h. This is an average of 8.8 cm/s1, roughly eleven times VIPER's rate, and requires the Scouts to
+plan and execute their own drives.
+
+We call the time a Scout may spend stationary during a sortie its stop budget. It follows from the top
+speed: at 10, 15 and 20 cm/s the Scout spends 19.4, 13.0 and 9.7 h moving, leaving 2.6, 9.0 and 12.3 h for
+drilling, position fixes, hazard stops and revisits. We baseline a top speed of 15 cm/s2, which gives a stop
+budget of 9.0 h.
+
+4.2 Localization and Its Limit
+
+Relative localization from odometry drifts by about 2% of the distance travelled [2], or about 140 m over
+a sortie. The Scouts bound this drift with ShadowNav, developed at JPL [2]. A lamp mounted below the
+stereo cameras casts a shadow beyond the near rim of each crater ahead, and a particle filter matches the
+detected rims to craters in an orbital elevation map, giving an absolute position fix. Over three simulated
+traverses the mean final error was 1.68 to 3.84 m [2]. Each sortie starts from the dock, whose position is
+registered to the orbital map15; any error in that registration is shared by every sortie and by both Scouts.
+
+We model the error between fixes as e(d) = efix + 0.02d, where d is the distance driven since the last fix,
+and set limits on the 95th-percentile radial error, applied along the whole sortie as the conservative case.
+We take the 95th percentile of the error after a fix as the mean plus 1.645 standard deviations across
+ShadowNav's 25 runs per traverse [2]. Table 1 gives the resulting maximum spacing between fixes.
+ShadowNav's largest errors arose on a traverse where craters missing from the orbital map produced false
+matches, in which detected rims were paired with the wrong mapped crater [2]. On that traverse the filter's
+reported uncertainty averaged 1.84 m against an average error of 3.84 m, so the Scouts schedule fixes by
+distance driven rather than by the filter's own estimate. With a 10 m limit, the traverse with false matches
+requires a fix every 80 m, about 88 per sortie, and the best traverse a fix every 358 m, about 20 per
+sortie10.
+
+ShadowNav traverse  Final error, mean ±  95th percentile,  5 m limit                  10 m
+[2]                           s.d.              efix        108 m                     limit
+                                               2.8 m
+3 (best)                1.68 ± 0.70 m                                                 358 m
+
+2                   1.75 ± 0.78 m        3.0 m             98 m                       348 m
+
+1 (false matches)   3.84 ± 2.78 m        8.4 m                 not                    80 m
+                                                           achievable
+
+   Table 1. Maximum distance between position fixes for two drill-site error limits.
+
+The higher rate conflicts with the stop budget. It has not been shown whether a fix requires the Scout to
+stop11; if each fix takes five minutes stationary, 88 fixes consume 7.3 of the 9.0 h available, leaving 1.7 h
+for drilling at two sites, hazard stops and revisits, whereas 20 fixes take 1.7 h. The completeness of the
+crater map, which sets the false-match rate, may therefore determine whether a sortie can be completed at
+all. The three elements below address it.
+
+4.3 A Crater Map Refined over Repeated Sorties
+
+The orbital elevation models available for PSRs resolve 0.5 to 5 m per pixel [2], so many craters the
+Scouts detect are absent from the map. Adding newly observed landmarks to a map and reusing them on
+later traverses is the basis of simultaneous localization and mapping (SLAM), and of the teach-and-repeat
+navigation demonstrated for planetary rovers [5]13. PROSPECT's operations suit this approach: each
+Scout makes about 16 sorties a month from one dock, along a shared descent corridor and adjacent survey
+lines, so most ground is seen many times. Each Scout logs the estimated position and size of every rim it
+cannot match. At the dock, these detections are compared across sorties and between Scouts, and a crater
+enters the shared map only after independent sightings agree12. A crater added in this way inherits the
+position error of the Scouts that observed it, and its size must be estimated from a partial rim, which
+ShadowNav has not demonstrated; the Monte Carlo model includes both effects. Refinement follows the
+workshop recommendation that resource maps be developed and then refined throughout the campaign
+[1], and it reduces the false-match rate, and with it the number of fixes per sortie, as the campaign
+proceeds (Figure 1b).
+
+4.4 A Resource Map That Records Position Confidence
+
+Terrestrial mining classifies resources by the confidence of the evidence behind them, and a lunar
+adaptation of this practice has been proposed [6]13. For a lunar deposit, confidence also depends on how
+well its position is known. Each Scout therefore stores every neutron spectrometer and radar reading with
+its estimated position and 95th-percentile position bound. When a reading exceeds the threshold for a
+candidate deposit, the other Scout surveys the surrounding area on its next sortie, out to a radius set by
+both Scouts' position bounds, and the deposit is confirmed if a matching reading is recorded there. One
+robot finding a resource and another returning to it was also used in [3]. Because both Scouts navigate by
+the same map from the same dock, their errors are not independent: the check is meaningful only when
+the combined bound is well below the deposit radius and the spectrometer footprint14, and errors common
+to both Scouts, such as the dock registration, must be bounded separately. The resource map distinguishes
+single readings, confirmed deposits and drilled deposits, and drilling is reserved for confirmed deposits, so
+that each drill sample provides ground truth for a deposit already located twice [1].
+
+4.5 Localizability in Site Selection
+
+Section 4.2 suggests that a crater floor with few mapped craters may not be surveyable within the stop
+budget. Localizability maps derived from orbital imagery have been used in rover path planning [7]13; we
+apply the same measure to the choice of target PSR. Crater density at each candidate is counted from
+orbital imagery16, and the Monte Carlo model gives the minimum density at which each fix policy meets
+the drill-site limit (Figure 1a).
+
+4.6 Simulation, Sensors and Operations
+
+We are developing a Monte Carlo model of complete sorties in which the errors published in [2] are
+sampled as inputs. It compares fix policies, with and without map refinement, across ranges of crater
+density, false-match rate, odometry drift from 1 to 4%, sensor failure and map error. It reports the
+probability of returning with the 25% battery reserve, the 95th-percentile error at drill sites, and the energy
+spent on the lamp and computer. The team's simulator, Lantern, which drives two rovers over the Lunar
+Orbiter Laser Altimeter (LOLA) elevation map of Shoemaker crater [4], will demonstrate map refinement
+and deposit checks and serve as the virtual prototype. It is not a source of performance figures.
+
+      Figure 1. (a) Probability of returning with the reserve, and 95th-percentile drill-site error, against
+   crater density for each fix policy. (b) False-match rate and fixes per sortie against sortie number, with
+
+                                and without map refinement. Results in preparation.7
+
+Each Scout carries a stereo camera pair with a lamp below it, a forward lidar for hazards and slopes,
+wheel odometry, and a star tracker and inertial measurement unit5 for heading, which crater matching
+does not provide [2]. Their mass, power, volume and data rates are given in the system budget17. Although
+the battery holds 7.9 kWh, the dock's 3 h recharge at 1.5 kW supplies 4.5 kWh, which limits the average
+load to about 205 W3. Contact with Earth may be lost for up to 11 days, about eight sortie cycles, during
+which the Scouts and dock store about 30 GB of data until it can be sent18 and each Scout follows rules
+fixed before launch, such as turning back when its energy falls to the amount needed to reach the dock
+with the reserve. The method requires darkness, a lamp, a star tracker and an orbital map with enough
+craters, and so applies to night-time operation elsewhere on the Moon wherever such maps exist.
+
+4.7 Technology Readiness and Risk
+ShadowNav's crater detection has been tested on real night-time stereo images and the complete method
+in simulation [2], which we assess as TRL 3. A later field test [8] may support TRL 4.9 Map refinement
+and deposit checks are operating procedures built on it and are at TRL 2, and adding craters from partial
+rims is less mature than ShadowNav's matching. The principal risks are a crater floor with too few
+mapped craters, errors entering the refined map, a dock registration error shared by both Scouts, and lamp
+and computer loads beyond the energy budget. They are addressed respectively by crater density as a site-
+selection criterion, by admitting craters to the map only after independent sightings agree, by the choice of
+registration method, and by the Monte Carlo energy accounting.
+References
+
+[1] Morris, G., and Sowers, G., "Lunar Polar Prospecting Workshop: Findings and Recommendations,"
+      Space Resources Roundtable and Lunar Exploration Analysis Group, Colorado School of Mines,
+      Golden, CO, Aug. 2018.
+
+[2] Cauligi, A., Swan, R. M., Ono, H., Daftry, S., Elliott, J., Matthies, L., and Atha, D., "ShadowNav:
+      Crater-Based Localization for Nighttime and Permanently Shadowed Region Lunar Navigation,"
+      arXiv:2301.04630, 2023.
+
+[3] Martinez Rocamora, B., Jr., Kilic, C., Tatsch, C., Pereira, G. A. S., and Gross, J. N., "Multi-Robot
+      Cooperation for Lunar In-Situ Resource Utilization," Frontiers in Robotics and AI, Vol. 10, 2023,
+      Paper 1149080.
+
+[4] Barker, M. K., et al., "Improved LOLA Elevation Maps for South Pole Landing Sites," Planetary and
+      Space Science, Vol. 203, 2021, Paper 105119.9
+
+[5] Furgale, P., and Barfoot, T. D., "Visual Teach and Repeat for Long-Range Rover Autonomy," Journal
+      of Field Robotics, 2010.13
+
+[6] Espejel, C., "LORS-101," International Astronautical Congress, IAC-20, 2020.13
+[7] Sasaki, T., et al., arXiv:2008.07157, 2020.13
+
+[8] Atha, D., et al., "ShadowNav: Autonomous Global Localization for Lunar Navigation in Darkness,"
+      arXiv:2405.01673, 2024.9
+Future work (not part of the draft)
+
+Each item is numbered as it appears in the draft. Items 1 to 6 are team decisions; the rest are tasks.
+Agreed during review: Lantern is never a source of numbers in the proposal, and the blockchain stays out.
+
+Decisions for the team
+
+# Item                                                                                  Section With
+
+1 The team baseline of 7.4 cm/s covers only 5.9 km in 22 h, short of the 7 km sortie, 4.1             Kellen,
+    which needs 8.8 cm/s. Reconcile the two.                                                          area 2
+
+2 Agree the top speed. The draft proposes 15 cm/s.                                      4.1           Area 4
+
+3 Reconcile the 270 W average load the battery allows with the 205 W a 3 h, 1.5 kW 4.6                Area 5
+    recharge allows.
+
+4 Set the drill-site position limit from deposit size and spectrometer footprint. It selects 4.2      Area 1
+    the 5 m or 10 m column of Table 1.
+
+5 Add the star tracker and inertial unit to the team baseline.                          4.6           Kellen,
+
+                                                                                                      area 6
+
+6 The workshop report [1] advises against the word "prospecting" (Finding 1) and        All           Kellen
+
+     says complex rovers should serve only as final verification (Finding 6). Decide
+
+     whether the proposal answers this, given the project's name and rover-led design.
+
+You
+
+7 Build the Monte Carlo model (nav-sim-plan.md) with map refinement, inherited crater-position        4.6
+
+     error and deposit revisits. Produce Figure 1a and 1b.
+
+8 Find a primary source for VIPER's 10 cm/s wheel speed and 0.8 cm/s average speed.                   4.1
+
+9 Read Atha et al. 2024 [8] in full before citing it or any TRL above 3. Complete authors and titles 4.7
+      of [4] and [8].
+
+10 The 95th-percentile values in Table 1 (2.8, 3.0, 8.4 m) assume normally distributed final errors; 4.2
+      check them against the distributions in [2, Fig. 13]. The linear 2% drift term is a simple bound,
+      not a fitted model. ShadowNav's reported uncertainty is the square root of the largest covariance
+      eigenvalue, not radial error; keep the two apart.
+
+11 Find out whether a ShadowNav fix requires the rover to stop, and how long it takes. This decides 4.2
+      whether the stop budget closes, and is the most important open number in the section.
+
+12 Define the rule for adding a crater to the map (sightings, sorties, distance) and how its size is  4.3
+
+     estimated from a partial rim.
+
+13 Read and complete [5] Furgale and Barfoot (teach-and-repeat), [6] Espejel, LORS-101 (lunar         4.3­
+
+     resource classification), and [7] Sasaki et al. (localizability maps). Search once more for crater- 4.5
+
+     map refinement in PSRs; the 16 Nov searches found none.
+
+14 Set the revisit threshold, the search-area time cost against the stop budget, and the numbers for 4.4
+      "well below the deposit radius and footprint".
+
+15 Choose how the dock is registered to the orbital map (for example orbital imaging of the dock, or 4.2
+      fixes on the rim) and its accuracy.
+Calvin
+
+16 Count craters at two or three candidate PSRs from orbital imagery (ShadowCam images PSRs at 4.5
+      about 1.7 m per pixel; check), for Figure 1a.
+
+17 Choose units and fill in mass, power, volume and data rate for the cameras and lamp, lidar, star    4.6
+
+tracker, inertial unit and flight computer, plus the size of a crater-map update per sortie.
+
+18 Link budget from Scout through beacons and tower to Earth, and the time to send a 30 GB             4.6
+
+backlog.
+
+19 Establish the lidar's rock detection range from the 1.6 m mast.                                     4.6
+
+Lantern
+
+20 Implement map refinement: log unmatched rims per sortie, merge them at the dock under the rule 4.3
+      from item 12, and drive repeat sorties over the same region. Demonstrates Section 4.3.
+
+21 Replace the on-chain confirm-or-dispute check with plain code: the other rover searches the area 4.4
+      around a reported find, sized by both position bounds, on its next sortie. Demonstrates Section
+      4.4.
+
+22 Run on terrain not selected for gentle slopes (sim/terrain.py:75) and on regions long enough for a 4.6
+      7 km sortie.
+
+23 Compute slope at the map's native 5 m spacing, or label 0.25 m slopes as interpolated. Turn rocks 4.6
+      on.
+
+24 Set the camera height to the Scout's 1.6 m mast with the lamp below it.                             4.6
+
+25 For the video and prototype, show the rovers as Scouts and remove the chain, Monad and              4.6
+
+hackathon interface.
+
+Also: log this draft in the team AI log. Lantern's code was largely written with AI agents, which the
+disclosure must state if Lantern appears in the proposal or video.
+

@@ -25,8 +25,8 @@ it, or from old mail.
 - `docs/terrain/position.md`: the approved terrain position and its
   sources.
 - `docs/SOURCES.md` and `docs/sources/`: every source, with copies. The
-  team's area 3 draft is unpublished and lives outside this repo; never
-  copy it in.
+  team's area 3 draft is `docs/sources/area3-navigation-draft.pdf`, with
+  a text copy beside it.
 - Hosting: local only until Joseph says it is right, then a new Vercel
   project. Never republish lantern-teal.vercel.app (the hackathon record).
 

@@ -105,22 +105,23 @@ def add_lips(height, craters, lips, x0, y0, cell, s):
     return h
 
 
-def nogo_png(height, x0, y0, cell, path):
-    """The planner's own no-go ground: SlopeMap(height).fine_deg > SLOPE_LIMIT_DEG
-    (sim/rover.py), i.e. steeper than the limit across 2 m, widened by the
-    rover's half width. Written as red on clear, north up, one pixel per sim
-    cell. Returns the meta entry, or None when sim/rover.py has no SlopeMap."""
+def nogo_png(height, x0, y0, cell, path, mode="footprint"):
+    """The planner's own no-go ground: SlopeMap(height, mode=mode).fine_deg >
+    SLOPE_LIMIT_DEG (sim/rover.py), by the slope test the run used. Written as
+    red on clear, north up, one pixel per sim cell. Returns the meta entry, or
+    None when sim/rover.py has no SlopeMap."""
     try:
         from sim.rover import SlopeMap, SLOPE_LIMIT_DEG
     except ImportError as e:
         print(f"no-go layer skipped: {e}")
         return None
-    bad = SlopeMap(height, x0, y0, cell).fine_deg > SLOPE_LIMIT_DEG
+    bad = SlopeMap(height, x0, y0, cell, mode=mode).fine_deg > SLOPE_LIMIT_DEG
     rgba = np.zeros(bad.shape + (4,), np.uint8)
     rgba[bad] = (79, 87, 229, 255)          # BGRA for cv2: #e5574f, the page's "disputed" red
     imwrite(path, rgba[::-1])
     return {"file": path.name, "limit_deg": SLOPE_LIMIT_DEG, "fraction": round(float(bad.mean()), 4),
-            "source": "sim/rover.py SlopeMap(height, x0, y0, cell).fine_deg > SLOPE_LIMIT_DEG, on the sim grid without display lips"}
+            "slope_test": mode,
+            "source": f"sim/rover.py SlopeMap(height, x0, y0, cell, mode={mode!r}).fine_deg > SLOPE_LIMIT_DEG, on the sim grid without display lips"}
 
 
 def far_normal(z, cell):
@@ -160,7 +161,13 @@ def main(site=None, run_ground=None):
     height, craters, x0, y0, cell = load_terrain(src)
     H, W = height.shape
     # The planner works on the sim grid as is, so the no-go layer does too.
-    nogo = nogo_png(height, x0, y0, cell, OUT / "nogo.png")
+    # The slope test the run used (Settings.slope_test; runs before 18 Nov 2026
+    # carry slope_test_widened instead, True = "widened", False = "point").
+    mode = "footprint"
+    if ground_rec:
+        st = rec.get("settings") or {}
+        mode = st.get("slope_test") or ("point" if st.get("slope_test_widened") is False else "widened")
+    nogo = nogo_png(height, x0, y0, cell, OUT / "nogo.png", mode)
     disp = DATA / (f"display_{site}" if site else "display")
     if ground_rec:
         # The camera texture built for this run ground (sim/terrain_display.py

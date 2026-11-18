@@ -194,10 +194,12 @@ class Settings:
                                          "sec. 4). 0.035 m puts as much ground over 15 deg at CR1 as Hemmi 2025's "
                                          "1 m DTM of it; 0.021 and 0.048 m, the ends of that comparison, are "
                                          "labelled test cases")
-    slope_test_widened: bool = S(True, "docs/terrain/position.md row 9: slope across 2 m, widened by the rover's "
-                                       "0.83 m half width (a modelling choice; no source states it). False is a "
-                                       "labelled test case: slope at the point, no widening, for the planner "
-                                       "and the lidar hazards alike")
+    slope_test: str = S("footprint", "docs/terrain/position.md row 9, sim/rover.py SLOPE_TESTS: 'footprint' = the "
+                                     "tilt of the Scout's 1.55 m footprint plane (brief p.6 width; sim/footprint.py, "
+                                     "GESTALT's rover-sized plane fit, Goldberg 2002, UNVERIFIED), for the planner "
+                                     "and the lidar hazards. Labelled test cases: 'widened' (slope across 2 m, "
+                                     "widened by the 0.83 m half width; the main case until 18 Nov 2026) and "
+                                     "'point' (2 m slope, no widening)")
     crater_n_ge10_per_km2: float = S(336.0, "Minton 2019 sec. 1.2, Fit 1 (Apollo 15): docs/terrain/position.md "
                                             "row 4. A single run's density (camera runs); drawn batches draw "
                                             "WorldRanges.crater_n_ge10_per_km2. 106 and 1,540 are labelled test cases")

@@ -1584,7 +1584,7 @@ class Campaign:
 SWEPT = ["site", "nav", "n_scouts", "check_policy", "map_refinement", "top_speed_mps", "check_stop_s", "drill_limit_m",
          "avg_load_w", "sightings_to_add", "drift_mode", "star_tracker",
          # the ground and the filter (docs/terrain/position.md; A24 eqs. 3-6), main case and test cases
-         "ground_roughness", "ground_rough_rms_m", "slope_test_widened", "crater_n_ge10_per_km2",
+         "ground_roughness", "ground_rough_rms_m", "slope_test", "cam_display", "crater_n_ge10_per_km2",
          "orbital_map_cut_m", "pf_scale_walk",
          # assumed inputs swept for sensitivity
          "p_wrong_per_missing", "confirm_bound_max_m", "bound_model"]

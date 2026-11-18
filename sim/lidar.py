@@ -177,12 +177,21 @@ class Lidar:
             far = ring_mean(RING_CELLS)             # crater-sized ring
             rock = zmax - near
             depr = far - zmean
-            gx = np.full((nx, ny), np.nan)
-            gy = np.full((nx, ny), np.nan)
-            b = 2  # +-1 m: a 2 m central difference (docs/handoffs.md step 2)
-            gx[b:-b, :] = (zmean[2 * b:, :] - zmean[:-2 * b, :]) / (2 * b * c)
-            gy[:, b:-b] = (zmean[:, 2 * b:] - zmean[:, :-2 * b]) / (2 * b * c)
-            slope = np.degrees(np.arctan(np.hypot(gx, gy)))
+            if getattr(self, "slope_mode", "footprint") == "footprint":
+                # The Scout's footprint tilt over the cell means (sim/footprint.py;
+                # docs/terrain/position.md row 9), as the planner's SlopeMap judges it.
+                try:
+                    from sim.footprint import tilt_deg
+                except ImportError:
+                    from footprint import tilt_deg
+                slope = tilt_deg(zmean, c)
+            else:
+                gx = np.full((nx, ny), np.nan)
+                gy = np.full((nx, ny), np.nan)
+                b = 2  # +-1 m: a 2 m central difference (docs/handoffs.md step 2)
+                gx[b:-b, :] = (zmean[2 * b:, :] - zmean[:-2 * b, :]) / (2 * b * c)
+                gy[:, b:-b] = (zmean[:, 2 * b:] - zmean[:, :-2 * b]) / (2 * b * c)
+                slope = np.degrees(np.arctan(np.hypot(gx, gy)))
         is_crater = known & (depr > DEPRESSION_M)
         is_rock = known & ~is_crater & (rock > ROCK_STEP_M) & DETECT_ROCKS
         is_slope = known & ~is_crater & ~is_rock & (slope > SLOPE_LIMIT_DEG)

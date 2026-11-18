@@ -185,8 +185,8 @@ class CameraRig:
             import terrain_display as TD
             self.display_dir = TD.build_for_ground(self.ground_path)
         self.scene = Scene(h, cr, x0, y0, cell, display=s.cam_display, display_dir=self.display_dir)
-        # docs/terrain/position.md row 9: widened by the half width, or the test case without.
-        self.slope = SlopeMap(h, x0, y0, cell, widen_m=None if s.slope_test_widened else 0.0)
+        # docs/terrain/position.md row 9: the Scout's footprint tilt, or a test case.
+        self.slope = SlopeMap(h, x0, y0, cell, mode=s.slope_test)
         n = h.shape[0]
         self.ground = {"file": f"run_ground/{self.ground_path.name}", "x0": float(x0), "y0": float(y0),
                        "cell": float(cell), "bounds": [rnd(x0 - cell / 2, 2), rnd(y0 - cell / 2, 2),
@@ -352,6 +352,7 @@ class CameraSortie(Sortie):
         self.vis = Vision(rig.scene, rng_for(camp.seed, 6, si, n))
         self.vis.rng = _AheadRng(self.vis.rng)
         self.lid = Lidar(rig.scene, rng_for(camp.seed, 7, si, n))
+        self.lid.slope_mode = "footprint" if camp.s.slope_test == "footprint" else "2m"
         self.map_true = self._map_truth()
         self.drift_true = w.draws["drift_frac"]
         self.k = 0

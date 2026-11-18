@@ -82,42 +82,65 @@ PLANNER_STANDIN = ("planner: A* on a 2 m grid; a cell is blocked if any point wi
                    "rover's estimate, with a local slope check each step (sim/rover.py)")
 
 
+SLOPE_TESTS = ("footprint", "widened", "point")
+
+
 class SlopeMap:
-    """Worst slope in degrees across a 2 m baseline, per 2 m planning cell.
+    """Slope in degrees per grid point and per 2 m planning cell, by one of
+    SLOPE_TESTS (Settings.slope_test, docs/terrain/position.md row 9):
 
-    INTERPOLATED: the 0.25 m grid is 5 m LOLA upsampled, plus stamped
-    craters and assumed roughness (sim/terrain.py), so a 2 m slope is not a
-    measurement. The measured slope is LOLA's own at 5 m (ldsm), which the
-    campaign batch uses (sim/psr_sites.py).
+    "footprint" (main case): the tilt of the Scout's footprint plane at each
+    point (sim/footprint.py: least-squares plane over a 1.55 m square, brief
+    p.6), not widened. A rover rests on its wheels, so the tilt of the plane
+    under it is what the 15 deg limit bounds.
+    "widened" (the earlier main case, a test case): slope across 2 m as a
+    central difference (docs/handoffs.md, step 2), widened by the rover's half
+    width, so a point is blocked if any spot under the rover is over the limit.
+    "point": the 2 m slope at the point, no widening, for the planner and the
+    lidar hazards alike.
 
-    Slope is measured at every 0.25 m grid point as a central difference
-    across 2 m (docs/handoffs.md, step 2), widened by the rover's half width,
-    and each 2 m cell keeps the steepest value inside it. Sampling the height
-    only every 2 m instead (the earlier version) missed crater walls that lie
-    between samples, so the rover drove into craters steeper than 15 deg.
+    INTERPOLATED: the grid is 5 m LOLA upsampled, plus stamped craters and
+    roughness (sim/site_ground.py), so its slope is not a measurement. The
+    measured slope is LOLA's own at 5 m (ldsm), which the campaign batch uses
+    (sim/psr_sites.py). Every grid point is judged, not one sample per 2 m:
+    sampling only every 2 m (an earlier version) missed crater walls between
+    samples, so the rover drove into craters steeper than 15 deg.
     """
 
-    def __init__(self, height, x0, y0, cell, widen_m=None):
-        """widen_m: the margin each slope is widened by, the rover's half width
-        by default (docs/terrain/position.md row 9); 0 is the labelled test
-        case, slope at the point only. The lidar hazards a sensing Rover marks
-        (add_hazards) are widened by the same margin."""
+    def __init__(self, height, x0, y0, cell, widen_m=None, mode="footprint"):
+        """widen_m: the margin lidar hazards (craters, rocks; slopes too except
+        in "footprint") are widened by in add_hazards, so the rover's body
+        stays off them: the rover's half width by default, 0 in "point"."""
         from scipy.ndimage import maximum_filter
-        self.widen_m = ROVER_HALF_WIDTH_M if widen_m is None else float(widen_m)
+        if mode not in SLOPE_TESTS:
+            raise ValueError(f"slope test {mode!r}: one of {SLOPE_TESTS}")
+        self.mode = mode
+        if widen_m is None:
+            widen_m = 0.0 if mode == "point" else ROVER_HALF_WIDTH_M
+        self.widen_m = float(widen_m)
+        # Margin for the slope itself: the footprint plane already spans the rover.
+        self.slope_widen_m = 0.0 if mode == "footprint" else self.widen_m
         k = max(1, int(round(SLOPE_BASELINE_M / cell)))
         b = k * cell
         h = np.asarray(height, dtype=np.float32)
-        half = k // 2                                   # +-1 m: a 2 m central difference
-        hp = np.pad(h, half, mode="edge")
-        gx = (hp[half:-half, 2 * half:] - hp[half:-half, :-2 * half]) / np.float32(2 * half * cell)
-        gy = (hp[2 * half:, half:-half] - hp[:-2 * half, half:-half]) / np.float32(2 * half * cell)
-        fine = np.degrees(np.arctan(np.hypot(gx, gy)))
-        del hp, gx, gy
-        # Widen by the rover's half width, so a cell is blocked if any part of
-        # the rover standing in it would be on a steep spot.
-        r = int(math.ceil(self.widen_m / cell))
-        if r > 0:
-            fine = maximum_filter(fine, size=2 * r + 1, mode="nearest")
+        if mode == "footprint":
+            try:
+                from sim.footprint import tilt_deg
+            except ImportError:  # run as a script from sim/
+                from footprint import tilt_deg
+            fine = tilt_deg(h, cell)
+        else:
+            half = k // 2                                   # +-1 m: a 2 m central difference
+            hp = np.pad(h, half, mode="edge")
+            gx = (hp[half:-half, 2 * half:] - hp[half:-half, :-2 * half]) / np.float32(2 * half * cell)
+            gy = (hp[2 * half:, half:-half] - hp[:-2 * half, half:-half]) / np.float32(2 * half * cell)
+            fine = np.degrees(np.arctan(np.hypot(gx, gy)))
+            del hp, gx, gy
+            # Widen by the rover's half width, so a cell is blocked if any part of
+            # the rover standing in it would be on a steep spot.
+            r = int(math.ceil(self.slope_widen_m / cell))
+            if r > 0:
+                fine = maximum_filter(fine, size=2 * r + 1, mode="nearest")
         # The A* grid: 2 m cell [i, j] spans x0 + j*b .. x0 + (j+1)*b (the
         # floor convention of plan()); it takes the widened slope at its
         # centre, x0 + (j + 0.5)*b, where plan() puts its waypoints. Every
@@ -530,7 +553,12 @@ class Rover:
         if kinds is not None and self.sensing:
             kinds = np.asarray(kinds)
             soft = kinds == "crater"
-            self._mark(pts[~soft], self.haz_steep)
+            # A slope hazard is already judged on the footprint (lidar.hazards,
+            # slope_mode "footprint"), so it closes only its own point; rocks
+            # and craters keep the body margin.
+            flat = (kinds == "slope") & (self.slope.mode == "footprint")
+            self._mark(pts[~soft & ~flat], self.haz_steep)
+            self._mark(pts[flat], self.haz_steep, r=0)
             self._mark(pts[soft], self.haz_crater)
             # _mark sets cells only within r of a point: refresh haz_fine and
             # its count in that window, not over the whole 0.25 m map (51M
@@ -570,13 +598,14 @@ class Rover:
             self.haz_2m[i0 // k:i1 // k, j0 // k:j1 // k] |= blk >= HAZARD_CELL_FRAC
         self.n_hazard_cells = int(self.haz_fine.sum())
 
-    def _mark(self, pts, grid):
-        """Set grid cells within the rover's half width of each point."""
+    def _mark(self, pts, grid, r=None):
+        """Set grid cells within the rover's half width of each point (r cells if given)."""
         if len(pts) == 0:
             return
         sm, c = self.slope, self.slope.cell
         H, W = grid.shape
-        r = int(math.ceil(self.slope.widen_m / c))
+        if r is None:
+            r = int(math.ceil(self.slope.widen_m / c))
         ci = np.rint((pts[:, 1] - sm.y0) / c).astype(int)
         cj = np.rint((pts[:, 0] - sm.x0) / c).astype(int)
         for di in range(-r, r + 1):

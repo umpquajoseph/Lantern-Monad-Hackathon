@@ -205,8 +205,12 @@ class Settings:
                                        "10 m'; docs/terrain/position.md row 7. A single run's starting-map cut "
                                        "(WorldRanges.orbital_resolve_px pinned to it); 18 m, where ShadowCam "
                                        "counts in polar shadow are complete (Mazarico 2025), is a labelled test case")
-    cam_display: str = S("off", "sim/scene.py DISPLAY_MODES: 'off' = the run ground as built (no display "
-                                "assets exist for a run ground)")
+    cam_display: str = S("detail", "sim/scene.py DISPLAY_MODES. 'detail': ShadowNav's render recipe, Hapke "
+                                   "with old-highland parameters (C23 sec. 4A, Xu 2020 Table 1) plus fractal "
+                                   "surface texture below the grid (C23 sec. 4A, A24 sec. IV-A), its amplitude "
+                                   "the ground's own k^-4 spectrum continued (sim/terrain_display.py "
+                                   "run_ground_params); no rocks, lips or albedo mottling. 'off': Lambert, "
+                                   "no texture, the GPU path (bench/render), a labelled test case")
     # Batch runs with nav='sampled' never read the fields below.
     camera_height_m: float = S(1.6, "brief p.6 '1.6 m mast'; draft item 24. Camera assumed at the mast top. "
                                     "A24 sec. IV tested 1.5, 2.5 and 3 m")

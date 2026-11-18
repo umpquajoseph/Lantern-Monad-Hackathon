@@ -349,7 +349,10 @@ def build(terrain_path=None, p: DisplayParams | None = None, out=OUT):
     np.save(out / "rocks.npy", rocks)
     lips = np.column_stack([p.lip_height_frac * depth, p.lip_width_frac * craters[:, 2] / 2])
     np.save(out / "lips.npy", lips.astype(np.float32))
-    alb = build_albedo(craters, depth, n, cell, x0, y0, p, rng)
+    if p.mottle_rms == 0 and (p.fresh_frac == 0 or p.fresh_gain == 0):
+        alb = np.ones(height.shape, np.float32)  # uniform: skips an n x n FFT of zeros
+    else:
+        alb = build_albedo(craters, depth, n, cell, x0, y0, p, rng)
     Image.fromarray(np.clip(alb * 128, 0, 255).astype(np.uint8)).save(out / "albedo.png")
 
     files = ["detail_height.npy", "detail_height.png", "detail_normal.png", "detail_albedo.png",
@@ -367,8 +370,12 @@ def build(terrain_path=None, p: DisplayParams | None = None, out=OUT):
     doc = dict(
         format=FORMAT, params=asdict(p), terrain=str(Path(terrain_path or T.default_path()).name),
         drive_area=drive, files=files, png_scale=scale, png_offset=lo,
-        real=["backdrop.npz (LOLA Shoemaker 5 m, averaged to 20 m)", "sim grid base (LOLA)"],
-        made_up=["detail tile", "albedo map", "rocks", "rim lips"],
+        real=(["backdrop.npz (LOLA Shoemaker 5 m, averaged to 20 m)"] if "backdrop.npz" in files else [])
+             + ["sim grid base (LOLA)"],
+        made_up=(["detail tile"]
+                 + (["albedo map"] if p.mottle_rms or (p.fresh_frac and p.fresh_gain) or p.tile_albedo_rms else [])
+                 + (["rocks"] if len(rocks) else []) + (["craterlets"] if p.craterlet_n_ge10cm_per_m2 else [])
+                 + (["pebbles"] if p.pebble_n_ge2cm_per_m2 else []) + ["rim lips"]),
         sources={"hapke": "Xu et al. 2020, Remote Sensing 12(22) 3676: Eqs. 5-6 p. 6, Eqs. 7-12 "
                           "and Table 3 p. 7, Table 1 p. 3 old highland bounds (from Sato et al. "
                           "2014); cited by Cauligi et al. 2023 sec. 4A as [26]"},
@@ -376,6 +383,83 @@ def build(terrain_path=None, p: DisplayParams | None = None, out=OUT):
     )
     (out / "display.json").write_text(json.dumps(doc, indent=1))
     return out
+
+
+# --------------------------------------------------------------------------
+# Camera texture for a run ground (sim/site_ground.py), used by camera runs.
+# --------------------------------------------------------------------------
+
+def _band_power(n, dx, beta, k_lo):
+    """Integral over k of the k^-beta spectrum _fractal_noise draws, with its
+    k_lo high-pass corner, on an n x n grid of spacing dx (unit coefficient)."""
+    kx = np.fft.fftfreq(n, d=dx)
+    k = np.hypot(kx[None, :], kx[:, None])
+    k[0, 0] = kx[1]
+    a = k ** (-beta / 2) * (1.0 / (1.0 + (k_lo / k) ** 8))
+    a[0, 0] = 0.0
+    dk = 1.0 / (n * dx)
+    return float((a ** 2).sum() * dk * dk)
+
+
+def run_ground_params(cell_m: float, rough_rms_m: float, rough_cutoff_m: float,
+                      rough_beta: float = 4.0) -> DisplayParams:
+    """The texture the camera sees below the run ground's own grid.
+
+    Recipe as ShadowNav's renders: the elevation map at sub-metre spacing with
+    a fractal surface texture added "for stereo to utilize" (C23 sec. 4A;
+    A24 sec. IV-A, "two scales of fractal Brownian motion", amplitude not
+    given), lit by Hapke with Xu 2020's old-highland parameters (C23 sec. 4A).
+
+    Amplitude: the run ground's own fractal (docs/terrain/position.md row 3,
+    k^-4, H = 1 after Barker 2021, rms rough_rms_m at wavelengths from
+    rough_cutoff_m down to two grid cells) continued below two grid cells
+    with the same spectrum and the same coefficient, so the power spectrum has
+    no step at the grid's limit. That is the spectrum-extension method row 3
+    already uses (Barker 2021, Allan 2019), taken to the tile's 3.9 mm texels.
+    At 1 m cells, 10 m cutoff and 0.035 m it gives 7.1 mm rms.
+
+    Everything else in the hackathon's display layer has no source and is off:
+    craterlets and pebbles (no size-frequency source under 1 m was read; Minton
+    2019 covers metre to kilometre craters), rocks (position.md row 11, not
+    modelled), albedo mottling and bright crater halos (ShadowNav renders one
+    Hapke regolith). Rim lips stay in the assets but the "detail" display mode
+    does not draw them (sim/scene.py DISPLAY_MODES)."""
+    p = DisplayParams()
+    cut = 2.0 * cell_m
+    ground = _band_power(1024, cell_m, rough_beta, 1.0 / rough_cutoff_m)
+    tile = _band_power(p.tile_px, p.tile_period_m / p.tile_px, rough_beta, 1.0 / cut)
+    return DisplayParams(
+        tile_cut_m=cut, tile_beta=rough_beta,
+        tile_rms_m=float(rough_rms_m) * float(np.sqrt(tile / ground)),
+        craterlet_n_ge10cm_per_m2=0.0, pebble_n_ge2cm_per_m2=0.0, tile_albedo_rms=0.0,
+        rock_n_ge10cm_per_m2=0.0, rim_rock_frac=0.0,
+        mottle_rms=0.0, fresh_frac=0.0, fresh_gain=0.0, albedo_cell_m=cell_m,
+    )
+
+
+def build_run(ground_path, cell_m: float, rough_rms_m: float, rough_cutoff_m: float) -> Path:
+    """Display assets for one run ground, next to it as <name>_display/.
+    Reused when the params match; rebuilt otherwise."""
+    ground_path = Path(ground_path)
+    out = ground_path.with_name(ground_path.stem + "_display")
+    p = run_ground_params(cell_m, rough_rms_m, rough_cutoff_m)
+    doc = out / "display.json"
+    if doc.exists():
+        try:
+            if json.loads(doc.read_text()).get("params") == json.loads(json.dumps(asdict(p))):
+                return out
+        except Exception:
+            pass
+    return build(ground_path, p, out)
+
+
+def build_for_ground(ground_path) -> Path:
+    """build_run with the cell and roughness the run ground records in its meta."""
+    with np.load(ground_path) as f:
+        meta = json.loads(str(f["meta"]))
+        cell = float(f["cell"])
+    return build_run(ground_path, cell, float(meta.get("roughness_rms_m", 0.0)),
+                     float(meta.get("roughness_cutoff_m", 10.0)))
 
 
 # --------------------------------------------------------------------------

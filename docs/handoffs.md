@@ -30,7 +30,14 @@ one only by telling the others and editing this file in the same commit.
   (`C:\Monad-Hackathon-Project\data\terrain\`), git-ignored and rebuilt by the
   script.
 
-## Terrain display (display only; the simulation never reads it)
+## Terrain display (the hackathon's display layer; camera runs now read it)
+
+Camera runs (`cam_display` "detail", the default since 18 Nov 2026) render
+with a display layer built per run ground, `data/terrain/run_ground/<run>_display/`
+(`sim/terrain_display.py build_for_ground`): texture only, no rocks, lips
+or mottling (docs/terrain/position.md row 12). `web/build_assets.py
+--run-ground` draws Mission Control's ground with the same layer. The
+Shoemaker layer below is the hackathon's and keeps its made-up values.
 
 `data/terrain/display/display.json` in the main checkout lists the files,
 parameters and sources. Built by `python sim/terrain_display.py build`.

@@ -51,6 +51,15 @@ sys.path.insert(0, str(ROOT))
 from sim.terrain import TERRAIN_DIR, load_terrain  # noqa: E402
 
 DATA = TERRAIN_DIR  # LANTERN_DATA/terrain, or the default in sim/terrain.py
+
+
+def run_display(ground_path):
+    """sim/terrain_display.py build_for_ground: the run ground's camera texture dir."""
+    sim_dir = str(ROOT / "sim")
+    if sim_dir not in sys.path:
+        sys.path.insert(0, sim_dir)  # terrain_display does `import terrain`
+    import terrain_display as TD
+    return TD.build_for_ground(ground_path)
 OUT = ROOT / "web" / "assets" / "terrain"
 TILE = 512          # cells per fine tile (128 m)
 COARSE = 4          # coarse grid keeps every 4th sample (1 m)
@@ -153,6 +162,11 @@ def main(site=None, run_ground=None):
     # The planner works on the sim grid as is, so the no-go layer does too.
     nogo = nogo_png(height, x0, y0, cell, OUT / "nogo.png")
     disp = DATA / (f"display_{site}" if site else "display")
+    if ground_rec:
+        # The camera texture built for this run ground (sim/terrain_display.py
+        # build_run, from the ground's own roughness), the same one the
+        # Scouts' cameras render with; built here if the run predates it.
+        disp = run_display(src)
     dj = disp / "display.json"
     d = json.loads(dj.read_text()) if dj.exists() else None
     if d is not None and (disp / "lips.npy").exists() and not ground_rec:

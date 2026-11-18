@@ -173,7 +173,18 @@ class CameraRig:
         self.ground_path, self.box = self._ground(camp)
         from sim.terrain import load_terrain
         h, cr, x0, y0, cell = load_terrain(self.ground_path)
-        self.scene = Scene(h, cr, x0, y0, cell, display=s.cam_display)
+        self.display_dir = None
+        if s.cam_display != "off":
+            # The camera texture for this ground (sim/terrain_display.py run_ground_params:
+            # ShadowNav's render recipe, amplitude from the ground's own roughness).
+            import os
+            import sys
+            here = os.path.dirname(os.path.abspath(__file__))
+            if here not in sys.path:
+                sys.path.insert(0, here)  # terrain_display does `import terrain`
+            import terrain_display as TD
+            self.display_dir = TD.build_for_ground(self.ground_path)
+        self.scene = Scene(h, cr, x0, y0, cell, display=s.cam_display, display_dir=self.display_dir)
         # docs/terrain/position.md row 9: widened by the half width, or the test case without.
         self.slope = SlopeMap(h, x0, y0, cell, widen_m=None if s.slope_test_widened else 0.0)
         n = h.shape[0]

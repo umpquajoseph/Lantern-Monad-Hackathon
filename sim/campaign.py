@@ -37,7 +37,7 @@ import math
 import os
 import time
 from collections import deque
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace as dc_replace
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -136,7 +136,7 @@ def draw_world_values(seed: int, ranges: WorldRanges, rng) -> dict:
 def standin_world(seed: int, s: Settings, ranges: WorldRanges) -> World:
     """Shoemaker LOLA window with seeded craters and ice. Stand-in for part 3.
 
-    The window is not PSR floor (spec 11.1). The dock sits 300 m inside the
+    The window is not PSR floor. The dock sits 300 m inside the
     west edge; "floor" is every cell at least descent_m from the dock and
     50 m inside the window, so the descent corridor is about descent_m long.
     """
@@ -588,7 +588,7 @@ class Sortie:
                 self._fault(mod)
         if self.energy <= 0:
             self.lost = True
-            self.event("lost", energy_kwh=0.0)
+            self.event("lost", energy_kwh=0.0, **self._flat_reason())
             return
         if self.act == ACT["survey"] and self.d_read >= s.reading_spacing_m:
             self.d_read = 0.0
@@ -782,6 +782,19 @@ class Sortie:
             return False
         if not self.drive_to(f["est"][0], f["est"][1], ACT["survey"]):
             return False
+        # A camera Scout gives up on a waypoint it cannot reach (event
+        # waypoint_skipped) and drive_to still returns. Searching from there
+        # would centre the grid on a spot the Scout never reached: on
+        # live-nav-first3 haynes S2-03 the search began 246 m from the find.
+        # By its own estimate, outside the search circle is not at the find:
+        # log it and leave the find open for another sortie. The sampled
+        # engine always arrives, so its runs are unchanged.
+        gap = math.hypot(f["est"][0] - self.ex, f["est"][1] - self.ey)
+        reach = X.search_area(f, self.bound, s)
+        if gap > reach:
+            self.event("search_abandoned", find_id=f["find_id"], reason="unreached", dist_m=rnd(gap, 2),
+                       radius_m=rnd(reach, 2), points_done=0, points_planned=0, partial=None)
+            return False
         self.work_check("search")
         if self.anchor == "dock":
             # crossing brief: a search is fix-anchored, never on the dock's error alone.
@@ -793,9 +806,23 @@ class Sortie:
                    find_bound95=f["bound95"], searcher_bound95=rnd(self.bound, 2), combined_bound95=rnd(comb, 2))
         readings, true_xy = [], []
         for px, py in pts:
+            stop = None
             if not self.drive_to(float(px), float(py), ACT["search"]):
-                return False
-            if not self.neutron_ok:
+                stop = "lost" if self.lost else (self.turn_reason or "turn_back")
+            elif not self.neutron_ok:
+                stop = "fault"
+            if stop:
+                # Cut short. The readings so far still count: a match inside
+                # the rule confirms as a full search would. Otherwise the
+                # search is logged as abandoned, with what the partial
+                # readings said, and the find stays open for another sortie.
+                det = X.judge_search_detail(f, readings, s)
+                if det["result"] == "confirmed" and not self.lost:
+                    break
+                self.event("search_abandoned", find_id=f["find_id"], reason=stop,
+                           dist_m=rnd(math.hypot(f["est"][0] - self.ex, f["est"][1] - self.ey), 2),
+                           radius_m=rnd(radius, 2), points_done=len(readings), points_planned=len(pts),
+                           partial=det["reason"], combined_bound95=rnd(comb, 2))
                 return False
             wt = self.read_here()
             readings.append((self.ex, self.ey, self.bound, wt, self.anchor))
@@ -811,7 +838,7 @@ class Sortie:
                    truth_has_deposit=bool(sc["truth_has_deposit"]),
                    false_confirmed=bool(sc["false_confirmed"]), missed=bool(sc["missed"]))
         self.search_results.append((f["find_id"], det["result"], det))
-        if det["result"] == "confirmed" and self.drills_left > 0:
+        if det["result"] == "confirmed" and self.drills_left > 0 and not self.returning:
             tgt = det.get("est") or f["est"]
             self.drill(f, tgt)
         return True
@@ -855,6 +882,18 @@ class Sortie:
 
     def _before_dock(self):
         """Hook: the last thing a sortie does before closing on the dock."""
+
+    def _can_home(self, d_home):
+        """Whether the Scout, its route driven, can close the last d_home
+        metres (true) to the dock. The sampled engine drives its route
+        exactly, so d_home is its navigation error and it always can."""
+        return True
+
+    def _flat_reason(self):
+        """The lost event's reason when the battery runs flat on the way:
+        "battery". A camera Scout may instead have been "stuck"
+        (sim/campaign_camera.py CameraSortie._flat_reason)."""
+        return {"reason": "battery"}
 
     # ------------------------------------------------------------ the sortie
     def run(self, searches, drills, lanes):
@@ -908,7 +947,10 @@ class Sortie:
         if not self.lost:
             # Home on the dock itself: drive the true remaining distance.
             d_home = math.hypot(self.tx - self.w.dock[0], self.ty - self.w.dock[1])
-            if d_home > 0:
+            if not self._can_home(d_home):
+                self.lost = True
+                self.event("lost", energy_kwh=rnd(self.energy, 4), reason="stranded", dist_m=rnd(d_home, 1))
+            elif d_home > 0:
                 self.act = ACT["return"]
                 dt = d_home / self.v
                 self.t += dt
@@ -919,7 +961,7 @@ class Sortie:
             self.errx = self.erry = 0.0
             if self.energy <= 0:
                 self.lost = True
-                self.event("lost", energy_kwh=0.0)
+                self.event("lost", energy_kwh=0.0, reason="battery")
         if self.lost:
             outcome = "lost"
         else:
@@ -937,10 +979,20 @@ class Sortie:
 
 # =================================================================== campaign
 
+def single_run_ranges(s: Settings) -> WorldRanges:
+    """A single run's world ranges: odometer drift, crater density and the
+    starting-map cut pinned to their Settings values, so each is in the run
+    id; every other range as WorldRanges. Drawn batches pass their own."""
+    base = WorldRanges()
+    return dc_replace(base, drift_frac=(s.drift_frac, s.drift_frac),
+                      crater_n_ge10_per_km2=(s.crater_n_ge10_per_km2, s.crater_n_ge10_per_km2),
+                      orbital_resolve_px=s.orbital_map_cut_m / base.orbital_dem_px_m)
+
+
 class Campaign:
     def __init__(self, seed: int, s: Settings, ranges: WorldRanges | None = None, site: str | None = None):
         self.seed, self.s = int(seed), s
-        self.ranges = ranges or WorldRanges(drift_frac=(s.drift_frac, s.drift_frac))
+        self.ranges = ranges or single_run_ranges(s)
         self.world = make_world(seed, s, self.ranges, site)
         w = self.world
         self.energy = energy_model(s)
@@ -1194,6 +1246,8 @@ class Campaign:
             self.step_arrays.update(so.arrays)
             self.sortie_extra[so.sid] = {"steps": int(len(so.arrays[f"{so.sid}.step"])),
                                          "point_turns": so.point_turns, "waypoints_skipped": so.skipped,
+                                         "pingpong_blocks": so.rover.pingpong_blocks,
+                                         "drive_overhead": rnd(so.overhead(), 3),
                                          "rim_points": so.n_rim_pts, "rim_matched": so.n_rim_matched,
                                          "rim_wrong": so.n_rim_wrong, "rim_unpaired": so.n_rim_unpaired}
         return so
@@ -1353,6 +1407,7 @@ class Campaign:
             # Additive (not in the handoffs list yet).
             "fixes": fixes,
             "searches": len(ends),
+            "searches_abandoned": sum(e["type"] == "search_abandoned" for e in ev),
             "confirm_rate": rnd(sum(e["result"] == "confirmed" for e in ends) / len(ends), 3) if ends else None,
             "search_bound_too_large": sum(e.get("reason") == "bound_too_large" for e in ends),
             "search_no_match": sum(e.get("reason") == "no_match" for e in ends),
@@ -1525,10 +1580,13 @@ class Campaign:
         return root
 
 
-# Design choices swept on purpose (spec sec. 4); every one goes in summary.csv.
+# Design choices swept on purpose; every one goes in summary.csv.
 SWEPT = ["site", "nav", "n_scouts", "check_policy", "map_refinement", "top_speed_mps", "check_stop_s", "drill_limit_m",
          "avg_load_w", "sightings_to_add", "drift_mode", "star_tracker",
-         # assumed inputs swept for sensitivity (spec 4a item 3)
+         # the ground and the filter (docs/terrain/position.md; A24 eqs. 3-6), main case and test cases
+         "ground_roughness", "ground_rough_rms_m", "slope_test_widened", "crater_n_ge10_per_km2",
+         "orbital_map_cut_m", "pf_scale_walk",
+         # assumed inputs swept for sensitivity
          "p_wrong_per_missing", "confirm_bound_max_m", "bound_model"]
 
 

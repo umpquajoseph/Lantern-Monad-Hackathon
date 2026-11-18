@@ -406,7 +406,10 @@ batch draws drift from `WorldRanges.drift_frac` per world.
 on different sites never share a folder, and it is a summary.csv column.
 
 A run is named `w<seed:05d>-<Settings.key()>`. Same seed and same key give
-the same record, byte for byte apart from `made_at`.
+the same record, byte for byte apart from `made_at`. A single run's world
+ranges come from its Settings (sim/campaign.py `single_run_ranges`: drift,
+crater density, map cut), so they are in the key; a drawn batch passes its
+own ranges, which are not.
 
 ### Run record (part 1 writes it; parts 2-4 read it)
 
@@ -479,7 +482,7 @@ Event `type`s and their extra fields:
 | `fault` | `module`: `camera` / `lamp` / `neutron` |
 | `swap` | `module`, `downtime_h` |
 | `contact_lost`, `contact_regained` | none; `sortie_id` and `scout` are null |
-| `lost` | `energy_kwh` (0): battery empty before the dock |
+| `lost` | `energy_kwh` (0): battery empty before the dock. Since 17 Nov 2026 also `reason`: `battery` (that case) or `stranded` (camera: its return route driven, the dock lies farther than its `bound95` + 25 m, sim/campaign_camera.py `DOCK_SIGHT_M`, assumed; `energy_kwh` is what it had left, `dist_m` the true distance to the dock). Before, the last hop to the dock was driven free whatever its length (up to 2,355 m in live-nav-first3), so those sorties read `ok` or `below_reserve`. Also `stuck` (camera, added later on 17 Nov 2026): the battery ran flat with the Scout's true position within 10 m of where it died for at least 1 h (sim/campaign_camera.py `STUCK_RADIUS_M`, `STUCK_MIN_H`, assumed), plus `stuck_h`, the hours since it was last farther. Earlier records call those losses `battery` |
 
 Part 1 also writes (2026-11-16, additive):
 
@@ -567,6 +570,23 @@ Record changes (additive unless marked):
     `bound95`, `anchor` as above, plus `points`, `fit_rms_m`.
   - `waypoint_skipped`: `reason` `blocked` (no progress for
     `Settings.cam_stuck_steps` steps) or `off_ground`; `goal` (map frame).
+  - `search_abandoned` (workflow, 17 Nov 2026; either engine): a search
+    that did not finish. `find_id`, `reason`: `unreached` (the drive to
+    the find ended with the searcher's estimate outside the search circle,
+    after a skipped waypoint; no `search_start` was logged), `energy` /
+    `time` / `fault` / `lost` (cut short after `search_start`); `dist_m`
+    (estimated distance to the find's `est` when it stopped), `radius_m`,
+    `points_done`, `points_planned`, `partial` (what
+    `judge_search_detail` said of the readings so far: `no_readings` /
+    `no_match` / `bound_too_large`; null when unreached),
+    `combined_bound95` (when started). No `search_end` follows; the find
+    keeps `status: "find"` and a later sortie may search it. A search cut
+    short whose readings so far already confirm ends with a normal
+    `search_end` instead. Summary adds `searches_abandoned`. Batch
+    `workflow-first3` (commit 68e2047) wrote the earlier name
+    `search_unreached` (`find_id`, `dist_m`, `radius_m`) and summary column
+    `searches_unreached`; read them as `search_abandoned` with reason
+    `unreached`.
 - `time_s.check` is 0: a camera Scout does not stop to fix.
   `Settings.check_policy`, `check_stop_s`, `drift_mode` and the sampled
   fix-error fields are not used. The truth's odometer is a scale error of
@@ -576,7 +596,14 @@ Record changes (additive unless marked):
   particles spread to `dock_reg_bound95_m`.
 - `bound95` everywhere is `K95_2D * sigma`, sigma the filter's per-axis
   spread (sim/nav.py `belief`).
-- Sorties add `steps` (camera steps), `point_turns`, `waypoints_skipped`.
+- Sorties add `steps` (camera steps), `point_turns`, `waypoints_skipped`,
+  `pingpong_blocks` (planning cells closed by sim/rover.py's back-and-forth
+  guard: a move that ends within 0.5 m of where the move before last
+  ended closes the turnaround's 2 m cell; 17 Nov 2026), `drive_overhead`
+  (sim/campaign_camera.py `CameraSortie.overhead`: drive time over the
+  time straight driving at top speed would take for the same progress
+  toward its waypoints, measured by the Scout on itself; its turn-back
+  rule multiplies the return's straight-driving time and energy by it).
 - **False-match rate** (one definition for the summary, the page and the
   paper; draft 4.2 "detected rims were paired with the wrong mapped
   crater"): of the rim points the filter paired with a mapped crater, the

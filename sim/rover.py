@@ -97,8 +97,13 @@ class SlopeMap:
     between samples, so the rover drove into craters steeper than 15 deg.
     """
 
-    def __init__(self, height, x0, y0, cell):
+    def __init__(self, height, x0, y0, cell, widen_m=None):
+        """widen_m: the margin each slope is widened by, the rover's half width
+        by default (docs/terrain/position.md row 9); 0 is the labelled test
+        case, slope at the point only. The lidar hazards a sensing Rover marks
+        (add_hazards) are widened by the same margin."""
         from scipy.ndimage import maximum_filter
+        self.widen_m = ROVER_HALF_WIDTH_M if widen_m is None else float(widen_m)
         k = max(1, int(round(SLOPE_BASELINE_M / cell)))
         b = k * cell
         h = np.asarray(height, dtype=np.float32)
@@ -110,8 +115,9 @@ class SlopeMap:
         del hp, gx, gy
         # Widen by the rover's half width, so a cell is blocked if any part of
         # the rover standing in it would be on a steep spot.
-        r = int(math.ceil(ROVER_HALF_WIDTH_M / cell))
-        fine = maximum_filter(fine, size=2 * r + 1, mode="nearest")
+        r = int(math.ceil(self.widen_m / cell))
+        if r > 0:
+            fine = maximum_filter(fine, size=2 * r + 1, mode="nearest")
         # The A* grid: 2 m cell [i, j] spans x0 + j*b .. x0 + (j+1)*b (the
         # floor convention of plan()); it takes the widened slope at its
         # centre, x0 + (j + 0.5)*b, where plan() puts its waypoints. Every
@@ -276,6 +282,12 @@ class Rover:
         self.haz_steep = np.zeros(slope.fine_deg.shape, dtype=bool)   # no-go, widened by half width
         self.haz_crater = np.zeros(slope.fine_deg.shape, dtype=bool)  # avoided, widened by half width
         self.haz_2m = np.zeros(slope.deg.shape, dtype=bool)           # closed planning cells
+        # Cells closed by the back-and-forth guard (_note_move). Kept apart from
+        # haz_2m because _refresh_cells reassigns haz_2m from the lidar grids
+        # every step, which would reopen them; it ORs these back in.
+        self.pingpong_2m = np.zeros(slope.deg.shape, dtype=bool)
+        self.pingpong_blocks = 0
+        self._moves = []          # sensing rovers: true xy after each of the last three moves
         self.cost_2m = np.zeros(slope.deg.shape, dtype=np.float32)    # extra cost per planning cell
         self.point_turns = 0      # sensing runs: turns in place
         self.n_hazard_cells = 0
@@ -392,6 +404,7 @@ class Rover:
                     best, best_cost = dh, c
         if best is not None:
             self.true = np.array([x + d * math.cos(h + best), y + d * math.sin(h + best), h + best])
+            self._note_move()
             return d, best
         # Aim behind the rover, or no clear heading inside the turn limit:
         # turn in place to the clear heading nearest the aim (the next step
@@ -409,6 +422,7 @@ class Rover:
             # The clear heading nearest the aim is inside the turn limit (the
             # aim is behind and only the way ahead is clear): drive it.
             self.true = np.array([x + d * math.cos(h + turn), y + d * math.sin(h + turn), h + turn])
+            self._note_move()
             return d, turn
         if turn is None:
             turn = math.radians(POINT_TURN_DEG)
@@ -416,6 +430,26 @@ class Rover:
         self.point_turns += 1
         self.stuck_turns += 1
         return 0.0, turn
+
+    def _note_move(self):
+        """Back-and-forth guard for a sensing rover, follow()'s rule: when a
+        move ends where the move before last ended, the turnaround between
+        them is a dead end the fine check refuses and the 2 m planner does
+        not see (the planner reads one widened slope per cell, the fine check
+        every 0.125 m). Close the planning cell of the turnaround so the next
+        local plan goes another way. Without it a camera Scout drove 2 m,
+        turned 180 deg, drove back, turned again, for up to 2,741 steps (19 h;
+        live-nav-first3, 7-88% of every sortie's steps)."""
+        self._moves = (self._moves + [self.true[:2].copy()])[-3:]
+        if len(self._moves) == 3 and np.hypot(*(self._moves[2] - self._moves[0])) < 0.5:
+            sm = self.slope
+            hx, hy = self._moves[1]
+            bi = int(np.clip((hy - sm.y0) // sm.b, 0, self.haz_2m.shape[0] - 1))
+            bj = int(np.clip((hx - sm.x0) // sm.b, 0, self.haz_2m.shape[1] - 1))
+            self.pingpong_2m[bi, bj] = True
+            self.haz_2m[bi, bj] = True
+            self.pingpong_blocks += 1
+            self._moves = []
 
     @staticmethod
     def _aim_along(pts, dist_m):
@@ -467,11 +501,18 @@ class Rover:
         return out
 
     def goal_blocked(self):
-        """True if the goal (taken where the rover believes it is) is on ground
-        the rover may not enter: a sensor hazard or a slope over the limit."""
+        """True if the goal is on ground the rover may not enter: a sensor
+        hazard or a slope over the limit. The goal is held in the rover's
+        believed frame and the hazard grids in the true frame (the lidar's
+        relative geometry placed at the true pose), so the goal is placed
+        where the rover's estimate puts it relative to itself: true + (goal -
+        estimate), as _waypoint_target does. Indexing the grids with the
+        believed-frame goal looked up ground as far off as the estimate's
+        error (10 m and more in live-nav-first3)."""
         if self.goal is None:
             return False
-        gx, gy = self.goal
+        gx = self.true[0] + self.goal[0] - self.estimate[0]
+        gy = self.true[1] + self.goal[1] - self.estimate[1]
         c = self.slope.cell
         i = int(np.clip(round((gy - self.slope.y0) / c), 0, self.haz_fine.shape[0] - 1))
         j = int(np.clip(round((gx - self.slope.x0) / c), 0, self.haz_fine.shape[1] - 1))
@@ -496,7 +537,7 @@ class Rover:
             # cells on a run ground; the whole-map OR and sum were most of a
             # camera step). Same arrays and count as before.
             c, (H, W) = self.slope.cell, self.haz_fine.shape
-            r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+            r = int(math.ceil(self.slope.widen_m / c))
             ci = np.rint((pts[:, 1] - self.slope.y0) / c).astype(int)
             cj = np.rint((pts[:, 0] - self.slope.x0) / c).astype(int)
             i0, i1 = max(int(ci.min()) - r, 0), min(int(ci.max()) + r + 1, H)
@@ -511,7 +552,7 @@ class Rover:
         sm = self.slope
         c = sm.cell
         H, W = self.haz_fine.shape
-        r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+        r = int(math.ceil(self.slope.widen_m / c))
         ci = np.rint((pts[:, 1] - sm.y0) / c).astype(int)
         cj = np.rint((pts[:, 0] - sm.x0) / c).astype(int)
         for di in range(-r, r + 1):
@@ -535,7 +576,7 @@ class Rover:
             return
         sm, c = self.slope, self.slope.cell
         H, W = grid.shape
-        r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+        r = int(math.ceil(self.slope.widen_m / c))
         ci = np.rint((pts[:, 1] - sm.y0) / c).astype(int)
         cj = np.rint((pts[:, 0] - sm.x0) / c).astype(int)
         for di in range(-r, r + 1):
@@ -549,7 +590,7 @@ class Rover:
         sm, c = self.slope, self.slope.cell
         H, W = self.haz_steep.shape
         k = int(round(sm.b / c))
-        r = int(math.ceil(ROVER_HALF_WIDTH_M / c))
+        r = int(math.ceil(self.slope.widen_m / c))
         ci = np.rint((pts[:, 1] - sm.y0) / c).astype(int)
         cj = np.rint((pts[:, 0] - sm.x0) / c).astype(int)
         i0, i1 = max(ci.min() - r, 0) // k * k, min(ci.max() + r + k, H) // k * k
@@ -559,7 +600,8 @@ class Rover:
         shp = ((i1 - i0) // k, k, (j1 - j0) // k, k)
         steep = self.haz_steep[i0:i1, j0:j1].reshape(shp).mean(axis=(1, 3))
         crat = self.haz_crater[i0:i1, j0:j1].reshape(shp).mean(axis=(1, 3))
-        self.haz_2m[i0 // k:i1 // k, j0 // k:j1 // k] = steep >= STEEP_CELL_FRAC
+        win = (slice(i0 // k, i1 // k), slice(j0 // k, j1 // k))
+        self.haz_2m[win] = (steep >= STEEP_CELL_FRAC) | self.pingpong_2m[win]
         self.cost_2m[i0 // k:i1 // k, j0 // k:j1 // k] = CRATER_COST * crat
 
     def _drive_true(self, aim_xy, d):

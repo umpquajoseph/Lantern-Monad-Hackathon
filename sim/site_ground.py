@@ -10,15 +10,18 @@ whole tiles of GroundBuild.tile_m. It holds:
 - the site's LOLA window (sim/psr_sites.py, 5 m or 10 m), smoothed and
   bicubic-upsampled as sim/terrain.py does for the 0.25 m grid. Everything
   finer than the LOLA cell is INTERPOLATED or made up;
-- roughness at wavelengths under two LOLA cells (sim/terrain.py Params);
+- fractal roughness at wavelengths under two LOLA cells, rms
+  Settings.ground_rough_rms_m (docs/terrain/position.md row 3);
 - the run's own craters: exactly the craters `campaign_world(site, seed,
   ranges)` drew for the run (the record's crater map is a subset of them),
   stamped with sim/terrain.py's crater profile. Depths are not part of the
   campaign world; they are drawn here from Cauligi 2023 Table 1 ratios on a
   stream of their own, so the same world always gets the same depths.
 
-The run itself never used this grid: the engine drove on the LOLA window and
-the crater list. This is what the viewer shows.
+Camera runs (Settings.nav = "camera") render, sense and drive on this grid.
+Sampled runs never use it: that engine drives on the LOLA window and the
+crater list. Either way this is what the viewer shows. Rocks are not
+modelled (docs/terrain/position.md row 11).
 
 Output: DATA/terrain/run_ground/<run_id>.npz, readable by
 sim.terrain.load_terrain (height rows north, x0/y0 = centre of cell [0, 0],
@@ -41,7 +44,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sim.psr_sites import load_site
-from sim.settings import GroundBuild, WorldRanges
+from sim.settings import GroundBuild, Settings, WorldRanges
 from sim.terrain import (C23_TABLE1, DATA, Params, _fractal_noise, _world_rng, campaign_world, save_terrain,
                          slope_deg, stamp_craters, upsample)
 
@@ -60,7 +63,7 @@ def crater_depths(craters, seed, p: Params = Params()):
 
 
 def build_ground(site, seed, x_lo, x_hi, y_lo, y_hi, ranges=None, g: GroundBuild = GroundBuild(),
-                 name=None, poses=None):
+                 name=None, poses=None, roughness=True, rough_rms_m=None):
     t0 = time.time()
     ranges = ranges or WorldRanges()
     d = load_site(site)
@@ -87,11 +90,15 @@ def build_ground(site, seed, x_lo, x_hi, y_lo, y_hi, ranges=None, g: GroundBuild
     yc = d["y0"] + c5 * np.arange(i0, i1)
     p = replace(Params(), cell=c, rough_cutoff_m=2 * c5)
     height = upsample(z5, xc, yc, x, y, p.lola_smooth_px)
-    # Roughness under two LOLA cells. The polar mosaics have no height-error
-    # product, so the RMS is Params.synthetic_toterr_m x rough_frac_of_toterr.
-    rng = _world_rng(seed, 4)
-    rough_rms = p.rough_frac_of_toterr * p.synthetic_toterr_m
-    height += _fractal_noise(n, c, p.rough_beta, rng, k_lo=1.0 / p.rough_cutoff_m) * rough_rms
+    # Roughness under two LOLA cells, rms Settings.ground_rough_rms_m
+    # (docs/terrain/position.md row 3). roughness=False
+    # (Settings.ground_roughness): the labelled sensitivity case without it.
+    if rough_rms_m is None:
+        rough_rms_m = Settings().ground_rough_rms_m
+    rough_rms = float(rough_rms_m) if roughness else 0.0
+    if roughness:
+        rng = _world_rng(seed, 4)
+        height += _fractal_noise(n, c, p.rough_beta, rng, k_lo=1.0 / p.rough_cutoff_m) * rough_rms
 
     w = campaign_world(site, seed, ranges)
     depth = crater_depths(w.craters, seed, p)
@@ -109,9 +116,10 @@ def build_ground(site, seed, x_lo, x_hi, y_lo, y_hi, ranges=None, g: GroundBuild
         box=[x_lo, x_hi, y_lo, y_hi], x_left=x_left, y_bottom=y_bottom, side_m=side,
         tiles=int(side // g.tile_m), craters=int(keep.sum()), world_craters=int(len(w.craters)),
         roughness_rms_m=rough_rms, roughness_cutoff_m=p.rough_cutoff_m,
-        note=("Display ground. LOLA upsampled (INTERPOLATED below the LOLA cell) plus made-up roughness; "
-              "craters are the run's world's own (campaign_world), depths drawn here (Cauligi 2023 Table 1). "
-              "The run drove on the LOLA window, not on this grid."),
+        note=("Run ground. LOLA upsampled (INTERPOLATED below the LOLA cell) plus fractal roughness of "
+              f"{rough_rms:g} m rms (docs/terrain/position.md row 3); craters are the run's world's own "
+              "(campaign_world), depths drawn here (Cauligi 2023 Table 1). No rocks (row 11). Camera runs "
+              "drive on this grid; sampled runs drove on the LOLA window."),
         ground_build=asdict(g), world_draws=w.draws, built_s=None,
     )
     meta["built_s"] = round(time.time() - t0, 1)
@@ -133,8 +141,13 @@ def from_run(run_dir, g: GroundBuild = GroundBuild()):
         poses = {k: f[k] for k in f.files}
     # poses columns 1, 2: true x, y (docs/handoffs.md, poses.npz). The dock is the site's.
     xy = np.concatenate([v[:, 1:3] for v in poses.values()] + [np.array([load_site(site)["dock"]])])
+    s = r.get("settings", {})
+    # Records from before Settings.ground_rough_rms_m were built at the old
+    # Params value, 0.3 x 0.234 m.
+    rms = s.get("ground_rough_rms_m", 0.3 * 0.234)
     return build_ground(site, r["seed"], xy[:, 0].min(), xy[:, 0].max(), xy[:, 1].min(), xy[:, 1].max(),
-                        ranges, g, name=r["run_id"], poses=poses)
+                        ranges, g, name=r["run_id"], poses=poses, roughness=s.get("ground_roughness", True),
+                        rough_rms_m=rms)
 
 
 def look(path, site_d, poses=None, close_m=120.0):

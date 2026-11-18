@@ -6,9 +6,9 @@ every worktree shares, and they are git-ignored:
     C:\Monad-Hackathon-Project\ops\mailboxes\<handle>\inbox\
     C:\Monad-Hackathon-Project\ops\mailboxes\<handle>\archive\
 
-Handles (workflow build, from 17 Nov 2026): `leader` (the lead session),
-`workflow` (simulation), `control` (Mission Control), `joseph`. Every earlier handle,
-`ground` included, is retired.
+Handles: `leader` (the lead session) and `joseph`. Every worker of 17 Nov
+(`workflow`, `control`, `ground`) is retired. A new worker gets a new
+handle, a mailbox and a brief in `docs/briefs/`.
 
 ## First thing every session
 

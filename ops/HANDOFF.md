@@ -1,7 +1,8 @@
 # Lantern handoff
 
-17 Nov 2026, 14:50 PST. This is the only current handoff. Read it first,
-then `docs/campaign-spec.md` on `lantern-workflow`, then `ops/PROTOCOL.md`.
+17 Nov 2026, 16:40 PST. This is the only current handoff. Read it first,
+then `docs/campaign-spec.md`, then `ops/PROTOCOL.md`. No workers are
+running: every worker of 17 Nov is retired.
 
 ## What Lantern is for
 
@@ -17,6 +18,9 @@ Moon. It is wrong when its purpose is a better outcome.
 
 ## Where it stands
 
+- **Everything is on one branch, `lantern-workflow`**, checked out in
+  `C:\Monad-Hackathon-Project`: simulation, Mission Control, terrain
+  position and sources. Nothing is on `main`.
 - **Spec finish line 1 is met.** Mission Control plays a real camera run:
   the map grows, a Scout logs a find, a second Scout searches, and the
   find is judged. The verdict so far is always "not confirmed".
@@ -26,24 +30,22 @@ Moon. It is wrong when its purpose is a better outcome.
   Scout-step. One 3-run batch takes 10-25 min. Memory allows one batch at
   a time.
 
-## Branches (pushed, nothing on `main`)
+## Approved-terrain batches (one chosen seed per site; not statistics)
 
-| Branch | Head | Holds |
-|---|---|---|
-| `lantern-workflow` | de465bc | Base, checked out in `C:\Monad-Hackathon-Project`: spec, briefs, this handoff; stale docs in `_archive/` |
-| `lantern-workflow-sim` | 8dcf209 | Simulation fixes and approved terrain defaults; has `lantern-ground` merged |
-| `lantern-workflow-web` | dc5a81f | Mission Control: real runs by default, workflow checkpoints, superseded list |
-| `lantern-ground` | 38e94a6 | Retired; its docs, sources and scripts are copied into `lantern-workflow` |
+Run with `python -m sim.live_runs` into `data/campaigns/<batch>/`.
 
-## Workers (mailboxes in `ops/mailboxes/`)
+| Batch | State | Sorties home / total (s89_134e, s89_014e, haynes) | Finds | Confirmed |
+|---|---|---|---|---|
+| `workflow-first3d` (old terrain, for comparison) | done | 1/4, 2/5, 5/7 | 1 | 0 |
+| `workflow-terrain-main` | done | 6/7, 1/4, 1/4 | 2 | 0 |
+| `workflow-terrain-rough021` | done | 7/8, 2/5, 3/5 | 2 | 0 |
+| `workflow-terrain-rough048` | done | 3/5, 0/3, 3/5 | 1 | 0 |
+| `workflow-terrain-dens106` | cut off at 15:18 by a shutdown, 1 run | | | |
+| density 1,540; map cut 18 m; slope at cell centre; scale walk 0.001 | not run | | | |
 
-| Handle | Folder | Doing |
-|---|---|---|
-| `workflow` | `C:\Monad-Hackathon-workflow-sim` | Running the approved-terrain main case and 7 test cases, one batch at a time, done about 16:05 (`data/campaigns/workflow-terrain-*`) |
-| `control` | `C:\Monad-Hackathon-workflow-web` | Waiting for those batches: mark older batches superseded, play the main case |
-| `ground` | retired 17 Nov 14:58 | Its work is in this branch: `docs/terrain/`, `docs/SOURCES.md`, `docs/sources/`, `bench/terrain/` |
-
-Mission Control runs at http://localhost:8050/ from `control`'s folder.
+Not yet reported or played: nobody has read these per sortie, and Mission
+Control has not been checked on them. Older batches still need the
+"old terrain" superseded reason in `web/js/superseded.js`.
 
 ## Decided
 
@@ -57,6 +59,8 @@ Mission Control runs at http://localhost:8050/ from `control`'s folder.
 - Lost reasons include `stranded` and `stuck`. No free hop home.
 - Beacons only as the brief proposes them: comms relays, not homing.
 - With truth hidden, views draw the believed pose.
+- Mission Control opens the newest batch with no superseded reason; test
+  cases never open by default.
 
 ## Findings so far
 
@@ -69,38 +73,47 @@ Mission Control runs at http://localhost:8050/ from `control`'s folder.
   its position is right.
 - Searches have found real deposits (13 of 13 readings on one) and still
   been judged "not confirmed" on the 6 m rule.
+- s89_014e's way in is too steep on LOLA alone; its Scouts survey little
+  under any terrain setting.
 
-## Next, in order (proposed, not started)
+## Next, in order (proposed, not started; each gets a new worker)
 
-1. `workflow`: check whether camera Scouts make the paper's planned
-   position checks (`check_policy` "fixed", draft Table 1 spacing, 5 min
-   stops). If not, build them. Scouts may only be fixing position when a
-   crater happens into view. This must come before any paper numbers.
-2. A new research worker: source the ice sensor's false-alarm rate (3 of 5 recent finds
-   were on no deposit) and map crater position error in shadow (about
-   20 m per Mazarico 2025, against the assumed 2 m).
-3. Leader: merge the four branches into one base.
+1. Finish the terrain test cases: resume `workflow-terrain-dens106`, run
+   the four not run, report each against `workflow-terrain-main`, and have
+   Mission Control mark the older batches superseded.
+2. Planned position checks: do camera Scouts make the paper's checks
+   (`check_policy` "fixed", draft Table 1 spacing, 5 min stops)? If not,
+   build them. Scouts may only fix position when a crater happens into
+   view. This must come before any paper numbers.
+3. Research: source the ice sensor's false-alarm rate (3 of 5 finds in one
+   test were on no deposit) and map crater position error in shadow
+   (about 20 m per Mazarico 2025, against the assumed 2 m).
 4. Product owner: how many runs the paper needs (1,000 runs is about
    100 h at one batch at a time; estimate).
-5. `workflow`: paper batch on random seeds, then Figure 1 and the fleet
-   and site tables. Due 15 Jan 2027. Site and video 10 Feb, proposal
-   24 Feb.
+5. Paper batch on random seeds, then Figure 1 and the fleet and site
+   tables. Due 15 Jan 2027. Site and video 10 Feb, proposal 24 Feb.
 
 ## Open for the product owner
 
 - Run count (step 4).
 - Approve steps 1-3.
 
-## Retiring workers
+## Workers
 
-A worker retires when its brief is done: its work merged or copied into
-`lantern-workflow`, its brief moved to `_archive/briefs/`, its mailbox to
-`ops/mailboxes/_old/`, its handle struck from `ops/PROTOCOL.md`. A new job
-gets a new worker with a fresh brief. `workflow` and `control` retire after
-the approved-terrain batches are reported and labelled.
+None running. Retired 17 Nov: `workflow` (simulation), `control`
+(Mission Control), `ground` (terrain research). Their briefs are in
+`_archive/briefs/`, their mailboxes in `ops/mailboxes/_old/`, and their
+branches (`lantern-workflow-sim`, `lantern-workflow-web`, `lantern-ground`)
+are merged or copied into `lantern-workflow`.
 
-## How to resume a worker
+A worker retires when its brief is done: work merged into
+`lantern-workflow`, brief to `_archive/briefs/`, mailbox to
+`ops/mailboxes/_old/`, handle struck from `ops/PROTOCOL.md`. A new job
+gets a new worker with a fresh brief in `docs/briefs/`, branched from
+`lantern-workflow`.
 
-Mail it in `ops/mailboxes/<handle>/inbox/` per `ops/PROTOCOL.md`, then
-tell it in its window to read its inbox. Watchers get killed when memory
-runs short; restart them by hand.
+## Running Mission Control
+
+From `C:\Monad-Hackathon-Project`: `python app.py --no-open --port 8050`,
+then open http://localhost:8050/. app.py builds each camera run's ground
+and re-indexes the runs.

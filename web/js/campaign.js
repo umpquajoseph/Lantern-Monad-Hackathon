@@ -2,6 +2,7 @@
 // "Campaign simulator"): the index of batches and summary rows, one run's
 // record, and its pose rows. Nothing here draws.
 import { Run } from "./data.js";
+import { supersededLong } from "./superseded.js";
 
 export const SCOUT_COLOR = { S1: "#5aa7ff", S2: "#f2994a", S3: "#b58cff", S4: "#4fd1b5", S5: "#f06a9a" };
 export const STATUS_COLOR = { find: "#e0b84a", confirmed: "#4fbf72", unconfirmed: "#8a9099", drilled: "#58c8ff" };
@@ -14,6 +15,13 @@ export const TIME_KINDS = [
 ];
 export const OUTCOME_WORD = { showcase: "showcase run", ok: "home with reserve", below_reserve: "home below reserve", fault_return: "turned back on a fault", lost: "lost" };
 export const OUTCOME_SHORT = { showcase: "showcase", ok: "", below_reserve: "below reserve", fault_return: "fault", lost: "lost" };
+
+
+const T_EPS_S = 0.5;   // display only: float32 rounding of pose times, see FleetRun.findsAt
+
+// A searcher gave up before reaching a find (docs/handoffs.md `search_abandoned`,
+// reason `unreached`). `search_unreached` is its earlier name, in workflow-first3.
+export const isUnreached = (e) => e.type === "search_unreached" || (e.type === "search_abandoned" && e.reason === "unreached");
 
 async function fetchOk(url) {
   const r = await fetch(url);
@@ -52,7 +60,7 @@ export class CampaignRun {
     this.sortieById = Object.fromEntries(rec.sorties.map((s) => [s.sortie_id, s]));
     this.events = rec.events.slice().sort((a, b) => a.t - b.t);
     // The ice map's events only: a record can hold tens of thousands of sightings and checks.
-    this.iceEvents = this.events.filter((e) => e.type === "find" || e.type === "search_end" || e.type === "drill" || e.type === "search_start");
+    this.iceEvents = this.events.filter((e) => e.type === "find" || e.type === "search_end" || e.type === "drill" || e.type === "search_start" || e.type === "search_abandoned" || e.type === "search_unreached");
     this.addedBy = {};
     for (const c of rec.crater_map.added || []) (this.addedBy[c.after_sortie] ||= []).push(c);
   }
@@ -78,10 +86,12 @@ export class CampaignRun {
   findsFrom(events) {
     const m = new Map();
     for (const e of events) {
-      if (e.type === "find") m.set(e.find_id, { ...e, status: "find", searches: [], drill: null });
+      if (e.type === "find") m.set(e.find_id, { ...e, status: "find", searches: [], unreached: [], drill: null });
       const f = m.get(e.find_id);
       if (!f) continue;
       if (e.type === "search_end") { f.status = e.result; f.searches.push(e); }
+      // A searcher that could not reach the find: no search, status unchanged.
+      if (isUnreached(e)) f.unreached.push(e);
       if (e.type === "drill") { f.status = "drilled"; f.drill = e; }
     }
     return [...m.values()];
@@ -196,8 +206,21 @@ export function fitPage() {
 }
 
 // Every banner a record needs: the showcase note (sim/showcase.py), then what is a stand-in.
-export function bannersOf(rec) {
-  return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec));
+export function bannersOf(rec, batch = null) {
+  return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec)) + supersededBanner(batch) + standinBanner(sensitivityOf(rec.settings), "Sensitivity");
+}
+
+// Settings.ground_roughness false (workflow fyi 20261117-132516): the labelled
+// sensitivity case, run ground without its roughness layer. `s` is a record's
+// settings or a summary row; the column may be absent (older runs: roughness on).
+export const NO_ROUGH_NOTE = "sensitivity case: the run ground has no roughness layer (ground_roughness off), not the default world";
+export function sensitivityOf(s) {
+  const v = s && s.ground_roughness;
+  return v === false || v === "False" || v === "false" ? NO_ROUGH_NOTE : null;
+}
+
+export function supersededBanner(batch) {
+  return standinBanner(supersededLong(batch), "Superseded");
 }
 
 export function esc(s) {
@@ -321,7 +344,10 @@ export class FleetRun extends Run {
   // with their status. world.js draws each with its 95% bound.
   findsAt(k) {
     if (this._finds.has(k)) return this._finds.get(k);
-    const T = this.times[k];
+    // Pose times are float32 (poses.bin): at campaign times near 3e5 s a step
+    // lands up to ~0.06 s before the float64 event it was logged at, so an
+    // event counts from the step whose time is within T_EPS_S of it.
+    const T = this.times[k] + T_EPS_S;
     const list = this.cr.findsFrom(this.cr.iceEvents.filter((e) => e.t <= T)).map((f) => ({
       find_id: f.find_id, agency: f.scout, x: f.est[0], y: f.est[1], sigma: f.bound95, status: f.status, checks: [],
       reading: f.reading_wt, sortie_id: f.sortie_id, searches: f.searches, drill: f.drill, tx: f.x, ty: f.y,

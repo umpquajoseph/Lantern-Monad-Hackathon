@@ -32,7 +32,7 @@ async function main() {
     $("loading").textContent = String(e.message).includes("assets") ? "Terrain assets missing. Run python app.py." : "Run not found.";
     throw e;
   }
-  const banners = bannersOf(cr.rec);
+  const banners = bannersOf(cr.rec, cr.batch);
   if (banners) { $("standin-slot").innerHTML = banners; $("page").classList.add("has-banner"); }
   fitPage();
   const want = P.get("sortie");

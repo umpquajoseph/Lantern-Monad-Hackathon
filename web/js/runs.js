@@ -1,5 +1,5 @@
 // Runs list: every run in web/campaigns/index.json with its setup and results.
-import { loadIndex, fmtNum, standinBanner, esc } from "./campaign.js";
+import { loadIndex, fmtNum, standinBanner, supersededBanner, sensitivityOf, NO_ROUGH_NOTE, esc } from "./campaign.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -110,7 +110,8 @@ function fillFilters() {
   $("f-policy").innerHTML = opts(runs.map((r) => r.check_policy), (v) => v);
   $("f-refine").innerHTML = opts(runs.map((r) => String(r.map_refinement)), (v) => (v === "true" ? "on" : "off"));
   state.f = { scouts: "", policy: "", refine: "", q: $("f-q").value.trim().toLowerCase() };
-  $("standin-slot").innerHTML = standinBanner(state.batch.showcase, "Showcase") + standinBanner(state.batch.standin);
+  $("standin-slot").innerHTML = standinBanner(state.batch.showcase, "Showcase") + standinBanner(state.batch.standin) + supersededBanner(state.batch.batch_id)
+    + (state.batch.runs.some((r) => sensitivityOf(r)) ? standinBanner(`Some runs in this batch are a ${NO_ROUGH_NOTE}.`, "Sensitivity") : "");
 }
 
 function head() {

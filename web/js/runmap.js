@@ -32,7 +32,7 @@ async function main() {
   const rec = run.rec;
   $("run-title").textContent = rec.run_id;
   document.title = `Lantern · ${rec.run_id}`;
-  const banners = bannersOf(rec);
+  const banners = bannersOf(rec, run.batch);
   if (banners) { $("standin-slot").innerHTML = banners; $("page").classList.add("has-banner"); }
   fitPage();
 

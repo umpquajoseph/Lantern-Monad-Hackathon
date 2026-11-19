@@ -54,3 +54,38 @@ def tilt_deg(height, cell: float, side: float = FOOTPRINT_M):
     gx = correlate(h, kx, mode="nearest")
     gy = correlate(h, ky, mode="nearest")
     return np.degrees(np.arctan(np.hypot(gx, gy)))
+
+
+def _square(side: float):
+    s = np.arange(-side / 2 + _SUB_M / 2, side / 2, _SUB_M)
+    X, Y = np.meshgrid(s, s)
+    return X.ravel(), Y.ravel()
+
+
+def plane_at(height_fn, x: float, y: float, heading: float, side: float = FOOTPRINT_M):
+    """(z0, gx, gy): the least-squares plane z = z0 + gx dx + gy dy of the ground
+    under a side x side footprint centred on (x, y) and turned to `heading`.
+    height_fn(xs, ys) gives the ground (bilinear between grid points, as the
+    sim drives it). A square's second moments are the same in every
+    direction, so the fit is that of tilt_kernels() at any heading."""
+    a, b = _square(side)
+    c, s = np.cos(heading), np.sin(heading)
+    dx, dy = c * a - s * b, s * a + c * b
+    z = np.asarray(height_fn(x + dx, y + dy), dtype=np.float64)
+    z0 = float(z.mean())
+    gx = float((dx * (z - z0)).sum() / (dx * dx).sum())
+    gy = float((dy * (z - z0)).sum() / (dy * dy).sum())
+    return z0, gx, gy
+
+
+def body_axes(gx: float, gy: float, heading: float):
+    """(3, 3) rotation, columns the body's forward, left and up in the local
+    world frame, for a rover resting on the plane of gradient (gx, gy) and
+    facing `heading`: up is the plane's normal, forward the heading's
+    direction projected onto the plane (so the heading's yaw is kept)."""
+    c, s = np.cos(heading), np.sin(heading)
+    n = np.array([-gx, -gy, 1.0])
+    n /= np.linalg.norm(n)
+    f = np.array([c, s, gx * c + gy * s])
+    f /= np.linalg.norm(f)
+    return np.column_stack([f, np.cross(n, f), n])

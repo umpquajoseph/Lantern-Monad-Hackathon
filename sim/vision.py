@@ -152,6 +152,7 @@ class Vision:
         self.scene = scene
         self.rng = rng
         self.cam = scene.camera_model()
+        self.axes = _level_axes(self.cam["pitch_deg"], self.cam["camera_height_m"])
         self.depth_model = depth_model
         self.contour_filter = contour_filter
         c = self.cam
@@ -159,6 +160,14 @@ class Vision:
         v = (c["cy"] - (np.arange(c["height"]) + 0.5)) / c["fy"]
         U, V = np.meshgrid(u, v)
         self._cos = 1.0 / np.sqrt(1.0 + U * U + V * V)   # depth along the optical axis / range along the ray
+
+    def set_pose(self, pose):
+        """The frame's body attitude, for a rover at the true pose: the camera's
+        axes in the level rover frame (sim/scene.py rover_axes). The rover is
+        assumed to know its tilt exactly (inclinometer or IMU; assumed). A
+        scene without rover_axes (sim/calibrate.py's worker _Cam) stays level."""
+        if hasattr(self.scene, "rover_axes"):
+            self.axes = self.scene.rover_axes(pose)
 
     # -- helpers ------------------------------------------------------------
     def noisy_range(self, rng_m, cos, n=None):
@@ -183,16 +192,17 @@ class Vision:
         """(h, w, 3) rover-frame points [x_fwd, y_left, z_up] from the camera, with stereo depth
         noise. nd: the frame's noisy_depth(), if already drawn."""
         noisy = self.noisy_depth(depth) if nd is None else nd
-        return self.scene.depth_to_rover(noisy.astype(np.float32))
+        return self.scene.depth_to_rover(noisy.astype(np.float32), self.axes)
 
     def _rover_points(self, rng_m, v, u):
-        """Rover-frame [x_fwd, y_left] of pixels (v, u) at range rng_m along their rays."""
-        c = self.cam
+        """Rover-frame [x_fwd, y_left] of pixels (v, u) at range rng_m along their
+        rays, from the pose (the camera's axes and offset: self.axes)."""
+        c, a = self.cam, self.axes
         U = (u + 0.5 - c["cx"]) / c["fx"]
         V = (c["cy"] - (v + 0.5)) / c["fy"]
-        z_eye = rng_m * self._cos[v, u]
-        p = math.radians(c["pitch_deg"])
-        return np.column_stack([z_eye * (math.cos(p) + V * math.sin(p)), -z_eye * U])
+        z_eye = np.asarray(rng_m * self._cos[v, u], np.float64)
+        P = z_eye[:, None] * (a["fwd"][None, :2] + U[:, None] * a["right"][None, :2] + V[:, None] * a["up"][None, :2])
+        return P + a["offset"][None, :]
 
     # -- rims -------------------------------------------------------------------
     def rims(self, img, depth, P=None, nd=None):
@@ -342,6 +352,14 @@ class Vision:
         return self.rims(img, depth, P, nd), *self.hazards(depth, P)
 
 
+def _level_axes(pitch_deg, camera_height_m):
+    """Camera axes of a level body in the rover frame (sim/scene.py level_axes),
+    from a camera model alone."""
+    p = math.radians(pitch_deg)
+    return dict(fwd=np.array([math.cos(p), 0.0, -math.sin(p)]), right=np.array([0.0, -1.0, 0.0]),
+                up=np.array([math.sin(p), 0.0, math.cos(p)]), offset=np.zeros(2), level=np.eye(3))
+
+
 def rover_to_world(pts, pose):
     """Rover-frame [x_forward, y_left] -> world (x, y), for a pose (x, y, heading)."""
     pts = np.asarray(pts, float).reshape(-1, 2)
@@ -366,19 +384,20 @@ def draw_plan(img, plan_world, pose, scene, hazards_world=None):
     out = np.ascontiguousarray(img).copy()
     cm = scene.camera_model()
     fx, fy, cx, cy = cm["fx"], cm["fy"], cm["cx"], cm["cy"]
-    p = math.radians(cm["pitch_deg"])
-    fwd_c = np.array([math.cos(p), 0.0, -math.sin(p)])
-    right_c = np.array([0.0, -1.0, 0.0])
-    up_c = np.array([math.sin(p), 0.0, math.cos(p)])
+    ax = scene.rover_axes(pose)   # the camera tilts with the body (sim/scene.py body_frame)
+    fwd_c, right_c, up_c = ax["fwd"], ax["right"], ax["up"]
     x, y, h = pose
     o = scene.origin
-    cam_z = float(scene.grid.height(x - o[0], y - o[1])) + cm["camera_height_m"]
+    G, R = scene.body_frame(pose)
+    cam_z = float(G[2] + cm["camera_height_m"] * R[2, 2])
+    ox, oy = ax["offset"]
 
     def project(wxy):
         wxy = np.asarray(wxy, float).reshape(-1, 2)
         gz = scene.grid.height(wxy[:, 0] - o[0], wxy[:, 1] - o[1]) + 0.05
         dx, dy = wxy[:, 0] - x, wxy[:, 1] - y
-        P = np.column_stack([dx * math.cos(h) + dy * math.sin(h), -dx * math.sin(h) + dy * math.cos(h), gz - cam_z])
+        P = np.column_stack([dx * math.cos(h) + dy * math.sin(h) - ox, -dx * math.sin(h) + dy * math.cos(h) - oy,
+                             gz - cam_z])
         zf = P @ fwd_c
         ok = zf > 0.5
         u = cx + fx * (P @ right_c) / np.where(ok, zf, 1)

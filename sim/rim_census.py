@@ -89,6 +89,7 @@ def census(run_dir, sortie=None, stride=10, max_render=None, display=None):
             rows.append(row)
             continue
         scene.set_rover("A", (x, y, hd))
+        vis.set_pose((x, y, hd))
         img, depth = scene.first_person("A")
         rendered += 1
         if cand:

@@ -64,6 +64,10 @@ try:
     from sim.settings import Settings as _Settings
 except ImportError:  # run as a script from sim/
     from settings import Settings as _Settings
+try:
+    from sim.footprint import plane_at as _plane_at, body_axes as _body_axes
+except ImportError:
+    from footprint import plane_at as _plane_at, body_axes as _body_axes
 CAMERA_HEIGHT_M = _Settings().camera_height_m
 LAMP_BELOW_CAMERA_M = _Settings().lamp_below_camera_m
 # Atha et al. 2024, sec. IV: the field rig camera has a 60 deg horizontal FOV.
@@ -510,13 +514,18 @@ class _Horizon:
 class _Lamp:
     """One rover's lamp: position, aim, and a horizon map for its shadows."""
 
-    def __init__(self, surface, pos, heading, heights=None):
+    def __init__(self, surface, pos, heading, heights=None, axis=None, margin_deg=0.0):
+        """axis: the lamp's aim, a unit vector (default: LAMP_PITCH_DEG below the
+        heading, a level body). margin_deg: added to the shadow map's span for
+        a tilted body (Scene._tilt_margin_deg)."""
         self.pos = np.asarray(pos, dtype=np.float64)
         self.heading = heading
-        p = math.radians(LAMP_PITCH_DEG)
-        self.axis = np.array([math.cos(heading) * math.cos(p), math.sin(heading) * math.cos(p), -math.sin(p)])
+        if axis is None:
+            p = math.radians(LAMP_PITCH_DEG)
+            axis = np.array([math.cos(heading) * math.cos(p), math.sin(heading) * math.cos(p), -math.sin(p)])
+        self.axis = np.asarray(axis, dtype=np.float64)
         # Everything behind the lamp is outside the cone (pitch + outer angle < 90 deg).
-        self.hz = _Horizon(surface, pos, heading, LAMP_HORIZON_HALF_DEG, heights)
+        self.hz = _Horizon(surface, pos, heading, LAMP_HORIZON_HALF_DEG + margin_deg, heights)
 
     def visibility(self, P):
         return self.hz.visibility(P)
@@ -738,6 +747,29 @@ def _rover_polydata():
 # ---------------------------------------------------------------------------
 # The scene.
 # ---------------------------------------------------------------------------
+def _camera_in(G, R):
+    """(C, fwd, right, up) of the mast camera on a body at G with axes R."""
+    p = math.radians(CAMERA_PITCH_DEG)
+    C = G + CAMERA_HEIGHT_M * R[:, 2]
+    fwd = R @ np.array([math.cos(p), 0.0, -math.sin(p)])
+    right = -R[:, 1]
+    up = R @ np.array([math.sin(p), 0.0, math.cos(p)])
+    return C, fwd, right, up
+
+
+def _axes_in_level(R, heading):
+    """Camera axes and xy offset in the level rover frame, for body axes R."""
+    c, s = math.cos(heading), math.sin(heading)
+    L = np.array([[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]]) @ R   # yaw removed: tilt only
+    C, fwd, right, up = _camera_in(np.zeros(3), L)
+    return dict(fwd=fwd, right=right, up=up, offset=C[:2].copy(), level=L)
+
+
+def level_axes():
+    """rover_axes() of a level body (no pitch or roll)."""
+    return _axes_in_level(np.eye(3), 0.0)
+
+
 class Scene:
     """Both views of both rovers. See docs/handoffs.md, Scene section.
 
@@ -805,6 +837,8 @@ class Scene:
             self._mesh_layers = ("lips", "rocks") if display == "full" else ("rocks",)
 
         self.poses = {}     # agency -> (x, y, heading), world
+        self.bodies = {}    # agency -> body_frame() of its pose: (ground point, body axes), local frame
+        self.body_tilt = True   # the body rests on the footprint plane; False: level, as before 18 Nov 2026
         self.lamps = {}     # agency -> _Lamp (local frame), built lazily
         self.blocks = {}    # agency -> fine mesh block
         self.near = {}      # agency -> 5 cm near _Grid (display on)
@@ -876,6 +910,7 @@ class Scene:
     def set_rover(self, agency, true_pose):
         x, y, hd = (float(v) for v in true_pose)
         self.poses[agency] = (x, y, hd)
+        self.bodies[agency] = self.body_frame((x, y, hd))
         self.lamps.pop(agency, None)
         self._lamp_colors_dirty = True
         lx, ly = x - self.origin[0], y - self.origin[1]
@@ -1109,28 +1144,70 @@ class Scene:
         Pixel (u, v), u right and v down from the top-left corner, has its
         centre at (u + 0.5, v + 0.5). Its ray in the camera frame (right,
         up, forward) is ((u + 0.5 - cx) / fx, (cy - v - 0.5) / fy, 1).
-        The camera is pitched down by pitch_deg about its right axis and is
-        levelled (no roll, no terrain tilt): an assumption of this scene.
+        The camera is pitched down by pitch_deg about the body's right axis.
+        The body rests on the ground's plane under its footprint
+        (body_frame), so on a slope the camera pitches and rolls with it;
+        rover_axes(pose) gives the camera's axes in the level rover frame.
         """
         fx, fy, cx, cy = self._intrinsics()
         return dict(width=FP_SIZE[0], height=FP_SIZE[1], fx=fx, fy=fy, cx=cx, cy=cy,
                     pitch_deg=CAMERA_PITCH_DEG, camera_height_m=CAMERA_HEIGHT_M,
                     lamp_below_camera_m=LAMP_BELOW_CAMERA_M, hfov_deg=HFOV_DEG)
 
-    def depth_to_rover(self, depth):
-        """(h, w, 3) rover-frame points [x_forward, y_left, z_up] in metres from the camera."""
+    def depth_to_rover(self, depth, axes=None):
+        """(h, w, 3) rover-frame points [x_forward, y_left, z_up] in metres:
+        x, y from the rover's reference point (the pose), z from the camera.
+        axes: rover_axes(pose) for the frame (default: a level body, whose
+        camera is straight above the pose)."""
         h, w = depth.shape
         fx, fy, cx, cy = self._intrinsics()
         u = (np.arange(w) + 0.5 - cx) / fx
         v = (cy - (np.arange(h) + 0.5)) / fy
         U, V = np.meshgrid(u, v)
         z_eye = depth / np.sqrt(1.0 + U * U + V * V)
-        p = math.radians(CAMERA_PITCH_DEG)
-        # Camera axes in the rover frame.
-        fwd = np.array([math.cos(p), 0.0, -math.sin(p)])
-        right = np.array([0.0, -1.0, 0.0])
-        up = np.array([math.sin(p), 0.0, math.cos(p)])
-        return z_eye[..., None] * (fwd + U[..., None] * right + V[..., None] * up)
+        a = level_axes() if axes is None else axes
+        P = z_eye[..., None] * (a["fwd"] + U[..., None] * a["right"] + V[..., None] * a["up"])
+        P[..., :2] += a["offset"]
+        return P
+
+    # -- the body's attitude --------------------------------------------------
+    def body_frame(self, pose):
+        """(G, R) for a rover at pose (x, y, heading): G its reference point on
+        the ground (local frame: the pose's xy, the footprint plane's height
+        there), R (3, 3) the body's forward, left and up axes in the local
+        frame. The body rests on the least-squares plane of the ground under
+        its footprint (sim/footprint.py, the plane the slope test judges), so
+        it pitches and rolls with the ground. body_tilt False: a level body on
+        the ground under the pose, as before 18 Nov 2026."""
+        x, y, hd = (float(v) for v in pose)
+        lx, ly = x - self.origin[0], y - self.origin[1]
+        if not self.body_tilt:
+            return np.array([lx, ly, float(self.grid.height(lx, ly))]), _body_axes(0.0, 0.0, hd)
+        z0, gx, gy = _plane_at(self.grid.height, lx, ly, hd)
+        return np.array([lx, ly, z0]), _body_axes(gx, gy, hd)
+
+    def rover_axes(self, pose):
+        """The camera's axes in the level rover frame (x along the heading, y
+        left, z up) for a rover at pose, and the camera's xy offset from the
+        pose. This is the rover's knowledge of its own attitude, assumed
+        measured exactly (inclinometer or IMU; assumed). Feeds
+        depth_to_rover() and Vision."""
+        G, R = self.body_frame(pose)
+        return _axes_in_level(R, float(pose[2]))
+
+    def _body(self, agency):
+        b = self.bodies.get(agency)
+        if b is None:
+            b = self.bodies[agency] = self.body_frame(self.poses[agency])
+        return b
+
+    def _tilt_margin_deg(self, agency):
+        """Extra span for the shadow maps when the body is tilted: a rolled or
+        pitched camera and lamp see a little further round in azimuth. Whole
+        degrees of tilt, so a level body keeps exactly the old span."""
+        _, R = self._body(agency)
+        t = math.degrees(math.acos(min(1.0, float(R[2, 2]))))
+        return float(math.ceil(t - 1e-9)) if t > 1e-6 else 0.0
 
     # -- internals ------------------------------------------------------------
     def _pixel_rays(self):
@@ -1150,20 +1227,17 @@ class Scene:
         return fx, fx, w / 2.0, h / 2.0
 
     def _camera_frame(self, agency):
-        x, y, hd = self.poses[agency]
-        lx, ly = x - self.origin[0], y - self.origin[1]
-        C = np.array([lx, ly, float(self.grid.height(lx, ly)) + CAMERA_HEIGHT_M])
-        p = math.radians(CAMERA_PITCH_DEG)
-        fwd = np.array([math.cos(hd) * math.cos(p), math.sin(hd) * math.cos(p), -math.sin(p)])
-        right = np.array([math.sin(hd), -math.cos(hd), 0.0])
-        up = np.cross(right, fwd)
-        return C, fwd, right, up
+        """Camera centre and axes in the local frame: the mast top,
+        CAMERA_HEIGHT_M along the body's up from its reference point,
+        pitched CAMERA_PITCH_DEG below the body's forward."""
+        return _camera_in(*self._body(agency))
 
     def _cam_horizon(self, agency):
         hz = self.cams.get(agency)
         if hz is None:
             C, *_ = self._camera_frame(agency)
-            hz = _Horizon(self.surface, C, self.poses[agency][2], CAMERA_HORIZON_HALF_DEG, self._hz_heights(agency))
+            hz = _Horizon(self.surface, C, self.poses[agency][2], CAMERA_HORIZON_HALF_DEG + self._tilt_margin_deg(agency),
+                          self._hz_heights(agency))
             self.cams[agency] = hz
         return hz
 
@@ -1200,19 +1274,27 @@ class Scene:
         self.timings["near_ms"] = 1e3 * (time.perf_counter() - t)
 
     def _lamp_pos(self, agency):
-        """The lamp, LAMP_BELOW_CAMERA_M straight under the camera (local frame)."""
+        """The lamp, LAMP_BELOW_CAMERA_M under the camera along the body's up (local frame)."""
         C, *_ = self._camera_frame(agency)
-        return C - np.array([0.0, 0.0, LAMP_BELOW_CAMERA_M])
+        return C - LAMP_BELOW_CAMERA_M * self._body(agency)[1][:, 2]
+
+    def _lamp_axis(self, agency):
+        """The lamp's aim: LAMP_PITCH_DEG below the body's forward."""
+        R = self._body(agency)[1]
+        p = math.radians(LAMP_PITCH_DEG)
+        return R @ np.array([math.cos(p), 0.0, -math.sin(p)])
 
     def _hz_heights(self, agency):
         """Heights along the horizon rays from this rover's camera xy, over the
-        wider of the lamp and camera spans. The lamp is straight under the
-        camera, so both maps sample the same points; only the origin height
-        differs (_Horizon applies it)."""
+        wider of the lamp and camera spans. The lamp is under the camera, so
+        both maps sample the same points; only the origin height differs
+        (_Horizon applies it). On a tilted body the lamp sits
+        LAMP_BELOW_CAMERA_M x sin(tilt) aside of the camera's xy (3.5 cm at
+        10 deg); its map is sampled from the camera's xy all the same."""
         hh = self._hzh.get(agency)
         if hh is None:
             C, *_ = self._camera_frame(agency)
-            n = _horizon_n_half(max(LAMP_HORIZON_HALF_DEG, CAMERA_HORIZON_HALF_DEG))
+            n = _horizon_n_half(max(LAMP_HORIZON_HALF_DEG, CAMERA_HORIZON_HALF_DEG) + self._tilt_margin_deg(agency))
             hh = _horizon_heights(self.surface, C[0], C[1], self.poses[agency][2], n)
             self._hzh[agency] = hh
         return hh
@@ -1221,7 +1303,8 @@ class Scene:
         lamp = self.lamps.get(agency)
         if lamp is None:
             C, *_ = self._camera_frame(agency)
-            lamp = _Lamp(self.surface, self._lamp_pos(agency), self.poses[agency][2], self._hz_heights(agency))
+            lamp = _Lamp(self.surface, self._lamp_pos(agency), self.poses[agency][2], self._hz_heights(agency),
+                         axis=self._lamp_axis(agency), margin_deg=self._tilt_margin_deg(agency))
             self.lamps[agency] = lamp
         return lamp
 
@@ -1460,12 +1543,16 @@ class Scene:
                 ren.AddActor(a)
                 pair.append(a)
             self._rover_actors[agency] = tuple(pair)
-        x, y, hd = self.poses[agency]
-        lx, ly = x - self.origin[0], y - self.origin[1]
-        gz = float(self.grid.height(lx, ly))
+        G, R = self._body(agency)   # the model sits on the footprint plane, tilted with it
+        m = vtk.vtkMatrix4x4()
+        for i in range(3):
+            for j in range(3):
+                m.SetElement(i, j, float(R[i, j]))
+            m.SetElement(i, 3, float(G[i]))
         for a in self._rover_actors[agency]:
-            a.SetPosition(lx, ly, gz)
-            a.SetOrientation(0, 0, math.degrees(hd))
+            a.SetPosition(0, 0, 0)
+            a.SetOrientation(0, 0, 0)
+            a.SetUserMatrix(m)
 
     # Third-person overlays ------------------------------------------------
     def _drape(self, xy, lift=DRAPE_M, step=0.5):

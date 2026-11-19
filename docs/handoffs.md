@@ -8,7 +8,12 @@ one only by telling the others and editing this file in the same commit.
 - World frame: metres, x east, y north. On a real LOLA tile, south polar
   stereographic metres, the frame the LOLA files use.
 - Heading: radians, counterclockwise from +x.
-- Rover frame: metres, x forward, y left, origin at the camera.
+- Rover frame: metres, level (z straight up), x along the heading, y left;
+  x, y from the pose, z from the camera. On level ground the camera is
+  straight above the pose, so this is the old "origin at the camera".
+  The body tilts with the ground under its footprint (`scene.body_frame`),
+  and camera and lidar readings are levelled with that known tilt
+  (18 Nov 2026).
 - Uncertainty `sigma`: one number in metres, the filter's 1-sigma radial
   spread, `sqrt(trace(cov) / 2)` of the particle cloud.
 
@@ -78,9 +83,12 @@ img = scene.third_person(agency, overlays)    # (h, w, 3) uint8
 
 - `overlays`: optional dict with `true_track (K, 2)`, `odom_track (K, 2)`,
   `estimate (x, y)`, `sigma` (metres), `finds` (list of `get_finds()` dicts).
-- Also: `scene.camera_model()` gives the intrinsics and pitch, and
-  `scene.depth_to_rover(depth)` turns depth into rover-frame points
-  `[x_fwd, y_left, z_up]` for the vision step.
+- Also: `scene.camera_model()` gives the intrinsics and pitch (on the body),
+  `scene.rover_axes(pose)` the camera's axes in the level rover frame for a
+  pose, and `scene.depth_to_rover(depth, axes)` turns depth into rover-frame
+  points `[x_fwd, y_left, z_up]` for the vision step (`Vision.set_pose(pose)`
+  before each frame). Camera, lamp and lidar sit on the body and pitch and
+  roll with it.
 - The first-person camera sits on the Scout's mast, `Settings.camera_height_m`
   (1.6 m, brief p.6); the lamp is `Settings.lamp_below_camera_m` (0.2 m) below
   it, 60° horizontal field of view (Atha et al. 2024, sections IV and V).

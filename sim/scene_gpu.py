@@ -14,6 +14,8 @@ import numpy as np
 
 import sim.scene as S
 
+MAX_TILT_MARGIN_DEG = 30.0   # numerics: shadow-map span kept for a body tilted up to this; steeper frames clip at it
+
 SRC = r"""
 #define M_PI 3.14159265358979323846
 extern "C" {
@@ -214,10 +216,12 @@ class GpuShade:
         n2 = int(math.ceil((S.LAMP_FADE_END_M - S.HORIZON_NEAR_M) / S.HORIZON_DR_M)) + 2
         self.r = cp.asarray(np.concatenate([r1, S.HORIZON_NEAR_M + S.HORIZON_DR_M * np.arange(1, n2 + 1)]))
         self.R = int(self.r.size)
-        self.nc, self.nl = S._horizon_n_half(S.CAMERA_HORIZON_HALF_DEG), S._horizon_n_half(S.LAMP_HORIZON_HALF_DEG)
-        self.n_hz = max(self.nc, self.nl)
-        self.Hc = cp.empty((2 * self.nc + 1, self.R), cp.float32)
-        self.Hl = cp.empty((2 * self.nl + 1, self.R), cp.float32)
+        # Buffers wide enough for a body tilted MAX_TILT_MARGIN_DEG; each frame
+        # fills the span its tilt needs (Scene._tilt_margin_deg).
+        nc = S._horizon_n_half(S.CAMERA_HORIZON_HALF_DEG + MAX_TILT_MARGIN_DEG)
+        nl = S._horizon_n_half(S.LAMP_HORIZON_HALF_DEG + MAX_TILT_MARGIN_DEG)
+        self.Hc = cp.empty((2 * nc + 1, self.R), cp.float32)
+        self.Hl = cp.empty((2 * nl + 1, self.R), cp.float32)
         w, h = S.FP_SIZE
         self.y = cp.empty(w * h, cp.float32)
         self.depth = cp.empty(w * h, cp.float32)
@@ -229,8 +233,11 @@ class GpuShade:
         w, h = S.FP_SIZE
         hd = float(sc.poses[agency][2])
         lp = sc._lamp_pos(agency)
-        p = math.radians(S.LAMP_PITCH_DEG)
-        axis = np.array([math.cos(hd) * math.cos(p), math.sin(hd) * math.cos(p), -math.sin(p)])
+        axis = sc._lamp_axis(agency)   # aimed with the body (sim/scene.py body_frame)
+        m = min(sc._tilt_margin_deg(agency), MAX_TILT_MARGIN_DEG)
+        self.nc = S._horizon_n_half(S.CAMERA_HORIZON_HALF_DEG + m)
+        self.nl = S._horizon_n_half(S.LAMP_HORIZON_HALF_DEG + m)
+        self.n_hz = max(self.nc, self.nl)
         F = cp.asarray(np.concatenate([C, fwd, right, up]).astype(np.float64))
         lamp32, camp32 = cp.asarray(lp.astype(np.float32)), cp.asarray(C.astype(np.float32))
         lamp64, axis32 = cp.asarray(lp.astype(np.float64)), cp.asarray(axis.astype(np.float32))

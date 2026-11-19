@@ -316,6 +316,10 @@ def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, ma
     height, craters, x0, y0, cell = terrain
     t = time.perf_counter()
     scene = Scene(height, craters, x0, y0, cell, display=display, display_dir=display_dir)
+    # The worker processes place rims with a level camera (_Cam has no
+    # attitude), so the renders stay level too until the ShadowNav rerun
+    # decides whether its rover tilts with the ground.
+    scene.body_tilt = False
     print(f"scene ({scene.display}) built in {time.perf_counter() - t:.0f} s", flush=True)
     vis = Vision(scene, np.random.default_rng(0))
     tree = cKDTree(craters[:, :2])

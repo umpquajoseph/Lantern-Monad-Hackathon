@@ -158,6 +158,7 @@ def measure(n_frames, routes_path, out_dir, chunk=None, rule="head-on"):
             continue
         pose = (px, py, hd)
         scene.set_rover("A", pose)
+        vis.set_pose(pose)
         img, depth = scene.first_person("A")
         # The renderer's depth, as measured in arcshare-1 (nd=depth keeps that measurement
         # reproducible; Vision now reads noisy depth by default).

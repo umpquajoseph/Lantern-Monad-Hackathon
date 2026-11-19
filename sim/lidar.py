@@ -73,21 +73,26 @@ class Lidar:
         self.el = np.radians(V_ANGLES_DEG)
 
     def origin(self, pose):
-        """Lidar position in the scene's local frame, and heading."""
-        sc = self.scene
-        x, y, h = pose
-        lx = x - sc.origin[0] + LIDAR_RIGHT_OF_CAMERA_M * math.sin(h)
-        ly = y - sc.origin[1] - LIDAR_RIGHT_OF_CAMERA_M * math.cos(h)
-        gz = float(sc.grid.height(x - sc.origin[0], y - sc.origin[1]))
-        return np.array([lx, ly, gz + LIDAR_HEIGHT_M]), h
+        """Lidar position in the scene's local frame, and the body's axes R
+        (sim/scene.py body_frame): on the mast head beside the camera, so it
+        pitches and rolls with the body."""
+        G, R = self.scene.body_frame(pose)
+        return G + R @ np.array([0.0, -LIDAR_RIGHT_OF_CAMERA_M, LIDAR_HEIGHT_M]), R
 
     def scan(self, pose):
-        """(points (N, 3) rover frame [fwd, left, up] from the lidar, range image (rows, cols))."""
-        O, h = self.origin(pose)
+        """(points (N, 3) level rover frame [fwd, left, up] from the lidar, range image (rows, cols)).
+        Beams are fixed to the body; the points are levelled with its known
+        tilt (inclinometer or IMU; assumed exact), so hazards are judged on
+        the true ground slope."""
+        O, R = self.origin(pose)
+        h = float(pose[2])
+        c, s = math.cos(h), math.sin(h)
+        self._level = np.array([[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]]) @ R   # body -> level rover frame
         EL, AZ = np.meshgrid(self.el, self.az, indexing="ij")          # (rows, cols)
-        dx = np.cos(EL) * np.cos(AZ + h)
-        dy = np.cos(EL) * np.sin(AZ + h)
-        dz = np.sin(EL)
+        bx, by, bz = np.cos(EL) * np.cos(AZ), np.cos(EL) * np.sin(AZ), np.sin(EL)   # body frame
+        dx = R[0, 0] * bx + R[0, 1] * by + R[0, 2] * bz
+        dy = R[1, 0] * bx + R[1, 1] * by + R[1, 2] * bz
+        dz = R[2, 0] * bx + R[2, 1] * by + R[2, 2] * bz
         from sim.scene import _par   # row-chunked threads; same arithmetic per point
         surf = self.scene.surface
         # March MARCH_BLOCK steps per height call on the rays still live, then
@@ -131,11 +136,14 @@ class Lidar:
         """Range noise and rover-frame points from the noiseless range image."""
         rng = rng + RANGE_NOISE_M * self.rng.standard_normal(rng.shape)
         ok = np.isfinite(rng)
-        # Rover frame: x forward, y left, z up, origin at the lidar.
+        # Body frame, then the level rover frame: x forward, y left, z up, origin at the lidar.
         fx = rng * np.cos(EL) * np.cos(AZ)
         fy = rng * np.cos(EL) * np.sin(AZ)
         fz = rng * np.sin(EL)
         pts = np.column_stack([fx[ok], fy[ok], fz[ok]])
+        L = getattr(self, "_level", None)
+        if L is not None:
+            pts = pts @ L.T
         return pts, rng
 
     def hazards(self, pts, grids=False):
@@ -320,9 +328,15 @@ class Lidar:
         return img
 
     def to_camera_frame(self, centres):
-        """Hazard centres from the lidar origin to the camera origin (rover frame)."""
+        """Hazard centres from the lidar to the rover's reference point (the pose),
+        level rover frame, for the last scan: what rover_to_world() takes. On
+        a level body that is the camera's origin, LIDAR_RIGHT_OF_CAMERA_M to
+        the lidar's left."""
         c = np.asarray(centres, float).reshape(-1, 2).copy()
-        c[:, 1] -= LIDAR_RIGHT_OF_CAMERA_M   # the lidar sits to the right (negative y_left)
+        L = getattr(self, "_level", None)
+        off = (np.array([0.0, -LIDAR_RIGHT_OF_CAMERA_M, LIDAR_HEIGHT_M]) if L is None
+               else L @ np.array([0.0, -LIDAR_RIGHT_OF_CAMERA_M, LIDAR_HEIGHT_M]))
+        c += off[:2]
         return c
 
 

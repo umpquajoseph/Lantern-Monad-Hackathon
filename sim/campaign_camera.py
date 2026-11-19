@@ -523,6 +523,7 @@ class CameraSortie(Sortie):
             self.vis.rng.draw_ahead((FP_SIZE[1], FP_SIZE[0]))   # rims' depth noise, or the kept-stream draw
         if look:
             rig.scene.set_rover(CAM, pose)
+            self.vis.set_pose(pose)   # the camera tilts with the body; vision levels with the known tilt
             img, depth = rig.scene.first_person(CAM)
             rig.frames["rendered"] += 1
         else:

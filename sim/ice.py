@@ -15,6 +15,11 @@ from dataclasses import dataclass, asdict
 
 import numpy as np
 
+try:
+    from sim.settings import Settings as _Settings
+except ImportError:  # run as a script from sim/
+    from settings import Settings as _Settings
+
 # PROSPECT brief p.9: "the ~1 wt% ice threshold we assumed". The team's own
 # assumption, not yet sourced; a reading at or above it counts as a find.
 FIND_THRESHOLD_WT = 1.0
@@ -26,7 +31,11 @@ RICH_PEAK_WT = 5.6
 SENSE_DEPTH_M = 1.0
 
 FOOTPRINT_RADIUS_M = 1.0   # assumed: sensor averages over a disc this wide on the ground
-SENSOR_NOISE_WT = 0.15     # assumed: 1-sigma reading noise
+# 1-sigma reading noise: VIPER NSS's 0.5 wt% at 3-sigma, scaled to the Scout's
+# reading spacing and speed (sim/settings.py Settings.sensor_noise_wt, sourced there).
+SENSOR_NOISE_WT = _Settings().sensor_noise_wt
+# Polar regolith's background hydrogen, in every reading (Settings.background_weh_wt, LEND).
+BACKGROUND_WEH_WT = _Settings().background_weh_wt
 DEPOSIT_RADIUS_M = 6.0     # assumed: radius of a deposit's 1 wt% contour
 
 
@@ -74,4 +83,4 @@ class IceSensor:
 
     def read(self, x, y):
         c = self.field.concentration(x + self._ox, y + self._oy).mean()
-        return max(0.0, float(c + self.rng.normal(0.0, SENSOR_NOISE_WT)))
+        return max(0.0, float(c + BACKGROUND_WEH_WT + self.rng.normal(0.0, SENSOR_NOISE_WT)))

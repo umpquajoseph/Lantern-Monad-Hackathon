@@ -331,6 +331,7 @@ class Lidar:
         if len(p):
             xy = rover_to_world(self.to_camera_frame(p[:, :2]), pose)
             boxes.append(mem.add(np.column_stack([xy, self._O[2] + p[:, 2]])))
+        mem.mark_view(rover_to_world(self.to_camera_frame(np.zeros((1, 2))), pose)[0], float(pose[2]))
         boxes += mem.expire()
         # A cell's verdict reads the cells up to RING_CELLS away (its crater ring), so
         # every cell that near a changed one is judged again.
@@ -539,7 +540,9 @@ class HazardMemory:
         if t is None:
             T = self.T
             t = dict(m=np.zeros((len(MOMENT_KEYS), T, T), np.float32), zmax=np.full((T, T), -np.inf, np.float32),
-                     last=np.zeros((T, T), np.int64), verdict=np.zeros((T, T), np.int8))
+                     last=np.zeros((T, T), np.int64), verdict=np.zeros((T, T), np.int8),
+                     seen=np.full((T, T), -MAX_IDLES, np.int64),   # last scan with the cell in the judged band
+                     oldest=math.inf, touched=-MAX_IDLES, seen_max=-MAX_IDLES)   # scalars: expire() skips quiet tiles
             self.tiles[key] = t
         return t
 
@@ -576,21 +579,74 @@ class HazardMemory:
                 t["m"][k] += np.bincount(idx, weights=w[name][sel], minlength=T * T).reshape(T, T).astype(np.float32)
             np.maximum.at(t["zmax"].reshape(-1), idx, z[sel].astype(np.float32))
             t["last"].reshape(-1)[idx] = self.cycle
+            t["oldest"] = min(t["oldest"], self.cycle)
+            t["touched"] = self.cycle
         return int(ci.min()), int(ci.max()) + 1, int(cj.min()), int(cj.max()) + 1
+
+    def mark_view(self, lidar_xy, heading):
+        """Note the cells inside this scan's judged band (HAZ_RANGE_M x
+        +-HAZ_HALF_WIDTH_M, within the H_FOV_DEG field) from the lidar at
+        lidar_xy facing heading, returns or not. Only why_missed() reads it."""
+        c, (lx, ly) = self.c, lidar_xy
+        ch, sh = math.cos(heading), math.sin(heading)
+        corners = [(a, b) for a in HAZ_RANGE_M for b in (-HAZ_HALF_WIDTH_M, HAZ_HALF_WIDTH_M)]
+        wx = [lx + ch * a - sh * b for a, b in corners]
+        wy = [ly + sh * a + ch * b for a, b in corners]
+        i0, i1 = int(math.floor(min(wx) / c)), int(math.floor(max(wx) / c)) + 1
+        j0, j1 = int(math.floor(min(wy) / c)), int(math.floor(max(wy) / c)) + 1
+        X = (np.arange(i0, i1)[:, None] + 0.5) * c - lx
+        Y = (np.arange(j0, j1)[None, :] + 0.5) * c - ly
+        fx, fy = ch * X + sh * Y, -sh * X + ch * Y
+        inb = ((fx >= HAZ_RANGE_M[0]) & (fx < HAZ_RANGE_M[1]) & (np.abs(fy) < HAZ_HALF_WIDTH_M)
+               & (np.abs(np.arctan2(fy, fx)) <= math.radians(H_FOV_DEG / 2)))
+        for key, src, dst in self._parts(i0, i1, j0, j1):
+            part = inb[dst]
+            if not part.any():
+                continue
+            t = self._tile(key)
+            t["seen"][src][part] = self.cycle
+            t["seen_max"] = self.cycle
+
+    def why_missed(self, x, y, slope_mode="footprint"):
+        """Why the map holds no hazard at world (x, y), for a step onto ground
+        truly over the limit: "never_in_band" (no scan had it in the judged
+        band within MAX_IDLES: under 2 m, beside or behind the lidar),
+        "shadow" (in the band but under MIN_RETURNS returns: hidden behind
+        terrain), "too_sparse" (returns, but too few or too narrow a spread to
+        fit the footprint plane), "under_read" (judged, tilt at or under the
+        limit), or "judged" (the map calls it a hazard; the rover's grids
+        lag)."""
+        c, m = self.c, RING_CELLS
+        i, j = int(math.floor(x / c)), int(math.floor(y / c))
+        base, verdict = self.window(i - m, i + m + 1, j - m, j + m + 1)
+        if verdict[m, m]:
+            return "judged"
+        t = self.tiles.get((i // self.T, j // self.T))
+        seen = t is not None and self.cycle - int(t["seen"][i % self.T, j % self.T]) < MAX_IDLES
+        if base["n"][m, m] < MIN_RETURNS:
+            return "shadow" if seen else "never_in_band"
+        g = _judge_moments(base, c, slope_mode)
+        return "too_sparse" if not np.isfinite(g["tilt"][m, m]) else "under_read"
 
     def expire(self):
         """Table 1 max-idles: zero every cell no scan has touched for MAX_IDLES scans,
-        and drop tiles left empty. Returns the boxes of the tiles that lost cells."""
-        out, gone, T = [], [], self.T
+        and drop tiles left with nothing in them. Returns the boxes of the tiles that
+        lost cells. A tile whose oldest held cell is younger than MAX_IDLES is skipped
+        without looking at its cells (speed only)."""
+        out, gone, T, now = [], [], self.T, self.cycle
         for (ti, tj), t in self.tiles.items():
-            held = t["m"][0] > 0
-            old = held & (self.cycle - t["last"] >= MAX_IDLES)
-            if old.any():
-                t["m"][:, old] = 0.0
-                t["zmax"][old] = -np.inf
-                out.append((ti * T, (ti + 1) * T, tj * T, (tj + 1) * T))
-                if not (held & ~old).any() and not t["verdict"].any():
-                    gone.append((ti, tj))
+            if now - t["oldest"] >= MAX_IDLES:
+                held = t["m"][0] > 0
+                old = held & (now - t["last"] >= MAX_IDLES)
+                if old.any():
+                    t["m"][:, old] = 0.0
+                    t["zmax"][old] = -np.inf
+                    out.append((ti * T, (ti + 1) * T, tj * T, (tj + 1) * T))
+                live = held & ~old
+                t["oldest"] = int(t["last"][live].min()) if live.any() else math.inf
+            if (t["oldest"] == math.inf and now - t["touched"] >= MAX_IDLES and now - t["seen_max"] >= MAX_IDLES
+                    and not t["verdict"].any()):
+                gone.append((ti, tj))
         for key in gone:
             del self.tiles[key]
         return out

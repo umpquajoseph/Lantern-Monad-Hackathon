@@ -1249,7 +1249,8 @@ class Campaign:
                                          "pingpong_blocks": so.rover.pingpong_blocks,
                                          "drive_overhead": rnd(so.overhead(), 3),
                                          "rim_points": so.n_rim_pts, "rim_matched": so.n_rim_matched,
-                                         "rim_wrong": so.n_rim_wrong, "rim_unpaired": so.n_rim_unpaired}
+                                         "rim_wrong": so.n_rim_wrong, "rim_unpaired": so.n_rim_unpaired,
+                                         **getattr(so, "extra", {})}
         return so
 
     def _apply(self, so: Sortie, t_arr):

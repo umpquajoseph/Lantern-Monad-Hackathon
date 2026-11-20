@@ -223,6 +223,12 @@ class Settings:
                                      "and the lidar hazards. Labelled test cases: 'widened' (slope across 2 m, "
                                      "widened by the 0.83 m half width; the main case until 18 Nov 2026) and "
                                      "'point' (2 m slope, no widening)")
+    plan_slope: str = S("orbital", "sim/rover.py SlopeMap.use_orbital: the slope camera Scouts plan and steer on. "
+                                   "'orbital' = the site's LOLA 5 m slope product as the site file holds it "
+                                   "(sim/psr_sites.py 'ldsm'), the orbital map VIPER's strategic plans use "
+                                   "(Shirley and Balaban 2022; Ennico-Smith 2023), plus the lidar's map. "
+                                   "Labelled test case 'truth': the ground's own 0.25 m footprint tilt, which "
+                                   "no Scout has (the main case until 20 Nov 2026)")
     crater_n_ge10_per_km2: float = S(336.0, "Minton 2019 sec. 1.2, Fit 1 (Apollo 15): docs/terrain/position.md "
                                             "row 4. A single run's density (camera runs); drawn batches draw "
                                             "WorldRanges.crater_n_ge10_per_km2. 106 and 1,540 are labelled test cases")

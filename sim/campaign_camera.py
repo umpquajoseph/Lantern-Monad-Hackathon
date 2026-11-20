@@ -187,6 +187,15 @@ class CameraRig:
         self.scene = Scene(h, cr, x0, y0, cell, display=s.cam_display, display_dir=self.display_dir)
         # docs/terrain/position.md row 9: the Scout's footprint tilt, or a test case.
         self.slope = SlopeMap(h, x0, y0, cell, mode=s.slope_test)
+        if s.plan_slope == "orbital":
+            # What the Scout knows of the ground before it sees it: the site's
+            # LOLA 5 m slope (Settings.plan_slope; SlopeMap.use_orbital).
+            from sim.psr_sites import load_site
+            site = load_site(w.site)
+            self.slope.use_orbital(site["slope"], site["x0"], site["y0"], site["cell"])
+            del site
+        elif s.plan_slope != "truth":
+            raise ValueError(f"plan_slope {s.plan_slope!r}: 'orbital' or 'truth'")
         n = h.shape[0]
         self.ground = {"file": f"run_ground/{self.ground_path.name}", "x0": float(x0), "y0": float(y0),
                        "cell": float(cell), "bounds": [rnd(x0 - cell / 2, 2), rnd(y0 - cell / 2, 2),
@@ -359,6 +368,11 @@ class CameraSortie(Sortie):
         self.prog_m = self.prog_t = 0.0      # overhead(): progress toward goals (m) and the drive time it took (s)
         self.point_turns = 0
         self.skipped = 0
+        # Sortie record fields from this sortie alone (sim/campaign.py sortie_extra; docs/handoffs.md).
+        self.extra = {"plan_slope": camp.s.plan_slope, "steep_unflagged": 0, "steep_unflagged_by": {},
+                      "steep_unflagged_true_deg_max": None, "steep_unflagged_lola_deg_mean": None,
+                      "steep_flagged_by": {}}
+        self._orb_sum = 0.0
         self.goal_xy = (float(wx), float(wy))
         self.st = {k: [] for k in ("step", "particles", "rims", "rim_map", "rim_map_m", "rim_true", "rim_wrong", "lidar",
                                    "haz", "haz_kind", "plan")}
@@ -492,8 +506,11 @@ class CameraSortie(Sortie):
     def _step(self):
         s, r, rig = self.s, self.rover, self.rig
         tp = time.perf_counter()
+        n_steep = len(r.steep_steps)
         d, dh = r.follow()
         rig.t["planner"] += time.perf_counter() - tp
+        if len(r.steep_steps) > n_steep:
+            self._tally_steep(r.steep_steps[n_steep:])
         if d == 0.0:
             self.point_turns += 1
         self.k += 1
@@ -508,6 +525,24 @@ class CameraSortie(Sortie):
         dt = d / self.v if d > 0 else abs(dh) / math.radians(s.cam_turn_rate_deg_s)
         self._after_move(d, dt, checks=False)
         self._pass_update(rims)
+
+    def _tally_steep(self, steps):
+        """Count steps onto ground truly over the limit (Rover._note_true_steep)
+        by what the Scout knew there; for the unflagged ones, why the lidar's
+        map missed it (HazardMemory.why_missed, the map as it stood when the
+        Scout chose the step). Every unflagged step is also LOLA averaging:
+        the orbital slope there was at or under the limit."""
+        x = self.extra
+        for px, py, tdeg, orb, flag in steps:
+            if flag == "none":
+                why = self.lid.memory.why_missed(px, py, getattr(self.lid, "slope_mode", "footprint"))
+                x["steep_unflagged"] += 1
+                x["steep_unflagged_by"][why] = x["steep_unflagged_by"].get(why, 0) + 1
+                x["steep_unflagged_true_deg_max"] = rnd(max(x["steep_unflagged_true_deg_max"] or 0.0, tdeg), 2)
+                self._orb_sum += orb
+                x["steep_unflagged_lola_deg_mean"] = rnd(self._orb_sum / x["steep_unflagged"], 2)
+            else:
+                x["steep_flagged_by"][flag] = x["steep_flagged_by"].get(flag, 0) + 1
 
     def _sense_and_log(self, moved, odo=None):
         """Render at the true pose, find rims, scan, update the filter, label

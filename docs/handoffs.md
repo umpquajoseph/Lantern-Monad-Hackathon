@@ -685,9 +685,12 @@ an offset array `o` of length K+1 (step k owns rows `o[k]:o[k+1]`).
 | `<sid>.lidar` | uint16 (K, 20, 121) | range image, every other beam row and column of sim/lidar.py's 40 x 241 scan (elevations `lidar_el_deg`, azimuths `lidar_az_deg`), centimetres, 0 = no return |
 | `<sid>.haz_o`, `<sid>.haz`, `<sid>.haz_kind` | int32 (K+1), float16 (H, 2), uint8 (H) | lidar hazard cells `[x_forward, y_left]` from the lidar, kind 0 crater, 1 slope, 2 rock |
 | `<sid>.plan_o`, `<sid>.plan` | int32 (K+1), float32 (P, 2) | the route the Scout is about to drive, true frame world xy, from the Scout forward, about 20 m (sim/rover.py `planned_route`) |
+| `<sid>.map_o`, `<sid>.map_ij`, `<sid>.map_v` | int32 (K+1), int32 (C, 2), uint8 (C) | the lidar's merged map (sim/lidar.py `HazardMemory`, what the Scout plans on) as the cells whose verdict changed at each step: world cell `[i, j]` = `floor(x / map_cell_m)`, `floor(y / map_cell_m)`, verdict 0 none, 1 crater, 2 rock, 3 slope. Replaying them in order from an empty map gives the map at any step. From 20 Nov 2026 |
+| `<sid>.steep`, `<sid>.steep_why` | float32 (S, 5), uint8 (S) | each step onto true footprint tilt over 15 deg (sim/rover.py `_note_true_steep`): `[step index, x, y, true deg, orbital deg]`, and why: 0 never_in_band, 1 shadow, 2 too_sparse, 3 under_read, 4 judged (unflagged; sim/lidar.py `why_missed`), 5 orbital, 6 lidar_steep, 7 lidar_crater (flagged). Empty when the Scout plans on the truth. From 20 Nov 2026 |
 | `map_craters` | float32 (M, 3) | every map crater any rim paired with, `[x, y, d]` |
 | `true_craters` | float32 (N, 3) | every true crater any rim lay on, `[x, y, d]` |
 | `lidar_el_deg`, `lidar_az_deg` | float32 | beam angles of the stored range image |
+| `map_cell_m` | float32 | cell side of `map_ij` (sim/lidar.py `HAZ_CELL_M`, 0.5 m) |
 
 
 ### Summary row (part 1)
@@ -840,7 +843,7 @@ the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
   planned route and both lidar views. `web/serve.py` (and
   `collect_campaigns.py convert_steps`) serves it as
   `campaigns/<batch>/<run>/steps/index.json` (`sorties`, `map_craters`,
-  `true_craters`, `lidar_el_deg`, `lidar_az_deg`, `standin`) plus one
+  `true_craters`, `lidar_el_deg`, `lidar_az_deg`, `map_cell_m`, `standin`) plus one
   `steps/<sortie_id>.bin` and `.json` per sortie: each array little-endian,
   4-byte aligned, float16 widened to float32, the .json mapping each name
   to `[dtype, shape, byte offset]`. `campaigns/index.json` marks such runs

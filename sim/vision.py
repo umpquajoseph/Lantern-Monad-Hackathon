@@ -11,6 +11,11 @@ is kept as a rim point when the image is darker just beyond it (further up
 the image) than just before it, and the ground beyond is further away (the
 shadowed side). Its position comes from the depth, with noise added, as the
 spec says ("the renderer's depth, with noise added, places each rim point").
+A24 sec. III-D's contour filter then keeps rims wide enough to be a mapped
+crater's, and C23 sec. 3A's positive-obstacle rejection drops a rim point
+when the ground directly beyond it is flat or falls (a terrain crest, not the
+far wall of a crater), keeping it when that ground rises or has too little
+stereo to judge (Vision.far_side_keep).
 
 Depth noise is stereo's (sim/settings.py stereo_*): the camera is ShadowNav's
 field rig (A24 sec. IV-B: 0.26 m baseline, 5120 px across a 60 deg view), and
@@ -51,6 +56,10 @@ CANNY_LO, CANNY_HI = 30, 90     # assumed: Canny thresholds on the 8-bit image
 SHADOW_CONTRAST = 25            # assumed: grey levels darker just beyond the edge than before it
 SHADOW_PROBE_PX = 3             # assumed: pixels above/below the edge sampled for the contrast test
 DEPTH_JUMP_M = 0.15             # assumed: the shadowed side must be at least this much further away
+FAR_SIDE_PX = 80                # assumed: rows above the rim searched for the ground beyond it
+FAR_SIDE_WINDOW_M = (0.2, 2.5)  # assumed: "the region directly beyond the detected edge" (C23 sec. 3A), ground distance past the rim
+FAR_SIDE_MIN_POINTS = 5         # assumed: fewer stereo points than this in the window is "not enough stereo" (C23 sec. 3A)
+FAR_SIDE_MIN_SLOPE = 0.0        # C23 sec. 3A: kept only on a positive slope (rise per metre of ground distance)
 MIN_EDGE_PX = 25                # assumed: drop edge fragments shorter than this (rock shadows, noise)
 MAX_RIM_POINTS = 80             # assumed: subsample to at most this many points per frame
 # Contour filter, A24 sec. III-D: rim pixels are closed (dilate, then erode)
@@ -146,15 +155,17 @@ class Vision:
             "hazards from a height grid built from depth (sim/vision.py)")
 
     def __init__(self, scene, rng: np.random.Generator, depth_model: str = "stereo",
-                 contour_filter: bool = True):
+                 contour_filter: bool = True, far_side: bool = True):
         """depth_model: "stereo" (the default) or "old" (0.5% of range, before 16 Nov 2026).
-        contour_filter: A24 sec. III-D's contour filter (default on; off only for sim/calibrate.py)."""
+        contour_filter: A24 sec. III-D's contour filter (default on; off only for sim/calibrate.py).
+        far_side: C23 sec. 3A's positive-obstacle rejection (far_side_ok; default on)."""
         self.scene = scene
         self.rng = rng
         self.cam = scene.camera_model()
         self.axes = _level_axes(self.cam["pitch_deg"], self.cam["camera_height_m"])
         self.depth_model = depth_model
         self.contour_filter = contour_filter
+        self.far_side = far_side
         c = self.cam
         u = (np.arange(c["width"]) + 0.5 - c["cx"]) / c["fx"]
         v = (c["cy"] - (np.arange(c["height"]) + 0.5)) / c["fy"]
@@ -217,6 +228,11 @@ class Vision:
         if self.contour_filter and len(v):
             ok = contour_ok(width_m, npx)
             v, u = v[ok], u[ok]
+        if self.far_side and len(v):
+            # C23 sec. 3A judges single points, so it runs after A24's contours are drawn
+            # from the full mask (neither paper runs both; the order is assumed).
+            ok = self.far_side_ok(v, u, nd)
+            v, u = v[ok], u[ok]
         return v, u
 
     def detect_contours(self, img, depth, nd=None):
@@ -234,6 +250,59 @@ class Vision:
             return v, u, np.zeros(0), np.zeros(0, int)
         width_m, npx = contour_stats(v, u, nd[v, u], nd.shape, self.cam["fx"])
         return v, u, width_m, npx
+
+    @staticmethod
+    def far_side_rows(v):
+        """(rows (N, FAR_SIDE_PX), inside (N, FAR_SIDE_PX)): the pixels up the column of each
+        rim pixel row v that far_side_keep() reads, from 2 rows above the rim; rows off the
+        image top are clipped to row 0 and marked outside."""
+        rows = np.asarray(v)[:, None] - 1 - np.arange(1, FAR_SIDE_PX + 1)[None, :]
+        return np.maximum(rows, 0), rows >= 0
+
+    def far_side_ok(self, v, u, nd):
+        """C23 sec. 3A positive-obstacle false positive rejection for rim pixels (v, u) of the
+        frame's noisy depth nd: far_side_keep() on the ranges up each pixel's column."""
+        v, u = np.asarray(v), np.asarray(u)
+        rows, inside = self.far_side_rows(v)
+        r = np.where(inside, np.asarray(nd, np.float64)[rows, u[:, None]], np.nan)
+        return self.far_side_keep(v, u, np.asarray(nd[v, u], np.float64), r)
+
+    def far_side_keep(self, v, u, r0, r_col):
+        """C23 sec. 3A: "Detected edge points are kept only if, within the region directly
+        beyond the detected edge, there exists a positive slope or if there is not enough
+        stereo to accurately compute the slope." Rim pixels (v, u) at range r0; r_col
+        (N, FAR_SIDE_PX): ranges at far_side_rows(v) (NaN: no stereo). The region is
+        FAR_SIDE_WINDOW_M of ground distance past the rim; the slope is a least-squares
+        line of height against ground distance in the level rover frame; fewer than
+        FAR_SIDE_MIN_POINTS points there is not enough stereo."""
+        c, a = self.cam, self.axes
+        v, u = np.asarray(v), np.asarray(u)
+        rows, _ = self.far_side_rows(v)
+        cols = np.broadcast_to(u[:, None], rows.shape)
+
+        def pts(r, vv, uu):
+            U = (uu + 0.5 - c["cx"]) / c["fx"]
+            V = (c["cy"] - (vv + 0.5)) / c["fy"]
+            z = r * self._cos[vv, uu]
+            p = z[..., None] * (a["fwd"] + U[..., None] * a["right"] + V[..., None] * a["up"])
+            return np.hypot(p[..., 0] + a["offset"][0], p[..., 1] + a["offset"][1]), p[..., 2]
+
+        s0, _ = pts(np.asarray(r0, np.float64), v, u)
+        r = np.asarray(r_col, np.float64)
+        fin = np.isfinite(r)
+        s, z = pts(np.where(fin, r, 0.0), rows, cols)
+        ds = s - s0[:, None]
+        win = fin & (ds > FAR_SIDE_WINDOW_M[0]) & (ds < FAR_SIDE_WINDOW_M[1])
+        n = win.sum(1)
+        w = win.astype(np.float64)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            mx = (w * ds).sum(1) / n
+            mz = (w * z).sum(1) / n
+            sxx = (w * (ds - mx[:, None]) ** 2).sum(1)
+            sxz = (w * (ds - mx[:, None]) * (z - mz[:, None])).sum(1)
+            slope = sxz / sxx
+        judged = (n >= FAR_SIDE_MIN_POINTS) & (sxx > 0) & np.isfinite(s0)
+        return ~judged | (slope > FAR_SIDE_MIN_SLOPE)
 
     @staticmethod
     def placed_row(ve, h):

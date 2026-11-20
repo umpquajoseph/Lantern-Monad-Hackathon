@@ -111,6 +111,41 @@ class Settings:
     fix_range_m: float = S(20.0, ASSUMED + "; A24 sec. V-B: craters 7.5-20 m across detected reliably; "
                                            "A24 sec. V-C1: observation points 7-13 m from the rim")
     fix_min_craters: int = S(2, ASSUMED + "; A24 Table 2 traverses used 2-3 landmarks")
+    # A camera Scout's scheduled fix (sim/campaign_camera.py CameraSortie.check).
+    cam_fix_mode: str = S("scheduled", "'scheduled': the filter's measurement update runs only at the observation "
+                                       "stops of a scheduled fix, against the one landmark crater chosen for it; "
+                                       "between fixes, odometry alone (draft 4.2 'e(d) = efix + 0.02d'; A24 sec. I, "
+                                       "contribution 2, 'intermittent localization wherein only specific landmark "
+                                       "craters are used and other craters that may appear along a trajectory are "
+                                       "ignored'; A24 sec. III-E2, landmarks 'require a planned trajectory to drive "
+                                       "towards'). 'opportunistic' (every frame with rims corrects against the whole "
+                                       "map, no scheduled fixes; the main case until 20 Nov 2026) is a labelled "
+                                       "test case")
+    fix_crater_d_m: tuple = S((7.5, 20.0), "A24 sec. V-B: 'craters of diameters between 7.5 m and 20 m can be "
+                                           "detected reliably'; a landmark must be in the Scout's own map too")
+    fix_reach_m: float = S(40.0, ASSUMED + "; a landmark's near rim must lie within this of the estimate when a fix "
+                                           "is due; sweep 0-80")
+    fix_survey_offset_m: float = S(10.0, ASSUMED + "; observation points this far outside the landmark's rim, the "
+                                                   "middle of A24 sec. V-C1's half survey, 'each observation point "
+                                                   "approximately 7 m-13 m from the crater rim'")
+    fix_survey_spacing_m: float = S(10.0, "A24 sec. V-D, Endurance-A ConOps: 'Long exposure captures are proposed "
+                                          "to be captured every 10 m'; observation points this far apart along the "
+                                          "half circle (A24 sec. V-C1, A24 Table 2: 'Localization accuracy is "
+                                          "optimal when a half survey around the landmark crater occurs')")
+    fix_stop_model: str = S("exposure", "How long a fix keeps the Scout stopped. Answers draft item 11 from A24 "
+                                        "sec. V-D. 'exposure': fix_exposure_stop_s at each observation point, "
+                                        "nothing more: A24 sec. V-D, 'proposed 1 min stops every 10 m to capture "
+                                        "long exposure images'; stereo and detection fit 'during the long-exposure "
+                                        "capture stop or while driving between exposure captures' (A24 Table 4 "
+                                        "text), so processing adds no time. Labelled test cases: 'batch' adds "
+                                        "fix_batch_stop_s once per fix (A24 sec. V-D, 'stop for approximately 10 "
+                                        "minutes between drives in order to perform absolute localization'); "
+                                        "'draft' spends check_stop_s per fix, split over its observation points "
+                                        "(draft 4.2 'if each fix takes five minutes')")
+    fix_exposure_stop_s: float = S(60.0, "A24 sec. V-D: 'proposed 1 min stops every 10 m to capture long exposure "
+                                         "images' (Endurance-A ConOps)")
+    fix_batch_stop_s: float = S(600.0, "A24 sec. V-D: 'stop for approximately 10 minutes between drives in order "
+                                       "to perform absolute localization'; fix_stop_model 'batch' only")
 
     # ---------------------------------------------------------- survey, ice
     reading_spacing_m: float = S(5.0, ASSUMED)

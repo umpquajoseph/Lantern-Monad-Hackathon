@@ -561,6 +561,30 @@ Record changes (additive unless marked):
   `sim/rover.py` `MAP_MARGIN_M` of its edge, so a sortie cannot leave fine
   ground: a waypoint off it is skipped (event `waypoint_skipped`).
 - Events, camera only:
+  - Since 20 Nov 2026 a camera Scout fixes on schedule (`Settings.cam_fix_mode`
+    "scheduled", the default; sim/campaign_camera.py `CameraSortie.check`):
+    a fix falls due by odometer distance (`check_policy` "fixed", draft
+    Table 1 spacing, 79.3 m at the 10 m limit), and the Scout drives a half
+    survey of one mapped crater 7.5-20 m across whose near rim is within
+    `fix_reach_m`. At each observation point it turns to face the crater,
+    takes one frame and stops `fix_exposure_stop_s` (`fix_stop_model`).
+    The filter updates only on those frames, against that crater alone;
+    between fixes it runs on odometry. `check` then means one fix:
+    `est`, `bound95`, `wrong_match` (over half the fix's rim points
+    false), `wrong_match_cause`, `craters_in_view` (distinct true craters
+    its points lie on), `matched` (1 when a point lay within
+    `cam_match_tol_m` of the landmark's edge), `fixed` (at least one frame
+    updated the filter), `reason` `schedule`, plus `landmark` `[x, y, d]`
+    (map frame), `landmark_row` (map row), `stops`, `stops_planned`,
+    `frames_used`, `points`, `wrong_points`, `stop_s`, `detour_m` (true
+    distance driven during the fix), `fix_h`, truth `true_err_before_m`,
+    `true_err_m` (when the fix ends). A fix point's false match: its source
+    is not the landmark. `fix_unavailable`: a fix was due and no landmark
+    was in reach. `est`, `bound95`, `reason` `no_landmark`, `reach_m`,
+    `d_since_fix_m`, truth `true_err_m`; retried after
+    `check_min_spacing_m` more. Crater passes still end, but only make
+    sightings. Everything below about passes is `cam_fix_mode`
+    "opportunistic", the test case and every camera record before 20 Nov.
   - `check` is one **crater pass**: consecutive steps whose rims matched
     mapped craters, ended by `Settings.cam_pass_gap_steps` steps without, or
     after `Settings.cam_pass_max_steps` steps.
@@ -602,9 +626,11 @@ Record changes (additive unless marked):
     `search_unreached` (`find_id`, `dist_m`, `radius_m`) and summary column
     `searches_unreached`; read them as `search_abandoned` with reason
     `unreached`.
-- `time_s.check` is 0: a camera Scout does not stop to fix.
-  `Settings.check_policy`, `check_stop_s`, `drift_mode` and the sampled
-  fix-error fields are not used. The truth's odometer is a scale error of
+- `time_s.check`: the fix stops ("scheduled"); 0 under "opportunistic",
+  where a camera Scout does not stop to fix. `check_policy` sets when a
+  fix is due ("scheduled" only); `check_stop_s` is used only by
+  `fix_stop_model` "draft". `drift_mode` and the sampled fix-error fields
+  are not used. The truth's odometer is a scale error of
   the world's `drift_frac` plus `odom_noise_frac` and
   `odom_heading_noise_rad` (sim/rover.py's model); the filter has its own
   (`pf_*`). The filter starts at the dock's registered position with its

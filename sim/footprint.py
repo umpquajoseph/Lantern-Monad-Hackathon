@@ -6,8 +6,9 @@ the ground's heights over a footprint-sized square centred on each point (the
 ground between grid points is its bilinear interpolation, as the sim drives
 it). Fitting a rover-sized planar patch and judging its tilt is how the MER
 rovers' GESTALT navigator rated terrain (Goldberg, Maimone and Matthies 2002,
-IEEE Aerospace, https://robotics.jpl.nasa.gov/media/documents/aero.pdf; known
-from a search summary, the paper itself not yet read: UNVERIFIED).
+IEEE Aerospace, sec. 4 step 3, p.6: each cell's traversability from "a
+rover-sized patch of surrounding cells and finding the best-fit plane"; its
+pitch hazard is that plane's slope. docs/sources/GESTALT-Goldberg-2002.pdf).
 
 FOOTPRINT_M: brief p.6, Scout "~1.55 m wide". The brief gives no length, so
 the footprint is taken as square (assumed).

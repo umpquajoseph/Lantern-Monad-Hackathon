@@ -196,7 +196,7 @@ class Settings:
                                          "labelled test cases")
     slope_test: str = S("footprint", "docs/terrain/position.md row 9, sim/rover.py SLOPE_TESTS: 'footprint' = the "
                                      "tilt of the Scout's 1.55 m footprint plane (brief p.6 width; sim/footprint.py, "
-                                     "GESTALT's rover-sized plane fit, Goldberg 2002, UNVERIFIED), for the planner "
+                                     "GESTALT's rover-sized plane fit, Goldberg 2002 sec. 4 step 3, p.6), for the planner "
                                      "and the lidar hazards. Labelled test cases: 'widened' (slope across 2 m, "
                                      "widened by the 0.83 m half width; the main case until 18 Nov 2026) and "
                                      "'point' (2 m slope, no widening)")

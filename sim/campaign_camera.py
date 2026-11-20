@@ -114,6 +114,12 @@ GATE_KEEP_STREAM = True
 # Settings.cam_fix_mode and Settings.fix_stop_model (sourced there).
 FIX_MODES = ("scheduled", "opportunistic")
 FIX_STOP_MODELS = ("exposure", "batch", "draft")
+# A landmark's survey must end where the planned route on to the goal runs
+# about straight: no longer than FIX_ROUTE_RATIO times the straight line plus
+# FIX_ROUTE_SLACK_M (2 m planning cells, short legs). Both assumed: a guard
+# against surveys that leave the Scout behind the crater on its own route.
+FIX_ROUTE_RATIO = 1.5
+FIX_ROUTE_SLACK_M = 10.0
 
 
 def _wrap(a):
@@ -518,8 +524,9 @@ class CameraSortie(Sortie):
     def _pick_landmark(self):
         """The mapped crater, fix_crater_d_m across and ahead of the Scout toward
         its current goal, whose near rim lies within fix_reach_m of the
-        estimate, whose half survey ends nearer the goal by planned route,
-        and which adds the least driving on the way to that goal.
+        estimate, whose half survey ends where the planned route on to the goal
+        runs about straight, and which adds the least driving on the way to
+        that goal.
         (row, cx, cy, d, points) or None."""
         s, c = self.s, self.c
         if c.map_tree is None or not len(c.map_arr):
@@ -541,16 +548,21 @@ class CameraSortie(Sortie):
             if (cx - ex) * (gx - ex) + (cy - ey) * (gy - ey) <= 0:
                 continue
             pts = self._survey_points(cx, cy, d)
-            # The survey must end nearer the goal by the Scout's own planned
-            # route (sim/rover.py SlopeMap.plan, its believed frame) than it
-            # is now. Ahead in a straight line is not enough: in
+            # From the survey's end, the Scout's own planned route to the goal
+            # (sim/rover.py SlopeMap.plan, its believed frame) must run about
+            # straight. Ahead in a straight line is not enough: in
             # nav-fix-check5 the route from a crater's far side led back round
-            # it, and one crater was surveyed 58 times in 31 h.
+            # it, and one crater was surveyed 58 times in 31 h. Requiring the
+            # end to be nearer the goal was too strict (nav-fix-check6: 195
+            # fixes found no landmark): corridor waypoints are 25 m apart, so
+            # a survey overshoots the goal it was due on.
+            after = self._route_m(pts[-1], (gx, gy))
+            if not after <= FIX_ROUTE_RATIO * math.dist(pts[-1], (gx, gy)) + FIX_ROUTE_SLACK_M:
+                continue
             if direct is None:
                 direct = self._route_m((ex, ey), (gx, gy))
-            after = self._route_m(pts[-1], (gx, gy))
-            if not after < direct:
-                continue
+                if not math.isfinite(direct):
+                    direct = math.hypot(gx - ex, gy - ey)
             arc = sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
             cost = math.dist((ex, ey), pts[0]) + arc + after - direct
             if best_cost is None or cost < best_cost:

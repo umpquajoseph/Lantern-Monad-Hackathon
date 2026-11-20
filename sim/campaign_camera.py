@@ -518,15 +518,16 @@ class CameraSortie(Sortie):
     def _pick_landmark(self):
         """The mapped crater, fix_crater_d_m across and ahead of the Scout toward
         its current goal, whose near rim lies within fix_reach_m of the
-        estimate and whose half survey adds the least driving on the way to
-        that goal. (row, cx, cy, d, points) or None."""
+        estimate, whose half survey ends nearer the goal by planned route,
+        and which adds the least driving on the way to that goal.
+        (row, cx, cy, d, points) or None."""
         s, c = self.s, self.c
         if c.map_tree is None or not len(c.map_arr):
             return None
         lo, hi = s.fix_crater_d_m
         ex, ey = self.ex, self.ey
         gx, gy = self.goal_xy
-        direct = math.hypot(gx - ex, gy - ey)
+        direct = None                    # planned route from here to the goal, m (computed once needed)
         best, best_cost = None, None
         for i in c.map_tree.query_ball_point((ex, ey), s.fix_reach_m + hi / 2):
             cx, cy, d = (float(v) for v in c.map_arr[i, :3])
@@ -540,11 +541,31 @@ class CameraSortie(Sortie):
             if (cx - ex) * (gx - ex) + (cy - ey) * (gy - ey) <= 0:
                 continue
             pts = self._survey_points(cx, cy, d)
+            # The survey must end nearer the goal by the Scout's own planned
+            # route (sim/rover.py SlopeMap.plan, its believed frame) than it
+            # is now. Ahead in a straight line is not enough: in
+            # nav-fix-check5 the route from a crater's far side led back round
+            # it, and one crater was surveyed 58 times in 31 h.
+            if direct is None:
+                direct = self._route_m((ex, ey), (gx, gy))
+            after = self._route_m(pts[-1], (gx, gy))
+            if not after < direct:
+                continue
             arc = sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
-            cost = math.dist((ex, ey), pts[0]) + arc + math.dist(pts[-1], (gx, gy)) - direct
+            cost = math.dist((ex, ey), pts[0]) + arc + after - direct
             if best_cost is None or cost < best_cost:
                 best, best_cost = (int(i), cx, cy, d, pts), cost
         return best
+
+    def _route_m(self, a, b):
+        """Length (m) of the global planner's route from a to b, inf when it finds none."""
+        if math.dist(a, b) < 1e-6:
+            return 0.0
+        p = self.rover.slope.plan(a, b)
+        if not p or len(p) == 1 and math.dist(a, b) > 3.0:
+            return math.inf
+        q = [tuple(a)] + [tuple(v) for v in p]
+        return sum(math.dist(q[k], q[k + 1]) for k in range(len(q) - 1))
 
     def _blocked(self, act):
         """drive_to stops: lost, or homeward with this drive not the return.

@@ -645,6 +645,24 @@ Record changes (additive unless marked):
   time straight driving at top speed would take for the same progress
   toward its waypoints, measured by the Scout on itself; its turn-back
   rule multiplies the return's straight-driving time and energy by it).
+- Camera sorties also add (20 Nov 2026) `plan_slope` (Settings.plan_slope:
+  `orbital`, the Scout plans and steers on the site's LOLA 5 m slope plus
+  its lidar map, sim/rover.py `SlopeMap.use_orbital`; `truth`, the test
+  case on the ground's own slope) and the steps it drove onto ground
+  whose true footprint tilt is over 15 deg (sim/rover.py
+  `_note_true_steep`; 15 deg is a planning limit, so these are driven, not
+  refused). `steep_unflagged`: steps neither the orbital slope nor the
+  lidar map flagged. `steep_unflagged_by`: why the lidar's map missed
+  each one (sim/lidar.py `HazardMemory.why_missed`): `never_in_band`,
+  `shadow`, `too_sparse`, `under_read` or `judged`. Every unflagged step
+  is also LOLA averaging, since the orbital slope there was 15 deg or
+  less. `steep_unflagged_true_deg_max` and `steep_unflagged_lola_deg_mean`
+  describe them. `steep_flagged_by` counts the steep steps the Scout
+  knew about: `orbital` (allowed only as the way off orbital-steep
+  ground), `lidar_steep` (stepping off a lidar hazard) and `lidar_crater`
+  (a costed crater interior). They come from sim/campaign_camera.py
+  `CameraSortie.extra`, which sim/campaign.py merges into the sortie
+  record.
 - **False-match rate** (one definition for the summary, the page and the
   paper; draft 4.2 "detected rims were paired with the wrong mapped
   crater"): of the rim points the filter paired with a mapped crater, the

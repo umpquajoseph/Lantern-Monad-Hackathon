@@ -130,6 +130,15 @@ class Settings:
     nss_ref_length_m: float = S(5.0, "Colaprete PIP Table 2-2 L2-SPL-5: WEH 'with a horizontal spatial "
                                      "resolution of no greater than 5 m'; " + ASSUMED + ": the 3-sigma figure "
                                      "is for one 5 m stretch of track (50 s at 10 cm/s)")
+    # Hydrogen in dry polar regolith: every reading is this plus the deposits'
+    # concentration (sim/campaign.py read_here). It is not ice to be found: a find is
+    # scored on the deposits alone (sim/crossing.py deposit_at). Test case 0.0: dry
+    # ground reads zero, as before 20 Nov 2026.
+    background_weh_wt: float = S(0.13, "Livengood et al., LEND polar hydrogen (NTRS 20180004020), abstract "
+                                       "p.2: 'Above 88 deg north or south, the concentration increases to "
+                                       "~140 ppmw, or 0.13+/-0.02 wt% water-equivalent hydrogen'; every "
+                                       "Lantern site is poleward of 88 S (sim/psr_sites.py). An orbital average "
+                                       "over km-scale footprints; a PSR floor's own background is not measured")
     find_threshold_wt: float = S(1.0, "brief p.9 '~1 wt% ice threshold we assumed' (code sim/ice.py:20)")
     rich_peak_wt: float = S(5.6, "brief p.12 LCROSS ~5.6% at Cabeus (code sim/ice.py:23)")
     survey_line_spacing_m: float = S(20.0, ASSUMED)

@@ -736,7 +736,7 @@ class Sortie:
         x, y = self.tx, self.ty
         foot = self.c.foot
         c = sum(concentration(x + ox, y + oy, self.w.ice, self.s.find_threshold_wt) for ox, oy in foot) / len(foot)
-        wt = max(0.0, c + self.rng_ice.normal(0.0, self.s.sensor_noise_wt))
+        wt = max(0.0, c + self.s.background_weh_wt + self.rng_ice.normal(0.0, self.s.sensor_noise_wt))
         if self.s.reading_stop_s:
             self.stop(self.s.reading_stop_s, "reading", self.em["p_stop_w"], ACT["reading"])
         return wt

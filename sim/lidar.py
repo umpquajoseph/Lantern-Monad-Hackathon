@@ -50,7 +50,9 @@ HAZ_HALF_WIDTH_M = 15.0
 RING_CELLS = 6                   # 3 m: ring radius used to judge a dip (craters 2.3-20 m wide)
 DEPRESSION_M = 0.35              # this far below a 3 m ring: inside a crater (94% of such cells
                                  # lie in a mapped crater on shoemaker.npz; 0.15 m gave 36%)
-ROCK_STEP_M = 0.15               # this far above its 1.5 m ring: a rock
+RING_MIN_PAIRS = 2               # complete mirrored ring pairs (cells at +d and -d) to judge a cell:
+                                 # two lines through it (assumed; see hazards())
+ROCK_STEP_M = 0.15              # this far above its 1.5 m ring: a rock
 DETECT_ROCKS = False             # off: at this scan density no setting found real rocks (precision 0 on
                                  # shoemaker.npz), and the tallest display rock stands 0.28 m, under
                                  # the 0.3 m wheel radius in sim/scene.py
@@ -168,17 +170,27 @@ class Lidar:
         known = (cnt >= MIN_RETURNS).reshape(nx, ny)
         zmean = np.where(known.ravel(), zsum / np.maximum(cnt, 1), np.nan).reshape(nx, ny)
         zmax = np.where(known.ravel(), zmax, np.nan).reshape(nx, ny)
-        # Compare each cell with the mean of a symmetric ring of cells around
-        # it: on any tilted plane that mean equals the cell's own height, so
-        # plain slopes do not read as rocks or dips.
+        # Compare each cell with the mean of a ring of cells around it, taken
+        # over mirrored pairs only (the cells at +d and -d, both judged): on
+        # any tilted plane each pair averages to the cell's own height, so
+        # plain slopes do not read as rocks or dips. A ring cut off on one
+        # side (the near edge of the scan, its sides, a shadow) would
+        # otherwise lean uphill or downhill: on a 10 deg ramp the half ring
+        # at the near edge sat 2 m uphill and read 0.35-0.43 m "deep"
+        # (20 Nov 2026). Pairs carry no slope bias however few there are, so
+        # a ring is judged from RING_MIN_PAIRS complete pairs: the far side
+        # of a crater's ring hides behind its far rim, leaving its floor 4-13
+        # of 24 pairs, and the old rule (half the ring) is not needed for bias.
         def ring_mean(rad):
-            offs = [(di, dj) for di in range(-rad, rad + 1) for dj in range(-rad, rad + 1)
-                    if max(abs(di), abs(dj)) == rad]
+            pairs = [(di, dj) for di in range(-rad, rad + 1) for dj in range(-rad, rad + 1)
+                     if max(abs(di), abs(dj)) == rad and (di, dj) > (0, 0)]   # one of each mirrored pair
             pad = np.pad(zmean, rad, constant_values=np.nan)
-            stack = np.stack([pad[rad + di:rad + di + nx, rad + dj:rad + dj + ny] for di, dj in offs])
-            n = np.sum(np.isfinite(stack), axis=0)
-            m = np.nansum(stack, axis=0) / np.maximum(n, 1)
-            return np.where(n >= len(offs) // 2, m, np.nan)
+            a = np.stack([pad[rad + di:rad + di + nx, rad + dj:rad + dj + ny] for di, dj in pairs])
+            b = np.stack([pad[rad - di:rad - di + nx, rad - dj:rad - dj + ny] for di, dj in pairs])
+            both = np.isfinite(a) & np.isfinite(b)
+            n = both.sum(axis=0)
+            m = np.where(both, 0.5 * (a + b), 0.0).sum(axis=0) / np.maximum(n, 1)
+            return np.where(n >= RING_MIN_PAIRS, m, np.nan)
 
         with np.errstate(all="ignore"):
             near = ring_mean(1)                     # 1.5 m: rocks
@@ -189,10 +201,15 @@ class Lidar:
                 # The Scout's footprint tilt over the cell means (sim/footprint.py;
                 # docs/terrain/position.md row 9), as the planner's SlopeMap judges it.
                 try:
-                    from sim.footprint import tilt_deg
+                    from sim.footprint import tilt_deg, tilt_kernels
                 except ImportError:
-                    from footprint import tilt_deg
-                slope = tilt_deg(zmean, c)
+                    from footprint import tilt_deg, tilt_kernels
+                # Padded with unjudged cells: tilt_deg extends a grid's edge
+                # values outward ("nearest"), which would flatten the plane fit
+                # at the edges of the judged band. Unjudged (NaN) cells give
+                # NaN tilt nearby, so only full footprints are judged.
+                kr = max(k.shape[0] for k in tilt_kernels(c)) // 2
+                slope = tilt_deg(np.pad(zmean, kr, constant_values=np.nan), c)[kr:-kr, kr:-kr]
             else:
                 gx = np.full((nx, ny), np.nan)
                 gy = np.full((nx, ny), np.nan)
@@ -211,12 +228,18 @@ class Lidar:
         return centres, kinds
 
     def points_from_image(self, rng_img):
-        """Rover-frame points [fwd, left, up] from a range image, as scan() makes them."""
+        """Level rover-frame points [fwd, left, up] from a range image, as scan()
+        makes them: levelled with the tilt of the last scan (the one that made
+        the image), so the panel judges the same hazards the rover did."""
+        return self._image_points(rng_img)[np.isfinite(rng_img)]
+
+    def _image_points(self, rng_img):
+        """(rows, cols, 3) level rover-frame point of every beam (NaN: no return)."""
         EL, AZ = np.meshgrid(self.el, self.az, indexing="ij")
-        ok = np.isfinite(rng_img)
-        r = rng_img[ok]
-        return np.column_stack([r * np.cos(EL[ok]) * np.cos(AZ[ok]), r * np.cos(EL[ok]) * np.sin(AZ[ok]),
-                                r * np.sin(EL[ok])])
+        p = np.stack([rng_img * np.cos(EL) * np.cos(AZ), rng_img * np.cos(EL) * np.sin(AZ),
+                      rng_img * np.sin(EL)], axis=-1)
+        L = getattr(self, "_level", None)
+        return p if L is None else p @ L.T
 
     def view(self, rng_img, size=VIEW_SIZE):
         """The lidar panel (RGB uint8): what this scan told the rover, seen from
@@ -285,9 +308,8 @@ class Lidar:
         rgb = np.stack([shade * 0.80, shade * 0.88, shade], axis=-1).astype(np.uint8)
         # Hazard class of every return, from the same grids as the top-down map.
         g = self.hazards(self.points_from_image(rng_img), grids=True)
-        EL, AZ = np.meshgrid(self.el, self.az, indexing="ij")
-        fx = rng_img * np.cos(EL) * np.cos(AZ)
-        fy = rng_img * np.cos(EL) * np.sin(AZ)
+        P = self._image_points(rng_img)
+        fx, fy = P[..., 0], P[..., 1]
         nx, ny = g["known"].shape
         x0, _ = HAZ_RANGE_M
         with np.errstate(invalid="ignore"):

@@ -66,6 +66,11 @@ MIN_PATCH_COVERAGE = 0.5         # GESTALT Table 1 (Goldberg et al. 2002, p.6) m
                                  # eigen-ratio test (2.0) is not applied: the paper does not say which
                                  # eigenvalues it compares.
 MIN_RETURNS = 3
+# The lidar's map over a sortie, kept as GESTALT keeps one (Goldberg et al. 2002
+# sec. 4 steps 2-3, docs/sources/GESTALT-Goldberg-2002.pdf; HazardMemory below).
+MAX_IDLES = 2000                 # GESTALT Table 1 max-idles, "Max number of cycles before zeroing a cell":
+                                 # 2000. A cycle read as one scan, one Lantern step (assumed reading)
+MEMORY_TILE = 64                 # cells a side of one stored tile (storage only; verdicts do not depend on it)
 
 # --- the lidar panel (display only)
 VIEW_SIZE = (800, 280)           # the viewer's panel is 400 x 140 (web/app.css .lidar); drawn at 2x
@@ -81,6 +86,7 @@ class Lidar:
         self.rng = rng
         self.az = np.radians(np.arange(-H_FOV_DEG / 2, H_FOV_DEG / 2 + 1e-9, H_STEP_DEG))
         self.el = np.radians(V_ANGLES_DEG)
+        self.memory = HazardMemory()   # the sortie's map (judge()); one Lidar per sortie
 
     def origin(self, pose):
         """Lidar position in the scene's local frame, and the body's axes R
@@ -95,6 +101,7 @@ class Lidar:
         tilt (inclinometer or IMU; assumed exact), so hazards are judged on
         the true ground slope."""
         O, R = self.origin(pose)
+        self._O = O
         h = float(pose[2])
         c, s = math.cos(h), math.sin(h)
         self._level = np.array([[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]]) @ R   # body -> level rover frame
@@ -171,64 +178,9 @@ class Lidar:
         ix = np.clip(((p[:, 0] - x0) / c).astype(int), 0, nx - 1)
         iy = np.clip(((p[:, 1] + HAZ_HALF_WIDTH_M) / c).astype(int), 0, ny - 1)
         flat = ix * ny + iy
-        cnt = np.bincount(flat, minlength=nx * ny)
-        zsum = np.bincount(flat, weights=p[:, 2], minlength=nx * ny)
-        zmax = np.full(nx * ny, -np.inf)
-        np.maximum.at(zmax, flat, p[:, 2])
-        known = (cnt >= MIN_RETURNS).reshape(nx, ny)
-        zmean = np.where(known.ravel(), zsum / np.maximum(cnt, 1), np.nan).reshape(nx, ny)
-        zmax = np.where(known.ravel(), zmax, np.nan).reshape(nx, ny)
-        # Compare each cell with the mean of a ring of cells around it, taken
-        # over mirrored pairs only (the cells at +d and -d, both judged): on
-        # any tilted plane each pair averages to the cell's own height, so
-        # plain slopes do not read as rocks or dips. A ring cut off on one
-        # side (the near edge of the scan, its sides, a shadow) would
-        # otherwise lean uphill or downhill: on a 10 deg ramp the half ring
-        # at the near edge sat 2 m uphill and read 0.35-0.43 m "deep"
-        # (20 Nov 2026). Pairs carry no slope bias however few there are, so
-        # a ring is judged from RING_MIN_PAIRS complete pairs: the far side
-        # of a crater's ring hides behind its far rim, leaving its floor 4-13
-        # of 24 pairs, and the old rule (half the ring) is not needed for bias.
-        def ring_mean(rad):
-            pairs = [(di, dj) for di in range(-rad, rad + 1) for dj in range(-rad, rad + 1)
-                     if max(abs(di), abs(dj)) == rad and (di, dj) > (0, 0)]   # one of each mirrored pair
-            pad = np.pad(zmean, rad, constant_values=np.nan)
-            a = np.stack([pad[rad + di:rad + di + nx, rad + dj:rad + dj + ny] for di, dj in pairs])
-            b = np.stack([pad[rad - di:rad - di + nx, rad - dj:rad - dj + ny] for di, dj in pairs])
-            both = np.isfinite(a) & np.isfinite(b)
-            n = both.sum(axis=0)
-            m = np.where(both, 0.5 * (a + b), 0.0).sum(axis=0) / np.maximum(n, 1)
-            return np.where(n >= RING_MIN_PAIRS, m, np.nan)
-
-        with np.errstate(all="ignore"):
-            near = ring_mean(1)                     # 1.5 m: rocks
-            far = ring_mean(RING_CELLS)             # crater-sized ring
-            rock = zmax - near
-            depr = far - zmean
-            if getattr(self, "slope_mode", "footprint") == "footprint":
-                # The Scout's footprint tilt (docs/terrain/position.md row 9), as
-                # GESTALT judges it from range data (Goldberg et al. 2002, sec. 4
-                # step 3, p.6; docs/sources/GESTALT-Goldberg-2002.pdf): merge the
-                # points' moment statistics over a rover-sized patch of cells,
-                # fit the best plane, and judge it "as long as there is enough
-                # data ... at least half the cells have more than 1 point". The
-                # patch is FOOTPRINT_CELLS square, the nearest whole-cell patch
-                # to the 1.55 m footprint. Before 20 Nov 2026 the lidar fitted
-                # the plane to cell means with sim/footprint.tilt_deg, which
-                # judged nothing where any cell of its 3.5 m window lacked
-                # returns: it flagged 18-28% of the truly steep ground it had
-                # returns on in tilt-check, and showed the rest as safe.
-                slope = _patch_tilt_deg(p[:, 0] - x0, p[:, 1] + HAZ_HALF_WIDTH_M, p[:, 2], flat, cnt, nx, ny, c)
-            else:
-                gx = np.full((nx, ny), np.nan)
-                gy = np.full((nx, ny), np.nan)
-                b = 2  # +-1 m: a 2 m central difference (docs/handoffs.md step 2)
-                gx[b:-b, :] = (zmean[2 * b:, :] - zmean[:-2 * b, :]) / (2 * b * c)
-                gy[:, b:-b] = (zmean[:, 2 * b:] - zmean[:, :-2 * b]) / (2 * b * c)
-                slope = np.degrees(np.arctan(np.hypot(gx, gy)))
-        is_crater = known & (depr > DEPRESSION_M)
-        is_rock = known & ~is_crater & (rock > ROCK_STEP_M) & DETECT_ROCKS
-        is_slope = known & ~is_crater & ~is_rock & (slope > SLOPE_LIMIT_DEG)
+        base = _cell_moments(p[:, 0] - x0, p[:, 1] + HAZ_HALF_WIDTH_M, p[:, 2], flat, nx, ny, c)
+        g = _judge_moments(base, c, getattr(self, "slope_mode", "footprint"))
+        known, is_crater, is_rock, is_slope, slope = g["known"], g["crater"], g["rock"], g["slope"], g["tilt"]
         if grids:
             return dict(known=known, crater=is_crater, rock=is_rock, slope=is_slope, tilt=slope)
         hi, hj = np.nonzero(is_crater | is_rock | is_slope)
@@ -358,6 +310,48 @@ class Lidar:
         cv2.putText(img, f"{MAX_RANGE_M:.0f}m", (kx - 8, ky1 + 30), f, fs, white, 2, cv2.LINE_AA)
         return img
 
+    def judge(self, pts, pose, widen_m=0.0):
+        """GESTALT's map update for one scan (Goldberg et al. 2002 sec. 4; HazardMemory):
+        merge the scan's points in the judged band (as hazards() takes them) into the
+        sortie's world-frame cells, zero cells idle MAX_IDLES scans, and judge afresh
+        every cell the change can reach. pts: the scan's level-frame points, from
+        scan(pose) just before. widen_m: the rover's hazard margin (SlopeMap.widen_m).
+
+        Returns (centres (K, 2) world xy, kinds, clear): clear lists the changed regions
+        widened past widen_m as world boxes (xmin, xmax, ymin, ymax); centres and kinds
+        are every hazard now judged within twice that, so marking them after clearing
+        the boxes (Rover.add_hazards) leaves the rover's grids as the map judges them."""
+        from sim.vision import rover_to_world
+        mem = self.memory
+        mem.cycle += 1
+        x0, x1 = HAZ_RANGE_M
+        sel = (pts[:, 0] >= x0) & (pts[:, 0] < x1) & (np.abs(pts[:, 1]) < HAZ_HALF_WIDTH_M)
+        p = pts[sel]
+        boxes = []
+        if len(p):
+            xy = rover_to_world(self.to_camera_frame(p[:, :2]), pose)
+            boxes.append(mem.add(np.column_stack([xy, self._O[2] + p[:, 2]])))
+        mem.mark_view(rover_to_world(self.to_camera_frame(np.zeros((1, 2))), pose)[0], float(pose[2]))
+        boxes += mem.expire()
+        # A cell's verdict reads the cells up to RING_CELLS away (its crater ring), so
+        # every cell that near a changed one is judged again.
+        m = max(RING_CELLS, FOOTPRINT_CELLS // 2)
+        boxes = [(i0 - m, i1 + m, j0 - m, j1 + m) for i0, i1, j0, j1 in boxes]
+        mode = getattr(self, "slope_mode", "footprint")
+        for bx in boxes:
+            mem.judge(*bx, slope_mode=mode)
+        c = mem.c
+        w = int(math.ceil(widen_m / c)) + 1            # clear margin, cells: past the rover's marks
+        clear, cen, kinds = [], [], []
+        for i0, i1, j0, j1 in boxes:
+            clear.append(((i0 - w) * c, (i1 + w) * c, (j0 - w) * c, (j1 + w) * c))
+            k = 2 * w + 1                              # hazards whose marks reach the cleared box
+            hz, kd = mem.hazards_in(i0 - k, i1 + k, j0 - k, j1 + k)
+            cen.append(hz)
+            kinds += kd
+        cen = np.concatenate(cen) if cen else np.zeros((0, 2))
+        return cen, kinds, clear
+
     def to_camera_frame(self, centres):
         """Hazard centres from the lidar to the rover's reference point (the pose),
         level rover frame, for the last scan: what rover_to_world() takes. On
@@ -371,25 +365,107 @@ class Lidar:
         return c
 
 
-def _patch_tilt_deg(x, y, z, flat, cnt, nx, ny, cell):
-    """(nx, ny) tilt in degrees of the least-squares plane through every point
-    in the FOOTPRINT_CELLS-square patch of cells centred on each cell; NaN
-    where under half the patch's cells hold more than 1 point (GESTALT sec. 4
-    step 3). x, y, z: the points (x, y from the grid's corner); flat: each
-    point's cell index; cnt: points per cell."""
-    from scipy.ndimage import correlate
-    k = np.ones((FOOTPRINT_CELLS, FOOTPRINT_CELLS))
-    # Points relative to their own cell's centre keep the moments well scaled.
+MOMENT_KEYS = ("n", "u", "v", "z", "uu", "uv", "vv", "uz", "vz", "zz")
+
+
+def _cell_moments(x, y, z, flat, nx, ny, cell):
+    """GESTALT sec. 4 step 2 (Goldberg et al. 2002, p.6): "First and second order
+    moment statistics are collected about all the range points in a given cell ...
+    only 10 floats comprising these statistics are stored". Per cell of an (nx, ny)
+    grid of side `cell`: n and the sums of u, v, z, uu, uv, vv, uz, vz, zz, with
+    (u, v) a point's offset from its own cell's centre (keeps the sums well scaled),
+    and zmax for the rock test. x, y: the points from the grid's corner; flat: each
+    point's cell index (i * ny + j)."""
     ci, cj = flat // ny, flat % ny
     u, v = x - (ci + 0.5) * cell, y - (cj + 0.5) * cell
+    m = nx * ny
+    w = dict(n=np.ones_like(z), u=u, v=v, z=z, uu=u * u, uv=u * v, vv=v * v, uz=u * z, vz=v * z, zz=z * z)
+    base = {k: np.bincount(flat, weights=w[k], minlength=m).reshape(nx, ny) for k in MOMENT_KEYS}
+    zmax = np.full(m, -np.inf)
+    np.maximum.at(zmax, flat, z)
+    base["zmax"] = zmax.reshape(nx, ny)
+    return base
+
+
+def _judge_moments(base, c, slope_mode="footprint"):
+    """GESTALT sec. 4 step 3 on cells' moment statistics (_cell_moments): each cell
+    judged crater interior, rock, or slope over the limit. Returns dict known, crater,
+    rock, slope (bool grids) and tilt (deg). One scan (Lidar.hazards) and the sortie's
+    merged map (HazardMemory) are judged by this same code."""
+    n = base["n"]
+    nx, ny = n.shape
+    known = n >= MIN_RETURNS
+    with np.errstate(all="ignore"):
+        zmean = np.where(known, base["z"] / np.maximum(n, 1), np.nan)
+        zmax = np.where(known, base["zmax"], np.nan)
+
+    # Compare each cell with the mean of a ring of cells around it, taken
+    # over mirrored pairs only (the cells at +d and -d, both judged): on
+    # any tilted plane each pair averages to the cell's own height, so
+    # plain slopes do not read as rocks or dips. A ring cut off on one
+    # side (the near edge of the scan, its sides, a shadow) would
+    # otherwise lean uphill or downhill: on a 10 deg ramp the half ring
+    # at the near edge sat 2 m uphill and read 0.35-0.43 m "deep"
+    # (20 Nov 2026). Pairs carry no slope bias however few there are, so
+    # a ring is judged from RING_MIN_PAIRS complete pairs: the far side
+    # of a crater's ring hides behind its far rim, leaving its floor 4-13
+    # of 24 pairs, and the old rule (half the ring) is not needed for bias.
+    def ring_mean(rad):
+        pairs = [(di, dj) for di in range(-rad, rad + 1) for dj in range(-rad, rad + 1)
+                 if max(abs(di), abs(dj)) == rad and (di, dj) > (0, 0)]   # one of each mirrored pair
+        pad = np.pad(zmean, rad, constant_values=np.nan)
+        a = np.stack([pad[rad + di:rad + di + nx, rad + dj:rad + dj + ny] for di, dj in pairs])
+        b = np.stack([pad[rad - di:rad - di + nx, rad - dj:rad - dj + ny] for di, dj in pairs])
+        both = np.isfinite(a) & np.isfinite(b)
+        k = both.sum(axis=0)
+        m = np.where(both, 0.5 * (a + b), 0.0).sum(axis=0) / np.maximum(k, 1)
+        return np.where(k >= RING_MIN_PAIRS, m, np.nan)
+
+    with np.errstate(all="ignore"):
+        near = ring_mean(1)                     # 1.5 m: rocks
+        far = ring_mean(RING_CELLS)             # crater-sized ring
+        rock = zmax - near
+        depr = far - zmean
+        if slope_mode == "footprint":
+            # The Scout's footprint tilt (docs/terrain/position.md row 9), as
+            # GESTALT judges it from range data (Goldberg et al. 2002, sec. 4
+            # step 3, p.6; docs/sources/GESTALT-Goldberg-2002.pdf): merge the
+            # points' moment statistics over a rover-sized patch of cells,
+            # fit the best plane, and judge it "as long as there is enough
+            # data ... at least half the cells have more than 1 point". The
+            # patch is FOOTPRINT_CELLS square, the nearest whole-cell patch
+            # to the 1.55 m footprint. Before 20 Nov 2026 the lidar fitted
+            # the plane to cell means with sim/footprint.tilt_deg, which
+            # judged nothing where any cell of its 3.5 m window lacked
+            # returns: it flagged 18-28% of the truly steep ground it had
+            # returns on in tilt-check, and showed the rest as safe.
+            slope = _patch_tilt_deg(base, c)
+        else:
+            gx = np.full((nx, ny), np.nan)
+            gy = np.full((nx, ny), np.nan)
+            b = 2  # +-1 m: a 2 m central difference (docs/handoffs.md step 2)
+            gx[b:-b, :] = (zmean[2 * b:, :] - zmean[:-2 * b, :]) / (2 * b * c)
+            gy[:, b:-b] = (zmean[:, 2 * b:] - zmean[:, :-2 * b]) / (2 * b * c)
+            slope = np.degrees(np.arctan(np.hypot(gx, gy)))
+    is_crater = known & (depr > DEPRESSION_M)
+    is_rock = known & ~is_crater & (rock > ROCK_STEP_M) & DETECT_ROCKS
+    is_slope = known & ~is_crater & ~is_rock & (slope > SLOPE_LIMIT_DEG)
+    return dict(known=known, crater=is_crater, rock=is_rock, slope=is_slope, tilt=slope)
+
+
+def _patch_tilt_deg(base, cell):
+    """(nx, ny) tilt in degrees of the least-squares plane through every point
+    in the FOOTPRINT_CELLS-square patch of cells centred on each cell, from the
+    cells' moments (_cell_moments); NaN where under half the patch's cells hold
+    more than 1 point (GESTALT sec. 4 step 3)."""
+    from scipy.ndimage import correlate
+    nx, ny = base["n"].shape
+    k = np.ones((FOOTPRINT_CELLS, FOOTPRINT_CELLS))
     # Shift each cell's moments to the patch centre: a point in the cell at
     # (di, dj) from the centre sits at (u + di c, v + dj c). Sum per offset.
     S = {key: np.zeros((nx, ny)) for key in ("n", "x", "y", "z", "xx", "xy", "yy", "xz", "yz")}
     r = FOOTPRINT_CELLS // 2
-    base = {key: np.bincount(flat, weights=w, minlength=nx * ny).reshape(nx, ny) for key, w in (
-        ("n", np.ones_like(z)), ("u", u), ("v", v), ("z", z), ("uu", u * u), ("uv", u * v), ("vv", v * v),
-        ("uz", u * z), ("vz", v * z))}
-    padded = {key: np.pad(a, r) for key, a in base.items()}
+    padded = {key: np.pad(base[key], r) for key in ("n", "u", "v", "z", "uu", "uv", "vv", "uz", "vz")}
     for di in range(-r, r + 1):
         for dj in range(-r, r + 1):
             g = {key: a[r + di:r + di + nx, r + dj:r + dj + ny] for key, a in padded.items()}
@@ -420,9 +496,202 @@ def _patch_tilt_deg(x, y, z, flat, cnt, nx, ny, cell):
         minor = 0.5 * (cxx + cyy) - np.sqrt(0.25 * (cxx - cyy) ** 2 + cxy * cxy)
         spread = np.sqrt(np.maximum(minor, 0.0))
     side = FOOTPRINT_CELLS * cell
-    full = correlate((cnt.reshape(nx, ny) > 1).astype(float), k, mode="constant", cval=0.0)
+    full = correlate((base["n"] > 1).astype(float), k, mode="constant", cval=0.0)
     ok = (full > k.size / 2) & (det > 0) & (spread >= MIN_PATCH_COVERAGE * side / math.sqrt(12.0))
     return np.where(ok, tilt, np.nan)
+
+
+class HazardMemory:
+    """The lidar's map over one sortie, kept as GESTALT keeps its map (Goldberg et
+    al. 2002 sec. 4, docs/sources/GESTALT-Goldberg-2002.pdf). How each part is read:
+
+    - Step 2, "moment statistics are collected about all the range points in a
+      given cell": world-frame cells of HAZ_CELL_M hold the 10 sums of every point
+      that has fallen in them, from every scan; a new scan's points are added to
+      the sums (add). Until 20 Nov 2026 each scan was judged alone and its hazards
+      ORed into the rover's grids for good, so one scan's misjudgement of a
+      near-limit ramp, seen from far off, closed it for the rest of the sortie.
+    - Step 3, traversability "found by merging the moment statistics from a
+      rover-sized patch of surrounding cells and finding the best-fit plane": after
+      each scan every cell whose verdict the new points can change (within
+      RING_CELLS of a touched cell) is judged afresh from the merged sums (judge),
+      by the code that judges a single scan (_judge_moments), so a cell can turn
+      safe as well as steep.
+    - Table 1 max-idles, 2000 "Max number of cycles before zeroing a cell": a cell
+      no scan has touched for MAX_IDLES scans is zeroed (expire).
+    - Table 1 grid-dist-timeout, 3.0 m "Throw out map data this far from rover": not
+      applied. GESTALT keeps a 10 m map in a frame that drifts with its pose
+      estimate, so old data far away is unreliable; Lantern places the points by
+      the true pose (relative geometry, as add_hazards always has), so its map does
+      not drift. Applied literally it would leave no cells beyond 3 m, inside the
+      lidar's 2-25 m judged band.
+
+    Cells are indexed (i, j) = floor(x / c), floor(y / c) in the world frame; heights
+    are kept relative to the first scan's median (z0) to keep the sums well scaled."""
+
+    def __init__(self, cell=HAZ_CELL_M, tile=MEMORY_TILE):
+        self.c, self.T = float(cell), int(tile)
+        self.tiles = {}
+        self.cycle = 0
+        self.z0 = None
+
+    def _tile(self, key):
+        t = self.tiles.get(key)
+        if t is None:
+            T = self.T
+            t = dict(m=np.zeros((len(MOMENT_KEYS), T, T), np.float32), zmax=np.full((T, T), -np.inf, np.float32),
+                     last=np.zeros((T, T), np.int64), verdict=np.zeros((T, T), np.int8),
+                     seen=np.full((T, T), -MAX_IDLES, np.int64),   # last scan with the cell in the judged band
+                     oldest=math.inf, touched=-MAX_IDLES, seen_max=-MAX_IDLES)   # scalars: expire() skips quiet tiles
+            self.tiles[key] = t
+        return t
+
+    def _parts(self, i0, i1, j0, j1):
+        """(tile key, tile slice, box slice) for each tile overlapping [i0, i1) x [j0, j1)."""
+        T = self.T
+        for ti in range(i0 // T, (i1 - 1) // T + 1):
+            for tj in range(j0 // T, (j1 - 1) // T + 1):
+                a0, a1 = max(i0, ti * T), min(i1, (ti + 1) * T)
+                b0, b1 = max(j0, tj * T), min(j1, (tj + 1) * T)
+                yield ((ti, tj), (slice(a0 - ti * T, a1 - ti * T), slice(b0 - tj * T, b1 - tj * T)),
+                       (slice(a0 - i0, a1 - i0), slice(b0 - j0, b1 - j0)))
+
+    def add(self, xyz):
+        """Step 2: merge world points (N, 3) into their cells' sums. Returns the
+        touched cells' box (i0, i1, j0, j1), end-exclusive."""
+        p = np.asarray(xyz, float).reshape(-1, 3)
+        if self.z0 is None:
+            self.z0 = float(np.median(p[:, 2]))
+        c, T = self.c, self.T
+        ci = np.floor(p[:, 0] / c).astype(np.int64)
+        cj = np.floor(p[:, 1] / c).astype(np.int64)
+        u, v, z = p[:, 0] - (ci + 0.5) * c, p[:, 1] - (cj + 0.5) * c, p[:, 2] - self.z0
+        w = dict(n=np.ones_like(z), u=u, v=v, z=z, uu=u * u, uv=u * v, vv=v * v, uz=u * z, vz=v * z, zz=z * z)
+        ti, tj = np.floor_divide(ci, T), np.floor_divide(cj, T)
+        loc = (ci - ti * T) * T + (cj - tj * T)
+        keys, inv = np.unique(np.column_stack([ti, tj]), axis=0, return_inverse=True)
+        inv = np.asarray(inv).reshape(-1)
+        for q, key in enumerate(keys):
+            sel = inv == q
+            t = self._tile((int(key[0]), int(key[1])))
+            idx = loc[sel]
+            for k, name in enumerate(MOMENT_KEYS):
+                t["m"][k] += np.bincount(idx, weights=w[name][sel], minlength=T * T).reshape(T, T).astype(np.float32)
+            np.maximum.at(t["zmax"].reshape(-1), idx, z[sel].astype(np.float32))
+            t["last"].reshape(-1)[idx] = self.cycle
+            t["oldest"] = min(t["oldest"], self.cycle)
+            t["touched"] = self.cycle
+        return int(ci.min()), int(ci.max()) + 1, int(cj.min()), int(cj.max()) + 1
+
+    def mark_view(self, lidar_xy, heading):
+        """Note the cells inside this scan's judged band (HAZ_RANGE_M x
+        +-HAZ_HALF_WIDTH_M, within the H_FOV_DEG field) from the lidar at
+        lidar_xy facing heading, returns or not. Only why_missed() reads it."""
+        c, (lx, ly) = self.c, lidar_xy
+        ch, sh = math.cos(heading), math.sin(heading)
+        corners = [(a, b) for a in HAZ_RANGE_M for b in (-HAZ_HALF_WIDTH_M, HAZ_HALF_WIDTH_M)]
+        wx = [lx + ch * a - sh * b for a, b in corners]
+        wy = [ly + sh * a + ch * b for a, b in corners]
+        i0, i1 = int(math.floor(min(wx) / c)), int(math.floor(max(wx) / c)) + 1
+        j0, j1 = int(math.floor(min(wy) / c)), int(math.floor(max(wy) / c)) + 1
+        X = (np.arange(i0, i1)[:, None] + 0.5) * c - lx
+        Y = (np.arange(j0, j1)[None, :] + 0.5) * c - ly
+        fx, fy = ch * X + sh * Y, -sh * X + ch * Y
+        inb = ((fx >= HAZ_RANGE_M[0]) & (fx < HAZ_RANGE_M[1]) & (np.abs(fy) < HAZ_HALF_WIDTH_M)
+               & (np.abs(np.arctan2(fy, fx)) <= math.radians(H_FOV_DEG / 2)))
+        for key, src, dst in self._parts(i0, i1, j0, j1):
+            part = inb[dst]
+            if not part.any():
+                continue
+            t = self._tile(key)
+            t["seen"][src][part] = self.cycle
+            t["seen_max"] = self.cycle
+
+    def why_missed(self, x, y, slope_mode="footprint"):
+        """Why the map holds no hazard at world (x, y), for a step onto ground
+        truly over the limit: "never_in_band" (no scan had it in the judged
+        band within MAX_IDLES: under 2 m, beside or behind the lidar),
+        "shadow" (in the band but under MIN_RETURNS returns: hidden behind
+        terrain), "too_sparse" (returns, but too few or too narrow a spread to
+        fit the footprint plane), "under_read" (judged, tilt at or under the
+        limit), or "judged" (the map calls it a hazard; the rover's grids
+        lag)."""
+        c, m = self.c, RING_CELLS
+        i, j = int(math.floor(x / c)), int(math.floor(y / c))
+        base, verdict = self.window(i - m, i + m + 1, j - m, j + m + 1)
+        if verdict[m, m]:
+            return "judged"
+        t = self.tiles.get((i // self.T, j // self.T))
+        seen = t is not None and self.cycle - int(t["seen"][i % self.T, j % self.T]) < MAX_IDLES
+        if base["n"][m, m] < MIN_RETURNS:
+            return "shadow" if seen else "never_in_band"
+        g = _judge_moments(base, c, slope_mode)
+        return "too_sparse" if not np.isfinite(g["tilt"][m, m]) else "under_read"
+
+    def expire(self):
+        """Table 1 max-idles: zero every cell no scan has touched for MAX_IDLES scans,
+        and drop tiles left with nothing in them. Returns the boxes of the tiles that
+        lost cells. A tile whose oldest held cell is younger than MAX_IDLES is skipped
+        without looking at its cells (speed only)."""
+        out, gone, T, now = [], [], self.T, self.cycle
+        for (ti, tj), t in self.tiles.items():
+            if now - t["oldest"] >= MAX_IDLES:
+                held = t["m"][0] > 0
+                old = held & (now - t["last"] >= MAX_IDLES)
+                if old.any():
+                    t["m"][:, old] = 0.0
+                    t["zmax"][old] = -np.inf
+                    out.append((ti * T, (ti + 1) * T, tj * T, (tj + 1) * T))
+                live = held & ~old
+                t["oldest"] = int(t["last"][live].min()) if live.any() else math.inf
+            if (t["oldest"] == math.inf and now - t["touched"] >= MAX_IDLES and now - t["seen_max"] >= MAX_IDLES
+                    and not t["verdict"].any()):
+                gone.append((ti, tj))
+        for key in gone:
+            del self.tiles[key]
+        return out
+
+    def window(self, i0, i1, j0, j1):
+        """The sums over cell box [i0, i1) x [j0, j1) as _cell_moments grids (float64),
+        and the stored verdicts."""
+        nx, ny = i1 - i0, j1 - j0
+        base = {k: np.zeros((nx, ny)) for k in MOMENT_KEYS}
+        base["zmax"] = np.full((nx, ny), -np.inf)
+        verdict = np.zeros((nx, ny), np.int8)
+        for key, src, dst in self._parts(i0, i1, j0, j1):
+            t = self.tiles.get(key)
+            if t is None:
+                continue
+            for q, k in enumerate(MOMENT_KEYS):
+                base[k][dst] = t["m"][q][src]
+            base["zmax"][dst] = t["zmax"][src]
+            verdict[dst] = t["verdict"][src]
+        return base, verdict
+
+    def judge(self, i0, i1, j0, j1, slope_mode="footprint"):
+        """Step 3 for every cell in box [i0, i1) x [j0, j1), from the merged sums of the
+        box and the RING_CELLS around it (what a verdict reads); stores the verdicts
+        (0 none, 1 crater, 2 rock, 3 slope)."""
+        m = RING_CELLS
+        base, _ = self.window(i0 - m, i1 + m, j0 - m, j1 + m)
+        g = _judge_moments(base, self.c, slope_mode)
+        code = np.select([g["crater"], g["rock"], g["slope"]], [1, 2, 3], 0)[m:m + i1 - i0, m:m + j1 - j0]
+        code = code.astype(np.int8)
+        for key, src, dst in self._parts(i0, i1, j0, j1):
+            t = self.tiles.get(key)
+            if t is None:
+                if not code[dst].any():
+                    continue
+                t = self._tile(key)
+            t["verdict"][src] = code[dst]
+
+    def hazards_in(self, i0, i1, j0, j1):
+        """(centres (K, 2) world xy, kinds) of the cells judged hazards in box [i0, i1) x [j0, j1)."""
+        _, verdict = self.window(i0, i1, j0, j1)
+        hi, hj = np.nonzero(verdict)
+        names = {1: "crater", 2: "rock", 3: "slope"}
+        centres = np.column_stack([(i0 + hi + 0.5) * self.c, (j0 + hj + 0.5) * self.c])
+        return centres, [names[int(v)] for v in verdict[hi, hj]]
 
 
 def fp_name(name):

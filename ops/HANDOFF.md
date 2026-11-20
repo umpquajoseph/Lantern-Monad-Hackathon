@@ -80,6 +80,49 @@ What has to be settled before the rerun counts:
   frame's attitude to the workers (`Scene.rover_axes`, `Vision.set_pose`).
 - Nothing in calibrate may be tuned toward C23's numbers.
 
+**Done 20 Nov, 10:56.** Both questions settled in `sim/calibrate.py`:
+
+- Ground: the two differed (0.25 m grid, roughness 0.070 m, craters
+  2.3-20 m, display "full" with rim lips, rocks and mottling). calibrate
+  now builds a run ground with `site_ground.build_ground` over the same
+  1 km of s89_134e (`--ground run`, the default), renders it "detail"
+  with its own camera texture. `--ground grid` keeps the old one.
+- Tilt: neither paper says whether its rendered camera tilted. Both give
+  the rover its 3D orientation (C23 sec. 3, star tracker; A24 sec. V-C,
+  "For simulation, the ground truth orientation is used"). So the body
+  tilts as in live runs and each frame's attitude is saved and used by
+  the workers. `--level` is the test case.
+- The table's headline row now reads `filter-route-nd`, the config that
+  detects as live runs do. It looked for `after` and printed empty.
+
+Result, `data/campaigns/calibration/shadownav-run-ground/table.md`,
+100 seeds: **it does not match.**
+
+| Traverse | Lantern error | C23 error | Lantern unc. | C23 unc. | odometry only |
+|---|---|---|---|---|---|
+| T1 gap | 5.14 ± 4.96 | 3.84 ± 2.78 | 3.65 | 1.84 | 13.68 |
+| T2 straight | 10.01 ± 7.42 | 1.75 ± 0.78 | 4.25 | 1.32 | 12.63 |
+| T3 half survey | 3.18 ± 1.91 | 1.68 ± 0.70 | 1.44 | 1.39 | 6.30 |
+
+What differs from C23's setup, each a candidate for step 3:
+
+- Spurious rim points, 11-27% after the range cut. The frames show
+  them on terrain crests: where LOLA relief curves away 0.5-1 m over
+  25 m, the lamp-lit ground ends in a sharp line the detector reads as a
+  leading edge. Physical, not a render bug. Looked at in renders of T2
+  frames 127-131.
+- Matching. A24 sec. III-E2 scores rims only against the front half of
+  each landmark crater, chosen by heading, and runs the filter only
+  within 20 m of a landmark. Lantern scores against the full circle of
+  the 6 nearest map craters, always. C23 sec. 6B notes the filter "had
+  difficulty reconciling the front edge of the rim with the back edge".
+- The truth's odometer drifts 1-4% (`WorldRanges.drift_frac`); C23 used
+  2%. Lantern steps 2 m; C23 imaged every 1 m.
+- T2's route has a 186 m blind stretch and sees 5 mapped craters. C23's
+  traverses each held two landmark craters they drove to.
+
+The filter itself matches C23 Algs. 1-3 and A24 eq. 3 line by line.
+
 ### 3. If it does not match: audit Lantern
 
 Known problems, each seen in a run:
@@ -117,6 +160,12 @@ Known problems, each seen in a run:
   Find out whether that steepness is LOLA's or comes from upsampling plus
   roughness (`sim/site_ground.py`). Report it; do not change the limit or
   the ground to get Scouts home.
+  **Answered 20 Nov: it is LOLA's.** LOLA's own 5 m slope in the box has
+  median 13.7°, 27% of pixels over 15°; 10 of its 64 pixels hold a real
+  LOLA return. By layer, footprint tilt over 15°: LOLA smoothed and
+  upsampled 13.5%, plus craters 13.5% (none on the ramp), plus roughness
+  20.3%. Medians stay 13.6° throughout. Smoothing lowers the steep share,
+  roughness raises it back part way.
 
 ## After the four steps (proposed in the 17 Nov handoff, not started)
 

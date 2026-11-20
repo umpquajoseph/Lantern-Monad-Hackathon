@@ -20,9 +20,17 @@ What it measures (Cauligi et al. 2023, docs/sources/ShadowNav-Cauligi-2023.*):
   does per particle. A point from a crater missing from the map is always
   a false match.
 
+The ground (from 20 Nov 2026, --ground run): a run ground of the approved
+recipe (docs/terrain/position.md) over the same 1 km window of s89_134e,
+built as every camera run builds it (sim/site_ground.py build_ground: 1 m,
+roughness Settings.ground_rough_rms_m, the world's craters 7.5-20 m at
+Settings.crater_n_ge10_per_km2), rendered with Settings.cam_display and the
+ground's own camera texture, the body tilted on its footprint plane.
+--ground grid keeps the 0.25 m grid used before (sim/terrain.py build
+--site s89_134e; LOLA 5 m, roughness 0.070 m, craters 2.3-20 m).
+
 The three traverses (Route below), in the style of C23 sec. 4C and A24
-sec. IV-A1, on the 1 km PSR-floor grid of site s89_134e (sim/terrain.py
-build --site s89_134e; LOLA 5 m with stamped craters 2.3-20 m):
+sec. IV-A1:
 - T1 "gap": a long drive whose middle sees no mapped crater for 150 m or
   more, past craters missing from the map (C23 traj. 1: "craters were
   out-of-sight", "spurious measurements from unlabeled crater").
@@ -107,6 +115,49 @@ AVOID_MARGIN_M = 1.5          # assumed: and keep this far outside their rims
 VIEW_RANGE_M = 20.0           # vision.RIM_RANGE_M upper end
 VIEW_HALF_DEG = 30.0          # sim/scene.py HFOV_DEG / 2
 MARGIN_M = 60.0               # assumed: routes keep this far inside the 1 km grid (view range + margin)
+
+GROUND_SEED = 7               # assumed: the run ground's world seed (sim/terrain.py Params.seed, the grid's own)
+
+
+def ground_box():
+    """The 1 km window the 0.25 m grid covers (sim/terrain.py site_base), so both grounds lie on the same LOLA."""
+    from sim.terrain import Params, site_base
+    *_, x_left, y_bottom = site_base(Params(site=SITE))
+    size = Params().size_m
+    return x_left, x_left + size, y_bottom, y_bottom + size
+
+
+def run_ground(seed=GROUND_SEED):
+    """A run ground of the approved recipe (docs/terrain/position.md) over ground_box(): the
+    builder, roughness, crater sizes, density and depths every camera run uses (sim/site_ground.py
+    build_ground, the single-run world ranges of sim/campaign.py). Reused when already built with
+    the current roughness."""
+    from sim.campaign import single_run_ranges
+    from sim.site_ground import OUT as GROUND_DIR, build_ground
+    s = Settings()
+    path = GROUND_DIR / f"calibrate-{SITE}-w{seed:05d}.npz"
+    if path.exists():
+        m = _ground_meta(path)
+        if m.get("roughness_rms_m") == (s.ground_rough_rms_m if s.ground_roughness else 0.0):
+            return path
+    return build_ground(SITE, seed, *ground_box(), ranges=single_run_ranges(s), name=path.stem,
+                        roughness=s.ground_roughness, rough_rms_m=s.ground_rough_rms_m)
+
+
+def run_ground_display(path):
+    """The camera texture for that ground, as live runs build it (sim/campaign_camera.py CameraRig)."""
+    import sys
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)   # terrain_display does `import terrain`
+    import terrain_display as TD
+    return TD.build_for_ground(path)
+
+
+def _ground_meta(path):
+    with np.load(path) as f:
+        return json.loads(str(f["meta"])) if "meta" in f.files else {}
+
 
 # C23 Table 2 (checked against the PDF: rows in the order traj. 1, 2, 3; sim/settings.py).
 C23 = {"T1": dict(err=C23_TRAJ1_FALSE_MATCH, unc=(1.84, 1.12), mahal=(8.74, 10.03)),
@@ -309,18 +360,36 @@ def source_ids(true_xy_rover, pose, tree, craters):
     return np.where(de[np.arange(len(w)), j] <= SOURCE_TOL_M, best, -1)
 
 
-def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, max_new=None):
+AXES_KEYS = (("fwd", 3), ("right", 3), ("up", 3), ("offset", 2))   # Vision.axes, as saved per frame
+
+
+def axes_row(ax):
+    return np.concatenate([np.asarray(ax[k], np.float64)[:n] for k, n in AXES_KEYS])
+
+
+def axes_from_row(row):
+    out, i = {}, 0
+    for k, n in AXES_KEYS:
+        out[k] = np.asarray(row[i:i + n], np.float64)
+        i += n
+    return out
+
+
+def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, max_new=None, tilt=True):
     """Render every pose of every route once; keep the rim pixels and their range."""
     from sim.scene import Scene
     import cv2
     height, craters, x0, y0, cell = terrain
     t = time.perf_counter()
     scene = Scene(height, craters, x0, y0, cell, display=display, display_dir=display_dir)
-    # The worker processes place rims with a level camera (_Cam has no
-    # attitude), so the renders stay level too until the ShadowNav rerun
-    # decides whether its rover tilts with the ground.
-    scene.body_tilt = False
-    print(f"scene ({scene.display}) built in {time.perf_counter() - t:.0f} s", flush=True)
+    # The body rests on the footprint plane and the camera tilts with it, as in
+    # live runs (sim/campaign_camera.py). Neither ShadowNav paper says whether
+    # its rendered camera tilted; both give the rover its full 3D orientation
+    # (C23 sec. 3: a star tracker "can compute orientation in three dimensions";
+    # A24 sec. V-C: "For simulation, the ground truth orientation is used"), so
+    # each frame's attitude is saved and the workers place rims with it.
+    scene.body_tilt = tilt
+    print(f"scene ({scene.display}, body tilt {tilt}) built in {time.perf_counter() - t:.0f} s", flush=True)
     vis = Vision(scene, np.random.default_rng(0))
     tree = cKDTree(craters[:, :2])
     (out_dir / "camera.json").write_text(json.dumps({"camera_model": scene.camera_model(), "display": scene.display}))
@@ -338,10 +407,13 @@ def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, ma
         # at the three pixels the depth steps read: 3 px below and above the edge, and the
         # placed pixel. run_one draws one stereo noise field per frame over these.
         EV, EU, RB, RA, RP, ES, eoff = [], [], [], [], [], [], [0]
+        AX = []
         kp = SHADOW_PROBE_PX
         t = time.perf_counter()
         for k, pose in enumerate(poses):
             scene.set_rover("A", pose)
+            vis.set_pose(pose)            # the frame's known attitude (level if body_tilt is off)
+            AX.append(axes_row(vis.axes))
             img, depth = scene.first_person("A")
             ve, ue = vis.edge_candidates(img)
             vp = Vision.placed_row(ve, depth.shape[0])
@@ -377,7 +449,7 @@ def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, ma
                             width_m=np.concatenate(W), npx=np.concatenate(NP),
                             ev=np.concatenate(EV), eu=np.concatenate(EU), rb=np.concatenate(RB),
                             ra=np.concatenate(RA), rp=np.concatenate(RP), esrc=np.concatenate(ES),
-                            eoff=np.asarray(eoff))
+                            eoff=np.asarray(eoff), axes=np.asarray(AX), body_tilt=np.bool_(tilt))
         print(f"{name}: {len(poses)} frames in {time.perf_counter() - t:.0f} s", flush=True)
 
 
@@ -412,6 +484,9 @@ CONFIGS = {
     "filter-route-nd": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
                             contour="route", noisy_detect=True),
 }
+# The headline row: the config that detects and filters as live runs do (sim/vision.py
+# rims_detail on one noisy depth per frame, Settings.rim_arc_share_measured = the route share).
+FINAL_CONFIG = "filter-route-nd"
 _W = {}
 # Bumped when run_one's counting changes, so saved runs from older code are run again.
 RUN_CODE = "e158a84-paired-false-match"
@@ -470,7 +545,10 @@ def run_one(task):
     counts = dict(right=0, wrong_mapped=0, unmapped=0, spurious=0)
     tolc = dict(tol_right=0, tol_wrong=0, tol_unpaired=0)
     frames_used = 0
+    AX = D.get("axes")                # per-frame attitude (detections from before 20 Nov 2026: level)
     for k in range(1, n):
+        if AX is not None:
+            vis.axes = axes_from_row(AX[k])
         d = float(np.hypot(*(poses[k, :2] - poses[k - 1, :2])))
         dh = float((poses[k, 2] - poses[k - 1, 2] + np.pi) % (2 * np.pi) - np.pi)
         d_o = d * (1.0 + drift) + s.odom_noise_frac * d * w_d[k]
@@ -579,11 +657,11 @@ def write_table(summary, routes_stats, out_dir, seeds, cmd):
          f"{seeds} seeds per traverse per config (C23 sec. 6B used 25). "
          "Final error and reported uncertainty (sqrt of the largest covariance eigenvalue) in metres, "
          "mean ± s.d. False match: share of rim points paired with the wrong crater (sim/calibrate.py).", "",
-         "## Final configuration (all three fixes) beside C23 Table 2", "",
+         f"## Final configuration ({FINAL_CONFIG}: detection and filter as live runs) beside C23 Table 2", "",
          "| Traverse | Lantern error | C23 error | Lantern uncertainty | C23 uncertainty | Lantern Mahalanobis | C23 Mahalanobis | Lantern false match | > 5 m |",
          "|---|---|---|---|---|---|---|---|---|"]
     for name in ("T1", "T2", "T3"):
-        s_ = summary.get(f"{name}|after")
+        s_ = summary.get(f"{name}|{FINAL_CONFIG}")
         if not s_:
             continue
         c = C23[name]
@@ -713,8 +791,15 @@ def main():
     ap.add_argument("--batch", default=None, help="folder under campaigns/calibration (default: a new stamp)")
     ap.add_argument("--reuse", action="store_true", help="reuse the batch's routes.json (traverses already "
                     "rendered, detections_<T>.npz, are always reused)")
-    ap.add_argument("--display", choices=("full", "detail", "off"), default="full",
-                    help="first-person display layer the camera sees (sim/scene.py); full is what live runs use")
+    ap.add_argument("--display", choices=("full", "detail", "off"), default=None,
+                    help="first-person display layer the camera sees (sim/scene.py). Default: 'detail' "
+                         "(Settings.cam_display, what live runs use) on --ground run, 'full' on --ground grid")
+    ap.add_argument("--ground", choices=("run", "grid"), default="run",
+                    help="run (default): a run ground of the approved recipe (sim/site_ground.py build_ground, "
+                         "docs/terrain/position.md) over GROUND_BOX, with its own camera texture "
+                         "(sim/terrain_display.py build_for_ground). grid: the 0.25 m --terrain grid, as before 20 Nov 2026")
+    ap.add_argument("--ground-seed", type=int, default=GROUND_SEED, help="world seed of the run ground's craters")
+    ap.add_argument("--level", action="store_true", help="keep the body level (test case; as before 20 Nov 2026)")
     ap.add_argument("--workers", type=int, default=3)
     ap.add_argument("--configs", default=",".join(CONFIGS))
     ap.add_argument("--max-render", type=int, default=None,
@@ -732,6 +817,11 @@ def main():
     batch = a.batch or ("cal-" + datetime.now().strftime("%Y%m%d-%H%M"))
     out_dir = OUT / batch
     out_dir.mkdir(parents=True, exist_ok=True)
+    if a.ground == "run":
+        a.terrain = str(run_ground(a.ground_seed))
+        a.display_dir = str(run_ground_display(a.terrain))
+    if a.display is None:
+        a.display = Settings().cam_display if a.ground == "run" else "full"
     terrain = load_terrain(a.terrain)
     height, craters, x0, y0, cell = terrain
     rj = out_dir / "routes.json"
@@ -751,7 +841,7 @@ def main():
         blocked = _blocked(slope, craters)
         routes = {k: plan_route(slope, blocked, wps[k]) for k in names}
         del slope, blocked
-        render_routes(routes, terrain, out_dir, a.display, a.display_dir, a.max_render)
+        render_routes(routes, terrain, out_dir, a.display, a.display_dir, a.max_render, tilt=not a.level)
         if not all((out_dir / f"detections_{k}.npz").exists() for k in names):
             return
     det = load_detections(out_dir, names)
@@ -789,6 +879,8 @@ def main():
     (out_dir / "calibration.json").write_text(json.dumps(
         {"format": "lantern-calibration/1", "made_at": datetime.now().astimezone().isoformat(timespec="seconds"),
          "command": cmd, "site": SITE, "terrain": Path(a.terrain).name, "n_craters": int(len(craters)),
+         "ground": a.ground, "ground_meta": _ground_meta(a.terrain),
+         "body_tilt": bool(det[names[0]].get("body_tilt", False)),
          "display": det["display"], "step_m": STEP_M, "sigma0_m": SIGMA0_C23,
          "settings": {k: getattr(Settings(), k) for k in ("pf_drift_sigma", "pf_step_noise_frac", "pf_heading_walk_rad",
                                                           "pf_scale_walk", "stereo_baseline_m", "stereo_width_px",

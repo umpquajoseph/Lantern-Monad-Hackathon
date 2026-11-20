@@ -533,9 +533,11 @@ class CameraSortie(Sortie):
         rims = self.vis.rims(img, depth) if look else np.zeros((0, 2))
         t2 = time.perf_counter()
         pts, rng_img = self.lid.scan(pose)
-        hz, kinds = self.lid.hazards(pts)
-        if len(hz):
-            r.add_hazards(rover_to_world(self.lid.to_camera_frame(hz), pose), kinds)
+        hz, kinds = self.lid.hazards(pts)     # this scan's own verdicts, for the step record
+        # The rover drives on the sortie's lidar map, every cell judged afresh as
+        # data merges in (sim/lidar.py HazardMemory; GESTALT sec. 4 steps 2-3).
+        mhz, mkinds, clear = self.lid.judge(pts, pose, widen_m=r.slope.widen_m)
+        r.add_hazards(mhz, mkinds, clear=clear)
         t3 = time.perf_counter()
         if look:
             del img, depth

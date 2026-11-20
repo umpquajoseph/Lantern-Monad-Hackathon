@@ -541,17 +541,30 @@ class Rover:
         j = int(np.clip(round((gx - self.slope.x0) / c), 0, self.haz_fine.shape[1] - 1))
         return bool(self.haz_fine[i, j]) or float(self.slope.at(gx, gy)) > SLOPE_LIMIT_DEG
 
-    def add_hazards(self, world_xy, kinds=None):
+    def add_hazards(self, world_xy, kinds=None, clear=None):
         """Mark hazard points from the lidar (world xy, true frame), widened
         by the rover's half width, for _feasible and the local planner.
         kinds: "crater" | "slope" | "rock" per point (sim/lidar.py); on a
         sensing rover, craters are costly and the rest no-go. Without kinds
-        every point is no-go and closes its 2 m cell, as before."""
+        every point is no-go and closes its 2 m cell, as before.
+        clear (sensing rover): world boxes (xmin, xmax, ymin, ymax) the
+        lidar's map has judged afresh (sim/lidar.py Lidar.judge). Their marks
+        are cleared first and world_xy holds every hazard now judged around
+        them, so ground the map now judges safe reopens."""
         pts = np.asarray(world_xy, float).reshape(-1, 2)
-        if len(pts) == 0:
+        if len(pts) == 0 and not clear:
             return
         if kinds is not None and self.sensing:
-            kinds = np.asarray(kinds)
+            kinds = np.asarray(kinds, dtype=object)
+            c, (H, W) = self.slope.cell, self.haz_fine.shape
+            corners = []
+            for xa, xb, ya, yb in clear or ():
+                i0, i1 = max(int(np.rint((ya - self.slope.y0) / c)), 0), min(int(np.rint((yb - self.slope.y0) / c)) + 1, H)
+                j0, j1 = max(int(np.rint((xa - self.slope.x0) / c)), 0), min(int(np.rint((xb - self.slope.x0) / c)) + 1, W)
+                if i1 > i0 and j1 > j0:
+                    self.haz_steep[i0:i1, j0:j1] = False
+                    self.haz_crater[i0:i1, j0:j1] = False
+                corners += [(xa, ya), (xb, yb)]
             soft = kinds == "crater"
             # A slope hazard is already judged on the footprint (lidar.hazards,
             # slope_mode "footprint"), so it closes only its own point; rocks
@@ -561,10 +574,11 @@ class Rover:
             self._mark(pts[flat], self.haz_steep, r=0)
             self._mark(pts[soft], self.haz_crater)
             # _mark sets cells only within r of a point: refresh haz_fine and
-            # its count in that window, not over the whole 0.25 m map (51M
-            # cells on a run ground; the whole-map OR and sum were most of a
-            # camera step). Same arrays and count as before.
-            c, (H, W) = self.slope.cell, self.haz_fine.shape
+            # its count in that window (and the cleared boxes), not over the
+            # whole 0.25 m map (51M cells on a run ground; the whole-map OR and
+            # sum were most of a camera step).
+            if corners:
+                pts = np.vstack([pts, np.asarray(corners, float)])
             r = int(math.ceil(self.slope.widen_m / c))
             ci = np.rint((pts[:, 1] - self.slope.y0) / c).astype(int)
             cj = np.rint((pts[:, 0] - self.slope.x0) / c).astype(int)

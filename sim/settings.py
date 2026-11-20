@@ -23,6 +23,7 @@ Source tags, one per field, in `metadata["source"]`:
 from __future__ import annotations
 
 import hashlib
+import math
 import json
 from dataclasses import dataclass, field, fields, asdict, replace
 
@@ -150,7 +151,29 @@ class Settings:
     # ---------------------------------------------------------- survey, ice
     reading_spacing_m: float = S(5.0, ASSUMED)
     footprint_radius_m: float = S(1.0, "code sim/ice.py:28 (assumed there)")
-    sensor_noise_wt: float = S(0.15, "code sim/ice.py:29 (assumed there)")
+    # Reading noise of the neutron spectrometer, from VIPER's NSS (the draft names
+    # no instrument): 0.5 wt% WEH at 3-sigma while roving at 10 cm/s, over the 5 m
+    # its WEH map resolves. Counting noise falls as 1/sqrt(integration time), and a
+    # Scout reads every reading_spacing_m while driving at top_speed_mps
+    # (reading_stop_s 0), so sensor_noise_wt (a property below) is
+    # nss_3sigma_wt / 3 * sqrt(T_ref / T): 0.204 wt% at 5 m and 0.15 m/s.
+    nss_3sigma_wt: float = S(0.5, "Colaprete et al., VIPER Project Implementation Plan (NTRS 20210015009) "
+                                  "sec. 3.2.1: 'detection sensitivity of 0.5% (wt) at 3-sigma while roving at "
+                                  "10 cm/s'; Andrews 2020 VIPER overview (NTRS 20205000864) NSS slide: 'down to "
+                                  "0.5% (wt) WEH to 3-sigma while roving'")
+    nss_ref_speed_mps: float = S(0.10, "Colaprete PIP sec. 3.2.1 (same sentence): 'while roving at 10 cm/s'")
+    nss_ref_length_m: float = S(5.0, "Colaprete PIP Table 2-2 L2-SPL-5: WEH 'with a horizontal spatial "
+                                     "resolution of no greater than 5 m'; " + ASSUMED + ": the 3-sigma figure "
+                                     "is for one 5 m stretch of track (50 s at 10 cm/s)")
+    # Hydrogen in dry polar regolith: every reading is this plus the deposits'
+    # concentration (sim/campaign.py read_here). It is not ice to be found: a find is
+    # scored on the deposits alone (sim/crossing.py deposit_at). Test case 0.0: dry
+    # ground reads zero, as before 20 Nov 2026.
+    background_weh_wt: float = S(0.13, "Livengood et al., LEND polar hydrogen (NTRS 20180004020), abstract "
+                                       "p.2: 'Above 88 deg north or south, the concentration increases to "
+                                       "~140 ppmw, or 0.13+/-0.02 wt% water-equivalent hydrogen'; every "
+                                       "Lantern site is poleward of 88 S (sim/psr_sites.py). An orbital average "
+                                       "over km-scale footprints; a PSR floor's own background is not measured")
     find_threshold_wt: float = S(1.0, "brief p.9 '~1 wt% ice threshold we assumed' (code sim/ice.py:20)")
     rich_peak_wt: float = S(5.6, "brief p.12 LCROSS ~5.6% at Cabeus (code sim/ice.py:23)")
     survey_line_spacing_m: float = S(20.0, ASSUMED)
@@ -281,6 +304,26 @@ class Settings:
                                              "0.484-0.620); width threshold 5.53 m")
     stereo_disparity_sigma_px: float = S(5.9, "A24 Table 1 row (SGBM, 1.5 m, -0.2 m, med), 10-20 m RMS 1.15 m "
                                               "at the bin's middle (15 m); the z^2 shape is assumed")
+    # The same Table 1 row, all four 10 m bands of true range (0-10/10-20/20-30/30-40 m).
+    # The z^2 law above reproduces the first two bands (RMS 0.16 / 1.06 m against 0.22 /
+    # 1.15; share off by more than 0.5 / 1 m 2.2 / 26.9% against 1.58 / 24.94%) but not
+    # the last two (RMS 3.13 / 6.67 m against 1.48 / 2.34): SGBM leaves the pixels it
+    # cannot match as holes, and the rest stay good. So from stereo_law_max_m out, the
+    # range error is Gaussian with the band's RMS (sim/vision.py noisy_range). Checked on
+    # the ground pixels of 29 calibration frames, 20 Nov 2026 (sensors report of 12:44).
+    stereo_law_max_m: float = S(20.0, "A24 Table 1 band edge: the z^2 law reproduces the 0-10 and 10-20 m "
+                                      "bands of the row above and not the 20-30 and 30-40 m bands")
+    stereo_band_rms_m: tuple = S((0.22, 1.15, 1.48, 2.34), "A24 Table 1 row (SGBM, 1.5 m, -0.2 m, med), RMS (m) "
+                                                           "by 10 m band 0-10/10-20/20-30/30-40; used from "
+                                                           "stereo_law_max_m out, beyond 40 m the last band's (assumed)")
+    stereo_hole_pct: tuple = S((6.71, 27.53, 50.30, 88.38), "A24 Table 1 row (SGBM, 1.5 m, -0.2 m, med), %hole by "
+                                                            "10 m band 0-10/10-20/20-30/30-40 m; beyond 40 m the "
+                                                            "last band's (assumed). Lantern's camera is 1.6 m up")
+    stereo_hole_model: str = S("pixel", ASSUMED + ": 'pixel', each render pixel a hole independently with its "
+                                        "band's share (one of the 640 px render's pixels spans 8 of the rig's "
+                                        "5120, wider than an SGBM window); test case 'block'")
+    stereo_hole_block_px: int = S(4, ASSUMED + ": the 'block' test case's square of render pixels that are "
+                                           "holes together")
     # The truth: how the odometer errs (sim/rover.py, sim/mission.py). The
     # bias is drift_frac above.
     odom_noise_frac: float = S(0.005, ASSUMED + "; white distance noise per step, share of the step")
@@ -361,6 +404,15 @@ class Settings:
                                           "(code sim/terrain.py:106)")
 
     # ------------------------------------------------------------- helpers
+    @property
+    def sensor_noise_wt(self) -> float:
+        """1-sigma noise (wt% WEH) of one ice reading: the NSS's 3-sigma over 3, scaled by
+        counting statistics from its reference integration (nss_ref_length_m at
+        nss_ref_speed_mps) to the Scout's (reading_spacing_m at top_speed_mps)."""
+        t_ref = self.nss_ref_length_m / self.nss_ref_speed_mps
+        t = self.reading_spacing_m / self.top_speed_mps
+        return self.nss_3sigma_wt / 3.0 * math.sqrt(t_ref / t)
+
     def key(self) -> str:
         """Short stable hash of every setting: (seed, key) names a run."""
         blob = json.dumps(asdict(self), sort_keys=True, default=list)
@@ -399,9 +451,31 @@ class WorldRanges:
     missing_share_large: tuple = S((0.0, 0.2), ASSUMED + "; share of resolved craters also absent")
     orbital_pos_err_px: float = S(1.0, ASSUMED + "; 1-sigma error per axis of a mapped crater's centre, in "
                                                  "orbital DEM pixels (2 m). C23 sec. 1 and 4A give the pixel, "
-                                                 "not the error")
+                                                 "not the error. No source gives a crater-position error for a "
+                                                 "DEM-derived map; the frame itself is far better: co-adjusted "
+                                                 "LOLA tracks are geolocated to 10-20 cm horizontally over each "
+                                                 "16 km site (Barker 2021 abstract); over 80-90 S, 1.00/1.00/0.15 m "
+                                                 "along/cross/radial, conservative (Barker 2023 sec. 3, p.10), and "
+                                                 "1 m NAC SfS DTMs are aligned to LOLA (Hemmi 2025 sec. 2.2, 4.3)")
     orbital_diam_err_px: float = S(1.0, ASSUMED + "; 1-sigma error of a mapped crater's diameter, in orbital "
-                                                  "DEM pixels (2 m)")
+                                                  "DEM pixels (2 m). ShadowCam diameters from detection boxes "
+                                                  "'may currently be slight overestimates' (Mazarico 2025), "
+                                                  "unquantified, so not modelled")
+    # A map cut at ShadowCam's completeness is a map made from ShadowCam
+    # images of the shadowed floor (docs/terrain/position.md row 7): 1 m SfS
+    # DTMs need sunlight (Hemmi 2025 keeps NoData in deep shadow, sec. 4.5),
+    # so a sub-5 m map of a PSR floor would come from ShadowCam. Its images
+    # are geolocated to about 20 m, so each image's craters share one offset.
+    shadowcam_map_from_cut_m: float = S(18.0, "Mazarico 2025: ShadowCam crater counts in polar shadow complete "
+                                              "from ~18 m. A starting map cut this large or larger is taken "
+                                              "to come from ShadowCam images and gets shadowcam_geoloc_m")
+    shadowcam_geoloc_m: float = S(20.0, "Mazarico 2025: 'the geolocation accuracy of the images is on a par "
+                                        "with the size of the smallest detected craters (~20 m)'. Read as a "
+                                        "1-sigma offset per axis, shared by every crater of one image "
+                                        "(assumed reading)")
+    shadowcam_image_m: float = S(5200.0, "ShadowCam factsheet (docs/sources/ShadowCam-factsheet.pdf): 'Image "
+                                         "Footprint (100 km alt.) 5.2 km x 144 km'; the cross-track width as the "
+                                         "side of a square patch that shares one offset (square " + ASSUMED + ")")
     n_deposits: tuple = S((3, 12), ASSUMED)
     deposit_radius_m: tuple = S((3.0, 12.0), ASSUMED + "; code sim/ice.py:30 uses 6 m")
     deposit_peak_wt: tuple = S((1.0, 5.6), "upper end brief p.12 (LCROSS); lower end the find threshold")

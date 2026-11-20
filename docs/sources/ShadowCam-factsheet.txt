@@ -1,0 +1,98 @@
+ShadowCam is a NASA-funded instrument hosted onboard the Korea 
+Aerospace Research Institute (KARI) Korea Pathfinder Lunar Orbiter 
+(KPLO) satellite. By collecting high-resolution images of the Moon’s 
+permanently shadowed regions (PSRs), ShadowCam provides critical 
+information about the distribution and accessibility of water ice and 
+other volatiles at spatial scales (1.7 m/pixel) required to mitigate risks 
+and maximize the results of future exploration activities. 
+The Moon’s PSRs never see direct sunlight and are illuminated only 
+by light reflected from nearby topographic highs. This secondary 
+illumination is very dim. To see details within the PSRs, ShadowCam 
+was designed to be over 200 times more sensitive than previous 
+imagers, like the Lunar Reconnaissance Orbiter Camera Narrow 
+Angle Camera (LROC NAC). As a result, ShadowCam images will 
+allow for unprecedented views into the shadows but will saturate 
+while imaging sunlit terrain.
+Science Objectives
+1. Map albedo patterns in PSRs and interpret their nature:  ShadowCam 
+will search for frost, ice, and lag deposits by mapping reflectance 
+with resolution and signal-to-noise ratios comparable to LROC NAC 
+images of illuminated terrain.
+2. Investigate the origin of anomalous radar signatures associated with 
+some polar craters: ShadowCam will determine whether high-purity 
+ice or rocky deposits are present inside PSRs.
+3. Document and interpret temporal changes of PSR albedo units: 
+ShadowCam will search for seasonal changes in volatile abundance 
+in PSRs by acquiring monthly observations.
+4. Provide hazard and trafficability information within PSRs for future 
+landed elements: ShadowCam will provide optimal terrain information 
+necessary for polar exploration.
+5. Map the morphology of PSRs to search for and characterize landforms 
+that may be indicative of permafrost-like processes: ShadowCam will 
+provide unprecedented images of PSR geomorphology at scales that 
+enable detailed comparisons with terrain anywhere on the Moon.
+ShadowCam was built by Malin Space Science Systems in San Diego 
+California. For more ShadowCam information, news, and images, 
+about ShadowCam, visit online at shadowcam.im-ldi.com. For more 
+information about the KPLO satellite and KARI, visit www.kari.re.kr/
+eng/sub03_07_01.do
+ShadowCam Seeing in the Shadows
+Illustration of KPLO satellite (courtesy of KARI).
+ShadowCam instrument (top) with a focused view of the electronics and radiator (right).
+
+Science and Operations Team*
+*Key LROC personnel leveraged to build, operate, and analyze observations.
+ShadowCam Factsheet Ver. 4, Oct. 2025
+Prasun Mahanti Principal Investigator (P .I.) Intuitive Machines
+Mark Robinson Deputy P .I. Intuitive Machines
+Ben Bussey Co-Investigator Applied Physics Laboratory
+Lynn Carter Co-Investigator University of Arizona
+Brett Denevi Co-Investigator Applied Physics Laboratory
+Nicholas Estes Co-Investigator Intuitive Machines
+Dave Humm Co-Investigator Spicacon
+Mallory Kinczyk Co-Investigator Applied Physics Laboratory
+Paul Lucey Co-Investigator University of Hawaii
+Erwan Mazarico Co-Investigator Goddard Space Flight Center
+Michael Ravine Co-Investigator Malin Space Science Systems
+Emerson Speyerer Co-Investigator Intuitive Machines
+Robert Wagner Co-Investigator Intuitive Machines
+Shuai Li Participating Scientist University of Hawaii
+Jean-Pierre Williams Participating Scientist University of California Los Angeles
+ShadowCam Characteristics
+Camera Design Time Delay Integration pushbroom
+FOV (cross track) 2.86°
+Pixel Scale 1.7 meter
+Signal-to-Noise Ratio > 90
+Pixel Size 12 μm
+Instantaneous FOV 17.16 μrad
+Sensor Width 3144 (3072 scene; 72 calibration) pixels
+Image Size (sensing pixels) 3072 (cross-track), 84992 (down-track)
+Image Footprint (100 km alt.) 5.2 km × 144 km
+Optics f/3.6 Cassegrain (Ritchey-Chretien)
+Focal Length 700 mm
+Primary Mirror Diameter 195 mm
+MTF (@Nyquist) > 0.2
+Aperture 194.4 mm
+Effective TDI Lines 32
+Sensitivity > 200× the LROC NAC sensitivity
+Mass 8.75 kg
+Volume 118 × 27 cm (w/radiator)
+Peak, Standby Power 9.3, 4.5 W
+Average Power 6.4 W
+Spectral Response 410–780 nm
+Labeled drawing of the ShadowCam instrument (top) and cross-section 
+(bottom) showing the internal optics and mirrors.
+The first ShadowCam image from orbit reveals 
+the permanently shadowed wall and floor 
+of Shackleton crater in never before seen 
+detail. Image 2040 meters wide, ShadowCam 
+M012728826 [NASA/KARI/IM].
+Telescope
+Sunshade
+Electronics
+Radiator
+Secondary Mirror
+Primary Mirror
+Optical Bench
+Telescope
+Sunshade

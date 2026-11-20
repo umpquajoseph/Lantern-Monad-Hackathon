@@ -1,0 +1,1881 @@
+Page 1/46 
+Background and Lunar Neutron Populations Detected by LEND 1 
+and Average Concentration of Near-Surface Hydrogen Near the 2 
+Moon’s Poles 3 
+T. A. Livengood, CRESST/University of Maryland at Planetary Systems 4 
+Laboratory, NASA Goddard Space Flight Center, Greenbelt, MD 20771 5 
+I. G. Mitrofanov, Institute for Space Research, Moscow, Russia 6 
+G. Chin, NASA Goddard Space Flight Center, Planetary Systems Laboratory, 7 
+Greenbelt, MD 20771 8 
+W. V. Boynton, University of Arizona, Lunar and Planetary Laboratory, Tucson, 9 
+AZ 10 
+J. G. Bodnarik, University of Arizona, Lunar and Planetary Laboratory, Tucson, 11 
+AZ 12 
+L. G. Evans, Computer Sciences Corporation, Lanham-Seabrook, MD 20706 13 
+K. P. Harshman, University of Arizona, Lunar and Planetary Laboratory, Tucson, 14 
+AZ 15 
+M. L. Litvak, Institute for Space Research, Moscow, Russia 16 
+T. P. McClanahan, NASA Goddard Space Flight Center, Planetary Systems 17 
+Laboratory, Greenbelt, MD 20771 18 
+R. Z. Sagdeev, Department of Physics, University of Maryland, College Park, MD 19 
+20742 20 
+A. B. Sanin, Institute for Space Research, Moscow, Russia 21 
+R. D. Starr, Department of Physics, Catholic University of America, Washington, 22 
+DC 20064 23 
+J. J. Su, Department of Physics, University of Maryland, College Park, MD 20742 24 
+ 25 
+Running Title: Lunar neutrons detected by LEND 26 
+Tables: 6 27 
+Figures: 6 28 
+Supplemental: 1 file 29 
+Correspondence to: Dr. Timothy A. Livengood 30 
+Code 693 31 
+NASA Goddard Space Flight Center 32 
+Greenbelt, MD 20771 33 
+E-mail: timothy.a.livengood@nasa.gov 34 
+Telephone: 301-286-1552 35 
+Fax: 301-286-1683 36 
+37 
+Page 2/46 
+Abstract:  38 
+Neutron flux measurements by the Lunar Exploration Neutron Detector (LEND) on the 39 
+Lunar Reconnaissance Orbiter (LRO) enable quantifying hydrogen-bearing volatiles in the 40 
+lunar surface from orbit. A ccurately determining hydrogen abundance requires 41 
+discriminating between the instrument background detection rate and the population of 42 
+lunar-sourced neutrons that are sensitive to surficial hydrogen.  We have investigated t he 43 
+detection rate for lunar and non-lunar (spacecraft-sourced) neutrons in LEND by modeling 44 
+maps of measured count rate in three LEND detector systems using linear combinations of 45 
+maps compiled from LEND detectors and from the Lunar Prospector Neutron Spectrometer. 46 
+We find that 30% of the global -average 24.926±0.020 neutron counts per second (cps) 47 
+detected by the LEND STN3 thermal-energy neutron sensor are lunar-sourced neutrons in 48 
+the thermal energy range (E<0.4  eV), 65% are lunar -sourced neutrons in the epithermal 49 
+and fast energy range (E>0.4 eV), and 5% are from spacecraft-sourced background signal. 50 
+In the SETN epithermal neutron detector, 90% of the 10.622±0.002 neutron detections per 51 
+second are consistent with a  lunar source of epithermal and fast neutrons combined 52 
+(E>0.4 eV), with 3 % due to lunar-sourced thermal neutron l eakage into the detector  53 
+(E<0.4 eV), and background signal accounting for 7 % of total detections . Background 54 
+signal due to spacecraft-derived neutrons is substantial in the CSETN collimated detector 55 
+system, accounting for 57% of the global average detection rate of 5.082±0.001 cps, greater 56 
+than the 48% estimated from cruise-phase data. Lunar-sourced epithermal and fast neutrons 57 
+account for 43% of detected neutrons, including neutrons in collimation as well as neutrons 58 
+that penetrate the collimator wall to reach the detector. We estimate a lower limit of 17% 59 
+of lunar -sourced neutrons detected by CSETN are epithermal neutrons in collimation  60 
+(0.37 cps), with an upper limit estimate of 54±11% of lunar-sourced neutrons received in 61 
+collimation, or 1.2±0.2 cps global average. The pole-to-equator contrast ratio in epithermal 62 
+and high -energy epithermal neutron flux  indicates that the average concentration of 63 
+hydrogen in the polar regolith above 80 ° north or south latitude is ~105 ppmw (parts per 64 
+million by weight) , or 0.095 ±0.01 wt% water-equivalent hydrogen. Above 88° north or 65 
+south, the concentration increases to ~140  ppmw, or 0.13±0.02  wt% water -equivalent 66 
+hydrogen. The s imilar pattern of neutron flux suppression at both poles suggests that 67 
+hydrogen concentration generally inc reases nearer the pole and is not closely  associated 68 
+with a specific feature such as Shackleton Crater at the lunar south pole that has no northern 69 
+counterpart. Epithermal neutron flux decreases with increasing latitude  outside the polar 70 
+regions, consistent with  surface hydration that increases with latitude if that hydration 71 
+extends to ~13–40 cm into the surface. 72 
+73 
+Page 3/46 
+Introduction 74 
+The flux of neutrons from solid surfaces exposed to galactic cosmic rays (GCR) can be 75 
+measured by spacecraft instrumentation to explore composition of the upper regolith (~1m) 76 
+in planetary bodies. Neutron remote sensing poses technical challenges in that neutrons are 77 
+not focused effectively with current technologies, and a significant background flux of 78 
+neutrons is formed by GCR impacts on spacecraft structures local to the detector.  The 79 
+Lunar Exploration Neutron Detector (LEND) on the Lunar Reconnaissance Orbiter (LRO) 80 
+spacecraft addresses the challenge of directing neutrons by placing a subset of its detectors 81 
+within a collimator structure that reduces the population of neutrons that reach the detector 82 
+from outside a limited range of acceptance angle (Mitr ofanov et al. 2010a). The detectors 83 
+within the collimator structure receive background neutron flux from the surrounding 84 
+structure, and  LEND also has uncollimated detectors  mounted on the outside of the 85 
+collimator structure which receive background neutron flux generated within the body of 86 
+the spacecraft and the neighboring collimator. The relatively high mass of the collimator 87 
+prevented deploying LEND on a boom and thus LEND was mounted to the spacecraft body, 88 
+which maximizes the solid angle subtended by t he spacecraft neutron source. Neutron 89 
+remote sensing detects hydrogen and other species  by their suppression of neutron flux. 90 
+Localized deposits of these species can be identified even in raw flux measurements , but 91 
+accurate quantitative measurements require determining and subtracting the background. 92 
+Data acquired at the Moon during the first (roughly) two and a half years of the LRO 93 
+mission demonstrate the actual performance of the LEND instrument in action at the Moon, 94 
+responding to the combin ed lunar neu tron flux and background . This work tests 95 
+background estimates in three of LEND’s detector systems  that were  determined from 96 
+cruise-phase measurements en route to the Moon (Litvak et al. 2012a) and uses a method 97 
+independent from a recent determination of background detection rates  by Litvak et al. 98 
+(2016). The present method also explores similarities and differences between 99 
+measurements of neutron flux by LEND and by the earlier Lunar Prospector (LP) neutron 100 
+detectors (Feldman et al. 1999). All of the data used here were downloaded from the 101 
+Planetary Data System Geosciences Node, hosted by Washington University in St. Louis 102 
+(http://geo.pds.nasa.gov) and thus are freely available to the lunar science community to 103 
+test the conclusions of this work. 104 
+The primary task for LEND is to map the distribution and magnitude of suppression in the 105 
+Moon’s neutron flux as an indicator for the presence of hydrogen, and thus water, in the 106 
+upper meter of the regolith  near the poles . Hydrogen, as water, is expected to be 107 
+concentrated within permanently shadowed regions (PSRs) near the lunar poles (Watson 108 
+et al. 1961; Carruba and Coradini 1999). Hydrogen or water may come from the constant 109 
+influx of solar wind, from impacts by hydrated micrometeoroids, from pulsed delivery of 110 
+water and other volatiles by major cometary or asteroidal impacts, or from outgassing 111 
+volatiles from the lunar interior . Remote detections of mineral hydration in the Moon’s 112 
+Page 4/46 
+near-infrared reflectance spectrum show that water or hydroxyl is more widely distributed 113 
+than expected (Sunshine et al. 2009; Pieters et al. 2009; Clark 2009; Livengood et al. 2011), 114 
+expanding the range of regions on the Moon whose hydrogen content is important to 115 
+understand. Understanding the background detection rate in LEND is necessary to measure 116 
+small quantities of water that are widespread. 117 
+Neutron remote sensing measures the quantity of hydrogen in the regolith through a local 118 
+deficit in the flux of epithermal neutrons (~0.4 eV < E < ~100 keV) that are created by 119 
+galactic cosmic ray (GCR) spallation from atomic nuclei in the Moon (Boynton et al. 2012). 120 
+A deficit in the epithermal neutron leakage flux is caused by collisions with hydrogen 121 
+atoms, which efficiently degrade neutron energy below the threshold of the thermal range 122 
+(E<~0.4 eV). For modest hydrogen concentrations up to a few thousand parts per million 123 
+by weight (ppmw) or a few percent or less of water-equivalent hydrogen by weight (wt% 124 
+WEH), the fractional abundance  of hydroge n is directly proportional to t he fractional 125 
+deficit of epithermal neutrons relative to unsuppressed neutron leakage from a hydrogen-126 
+poor reference region of similar mineralogy (see Eqn. 8). If the detector background were 127 
+not subtracted, the measurement would underestimate the actual hydrogen concentration, 128 
+resulting in a hard lower limit on the abundance of hydrogen in the regolith. 129 
+LEND is the second orbital neutron  detection instrument deployed at the Moon to 130 
+investigate the quantity and spatial distribution of hydrogen in the lunar surface, enlarging 131 
+on results from  Lunar Prospector (Hubbard et al. 1998). The LP investigation of water 132 
+deposits in the Moon’s polar regions was reported by Feldman et al. (2000; 2001; 2004). 133 
+The Lunar Prospector mission was terminated by intentional lunar impact on 31 July 1999 134 
+(Goldstein et al.  1999). Lunar Prospector operated in two phases, initially at 100  km 135 
+altitude and later at 30  km altitude. The s patial footprint of omnidirectional neutron 136 
+detectors, such as used on LP, is proportional to altitude. We use data from the low altitude 137 
+phase of the LP mission to compare with LEND measurements at ~51 km altitude. 138 
+The present work models the spatial distribution of lunar neutron flux measured by three 139 
+of the LEND detectors , using comparable data from LP  as well as using LEND data to 140 
+compare between detector systems (Fig. 1). This effort differs from Litvak et al. (2012b), 141 
+which compares the first 1.3 years of LEND data to LP mapped neutron flux measurements, 142 
+by using substantially more LEND data and by quantitatively investigating the relative 143 
+contribution of neutrons from different populations in each LEND detector. Litvak et al. 144 
+(2016) also investigated LEND detector background, using orbital phase profiles rather 145 
+than complete two-dimensional maps and using only data from LEND detectors rather than 146 
+LP. Eke et al. (2012) modeled the performance of one LEND detector system, the CSETN 147 
+collimated detector, comparing the data stream of individual one -second integrations by 148 
+LEND against latitude-longitude maps compiled from LP. The present effort differs from 149 
+Eke et al. (2012) by comparing maps assembled by comparable methods for LEND and 150 
+LP both, and by investigating two other LEND detector systems as well as CSETN . The 151 
+Page 5/46 
+compiled LEND maps are assembled from data reduced, calibrated, and flagged by LEND 152 
+standard processing for  Derived LEND Data products (DLD) for the PDS (Litvak et al. 153 
+2012a). An ASCII text file recording the mapped LEND data and detector backgrounds 154 
+derived from this work can be found in the online Supplemental Materials. 155 
+ 
+Fig. 1: Lunar neutron flux mapped by LEND ( a, b, c ) and by LP (e, f, g) with 3° square 
+pixels over the full range of latitude (±90°) and longitude (±180°). Neutron detection rates 
+stretch between minimum (dark) and maximum (bright) as shown by the respective color 
+scales for each image set, labeled in counts per second. LEND detectors are (a) STN3; (b) 
+SETN; and ( c) CSETN. Maps displayed for LP  are: (e) thermal neutron s; (f) epithermal 
+neutrons; (g) fast neutrons. Integration time per map pixel is shown for the CSETN detector 
+(d; 7788–27078 sec) and for LP ( h; 256–4960 sec). Count rates for the CSETN detector 
+are labeled by count rate per detector, as well as the 4 -detector equivalent count rate, in 
+parentheses. 
+In the following section, we summarize relevant features of LEND and its major 156 
+differences from the LP neutron detectors and discuss constructing maps using both LP 157 
+and LEND data. We show how archived data from LP can be used to estimate contributions 158 
+to the LEND detectors from lunar and non -lunar sources and to estimate parameters 159 
+LRO/LEND LP 
+d h 
+0 
+27,078 
+0 
+4960 
+c 
+ g 
+1.242 
+(4.97) 
+1.324 
+(5.30) 
+13.0 
+16.1 
+b 
+ f 
+10.2 
+11.1 
+18.5 
+20.4 
+a 
+ e 
+20.6 
+27.7 
+8.9 
+25.0 
+
+Page 6/46 
+required to reduce LEND data and eliminate background and out-of-band contributions in 160 
+the different detectors. Finally, we address distinctions between neutron flux measured by 161 
+LEND and neutron flux measured by LP, including both the uncollimated and the 162 
+collimated LEND detectors. We identi fy a persistent discrepancy in the polar regions 163 
+between two of the LP  neutron flux  maps in comparison to corresponding LEND 164 
+measurements and argue that this discrepancy is an artifact of the LP data that is not present 165 
+in the LEND detectors nor in the remaining one of the three LP neutron detector systems. 166 
+The ratio between the epithermal neutron flux at the relatively dry equator and at the poles 167 
+yields estimates for the regionally averaged hydrogen content in the polar regolith. 168 
+Instruments and Data Reduction 169 
+The Lunar Reconnaissance Orbiter was launched 18 June 2009 and entered the mapping 170 
+phase of its mission on 15 September 2009 in a circular polar orbit of the Moon at 171 
+approximately 51 km altitude (average of actual data collection), covering the entire lunar 172 
+surface in both day and night phases in one lunation. The spacecraft was moved to a 173 
+dynamically stable elliptical orbit in December 2011, to conserve fuel and maintain 174 
+operational capability for as long as possible during the extended mission (Vondrak et al. 175 
+2012). LEND measurements used for the present work were collected between 16 176 
+September 2009 and 31 December 2011, restricted to data collected in the altitude range 177 
+51±15 km, which includes more than 80% of data, distributed approx imately 178 
+symmetrically about the mean value . Limiting to data prior to 2012 enables multiple 179 
+detector systems to be considered contemporaneously, since an instrument anomaly in May 180 
+2011 ended useful data from two of the detectors that we consider here, STN3 and SETN. 181 
+The anomaly appears to have been an electrical discharge (arcing) within high -voltage 182 
+circuitry that damaged an electronics board that digitized the signal from some detectors, 183 
+including SETN. The STN3 detector and one element of the CSETN colli mated detector 184 
+shared the responsible high -voltage electronics, which have been switched off to protect 185 
+the rest of the instrument. There have been no subsequent anomalies  that resulted in 186 
+reducing instrument function. 187 
+LEND is body -mounted on the 3 -axis st abilized polar -orbiting LRO spacecraft. The 188 
+configuration of LEND is described and illustrated by Mitrofanov et al. (2010a). Eight of 189 
+the LEND detectors are functionally identical cylindrical 3He-filled proportional counters, 190 
+differing in terms of cladding  and mounting position. The LEND high -energy neutron 191 
+detector SHEN, which is not used in this work, employs a stilbene scintillator with anti -192 
+coincidence shield and is the only LEND detector that is not a gas proportional counter. 193 
+The detectors are mounted with long axis parallel to each other and aligned towards the z-194 
+axis of the LRO spacecraft, normally the nadir direction. All LEND measurements that are 195 
+used here were acquired within 2° of nadir pointing , for stable observational geometry . 196 
+Detected neutrons include lunar sources as well as neutrons from GCR spallation off of 197 
+spacecraft and instrument components. 198 
+Page 7/46 
+Standard LEND data -processing methods are described by Litvak et al. (2012a). LEND 199 
+data used here were obtained from the PDS in the calibrated DLD (Derived LEND Data) 200 
+format, which is derived from Reduced Data Records (RDR) files, which also are available 201 
+on the PDS. The full set of quantitative calibration steps applied in creating the RDR and 202 
+DLD data sets are described by Litvak et al. (2012a) and by Boynton et al. (2012). Each 203 
+record in the DLD format corresponds to a single 1-second integration of neutron detection 204 
+events for all operating detectors in the LEND instrument and includes spacecraft event 205 
+time, calendar date and time, local solar time, lunar latitude and longitude, the number of 206 
+counts in each LEND detector, and estimated background in each detector. Altitude 207 
+information was recovered from spacecraft ephemerides. The background recorded in the 208 
+DLD was estimated from data collected during the short cruise to the Moon, in the absence 209 
+of lunar neutrons ; this background is tested by the present work . LEND acquires up to 210 
+86,400 records in a terrestrial day  to make one DLD file. This work uses 771 DLD files, 211 
+although not every file covers a complete day, due to spacecraft events such as pointing  212 
+off-nadir for the benefit of other LRO measurements, conflict with charged particle flux 213 
+from solar particle events, or instrument or spacecraft anomalies.  No DLD records are 214 
+produced for periods in which the instrument was switched off. 215 
+In the maps constructed from the data used in this work, mean altitude as a function of 216 
+latitude varies from a minimum of 48.0  km at the north pole to a maximum of 52. 8 km at 217 
+the south pole. Over this altitude range, the detector background due to GCR impinging on 218 
+the spacecraft is expected to vary by 0.86% due to the change in solid angle subtended by 219 
+the Moon that occ ults the otherwise isotropic cosmic ray fluence (Litvak et al. 2012a). 220 
+Treating the background as a spatially uniform component of the total neutron detection 221 
+rate thus is likely to overestimate the background at the low altitude of the north pole by 222 
+~0.43%, and underestimate the background at the high altitude of the south pole by ~0.43%. 223 
+This is small compared to the uncertainties that are derived for the background (below) . 224 
+The altitude also varies as a function of longitude, from a minimum of 43.0 km altitude at 225 
+~15°N on the l unar near side, to a maximum of 58.1 km altitude at ~ 15°S on the lunar 226 
+farside, with the background varying by 2.8% between the nearside minimum and the 227 
+farside maximum. The variability of the background with altitude is opposed by variability 228 
+in the flux of lunar neutrons, which decreases with altitude  so that the magnitude of 229 
+variation in the total signal is less than the variation in either component. Eke et al. (2012) 230 
+constructed an empirical distribution of signal versus altitude for the LEND detector 231 
+CSETN which shows that the total signal declines by about 1.1% with altitude increasing 232 
+from 40 km to 60 km. Since t he GCR -induced background increases with altitude, the 233 
+lunar-sourced neutron flux must decrease by more  than the background increases . Since 234 
+the two effects are close to balanc e over the relatively narrow altitude range from which  235 
+data are drawn for this work, the overestimate of background at altitudes below the 51 km 236 
+average mostly compensates for the underestimate of lunar neutrons, and vice -versa. The 237 
+empirical deviation in the magnitude of CSETN total signal due to variations of spacecraft 238 
+Page 8/46 
+altitude with respect to the 51 km mean altitude are thus of order ±1.1%•((58.1-43.0)/20)/2 239 
+= ±0.42% of the CSETN total signal, which is approximately a factor of two greater than 240 
+the background estimated below. The estimated uncertainty in the CSETN background  is 241 
+about ten times this altitude variability, which is  thus not important to the outcome . 242 
+Variation with altitude of signal from the uncollimated LEND detectors , in which the 243 
+background component is much smaller  and the lunar signal varies substantially with 244 
+altitude, is corrected as part of the standard processing described by Litvak et al. (2012a). 245 
+The LEND proportional-counter detectors are switched off while operating the LRO rocket 246 
+motor for station-keeping maneuvers due to arcing in the high -voltage electronics caused 247 
+by exhaust gases. Station -keeping was conducted approximately every two weeks during 248 
+the circular-orbit phase of the mission , when the normal to the spacecraft orbit plane was 249 
+aligned with the Earth-Moon axis so that the spacecraft could communicate with the ground 250 
+station at all times in case of trouble. Maneuvers thus took place when the spacecraft orbit 251 
+was near longitudes ±90° , over a variety of local time values , resulting in reduced 252 
+integration time at these longitudes (Fig. 1). LRO orbital period is less than two hours; as 253 
+a result, any uncalibrated variations in detector sensitivity, variations in GCR flux, or 254 
+effects due to detector inactivity that last significantly longer than two hours, would appear 255 
+in mapped LEND data as striping nearly parallel to longitude, affecting all latitudes equally. 256 
+Figure 1 reflects  the reduced  net integration time  and resulting signal-to-noise ratio at 257 
+longitude ±90°. 258 
+Variations in the sensitivity of individual detectors and in the GCR flux that produces lunar 259 
+neutrons and spacecraft-generated (background) neutrons are compensated in routine data 260 
+reduction. Detector sensitivity increases over a period of a few weeks after switch -on, 261 
+approaching ~27% greater sensitivity than at switch-on in the example shown by Litvak et 262 
+al. (2012a). Similar sensitivity variation occurs in all the LEND 3He-detectors and appears 263 
+consistent with surface charging on the insulated stand -off that supports the central 264 
+electrode within the detector chamber, increasing the active length of the detector by about 265 
+the same proportion. The variation in sensitivit y is modeled as an exponential function, 266 
+appropriate to the behavior of a resistive-capacitive circuit. Sensitivity in each individual 267 
+LEND detector is calibrated independently using data acquired from a narrow range of 268 
+latitude around each lunar pole, representing a repeatable measurement of neutron flux 269 
+(Litvak et al. 2012a; Boynton et al. 2012). Calibrating by this standard corrects for any 270 
+long-term change in detector sensitivity, as well as variability in the lunar neutron leakage 271 
+flux. Since lunar neutrons arise from GCR interactions with the lunar regolith, and 272 
+background neutrons also arise from GCR interactions with spacecraft materials, the total 273 
+signal in the detector scales uniformly with changes in GCR flux. 274 
+Lunar Prospector was in polar orbit, spin-stabilized with rotation axis nearly parallel to the 275 
+Moon’s rotation axis (Binder 1998). Two of the LP neutron detectors were mounted on a 276 
+2.5m-long boom extended perpendicular to the spin axis, with the two 3He-filled 277 
+Page 9/46 
+cylindrical proportional-counter detectors for thermal and epithermal neutrons mounted 278 
+end-to-end, oriented perpendicular to the boom and perpendicular to the spacecraft spin 279 
+axis (Maurice et al.  2004). Measurements from these detectors we re corrected for the 280 
+detector cross-section presented to the lunar surface, as the detectors were parallel to the 281 
+surface over the poles and continuously alternated between perpendicular and parallel to 282 
+the surface over the equator due to spacecraft rotation. A small background component of 283 
+neutron flux was generated from GCR impacts on spacecraft hardware, relatively little due 284 
+to the detectors’ position on the boom , separated from the bulk of the spacecraft. A third 285 
+neutron energy range, fast neutrons, was detected with the anti-coincidence shield (ACS) 286 
+of the Lunar Prospector gamma ray spectrometer, mounted on a different boom. The ACS 287 
+used a borated plastic scintillator and photomultiplier detectors to detect neutron capture 288 
+events. The ACS was shaped as a cup surrounding the gamma ray scintillator component, 289 
+with a stubby cylindrical base of approximately equal height and diameter. Signal in the 290 
+ACS varied with the geometry of the detector relative to the lunar surface, which was 291 
+parameterized and corrected by Maurice et al.  (2000) as a function of latitude using 292 
+measured count rates obtained over the lunar highlands . Data reduction and calibration 293 
+procedures for the LP neutron detectors are described by Maurice et al. (2004). The LP 294 
+neutron flux data products available from the PDS have already had background-295 
+subtraction and geometrical corrections performed. 296 
+A neutron -detection event in the LEND proportional counter detectors occurs when a  297 
+neutron penetrates into the detector chamber to be captured by a  3He nucleus, forming a 298 
+triton and a free proton and releasing  an electron and 764 keV of binding energy as the 299 
+total kinetic energy of the products. Collisions of the energetic products with the remaining 300 
+3He gas results in ionization proportional to the release of energy, generating a pulse of 301 
+current between a central electrode and the chamber wall that is proportional to the energy. 302 
+Neutron-detection events are distinguishable from the con tinuum of pulse magnitude 303 
+created by charged particles, which also may be detected but with an energy spectrum that 304 
+peaks at low energy (Litvak et al. 2012a). Measured signal is the count of neutron-detection 305 
+events within 1-second integration intervals. The triton eventually undergoes a beta-decay 306 
+to 3He, leaving a net increase of one hydrogen atom in the detector chamber. Detection 307 
+efficiency degrades for neutrons entering the chamber with energy greater than ~1 eV and 308 
+is near zero for energy greater than ~10 keV (Litvak et al. 2012a). 309 
+The three LEND detector systems investigated here are: 310 
+1. STN3 – uncollimated Sensor for Thermal Neutrons.  This detector is mounted 311 
+outside the LEND collimator structure and near its nadir-pointed apex so that it 312 
+receives lunar neutrons from all directions and all energies. The identical STN1 and 313 
+STN2 detectors are mounted fore -and-aft on the outside base of the collimator so 314 
+that one is exposed primarily to neutrons from the direction of travel along the orbit 315 
+and the other is exposed to neutrons from the trailing direction. STN3 is positioned 316 
+Page 10/46 
+such that it is unaffected by the velocity of the spacecraft, which has a significant 317 
+influence on detection rates for low-energy thermal neutrons detected by STN1 and 318 
+STN2. The globally averaged count rate in the STN3 detector is 24.93±0.02 counts 319 
+per second (cps). 320 
+2. SETN – uncollimated Sensor for Epi Thermal Neutrons. This detector is mounted 321 
+similarly to STN3, on the opposite side of the coll imator structure. It differs from 322 
+STN3 in that it is wrapped in cadmium foil, which has a high absorption cross-323 
+section for neutrons of energy less than ~0.4  eV, so that SETN accepts neutrons 324 
+only of greater energy. The LP epithermal-neutron detector also used cadmium foil 325 
+to exclude thermal neutrons from detection. The globally averaged count rate in the 326 
+SETN detector is 10.622±0.002 cps. 327 
+3. CSETN – Collimated Sensor(s) for Epi Thermal Neutrons. The signal from the 328 
+CSETN detector system is collected from up to  four detectors located within a 329 
+collimator structure. The collimator design is an aluminum structure that encases 330 
+polyethylene beads and an inner shield containing 10B. The hydrogen -rich 331 
+polyethylene moderates the energy of neutrons that enter the walls of the collimator 332 
+so that they have a high probability of capture  by the 10B. Each detector sits at the 333 
+base of an open barrel in the collimator, positioned so that the long axis of the 334 
+detector and of the open barrel point in the direction of the LRO spacecraft z-axis, 335 
+the nadir direction in normal operation, with the field of view defined by the barrel 336 
+opening. A cadmium window in the barrel absorbs low-energy neutrons so that only 337 
+epithermal neutrons are detected in collimation. Neutrons that reach the detector in 338 
+collimation will have approximately the same energy spectrum as those detected 339 
+by the uncollimated SETN detector. Lunar neutrons that reach the detector out of 340 
+collimation must penetrate the collimator wall and must have greater initial energy 341 
+in order to reac h the detector even after moderation by the polyethylene and 342 
+potential capture by the 10B. The mean energy of the total lunar neutron population 343 
+detected by CSETN thus skews toward higher energy epithermal neutrons, or HEE 344 
+neutrons as labeled by Eke et al.  (2012) and by Lawrence et al.  (2011a). The 345 
+globally averaged count rate in the CSETN detectors is 1.2705±0.0003 cps per 346 
+detector, or 5.082±0.001 cps total. 347 
+The STN3 and SETN detectors are corrected for a ltitude-dependence in measured lunar 348 
+flux and spacecraft-sourced neutron production due to variations in the Moon’s shadowing 349 
+of GCR fluence at the spacecraft. We test alternative detector background at the LRO mean 350 
+altitude but make no attempt to replace or supersede the rest of the reduction scheme 351 
+described by Litvak et al. (2012a). No altitude-dependent correction is applied to CSETN 352 
+data in the standard data reduction. 353 
+Neutron emissions mapped  by LEND were shown by Litvak et al.  (2012b) to be  354 
+qualitatively similar to results from LP, a decade earlier  (Fig. 1). The neutron spectrum 355 
+Page 11/46 
+reflects geochemistry, resulting in regional variability of the neutron flux in the energy 356 
+intervals sensed by both LEND and LP (Lawrence et al. 2006). A map of the LEND STN3 357 
+signal qualitatively resembles thermal neutron flux measured by LP, as expected. A map 358 
+of the SETN signal qualitatively resembles epithermal neutron flux measured by LP, as 359 
+expected. A map of the CSETN signal qualitatively resembles fast neutron flux measured 360 
+by LP, consistent with a fraction of neutrons detected by CSETN includ ing greater initial 361 
+energy to penetrate the collimator and reach the CSETN detectors out of collimation (e.g., 362 
+Mitrofanov et al. 2011; Lawrence et al. 2011a). The distinctive morphology of neutron 363 
+emissions in the LP and LEND data sets provides a means to distinguish contributions to 364 
+the LEND signal from neutrons in energetically distinct populations measured by LP. 365 
+Constructing Maps 366 
+Cylindrical-projection map s of neutron detection rate can be  constructed in a 367 
+straightforward fashion, by summing detected counts of every 1-second measurement that 368 
+fall within bins of chosen angular dimension in spacecraft latitude and longitude, divided 369 
+by total integration time within that bin. Polar orbit means that the latitude and longitude 370 
+of the spacecraft both  vary linearly with time, so that integration time and statistical 371 
+uncertainty are distributed evenly across a cylindrical projection map (Fig. 1d&h), in 372 
+contrast to equal-area projection (e.g., Eke et al. 2012), which concentrates integration time 373 
+per unit surface area in the polar regions . The map construction that is employed here  374 
+provides a natural way to han dle times when one or two of the  CSETN detectors were 375 
+powered off, by separately totaling counts and integration time for each of the detectors to 376 
+obtain an average signal per detector that can be multiplied by four to yield the equivalent 377 
+of the combined CSETN count rate with all four detec tors in operation, the standard way 378 
+that CSETN data have been presented. The mapped net integration time is minimum, and 379 
+statistical uncertainties somewhat greater, at longitude  ±90°, as expected  due to station-380 
+keeping (Fig. 1). 381 
+LP neutron flux measurements are reported in the PDS data sets in units of counts per 8-382 
+second or per 32-second interval, but otherwise can be handled similarly to the LEND data, 383 
+dividing total counts within a latitude-longitude cell by total dwell time in that cell to yield 384 
+counts per second. Only the LP data collected with the longer integration time includes 385 
+fast-neutron data, thus we use only the 32-second data. The band of minimum integration 386 
+time for LP  neutron measurements is not quite parallel to lines of longitude, as it is for 387 
+LEND, but integration time and thus statistical significance are otherwise spread fairly 388 
+evenly over the Moon (Fig. 1). 389 
+The mapped quantity is count rate at the spacecraft, comprising the uniform background of 390 
+spacecraft-sourced neutrons plus a quantity proportional to the flux of lunar neutrons while 391 
+in that position. We do not apply any smoothing to these maps, as the sto chastic noise of 392 
+the individually -measured map cells is essential to evaluate goodness -of-fit and to 393 
+Page 12/46 
+discriminate between models of the mapped data. This aspect of map construction differs 394 
+significantly from maps constructed by Litvak et al. (2012b) and by Maurice et al. (2004), 395 
+who smooth their maps to reduce noise and to reveal the distribution of neutron emission 396 
+rate at the resolution of the omnidirectional detectors.  Although each measurement is in 397 
+response to neutrons emitted from a broad field of view over the lunar surface, the actual 398 
+measured counts (and noise) found within a given bin of the unsmoothed map belong to 399 
+instances when the spacecraft could be found within that latitude-longitude bin. 400 
+The choice of angular dimension for the map binnin g is significant. The LEND CSETN 401 
+detection system is designed to obtain relatively high spatial resolution on the component 402 
+of signal that reaches the detectors through the barrel of the collimator, with finer resolution 403 
+than the LP neutron flux measuremen ts. LP  flux maps have  finer resolution than the 404 
+omnidirectional detectors of LEND, since LP operated closer to the lunar surface (~30 km 405 
+altitude) while obtaining the data used here ; on the other hand, the 32 -second integration 406 
+time means that the spacecraft traveled 1.6° in latitude during each sample compared to 407 
+0.05° for LRO and LEND. Any element of fine spatial resolution that is present in mapping 408 
+one data set, but not the other , resembles noise and skews the outcome of a least -squares 409 
+goodness-of-fit minimization in constructing a model for LE ND maps using LP mapped 410 
+data. We consider this to be a significant difference between the present work and work by 411 
+Eke et al. (2012), which compared individual one -second integrations with maps derived 412 
+from LP data, mismatching fine-scale properties between the two data sets. 413 
+We choose a binning dimension , 3° 3°, broad enough that  the estimated field of view  414 
+(FOV) of both the LEND and LP omnidirectional detectors is contained within one element 415 
+in the direction of travel. A comparison between LEND and LP can be based on regionally 416 
+variable flux measurements  that the two systems should have in common, rather than 417 
+localized flux measurements that would emphasize their differing properties. The effective 418 
+FOV cited for the LP  neutron detectors is of order 45  km (Maurice et al. 2004), which 419 
+projects to 1.5° in latitude and longitude at the equator. LEND operates at higher altitude 420 
+and so its omnidirectional detectors are sensitive to a proportionately broader field of view, 421 
+45•51/30 = 7 6.5 km, which projects to 2.5° in latitude and longitude at the equator. We 422 
+choose a somewhat broader binning scale of 3°; tests with 4° and 5° binning yield the same 423 
+qualitative results as the 3° binning. 424 
+All maps and models displayed in this work use 3° binning  and 7200 sample elements to 425 
+cover the full range in latitude and longitude . At this sampling scale, the information 426 
+content in LEND and LP maps of lunar neutron flux should differ only in the measurement 427 
+uncertainty and any systematic artifacts  such as detector background (‘dark’) signal . 428 
+Neither data set should retain the underlying spatial variation of the measured signal at fine 429 
+resolution. The maps of LEND total neutron-detection counts, total integration time in each 430 
+detector, and estimated background and out-of-band contribution compiled for 3° binning 431 
+are reported in an ASCII text file in the online Supplemental Materials. 432 
+Page 13/46 
+Modeling LEND Maps 433 
+We model e ach map of LEND detector  signal using a linear combin ation of a uniform 434 
+signal for spacecraft background and templates derived from the LP thermal, epithermal, 435 
+and fast neutron maps. It is evident by inspection of Fig.  1 that the mapped LEND signal 436 
+in the STN3 (nominally thermal), SETN (nominally epithermal), and CSETN (collimated 437 
+epithermal) detectors is patterned similarly to the thermal, epithermal, a nd fast neutron 438 
+maps from LP, respectively. Background already has been subtracted from the LP neutron 439 
+data as furnished through the PDS. Litvak et al. (2012b) demonstrate the similarity between 440 
+LEND and LP mapped data by plotting the LEND measurements against LP neutron flux 441 
+measurements in corresponding mapped locations to demonstrate the correlation between 442 
+the LEND uncollimated detectors and their LP counterparts. 443 
+The templates consist of each of the LP neutron flux maps normalized to its average value, 444 
+resulting in a surface of approximately unity value, with the unique spatial modulation that 445 
+corresponds to each neutron energy range. Coefficients applied to the templates are in units 446 
+of counts per second (cps) and represent the globally averaged contribution to each LEND 447 
+detector that is due to neutrons in each mapped source population. The geographically 448 
+averaged mean count rate in each of the LEND detector systems, STN3 (24.93±0.02 cps), 449 
+SETN (10.622±0.002 cp s), and CSETN  (5.082±0.001 cps) , is reported in Table  1. The 450 
+mean count rate for each detector is estimated by averaging the measured count rate per 451 
+pixel across the map, estimating the precision uncertainty as standard error of th e mean. 452 
+The count rate and uncertainty estimated from Poisson statistics by totaling all counts and 453 
+dividing by the total of all integration time yields nearly the same result and uncertainty as 454 
+the geographic average , but that is  an average over time rather than an average over 455 
+geography. 456 
+Table 1 reports the best -fit coefficients from modeling the LEND detectors with linear 457 
+combinations of LP map templates, with uncertainties ; the methodology is described i n 458 
+greater detail below. All three LEND detectors appear to be sensitive to lunar epithermal 459 
+and fast -neutron populations despite the fact that 3He detectors have no significant 460 
+sensitivity at energies greater than 10 keV. The uncollimated epithermal-neutron detector, 461 
+SETN, has a small sensitivity to thermal neutrons, while the collimated detector, CSETN, 462 
+has no sensitivity to thermal-energy neutrons. SETN has the least relative sensitivity to fast 463 
+neutrons, while CSETN displays the greatest relative sensitivity to fast neutrons, consistent 464 
+with expectation that the total detection rate in CSETN skews toward HEE neutrons (high 465 
+energy epithermal). The collimator adjacent to (or surrounding) the detectors can moderate 466 
+the energy of lunar neutrons while scattering them to the detectors, thereby rendering th e 467 
+high-energy population detectable. The actual energy distribution in the population of 468 
+detected neutrons that leave the Moon with energy greater than 10 keV is not determined; 469 
+they may not actually be “fast” neutrons (E>1 MeV) but a moderate-energy population that 470 
+is spatially distributed similar to the fast neutron population.  Several analyses support the 471 
+Page 14/46 
+detectability by CSETN of a moderate energy population of neutrons in the 10  keV to 472 
+1 MeV energy range ( Eke et al.  2012; Lawrence et al.  2011a; Litvak et al.  2011). 473 
+Experiments with using a template from LEND’s own  fast neutron detector  in the same 474 
+role as the fast neutron map from LP have resulted in substantially greater residuals in the 475 
+fit. The sensitivity of the stilbene-based LEND fast neutron detector SHEN (Sensor for 476 
+High Energy Neutrons; Mitrofanov et al. 2010a) is limited to 1-6 MeV neutrons. The fast 477 
+neutron detector on LP also is nominally limited to neutrons of energy >1 MeV. However, 478 
+McElhaney et al. (1990) have shown that the BC -454 scintillant used in the LPGRS anti-479 
+coincidence shield/fast neutron detector (Feldman et al. 1999) also is sensitive to neutrons 480 
+of energy 100–1000 keV in the laboratory , and Feldman et al.  (1998a) note that the 481 
+sensitivity of the ACS in Lunar Prospector favored the low-energy end of the fast neutron 482 
+distribution. Greater s ensitivity to the moderate -energy population of neutrons may 483 
+account for the fact that the LP fast neutron map yields a better model for the LEND maps 484 
+than SHEN. 485 
+The method to identify best-fit coefficients for the LP -derived templates and to estimate 486 
+uncertainties in modeling the LEND maps must accommodate substantial covariance in the 487 
+coefficients, since the templates  are not mathematically orthogonal. Each parameter set 488 
+includes up to four coefficients, one for each of the three LP-derived map templates 489 
+(thermal, epithermal, and fast neutrons) and one for a geographically uniform signal 490 
+contribution due to spacecraft -sourced neutrons. We have adopted an evolutionary 491 
+algorithm in which successive generations of a few tens of thousands of randomly-selected 492 
+parameter sets are used as coefficients to model each LEND map, ultimately resulting in 493 
+testing a few hundred thousand to a million distinct parameter sets in each fitting operation, 494 
+with the constraint that all coefficients in each trial must be greater than or equal to zero . 495 
+The best -fitting model in each successive generation is identified by a least -squared 496 
+deviation criterion and is used as the central value for the next generation of parameters. 497 
+The breadth of parameter space that is explored by random selection in successive 498 
+generations is expanded or contracted for each coefficient depending on whether the “best 499 
+fit” value for that parameter is near the edge of the tested range in each generation or near 500 
+the central value. The procedure is repeated until converging on a best-fit set of coefficients 501 
+in consecutive generations, retaining all the tested parameter sets to investigate 502 
+uncertainties. We have tested various initialization schemes for parameter central values 503 
+and parameter randomization, including both realistic values near previous best -fit 504 
+parameter sets as well as unrealistic values that start far from any plausible parameter set, 505 
+with broad ranges of random selection. The best -fit results are repeatable, with small 506 
+variability within the range of the estimated uncertainties due to the di screte nature of the 507 
+parameter-generation method. The initial breadth of the random parameter distribution is 508 
+selected to be at least wide enough to ensure that the population of random parameter sets 509 
+is well populated far from the best-fit value, to enable a well-characterized fit uncertainty 510 
+on each parameter. 511 
+Page 15/46 
+Uncertainty in the coefficients is estimated using the Fisher F statistic formed from a ratio 512 
+of variances. The statistical variance (sum of squared deviations) between each tested 513 
+model and the LEND map is compared to the variance between the best-fit model and the 514 
+LEND map to test for models that are indistinguishable at less than the 1  (68.27%) 515 
+confidence level in a model with N = (360/3)*(180/3) - 4 = 7,196 degrees of freedom , 516 
+computing the limiting value of F using code adapted from Press et al.  (1989). The 517 
+maximum difference in each coefficient between the best -fit value and its value in all 518 
+parameter sets that meet the limiting criterion in F is adopted as the 1 uncertainty of each 519 
+coefficient. This is a conservative uncertainty estimate  that does not  assume prior 520 
+knowledge of the statistical properties  of the LEND measurements  and that tolerates 521 
+comparing an imperfect best -fit model with other models that are even more imperfe ct. 522 
+This algorithm naturally incorporates covariance between all model parameters  since it 523 
+explores the entire range of tested models that fit the statistical criterion. 524 
+Analysis of LEND STN3 detector: The coefficient for the uniform component of neutrons 525 
+detected by STN3 is required to be no less than  zero, as a negative particle-detection rate 526 
+has no physical meaning, resulting in a background of 0±1.0 counts per second (cps); really, 527 
+a 1 upper limit of 1.0. The coefficient of the LP thermal-neutron template is 8.4±0.4 cps 528 
+out of a mean STN3 count rate of 24. 93±0.02 cps, accounting for 34±2% of signal in this 529 
+detector. The remaining signal is a combination of neutrons originating in the epithermal 530 
+population, 49±5% of the total, and in the fast -neutron population, accounting for 17±4% 531 
+of the total. Combined, the epithermal and fast neutrons account for 16.5±1.1  cps, or 532 
+66±4% of the total signal. 533 
+The best-fit model map is nearly indistinguishable from the LEND map of Fig. 1a under 534 
+visual inspection and thus is not displayed. Instead, Fig. 2a plots the modeled value against 535 
+the measured value of each STN3 pixel. The dispersion in values in each of the plotted 536 
+axes corresponds to modeling defects and  measurement noise in the data and the 537 
+component templates. T he dispersion is not symmetric  about a line of slope unity that 538 
+represents perfect correlation, indicating systematic discrepancies between the model and 539 
+data. Figure 2a includes a smoothed map of absolute magnitude of the residuals between 540 
+the model and the data, showing that there are, indeed, systematic regional discrepancies 541 
+between the LEND map and a model based on LP  neutron flux maps . The model is 542 
+consistently too ‘neutron -bright’ in the polar regions and consistently too ‘neutron -dim’ 543 
+near the equator, with a component that oscillates in value with longitude. 544 
+ 545 
+Page 16/46 
+ 
+Figure 2: Pixel-to-pixel comparison between data and models for the LEND STN3 detector 
+map constructed from ( a) a linear combination of LP thermal -, epithermal -, and fast -
+neutron maps; and (b) a linear combination of the LP thermal -neutron map with the map 
+of the LEND SETN epithermal -neutron detector (Fig. 1b). The inset i mage in each panel 
+is a map of residuals of the fit (absolute value), smoothed to show regional discrepancies, 
+stretched between zero and 1% of the signal maximum. 
+ 546 
+The LEND epithermal neutron detector SETN offers an alternative model for the 547 
+epithermal component of the neutron populations detected by the thermal-neutron detector, 548 
+STN3. Since the SETN detector is identical to STN3, apart from the cadmium foil, it should 549 
+measure the epithermal and fast-neutron flux that also is intercepted by STN3 and collects 550 
+measurements simultaneously with STN3 , minimizing any systematic effect due to 551 
+collecting data in different epochs . We can construct a second model for the STN3 map, 552 
+using the thermal-neutron template from LP and using the map of SETN signal to represent 553 
+all suprathermal  neutrons in a combined LP+LEND model  with only three adjustable 554 
+parameters: lunar thermal neutrons, spacecraft -sourced background, and lunar epithermal 555 
+(and fast) neutrons. 556 
+The variance between model and data is dramatically reduced by using SETN to model the 557 
+contribution of epi thermal neutrons to STN3 , as reported in Table  2. There is some 558 
+flexibility in how to formulate the model. The uncertainty on the uniform component in 559 
+the LP-based model for STN3 (Table 1) is substantial enough to encompass the background 560 
+count-rate of 1.04 cps estimated by Litvak et al. (2012a), who also estimated a background 561 
+count rate of 0.72  cps in the SETN detector.  These background values included a sca le 562 
+factor of 0.93 to account for changes in neutron moderation and scattering by fuel in the 563 
+spacecraft, but more recent Monte Carlo modeling of neutron transport in the spacecraft 564 
+a b 
+Page 17/46 
+suggests that moderation by the hydrazine fuel actually has little effect o n the population 565 
+of neutrons generated in the spacecraft that reach the detectors. Reversing this scaling, we 566 
+thus assume that background in the STN3 and SETN detectors could better be represented 567 
+by 1.12 cps in STN3 and by 0.77 cps in SETN. The model displayed in Fig. 2b employs a 568 
+template with the background count rate  of 0.77  cps subtracted from SETN prio r to 569 
+normalization, and assumes a fixed value of  1.12 cps for the background count rate in 570 
+STN3. The result is a clearly superior fit compared to Fig. 2a and the LP-only model: the 571 
+magnitude of dispersion about the correlation axis is reduced, the dispersion is symmetric 572 
+about the axis, the map of residual discrepancies between model and data is substantially 573 
+reduced in magnitude, and the qu antitative variance is reduced from 0.0932  cps2 to 574 
+0.0395 cps2. An alternative is to fit the uniform component as a free parameter , where a  575 
+negative value for the uniform component in STN3 translates to a n estimate for the 576 
+background count rate that must be subtracted from SETN. This approach yields a slightly 577 
+better fit to the map of STN3 signal and estimates a background count rate for SETN of 578 
+1.3±0.6 cps, about 1 greater than the SETN background estimated by Litvak et al. (2012a). 579 
+The background count rates in STN3 and SETN prove to be covariant in fitting the two 580 
+maps jointly, thus t he uncertainties are sufficiently  generous that there is no compelling 581 
+statistical argument to prefer the fitted values ov er the estimates by Litvak et al. (2012a) 582 
+for STN3 and SETN. Using fixed value s for the background count rate substantially 583 
+reduces the precision uncertainties in the remaining parameters.  These are the values 584 
+reported in Table 2. 585 
+The variance in the LP+LEND model is reduced from the LP-only model by a factor of 586 
+2.4. Testing the ratio of variances, F, confirms that this is a superior model with essentially 587 
+100% confidence. The background count rate due to spacecraft-sourced neutrons that is 588 
+assumed from Litvak et al. (2012a), 1.12 cps, accounts for a modest 4 .5% of total signal, 589 
+with 65.2±0.5% (16.26±0.12 cps) of the globally averaged STN3 signal in the combined 590 
+epithermal and fast neutron flux measured by SETN . The com ponent due to thermal 591 
+neutrons is 30.3±0.4% (7.54±0.11 cps) of all neutrons detected by STN3. Uncertainties in 592 
+the fit are small since the model has only two free parameters after fixing the background. 593 
+Since SETN and STN3 data are acquired simultaneously, the fit  coefficients enable the 594 
+flux of thermal neutrons to be determined  from the STN3 data by subtracting  the 595 
+background count rate and  1.651 times the SETN detector signal minus its own 596 
+background: 597 
+ Thermal = STN3 – 1.651 • (SETN – 0.77) – 1.12, (1) 598 
+in which STN3 and SETN represent the signal from those detectors in units of counts per 599 
+second and the coefficient of 1.651 times the mean signal in SETN (minus background) 600 
+results in the mean contribution in counts per second from epithermal neutrons detected by 601 
+STN3. Since data reported from the DLD files correspond to one-second integrations, these 602 
+coefficients can be applied directly to the data. Data-reduction coefficients estimated 603 
+Page 18/46 
+similarly for each of the LEND detectors are summarized in Table  3 with estimated 604 
+uncertainties. 605 
+Analysis of LEND SETN detector: Best-fit coefficients for modeling SETN using LP maps 606 
+are reported in Table 1, and the correlation between model and data is displayed in Fig. 3a. 607 
+The dispersion in pixel values about the line of correlation is relatively broad and the axis 608 
+of the cloud of values is perceptibly tilted such that model values tend to be a little too high 609 
+when data values are low, and model values tend to be a little too low when data values are 610 
+high. The systematic discrepancies in the map of residuals between model and data shown 611 
+in Fig. 3a are similar to the discrepancy seen in modeling STN3 using only LP neutron flux 612 
+maps, where the model is consistently neutron-bright at high latitudes, and neutron-dim at 613 
+equatorial latitudes, compared to the SETN map. The coefficient for the uniform 614 
+component of neutrons detected by S ETN is slightly greater  than zero  at 0.4±0.9  cps 615 
+(4±8%) of the mean total count rate of 10.622±0.002 cps, well within uncertainty of either 616 
+zero or the background count rate of 0.77 cps estimated by Litvak et al. (2012a). Lunar 617 
+thermal neutrons contribute a small fraction of the total counts in SETN with 0.3±0.1 cps 618 
+(3±1%). The epithermal neu tron component, 8.0±0.8 cps, accounts for 75±8 % of SETN 619 
+signal. As with STN3, there is a component of fast neutrons detected in excess of the 620 
+nominal epithermal neutro n component, 1.9±0.5 cps, accounting for 18±5 % of SETN 621 
+signal. The total count rate due to suprathermal neutrons estimated from fitting the SETN 622 
+epithermal detection map using LP map templates is 9.9±0.9 cps, 93±8% of the detected 623 
+count rate. 624 
+As with modeling STN3, a model can be constructed for SETN that is partially based on 625 
+other LEND data  to determine  coefficients for subtracting from the  SETN signal the 626 
+background and thermal  neutron components of the total , leaving only  the combined 627 
+epithermal and fast neutron detection rate (Fig. 3b). The template for thermal neutron flux 628 
+is constructed by subtracting the background and SETN contributions from the STN3 map 629 
+using Eqn.  1, and the background count rate in SETN is assumed to be 0.77 cps as 630 
+estimated by Litvak et al.  (2012a), accounting for 7% of the SETN signal . Fixing the 631 
+background count rate to the calibrated value leaves three free paramete rs: the thermal-632 
+neutron contribution, the epithermal -neutron contribution, and the fast -neutron 633 
+contribution. The numerical coefficients for this model are tabulated in Table  2. None of 634 
+the retrieved coefficients are altered beyond the bounds of uncertainty from Table 1, which 635 
+is not surprising since only  minority component s are altered from the LP-only fit . 636 
+Nevertheless, the variance of the best-fit model is reduced to an extent that is a marginally 637 
+significant improvement over the LP-only model of Fig.  3a and Table 1, a bit better than 638 
+the 1 confidence level. In this model, thermal neutrons account for 3±1% of detected lunar 639 
+neutrons, epithermal neutrons account for 72±5% of detected lu nar neutrons, and fast 640 
+neutrons account for 18±4% of detected lunar neutrons. The total detection rate for 641 
+suprathermal neut rons, globally averaged, is 9.50±0.13  cps, 89.5 ±1.2% of the global 642 
+Page 19/46 
+average signal.  The slight decrease in lunar neutron contribution  balances the slight 643 
+increase in the assumed background value. 644 
+ 645 
+ 
+Figure 3: Pixel-to-pixel comparison between data and models for the LEND SETN detector 
+map constructed from ( a) a linear combination of LP thermal -, epithermal -, and fast -
+neutron maps; and (b) a linear combination of the LP epithermal - and fast-neutron maps 
+with the map of thermal neutron flux evaluated from LEND STN3. The inset image in each 
+panel is a map of residuals of the fit (absolute value), smoothed to show regional 
+discrepancies, stretched between zero and 1% of the signal maximum. 
+ 646 
+If the background (spacecraft -sourced) count rates in SETN and STN3 are allowed to be 647 
+fitted parameters, then the fit to STN3 is improved, but the fit to SETN is degraded such 648 
+that it is identical to fitting with the LP templates alone. A joint goodness -of-fit criterion 649 
+for simultaneously estimating the best -fit background to both STN3 and SETN results in 650 
+such loose constraints that it is no improvement over assuming the calibrated background 651 
+count-rate values from Litvak et al. (2012a). 652 
+The suprathermal neutron flux can be derived from the SETN signal by subtracting the 653 
+small spacecraft-sourced background and the small contribution from thermal neutrons: 654 
+ Epithermal = SETN – 0.047 • Thermal – 0.77, (2)  655 
+in which the coefficient of 0.047 applied to the thermal neutron flux results from dividing 656 
+the mean thermal neutron flux computed from Eqn. 1 into the mean contribution in counts 657 
+per second from the fit parameters. The result of Eqn. 1 can be substituted for the Thermal 658 
+component and terms combined to yield: 659 
+a b 
+Page 20/46 
+ Epithermal = 1.0776•SETN – 0.047 • STN3 – 0.777,  (3) 660 
+in which STN3 and SETN represent the signal from those detectors in units of counts per 661 
+second. Table  3 summarizes the coefficients in these  expressions, with estimated 662 
+uncertainty. The small numerical increase in the overall SETN count rate in the first term 663 
+counters the subtraction of lunar epithermal neutrons that are detected by STN3 in the 664 
+second term. 665 
+ 666 
+ 
+Figure 4: Pixel -to-pixel compari son between data and models for the LEND CSETN 
+detector map constructed from ( a) a linear combination of LP thermal -, epithermal-, and 
+fast-neutron maps; and (b) a linear combination of the LP fast-neutron map with the maps 
+of thermal and epithermal neutrons estimated from the LEND STN3 and SETN detectors 
+respectively. The inset image in each panel is a map of residuals of the fit (absolute value), 
+smoothed to show regional discrepancies, stretched between zero and 1% of the signal 
+maximum. Both models yiel d zero sensitivity to thermal neutrons and nearly the same 
+uniform background from spacecraft-sourced neutrons. 
+ 667 
+Analysis of LEND CSETN detector : Combining total counts across the operating CSETN 668 
+detectors, divided by total integration time across all operating detectors, yields the average 669 
+count rate per pixel  per detector . Multiplication by four yields the equivalent of total 670 
+CSETN count rate as if all four detectors were operating at all times, for a geographic 671 
+average of 5.082±0.001 cps. The instrument anomaly in May 2011 reduced CSETN to two 672 
+operating detectors (CSETN3 and CSETN4) and it has continued to collect data in that 673 
+mode. Small differences in background levels and the sensitivity specific to each detector 674 
+are corrected by scaling each individual detector’s signal and its background to yield the 675 
+b 
+a 
+Page 21/46 
+average value of signal above background  averaged over all four detectors , so that 676 
+discontinuities are not introduced by changes in the identity of which CSETN detectors are 677 
+in operation.  The an alysis of the individual CSETN detectors is presented later, after 678 
+covering the combined CSETN detector system to demonstrate the methodology. 679 
+Best-fit coefficients for modeling CSETN using LP maps are reported in Table 1, and the 680 
+correlation between model  and data is displayed in Fig.  4a. CSETN pixel values cluster 681 
+into two groups, a minority formed by highly-correlated bright pixels in the model and data 682 
+that follow the correlation axis, and a majority of pixels that cluster at low data values , 683 
+consistent with the extensive neutron -dim regions shown in the map of Fig.  1c. There do 684 
+not appear to be major regional discrepancies between model and data.  The estimated 685 
+uniform background component is a much greater fraction of total signal than in the SETN 686 
+detector, accounting for 2.9±0.3 cps or 57±6% of the total. This value is greater than the 687 
+total background level of 2.42 cps estimated by Litvak et al. (2012a) by more than 1; we 688 
+thus continue to use the background detection rate as a fitted parameter. 689 
+The SETN and CSETN detectors differ only in that the four CSETN detectors are located 690 
+inside the collimator structure. The average background per detector in CSETN is 691 
+0.72±0.08 cps, very similar to what we estimate for SETN. The high relative background 692 
+in CSETN thus is due to the collimator reducing the reception of lunar signal while largely 693 
+preserving the rate of spacecraft-sourced neutron detections. The similarity between SETN 694 
+and CSETN background count rates, despite the isolation of the CSETN detectors inside 695 
+the collimator, suggests that the primary source of detected epithermal neutrons is material 696 
+in close proximity to the detectors. The thermal-neutron contribution to CSETN is zero, 697 
+with narrow uncertainty. Lunar-sourced suprathermal neutrons account for the remaining 698 
+globally-averaged count rate of 2.2±0.3 cps or 43±6% of total CSETN counts, combining 699 
+neutrons both in and out of collimation , both fast and epithermal populations . The fast-700 
+neutron contribution to the total CSETN signal, 1.24±0.12 cps, is a greater fraction of the 701 
+total than in the other LEND detectors, 24±2% of total count rate or 57% of lunar-sourced 702 
+neutrons. Epithermal neutrons, comparable to the population detected by LP, account for 703 
+0.95±0.24 cps; 19±5% of the total count rate or 43% of lunar -sourced neutrons. The net 704 
+population of suprathermal neutrons detected by CSETN is skewed towards higher 705 
+energies, as expected. 706 
+The thermal and epithermal neutron map s derived from STN3 and SETN using Eqns. 1 707 
+and 2 can be substituted for the corresponding LP maps as templates for modeling CSETN. 708 
+Since SETN and CSETN use identical detectors, they should have approximately the same 709 
+response to the lunar neutron energy spectrum that propagates through free space before 710 
+reaching the detector. Fig. 4b shows the comparison between model and data pixels using 711 
+these substitutions, with numerical coefficients of the fit tabulated in Table 2. The change 712 
+in the comparison between model and data is relatively minor to the eye, but the numerical 713 
+improvement in the variance is definite  and the uncertainty in the fitted parameters is 714 
+Page 22/46 
+reduced. The uniform background component an d thermal -neutron components are 715 
+unchanged within uncertainty limits ; 57±4% of CSETN signal is in spacecraft-sourced 716 
+background (2.90±0.23 cps), with no sensitivity to lunar thermal-neutron flux. The relative 717 
+contributions from epithermal and fast -neutron components are reversed, with 718 
+1.18±0.21 cps arising from a map similar to the SETN epithermal neutron map, and 719 
+1.00±0.10 cps arising from fast neutrons. Since there is no thermal -neutron contribution, 720 
+the HEE neutron flux detected by CSETN is obtained simply by subtracting the uniform 721 
+background component: 722 
+ HEE = CSETN – 2.90, (4) 723 
+in which CSETN represents signal from the CSETN detector in units of counts per second, 724 
+and HEE represents the total lunar neutron flux measured by CSETN, including neutrons 725 
+that reach the detectors in collimation as well as  those neutrons that reach the detectors 726 
+through the wall of the collimator . Table 3 includes the estimated background used in 727 
+Eqn. 4. 728 
+The spacecraft-sourced background count rate estimated for CSETN is greater than the 729 
+estimate of 2.42 cps (48%) by Litvak et al. (2012a), and is slightly greater than the estimate 730 
+of 54% by Eke et al. (2012). The background reported in Eqn. 4 and Table 2 is 2 greater 731 
+than the published Litvak et al.  estimate, translating to 97.5% confidence that the 732 
+background actually has some value greater than 2.42  cps. The estimate by Litvak et al. 733 
+(2012a) for background count rate s at the Moon included  an assumed  7% decrease in 734 
+spacecraft-sourced neutron background due to fuel consumption that is probably incorrect 735 
+according to more recent work by Litvak et al. (2016). Compensating for this erroneous 736 
+correction brings the background of Litvak et al. (2012a) up to 2.60  cps, while the more 737 
+recent work by Litvak et al. (2016) estimates 2.74±0.09 cps, similar to the value from Eke 738 
+et al. (2012). For internal consistency , we stand by the value we have derived from the 739 
+operational data, since no single one  of the determinations by Litvak et al. (2016), Eke et 740 
+al. (2012) or ourselves is clearly preferable to another.  The distinction is less than one 741 
+uncertainty unit using our estimate for uncertainty, less than 2 using the estimate from 742 
+Litvak et al. (2016). 743 
+Estimates for collimated component of CSETN detected signal : We consider the  SETN-744 
+like contribution to the CSETN signal to be an upper limit on the total signal from neutrons 745 
+that reach the detectors in collimation, 1.2±0.2 cps or 54±11% of lunar neutrons, since the 746 
+SETN template includes both the epithermal and fast components of the neutron energy 747 
+spectrum as it is encountered by a detector in the open but adjacent to the LEND collimator. 748 
+Neutrons in the thermal and epithermal range that are out of collimation are moderated and 749 
+stopped, skewing the out -of-collimation spectrum towards neutrons of greater initial 750 
+energy at the point of emission, represented by the fast neutron component in the fit to the 751 
+CSETN map. If any fraction of epithermal neutrons were also to penetrate the collimator, 752 
+Page 23/46 
+it would reduce the fraction assigned to detection in collimation, consistent with 1.2  cps 753 
+being an upper limit. Only if the in -collimation fraction of neutrons detected by CSETN 754 
+were richer in fast neutrons than the spectrum detected by SETN could this be an 755 
+underestimate. Since much of the dispute over the effectiveness of a collimated detector 756 
+has been based on cl aims of very low collimation efficiency (Lawrence et al.  2010; 757 
+Teodoro et al.  2014), the possibility that 1.2  cps is an underestimate of the collimated 758 
+counting rate is not a significant issue. A serviceable working estimate for neutrons 759 
+received in collim ation would be the epithermal detection rate estimated from modeling 760 
+with LP templates, 1.0±0.2  cps in collimation, or 45% of lunar neutrons  detected in 761 
+collimation. 762 
+An alternative estimate for t he fraction of epithermal neutrons received in collimation 763 
+comes from the empirical angular sensitivity function presented for CSETN by Litvak et 764 
+al. (2012a), which has a high-throughput core for an opening angle from nadir to about 12° 765 
+from nadir, where the measured neutron transmission is near zero . Neutron transmittance 766 
+increases from this minimum in a wing that extends out to 90° from nadir, although the 767 
+limb of the Moon only extends to 76.4° from nadir at the 51 km altitude of LRO. The 768 
+integrated signal within the core region  is about 50% of total signal  integrated over the 769 
+angular sensitivity function , including a cosine anisotropy for emission from the surface  770 
+and limiting the numerical integration to 76.4° from nadir . Applying this 50% fraction to 771 
+the entire HEE populati on detected by CSETN yields 1.1  cps. A lower limit can be 772 
+estimated by assuming that detected fast neutrons always are out of collimation and apply 773 
+this modulation factor to the SETN -like fraction only. This suggests a lower limit at 50% 774 
+of 1.2±0.2 cps, or 0.6 cps. 775 
+Lawrence et al.  (2010) predicted the count rate for a collimated neutron detector by 776 
+comparison to  the LP uncollimated epithermal neutron detector , arriving at a very low 777 
+value for a detector resembling LEND CSETN in design . This calculation incorporated 778 
+several assumed parameter values that are not needed in a comparison between LEND’s 779 
+uncollimated and collimated detectors, including GCR flux and spectrum and proportional 780 
+counter efficiency. Equation 20 of Lawrence et al. (2010) estimates that the field of view 781 
+of a single collimated detector is 0.0109 of the FOV for an uncollimated detector at the 782 
+LRO altitude. The count rate for lunar epithermal and fast neutrons detected by SETN is 783 
+9.5–9.9 cps (Tables 1 & 2). The predicted detection rate by all four CSETN detectors for 784 
+lunar neutrons in c ollimation is thus 4•0.0109•9.5  cps = 0.41  cps by this calculation, a 785 
+factor of 2.8 greater than the estimate by Lawrence et al. (2010). A Monte Carlo calculation 786 
+for the collimator performance, whose details are not shown by Lawrence et al., increases 787 
+the count rate by 20%. Applying this same correction, we estimate 0.49 cps in collimation. 788 
+Lawrence et al. also argue that neutrons propagating along the length of the detectors in 789 
+CSETN experience partial shielding from the active volume of the detector by 3He in a 790 
+“dead zone” at the end of the detector, reducing the detectable neutron flux to ~0.76 of 791 
+Page 24/46 
+nominal, bringing the count rate in collimation to 0.37  cps. It is not clear whether this 792 
+correction factor applies, since the increase in detector sensitivity after switch -on that is 793 
+reported by Litvak et al. (2012a) appears to result from the “dead zone” becoming active. 794 
+The collimated component of the neutron flux detected by CSETN then falls within the 795 
+range 0.37–1.2 cps out of a total of 2.2  cps for HEE neutrons, with 17% – 54% of lunar 796 
+HEE neutrons detected by CSETN in collimation, or 7 % to 24% of all neutrons detected 797 
+by CSETN, including the spacecraft-sourced background. 798 
+Lawrence et al.  (2010) make the simplifying assumption of isotropic neutron emission 799 
+from the Moon , which is unrealistic and presents significant consequences . The actual 800 
+condition of a nisotropic emission decrease s the broad FOV of uncollimated detector s, 801 
+which extends out to the lunar limb. The surface emission angle is 90° from local zenith at 802 
+the horizon, with zero emission. The empirically-determined 45 km FWHM field of view 803 
+for the  LP neutron detectors extended to about 37° from nadir, much less than the 79° from 804 
+nadir to limb at 30  km altitude. As a test  for the effect of  anisotropy, the solid angle 805 
+contributing to the SETN detection can be reduced by the mean of the cosine function from 806 
+0° to 90°, which is 0.637 , approximating the reduction in field of view due to cosine 807 
+emission anisotropy. This reduced solid angle corresponds to an angle from nadir of 59.1° 808 
+(~83 km radius on surface) . Applying this angle in the preceding calculations yields an 809 
+estimated count rate in collimation of 1.2  cps, or 0.9  cps with the assumption of self -810 
+shielding. Predictions from this model for a collimated detector thus are dominated by the 811 
+quality of assumptions that are difficult to constrain. 812 
+Teodoro et al. (2014) provide an additional test on performance of the CSETN detector 813 
+system’s angular sensitivity and the fraction of signal received in collimation versus flux 814 
+detected out of collimation. They test performance of two hypothe tical systems, one with 815 
+zero sensitivity to neutron flux in collimation, and one with significantly greater sensitivity 816 
+in collimation as well as reduced background compared to the results here, based on an 817 
+early characterization of the detector performance  by Mitrofanov et al. (2011). Between 818 
+these two cases, Teodoro et al. (2014) favor a condition with greater background and near-819 
+zero signal in collimation. They did not derive an optimal description of CSETN 820 
+performance, so it is not clear how to compare their result to the interme diate description 821 
+of spacecraft background and collimated signal derived here and by Litvak et al. (2016) in 822 
+independent analysis. 823 
+Analysis of individual CSETN detectors : The four detectors comprising CSETN are 824 
+reported by Litvak et al. (2012a) to have slightly different background count rates, and may 825 
+be expected to have slightly different sensitivity. The four detectors can be mapped 826 
+individually and fitted individually. Since the combined CSETN detectors are best fit using 827 
+thermal and epithermal neutron maps derived from STN3 and SETN  plus the LP fast -828 
+neutron map, we model the individual CSETN detectors using these components and report 829 
+the fit coefficients in Table  4 to obtain the components of spacecraft - and lunar-sourced 830 
+Page 25/46 
+neutrons. The ratio between ep ithermal and fast -neutron components for each detector 831 
+differs from the combined CSETN detector but lies within the uncertainty of the retrievals. 832 
+The sum of the estimated backgrounds is 2.96±0.21 cps, slightly different from the 833 
+background estimated for t he combined measurement but well within uncertainty.  834 
+Similarly, the sum in each parameter over all four detectors is within uncertainty of the 835 
+corresponding parameter fitted to the combined CSETN map , with similar combined 836 
+uncertainty. 837 
+If all four CSETN detectors were in operation at all times, the summed parameters should 838 
+be identical with the results from fitting the map of the combined signal, but that is not the 839 
+case. To prevent discontinuities in the CSETN data set due to the changing identity of the 840 
+operating detectors, the signal and estimated background in each detector is normalized to 841 
+the geographical average value of lunar HEE neutron count rate per detector, dividing by 842 
+the geographically averaged count rate in each individual detector: 843 
+ Sx = (n (CSETNn – BKDn)/4) / (CSETNx – BKDx) (5) 844 
+where the signal value CSETN x and the background value BKD x correspond to the 845 
+geographical average for each individual detector  designated by the subscript x . 846 
+Multiplying the measured counts and estimated background counts in each detector by its 847 
+scale factor S x, each detector obtain s the same geographically -averaged net signal. After 848 
+multiplying by the scale factor S x, t he net counts summed over all operating CSETN 849 
+detectors, divided by the net integration time over all operating detectors, yields a map of 850 
+the average count rate per detector. The scaling factors are reported in Table  4. The 851 
+sensitivity of each individual CSETN detector is within 15% of the mean sensitivity to 852 
+lunar neutrons. 853 
+  854 
+Page 26/46 
+ 
+Figure 5: Thermal, epithermal, and HEE neutron maps (a, b, c, respectively), derived from 
+LEND STN3, SETN, and CSETN detectors respectively  by subtracting background and 
+out-of-band contributions, stretched from zero to maximum signal to show image contrast. 
+Greatest contrast is in the t hermal map (a), where neutron flux in the nearside Maria and 
+farside Aitken Basin regions is much less than in the  northern hemisphere far -side 
+highlands. Least contrast is in the epithermal map (b) where highlands are slightly brighter, 
+while the poles, Maria, and Aitken Basin are slightly darker, but otherwise the map contrast 
+is very small. HEE (c) is brightest in the Maria and major nearside craters, bland elsewhere. 
+Black boxes within 10° latitude of  the poles and within ±10° of the equator show regions 
+over which signal is averaged to evaluate equator -to-pole signal contrast. Profiles on the 
+right show zonal-average equator-to-pole profiles in the raw data (solid) and in the 
+background-subtracted data (dotted), shading the separation between them. 
+ 855 
+Nor 
+Sou 
+Eqr 
+LEND maps of lunar neutrons 
+a
+b 
+c 
+0° 
+90° 
+-90° 
+60° 
+30° 
+-30° 
+-60° 
+1 0.9 1.1 
+Page 27/46 
+Polar Hydrogen 856 
+The motivation for neutron remote sensing on LRO is to investigate the accumulation of 857 
+hydrogen in the Moon’s polar regions.  Figure 5 illustrates the contrast in neutron flux 858 
+between equator and pole and across the map , with background and out -of-band 859 
+contributions subtracted from each detector according to the coefficients of Table 3 to yield 860 
+maps of thermal, epithermal, and HEE neutron flux . Regions selected for an equator-to-861 
+pole comparison are shown within 10° latitude of the North and South poles and within 862 
+±10° of the equator. 863 
+Regolith g eochemistry strongly influences the thermal neutron flux , so  it is not 864 
+straightforward to interpret hydrogen content from the pole -to-equator contrast in this 865 
+energy range. For the epithermal and HEE neutron populations derived from SETN and 866 
+CSETN, the pole -to-equator contrast is related to the regionally averaged abundance of 867 
+hydrogen trapped in the polar regolith  compared to the relatively volatile -free equatorial 868 
+regolith, with a lesser effect from regolith composition  on neutrons in this energy range . 869 
+The equatorial region features the greatest zonal average  epithermal and HEE flux , 870 
+consistent with the least resident hydrogen , as expected for the latitude that also 871 
+experiences peak diurnal surface temperature (Vasavada et al.  2012). Recent work has 872 
+demonstrated diurnally varying neutron suppression at the equator that is ignored here  873 
+(Livengood et al. 2015), since the present work constructs maps from measurements at all 874 
+local times, diluting the small diurnally varying suppression. We use the zonal-average and 875 
+diurnal-average neutron flux near the equator as the reference for dry regolith everywhere 876 
+on the Moon, including both the maria and highlands regions in the average.  877 
+Each of the maps displayed in Fig.  5 is accompanied by  a meridional trace of the zonal-878 
+average signal as a function of latitude. The thermal neutron signal is highly variable with 879 
+latitude, with a maximum at the poles ~9% greater than the equatorial average signal. The 880 
+epithermal neutron flux measured by SETN declines gradually up to about 75°  latitude, 881 
+then declines sharply to ~94% of the equatorial signal at the poles. The modest background 882 
+and thermal neutron signal subtracted from SETN to reveal the e pithermal neutron signal 883 
+makes little difference in the meridional trace from equator to pole. The much more 884 
+significant spacecraft-sourced background subtracted from CSETN results in a meridional 885 
+trace for HEE flux that differs in detail from the epithermal dis tribution but reaches the 886 
+same signal suppression at the poles.  The similarity in pole -to-equator contrast of the  887 
+epithermal and HEE distributions cannot be an artifact of using the LEND epithermal map 888 
+in modeling CSETN to obtain the spacecraft-sourced background, since both the LP-based 889 
+and LEND-based models for CSETN obtained the identical background estimate. The only 890 
+quantity subtracted from the CSETN data to form the map and trace in Fig. 5 is the uniform 891 
+background. 892 
+Neutron flux measurements extracted from near the poles and the equator are tabulated in 893 
+Page 28/46 
+Table 5 for the LP  neutron data products, for the LEND detectors, and for the thermal, 894 
+epithermal, and HEE neutron count rates derived from the LEND detectors. The precision 895 
+uncertainty in the detector signal is estimated using standard error of the mean for the 896 
+population of measured map pixels in each compar ison region, for both LP and LEND. 897 
+The uncertainty tabulated for  the background -subtracted LEND measurements is the 898 
+accuracy uncertainty estimated from the tabulated fit parameters in Tables 1 to 3, since the 899 
+precision uncertainty is much smaller than the accuracy uncertainty  for the subtracted 900 
+background and out-of-band contributions. The accuracy uncertainty is not independent in 901 
+equator-to-pole comparisons:  it applies equally to both regions , in the sense that if the 902 
+background is a little over -estimated at the pole, it is overestimated to the same extent at 903 
+the equator . The accuracy uncertainty in the ratio between equator and polar signal is 904 
+estimated by constructing a normal distribution of discrepancy values with the appropriate 905 
+standard deviation and adding values from this population equally to both numerator and 906 
+denominator to create a randomly-distributed population of ratio values whose mean and 907 
+standard deviation can be computed  to yield the accuracy uncertainty in the ratio . This is 908 
+the approach used in Tables 5 and 6. 909 
+The raw LEND STN3 signal is about the same at the poles as at the equator.  After 910 
+subtracting the background and epithermal components, the thermal neutron flux measured 911 
+by LEND within 10° of the north pole is 6.8±0.1% greater than the equatorial flux, and the 912 
+thermal neutron flux measured at the south pole is 10.9±0.1% greater than the equatorial 913 
+flux. The equivalent ratios for LP neutron flux measurements are 10.8±0.2% greater at the 914 
+north pole and 14.8 ±0.2% greater at the south pole. Greater polar flux in the LP 915 
+measurements is consistent with the residuals from modeling STN3 using LP maps. 916 
+Signal suppression measured in the  raw SETN signal and in the epithermal neutron flux 917 
+derived from it is about the same, suppressing the signal relative to equatorial by 4.4–5% 918 
+in the north and by 3.7–4.4% in the south. Suppression in the LP epithermal flux is much 919 
+less, only 1.6% and 1.8%, respectively, but the suppression in the LP fast -neutron flux is 920 
+similar to the LEND epithermal contrast, 4.3% and 4.0%, at north and south respectively. 921 
+Greater polar flux in the LP epithermal neutron flux data is consistent with the residuals 922 
+from modeling SETN using LP neutron emission maps. 923 
+Measured neutron flux suppression can be converted to estimated hydrogen content in the 924 
+regolith with an appropriate calibration function. Mitrofanov et al.  (2010a) display 925 
+calibration curves derived from Monte Carlo calculations for the neutron flux suppression 926 
+expected with regolith that is evenly implanted with hydrogen, which is summarized as 927 
+4.5% suppression corr esponding to 100 ppmw hydrogen. The suppression curve can be 928 
+approximated well by an expression that is inversely proportional to the concentration of 929 
+hydrogen for large concentrations  and approaches unity (no suppression) for very small 930 
+concentrations: 931 
+Page 29/46 
+ C1/C0 = 1 / (1 + [H]/H), (7) 932 
+where C0 is the reference count rate from non-hydrated regolith, C1 is the count rate over 933 
+hydrated regolith, [H] is the concentration of hydrogen in the hydrated regolith, and ΓH is 934 
+a calibration constant in units of hydrogen concentration by weight . This expression can 935 
+be inverted to yield the estimated hydrogen concentration corresponding to measured count 936 
+rates, 937 
+ [H] = ΓH • (C0/C1 – 1). (8) 938 
+With 4.5% suppression, the ratio C1/C0 will have the value  0.955. With corresponding  939 
+100 ppmw hydrogen concentration, the calibration constant ΓH has a value of 2122 ppmw. 940 
+Since the mass of a water molecule is 9 times the mass of its hydrogen, t he units of the 941 
+constant can be converted to yield a calibration constant for the weight -percentage of 942 
+water-equivalent hydrogen (WEH), ΓW = 1.91 wt% WEH. Calibrations by Feldman et al. 943 
+(1998b) and by Lawrence et al. (2006) differ in detail but produce similar results for flux 944 
+suppression of several percent. Calibration factors from Feldman et al. (1998b) suggest 945 
+that fast neutrons are about five times less sensitive than epithermal neutrons, thus a similar 946 
+degree of flux suppression in fast neutrons wou ld indicate about five times greater 947 
+hydrogen content in the observed regolith. A detailed Monte Carlo calculation to calibrate 948 
+response in the HEE neutron population contributing to CSETN clearly is necessary. 949 
+Although the calibration expression is formulated with respect to a reference count rate of 950 
+C0 from a nominally hydrogen-free sample of regolith, the reality is that there is always a 951 
+small amount of hydrogen or water present in most surfaces and thus even the driest and 952 
+most hydrogen-free reference region on the Moon is not completely devoid of hydrogen. 953 
+At the small concentrations relevant to lunar materials and the resulting modest neutron 954 
+flux suppression, the comparison between a minimally hydrated reference region and a 955 
+more-hydrated region of interest results in a differential value of hydrogen concentration. 956 
+For example, if a reference sample of regolith were relatively highly hydrated, at [H] = 957 
+50 ppmw (0.045 wt% WEH), and a target sa mple yielded a count rate with 5 % flux 958 
+suppression relative to the reference sample, then the ratio between the count rates would 959 
+suggest the target has [H] = 112 ppmw (0.1 wt% WEH), whereas the actual hydration of 960 
+the target sample would be [H] = 164 ppmw (0.148 wt% WEH), very close to the sum of 961 
+the differential and the reference hydration values . The greater the concentration of 962 
+hydrogen in the reference sample, the less closely the relative suppression resembles a 963 
+simple differential measurement in the hydration quantities. 964 
+Table 5 applies the calibration expression equally to both LEND and LP epithermal neutron 965 
+suppression at the pole relative to the equator  so that they can be compared with similar 966 
+terms. The average regolith water content within 10° of the north pole determined from the 967 
+LEND epithermal neutron flux measured by SETN is 0. 100±0.001 wt% WEH by this 968 
+calibration, and 0.089±0.001 wt% WEH within 10° of the south pole. These values use the 969 
+Page 30/46 
+uncertainty in accuracy due to the uncertainty in the background value ; the contribution 970 
+from the precision uncertainty is negligible . The average concentration from the LP 971 
+epithermal data, using the same calibration, is 0.031–0.035 wt% WEH with similar narrow 972 
+uncertainty. A lower limit can be estimated from the SETN count values with no 973 
+background subtraction, 0.087  wt% WEH at the north pole, and 0.074  wt% WEH at the 974 
+south pole.  The discrepancy between LEND SETN and LP epithermal is well beyond 975 
+measurement uncertainty, which we address below. Note that the differential in hydrogen 976 
+abundance between poles and equator from the contrast in neutron flux measured by SETN 977 
+is comparable to the example just given for the differential effect in measuring two samples 978 
+with different q uantities of hydrogen included. The example included a relatively high 979 
+concentration in the reference sample, but the actual concentration of hydrogen in 980 
+equatorial regolith is expected to be much less than in the polar regions. 981 
+For CSETN, the estimated uncertainty in the HEE flux is just the uncertainty of the uniform 982 
+background component. The north polar HEE neutron flux is suppressed by 5. 1±0.6% 983 
+relative to the equator, while the south polar flux is suppressed by 4.8±0.5%. The polar 984 
+suppression in the LE ND HEE flux is similar to  the polar suppression in  the LEND 985 
+epithermal flux. Applying the calibration to the  HEE suppression yields about the same 986 
+water-equivalent hydrogen content as the epithermal flux suppression, (0.09-987 
+0.10)±0.01 wt% WEH at both poles. The calculations that generated the modeled neutron-988 
+suppression calibration factor (Eqn. 8) may not accurately apply to the higher -energy end 989 
+of the epithermal neutron spectrum that contributes about half the measured HEE signal . 990 
+Neutrons that truly fall into the fast population, with energy greater than about 1 MeV, are 991 
+not expected to respond significantly to the presence of hydrogen in the regolith  and their 992 
+presence may dilute flux suppression and thus underestimate the quantity of hydrogen . 993 
+Calculations have not yet been reported explicitly for populations, with energy between 994 
+~10 keV and 1 MeV. However, Lawrence et al. (2011b) have investigated the effect on the 995 
+neutron energy spectrum from the burial depth of hydrogen in the regolith. A qualitative 996 
+reading of their figures indicates that HEE neutrons respond to approximately the same 997 
+extent as low-energy epithermal (LEE) neutrons to uniformly hydrogenated lunar regolith, 998 
+but respond more strongly  than LEE neutrons  if hydrogen is isolated near the surface, 999 
+within ~20 cm or less. Similar suppression in both the HEE and LEE neutron populations, 1000 
+measured by CSETN and SETN, respectively, suggests a uniform density of hydrogenation 1001 
+in the polar regolith within the ~1 m depth probed by LEE neutrons. If there is a difference 1002 
+in sensitivity between the HEE and LEE neutron populations, the calibration factors of 1003 
+Feldman et al. (1998b) suggest that similar flux suppression would imply up to five times 1004 
+greater hydrogen abundance in the upper ~20 cm of regolith. 1005 
+The thermal and epithermal neutron flux relative to the equator measured by LP in the polar 1006 
+regions is significantly greater than estimated from LEND data, as shown by the systematic 1007 
+high latitude discrepancy in the model results and reported in Table 5. This distinction also 1008 
+Page 31/46 
+is noted by Eke et al. (2012) in the comparison between CSETN and LP epithermal neutron 1009 
+flux measurements . Suppression in the  LP epithermal neutron flux measurements  have 1010 
+been interpreted as the spatially diluted effect of under -resolved deep suppression in a 1011 
+limited number of isolated permanently shadowed regions  (Lawrence et al.  2006). We 1012 
+interpret the mapped flux as indicating a broad regional distribution of hydrated regolith at 1013 
+high latitude that is punctuated by locally greater concentrations of hydrogen  as reported 1014 
+by Sanin et al. (2012). The regional character of the suppression is apparent in Fig. 6, which 1015 
+combines the LEND maps of thermal, epithermal, and HEE neutron flux into a three-color 1016 
+image, assigning the low -energy thermal neutron count rate to red, the moderate -energy 1017 
+epithermal count rate to green, and the high -energy-skewed HEE count rate to blue. The 1018 
+regional suppression of e pithermal and HEE neutrons is obvious at latitudes above 80°, 1019 
+where the map shows elevated thermal neutron flux and suppressed e pithermal neutron 1020 
+flux over the entire range of longitude, neatly ending at about 80° latitude. The pole is over 1021 
+the horizon for measurements below 87° north or south latitude, thus the broad regional 1022 
+suppression at 80°–87° latitude cannot be due to averaging flux suppression near or at the 1023 
+poles over all longitudes by the broad spatial footprint of the LEND detectors.  1024 
+The discrepancy between the suppressed polar epithermal neutron flux measured by LEND 1025 
+and the lesser epithermal-neutron suppression and greater thermal-neutron enhancement in 1026 
+the broad polar regions mapped by LP can be resolved by positing  a modest systematic 1027 
+error of ~3% in corrections for the geometric projection of the LP  proportional-counter 1028 
+detectors as a function of latitude. The LEND detectors maintain stable orientation relative 1029 
+to the surface and thus do not require  geometric correction, whereas the thermal and 1030 
+epithermal neutron detectors of LP both required an identical correction . The fractional 1031 
+difference in signal contrast between LP detectors and LEND is of approximately the same 1032 
+magnitude in both detectors at both poles.  Geometric corrections to t he LP fast-neutron 1033 
+flux measurements apparently were more successful, as the equator-to-pole contrast in the 1034 
+LP fast-neutron measurements are very similar to the LEND epithermal and HEE neutron 1035 
+populations. We conclude that the Moon’s polar regions host a widespread distribution of  1036 
+regolith that is hydrated to 0.1 wt% water-equivalent hydrogen, or 105±13 ppmw hydrogen, 1037 
+averaging over the region within 10° of the poles . Miller et al. (2012) obtained a similar 1038 
+quantity by combining LP epithermal neutron counts with SETN counts to evaluate the 1039 
+differential between the polar region and 70° to 80° latitude, assuming ~50 ppmw hydrogen 1040 
+(0.045 wt% WEH) in the reference region. 1041 
+ 1042 
+Page 32/46 
+ 
+Figure 6: Composite of thermal, epithermal, and HEE neutron flux from LEND. Contrast 
+is stretched between minimum and maximum in each image component. Pole -to-equator 
+comparison regions are shown by dotted lines at 10° latitude difference from the poles and 
+equator. HEE neutron flux (blue), and epithermal neutron flux (green) , are suppressed in 
+the polar regions and elevated in the Maria, in the Aitken Basin, and in large craters. The 
+extensive red (thermal -neutron bright) regions at the poles are consistent with bro ad 
+regional suppression of epithermal neutrons and elevation of thermal neutron flux near the 
+poles. 
+ 1043 
+The meridional profiles for the epithermal and HEE neutrons shown in Fig.  5 decrease 1044 
+monotonically from ~80° latitude to the poles. We consider a second contrast comparison 1045 
+between the region within 2° of the poles and the equator, reported in Table 6. The results 1046 
+are qualitatively similar to the equator -to-pole contrast reported in Table  5 and 1047 
+quantitatively represent a greater concentration of hydrogen in the regolith, 0.12–0.13 wt% 1048 
+WEH with greater than 6 significance, or 133–144 ppmw hydrogen. 1049 
+Miller et al. (2012) analyze neutron flux measurements differently, by mapping the data in 1050 
+two dimensions rather than the zonal averages used in forming the meridional profiles used 1051 
+here, which sacrifice spatial detail for improved signal-to-noise ratio. Miller et al. conclude 1052 
+that suppression in the fast neutron flux measured by LP is significant relative to a reference 1053 
+measurement at 70° –80° latitude only within 2° of the south pole , from which they 1054 
+conclude that  Shackleton Crater  is unique in having hydrogen near the surface of the 1055 
+regolith and that elsewhere, the upper ~20  cm of regolith is hydrogen -poor. We observe 1056 
+that the meridional profile in the LEND epithermal and HEE neutron count rates, and the 1057 
+LP fast neutron count rate, is suppressed to the same extent relative to the equator at both 1058 
+poles. We conclude that the identification of Shackleton Crater as  a distinct locus is not 1059 
+enhanced contrast 
+0°E$ +60°E$ +120°E$–60°E$–120°E$–180°E$ +180°E$
+30°N$
+60°N$
+80°N$
+80°S$
+60°S$
+30°S$
+Eqr$
+Page 33/46 
+supported and that it is only by coincidence that  Shackleton Crater falls on the maximum 1060 
+in a regional pattern of hydrogen distribution controlled by lunar latitude. 1061 
+The equatorial zonal average that is used here for the reference neutron flux measurement 1062 
+for epithermal (LEE) and HEE neutron populations may be skewed by the fact that it 1063 
+includes both maria and highlands regions, which differ in the mapped flux measurements 1064 
+(Figs. 1, 5, 6). If the reference region were restricted to just the highlands, it would increase 1065 
+the LEND epithermal reference value by about 0.7%, and decrease the HEE reference value 1066 
+by about 1.5%. The calibration expression can be applied to these relative differences in 1067 
+the reference rates, implying that with a highlands (non -Maria) reference, the WEH 1068 
+hydrogen content derived from the LEND epithermal (SETN) data would increase by 1069 
+1.91•(100.7/100-1) = 0.013 wt% WEH, while the content derived from the HEE flux would 1070 
+decrease by 1.91•(98.5/100 -1) = -0.029 wt% WEH.  Applying these differences to the 1071 
+tabulated values in Table  5, the estimated water content averaged over both pol es rises 1072 
+from 0.094 wt% to 0.107 wt% estimated from epithermal neutron flux, and decreases from 1073 
+0.095 wt% to 0.0 66 wt% estimated from the HEE neutron flux. These values would be 1074 
+consistent with a somewhat dryer upper regolith at the poles in the top ~25  cm compared 1075 
+to the deeper regolith probed by the lower-energy emergent neutron flux. The choice of the 1076 
+reference region should have  no effect on  comparisons between LP - and LEND -based 1077 
+retrievals of hydrogen content in the polar regions, as the reference is constructed from the 1078 
+measured flux in the same regions. 1079 
+Hydrogen Outside the Polar Region 1080 
+It is now  known that the Moon features widespread surface hydration that appears to 1081 
+increase with angular separation from the subsolar point (Pieters et al. 2009; Sunshine et 1082 
+al. 2009; Clark 2009; Hendrix et al.  2012), thus increasing with latitude as well as 1083 
+increasing towards the terminator . The variation with respect to the terminator  has been 1084 
+interpreted by Sunshine et al. (2009) as actual diurnal variability , rather than an optical 1085 
+effect as interpreted by Clark (2009). Sunshine’s interpretation is supported by a similar 1086 
+pattern in nadir-viewing ultraviolet spectroscopy from LRO (Hendrix et al. 2012), and by 1087 
+LEND measurements of diurnal variability in the epithermal neutron flux near the equator 1088 
+(Livengood et al. 2015), which is not subject to effects of viewing angle . If the diurnally 1089 
+varying component of the spectroscopic hydration signature is not an optical effect, then 1090 
+there would be no cause to dismiss the static distribution as a function of lat itude as an 1091 
+optical effect, either. This raises the possibility that the distribution of epithermal neutron 1092 
+flux with latitude may be affected by  a spatially varying distribution of hydrogen in the 1093 
+lunar regolith. 1094 
+The zonal average epithermal and HEE neutron flux declines from near the equator to the 1095 
+poles, diminish ing more steeply polewards of ±80° latitude  (Fig. 5). The epithermal 1096 
+neutron flux is diminished by ~2% at ±80° latitude, corresponding to ~0.04  wt% WEH or 1097 
+Page 34/46 
+40 ppmw hydrogen if this suppression were entirely assigned to the effect of hydrogen in 1098 
+the regolith. The HEE flux is diminished somewhat more, but quantitative interpretation is 1099 
+complicated by the obvious presence of local brightening associated with the Maria (Figs. 1, 1100 
+6). Hydration values detected in reflected light have not been well quantified, but values 1101 
+on the order of 0.1 to 0.3 wt% were suggested in the discovery papers. The increase in the 1102 
+surface hydration signature at higher latitudes is qualitatively consistent with the 1103 
+diminishing epithermal neutron flux  detected by LEND, if the hydrated layer were not a 1104 
+“monolayer” but extends into the ground by a few centimeters  at the concentration 1105 
+interpreted from spectroscopy . Modeling by Lawrence et al.  (2011b), cited in the 1106 
+discussion of polar volatiles, suggests that hydrogen in shallow emplacement suppresses 1107 
+HEE neutrons to a greater extent than LEE neutrons, qualitatively similar to the observed 1108 
+pattern. A first-order estimate for the depth of hydration at 0.1 –0.3 wt% that would yield 1109 
+0.04 wt% WEH for the one -meter depth probed by SETN (LEE neutrons) is a layer 1110 
+extending from the surface to 13 –40 cm depth  in the high -latitude region of greatest 1111 
+suppression, at ~80° latitude . A more precise statement on the depth and degree of 1112 
+hydrogenation that could correspond to the observed neutron suppression will require new 1113 
+Monte Carlo calculations for the neutron leakage flux under suitable conditions. Lawrence 1114 
+et al. (2011b) found that for a relatively thin near -surface layer of mode st hydration, the 1115 
+measurable epithermal neutron flux could actually be enhanced by a few percent. 1116 
+Significant effort will be required to quantitatively interpret the apparent observed 1117 
+condition of weakly suppressed neutron flux in both LEE and HEE neutron populations. 1118 
+A study by Little et al. (2003) suggests that subsurface temperature in the regolith may 1119 
+make a contribution to suppressing epithermal neutron flux with increasing latitude , 1120 
+resulting in an overestimate of hydrogen in the regolith . Most of the work presented by 1121 
+Little et al.  (2003) is for thermal neutron flux , but they also show figures depicting 1122 
+emergent epithermal neutron flux as being reduced at low temperature compared to high 1123 
+temperature (<400 K), although to a lesser extent t han for thermal neutrons . They 1124 
+investigate the variation with latitude of LP thermal neutron flux in the lunar highlands, 1125 
+differing from the zonal average profile of Fig. 5 by excluding the nearside Maria (near 0° 1126 
+longitude) and South Pole -Aitken Basin (~180° longitude) regions, which have strongly 1127 
+suppressed thermal neutron flux . The highlands -only profile that they present shows a 1128 
+general decrease in thermal neutron flux from the equator to the poles, discernible in the 1129 
+mapped thermal neutron data of Figs. 1 and 5 as darkening from equator to pole within the 1130 
+lunar highlands of the northern farside and southern nearside. 1131 
+The model presented by Little et al. , although qualitatively similar to the variation of 1132 
+thermal neutron flux  with latitude in the lun ar highlands, exhibits substantially less 1133 
+quantitative contrast from equator to pole than the LP thermal neutron data to which they 1134 
+compare it. If the near-polar flux measured by LP were reduced by a few percent further, 1135 
+as we argue here, then the quantitative discrepancy would be even greater.  The neutron 1136 
+Page 35/46 
+energy spectrum modeled by Little et al. extends only to 0.1 keV and thus does not include 1137 
+the HEE neutron population sensed by CSETN. The ir published spectra show that 1138 
+regardless of effects at low neutron energy (<1 eV) in response to variations in temperature 1139 
+below 400 K, neutrons of greater energy are indifferent to temperature effects. Thus, the 1140 
+temperature effects cited by Little et al. cannot even qualitatively suggest an explanation 1141 
+for high-latitude suppression in the HEE neutron flux aside from the effect of hydrogen or 1142 
+broad latitude dependence in the elemental composition of the regolith. 1143 
+Conclusions 1144 
+We have constructed maps of the lunar neutron flux measured by thermal (STN3), 1145 
+epithermal (SETN), and collimated epithermal (CSETN) detectors of the Lunar 1146 
+Exploration Neutron Detector (LEND) on the Lunar Reconnaissance Orbiter mission. 1147 
+Linear combinations of similarly -constructed maps from earlier Lunar Prospector (LP) 1148 
+neutron flux measurements can be used to model the LEND maps and thereby estimate the 1149 
+contributions of neutrons to the detected signal in the LEND detectors from different source 1150 
+populations. Hybrid models that combine LP flux maps with LEND maps reduce 1151 
+systematic discrepancies between the LEND detector maps and models, and provide 1152 
+estimates for parameters to reduce data from the detectors to measurements of the thermal, 1153 
+epithermal, and High Energy Epithermal ( HEE) neutron flux populations. Spacecraft-1154 
+sourced background neutron count rates estimated in this work  are consistent with in 1155 
+uncertainty with rates determined by Litvak et al. (2012a) from calibration measurements 1156 
+for the uncollimated thermal and epithermal neutron detectors, leading us to accept  1157 
+background count rates estimated from Litvak et al. for the uncollimated detectors . The 1158 
+background estimated for the collimated CSETN detector is significantly greater than that 1159 
+estimated by Litvak et al.  (2012a). Uncertainty limits on analytical parameters derived 1160 
+within the present work are generous, as this work does not presuppose any knowledge of 1161 
+the statistical properties of LEND detections and incorporates all covariances in fitting data. 1162 
+The resulting uncertainties estimate accuracy rather than precision, and apply equally to all 1163 
+elements of maps derived from LEND data. As a result, even the relatively large 1164 
+uncertainties estimated here in modeling the background in LEND data have a relatively 1165 
+small influence on the geochemical interpretation of LEND results, which depend on the 1166 
+ratio of signal in regions compared. 1167 
+This work estimates the contribution of lunar neutrons in collimation  to the total lunar 1168 
+neutron detection rate in the LEND CSETN collimated detector. We estimate an upper 1169 
+limit of 1.2  cps in collimation  with a serviceable working estimate of 1.0  cps. Using the 1170 
+work of Lawrence et al. (2010) applied to a comparison between the LEND collimated and 1171 
+uncollimated epithermal ne utron detectors, we set a hard lower limit of 0. 37 cps in 1172 
+collimation. This is substantially greater than estimated by Lawrence et al. (2010), which 1173 
+differed by estimating CSETN performance from LP data. Our estimation is based on 1174 
+identical detectors in and outside of collimation as part of LEND, operated simultaneously, 1175 
+Page 36/46 
+thus eliminating parameters that were estimated or assumed in a comparison with the Lunar 1176 
+Prospector measurements. The lower limit is an underestimate for the true detection rate in 1177 
+collimation, as the model developed by Lawrence et al. (2010) does not include the effects 1178 
+of emission anisotropy at the lunar surface . A modest approximation for the effect of 1179 
+anisotropic emission significantly increases the estimated count rate in collimation, raising 1180 
+it to ~0.9–1.2 cps. We thus find that the count rate in collimation for the LEND CS ETN 1181 
+detector is in the range 0.37–1.2 cps, 17–54% of lunar neutrons detected by CSETN, with 1182 
+1.0 cps or ~45% as a reasonable estimate for the collimated component. The count rate out 1183 
+of collimation is 1.0–1.8 cps, or 46%–83% of detected lunar neutrons. The estimated count 1184 
+rate using the method of Lawrence et al. (2010), corrected for anisotropic emission, yields 1185 
+~43–57% of lunar neutrons in collimation. 1186 
+LEND measurements are a sig nificant step forward in remote sensing of lunar hydrogen 1187 
+deposits. At low spatial resolution, LEND data  demonstrate regional epithermal neutron 1188 
+flux suppression around the poles that increases monotonically toward the pole. Epithermal 1189 
+neutron flux suppression at each pole is the same, implying that hydrogen emplacement at 1190 
+the poles is a regional effect of high latitude. The relative populations of neutrons that 1191 
+contribute to the LEND collimated detectors also demonstrate that a significant fraction of 1192 
+detected neutrons is measured in collimation, which could enable measurements of isolated 1193 
+hydrogen deposits, although that work is not done here . The LEND detectors are more 1194 
+sensitive to fast neutron populations than anticipat ed, furnishing additional information 1195 
+about hydrogen burial depth. 1196 
+Mineral hydration was discovered on the Moon’s surface around the time of LRO launch. 1197 
+Although these results typically are described as a monolayer , the  gradual decrease in 1198 
+epithermal and high -energy epithermal neutron flux with increasing latitude that is 1199 
+measured by LEND is consistent with the degree of hydration suggested by these 1200 
+discoveries if it is assumed that the hydration may extend  into the surface by tens of 1201 
+centimeters. 1202 
+Acknowledgments 1203 
+TAL was supported by NASA’s Lunar Reconnaissance Orbiter project under NASA award 1204 
+number NNG06EO90A to the University of Maryland. RZS and JJS were supported by the 1205 
+LRO project through a cooperative agreement between NASA and the University  of 1206 
+Maryland; RDS was supported by a cooperative agreement between NASA and the 1207 
+Catholic University of America; WVB  was supported by contract to t he Universi ty of 1208 
+Arizona; and LGE as supported by contract to the Computer Science Corporation. The 1209 
+Russian co-authors of this paper (IGM, MLL, ABS) were supported by grant No.  14-22-1210 
+00249 of the Russian Scientific Foundation. The Russian Federal Space Agency supplied 1211 
+the LEND instrument to NASA and the LRO project. The authors would like to thank D. 1212 
+J. Lawrence of the Johns Hopkins University Applied Physics Laboratory for assistance in 1213 
+Page 37/46 
+obtaining and interpreting the Lunar Prospector neutron  data, and for stimulating 1214 
+discussions that have contributed to this work. 1215 
+ 1216 
+References 1217 
+Binder, A. B. (1998). Lunar Prospector: Overview. Science 281, 1475–1476, doi: 1218 
+10.1126/science.281.5382.1475.  1219 
+Boynton, W. V., G. F. Droege, I. G. Mitrofanov, T. P. McClanahan, A. B. Sanin, M. L. 1220 
+Litvak, M. Schaffner, G. Chin, L. G. Evans, J. B. Garvin, K. Harshman, A. 1221 
+Malakhov, G. Milikh, R. Sagdeev, and R. Starr (2012). High Spatial Resolution 1222 
+Studies of Epithermal Neutron Emission from the Lunar Poles: Constraints on 1223 
+Hydrogen Mobility. JGR-Planets 117, E00H33 (19 pp), doi: 10.1029/2011JE003979.  1224 
+Carruba, V., and A. Coradini (1999). Lunar Cold Traps: Effects of Double Shielding. 1225 
+Icarus 142, 402–413, doi: 10.1006/icar.1999.6192.  1226 
+Clark, R. N. (2009). Detection of Adsorbed Water and Hydroxyl on the Moon. Science 1227 
+326, 562–564, doi: 10.1126/science.1178105.  1228 
+Eke, V. R., L. F. A. Teodoro, D. J. Lawrence, R. C. Elphic, and W. C. Feldman (2012). A 1229 
+Quantitative Comparison of Lunar Orbital Neutron Data. Astrophys. J. 747, 6, doi: 1230 
+10.1088/0004-637X/747/1/6. 1231 
+Feldman, W. C., K. Ahola, B. L. Barraclough, R. D. Belian, R. K. Black, R. C. Elphic, D. 1232 
+T. Everett, K. R. Fuller, J. Kroesche, D. J. Lawrence, S. L. Lawson, J. L. Longmire, 1233 
+S. Maurice, M. C. Miller, T. H. Prettyman, S. A. Storms, and G. W. Thornton (2004). 1234 
+Gamma-Ray, Neutron, and Alpha-Particle Spectrometers for the Lunar Prospector 1235 
+mission. JGR-Planets 109, E07S06, doi: 10.1029/2003JE002207.  1236 
+Feldman, W. C., S. Maurice, D. J. Lawrence, R. C. Little, S. L. Lawson, O. Gasnault, R. 1237 
+C. Wiens, B. L. Barraclough, R. C. Elphic, T. H. Prettyman, J. T. Steinberg, and A. B. 1238 
+Binder (2001). Evidence for water ice near the lunar poles. JGR-Planets 106, 23231–1239 
+23251, doi: 10.1029/2000JE001444. 1240 
+Feldman, W. C., D. J. Lawrence, R. C. Elphic, B. L. Barraclough, S. Maurice, I. Genetay, 1241 
+and A. B. Binder (2000). Polar hydrogen deposits on the Moon. JGR-Planets 105, 1242 
+4175–4196, doi: 10.1029/1999JE001129.  1243 
+Feldman, W. C., B. L. Barraclough, K. R. Fuller, D. J. Lawrence, S. Maurice, M. C. 1244 
+Miller, T. H. Prettyman, and A. B. Binder (1999). The Lunar Prospector gamma-ray 1245 
+and neutron spectrometers. Nuclear Instruments and Methods in Physical Research, 1246 
+Section A 422, 562–566, doi: 10.1016/S0168-9002(98)00934-6. 1247 
+Page 38/46 
+Feldman, W. C., B. L. Barraclough, S. Maurice, R. C. Elphic, D. J. Lawrence, D. R. 1248 
+Thomsen, and A. B. Binder (1998a). Major Compositional Units of the Moon: Lunar 1249 
+Prospector Thermal and Fast Neutrons. Science 281, 1489–1493, doi: 1250 
+10.1126/science.281.5382.1489.  1251 
+Feldman, W. C., S. Maurice, A. B. Binder, B. L. Barraclough, R. C. Elphic, and D. J. 1252 
+Lawrence (1998b). Fluxes of Fast and Epithermal Neutrons from Lunar Prospector: 1253 
+Evidence for Water Ice at the Lunar Poles. Science 281, 1496–1500, doi: 1254 
+10.1126/science.281.5382.1496.  1255 
+Goldstein, D. B., R. S. Nerem, E. S. Barker, J. V. Austin, A. B. Binder, and W. C. 1256 
+Feldman (1999). Impacting Lunar Prospector in a cold trap to detect water ice. 1257 
+Geophys. Res. Lett. 26, 1653–1656, doi: 10.1029/1999GL900384.  1258 
+Hendrix, A. R., K. D. Retherford, G. R. Gladstone, D. M. Hurley, P. D. Feldman, A. F. 1259 
+Egan, D. E. Kaufmann, P. F. Miles, J. W. Parker, D. Horvath, P. M. Rojas, M. H. 1260 
+Versteeg, M. W. Davis, T. K. Greathouse, J. Mukherjee, A. J. Steffl, W. R. Pryor, and 1261 
+S. A. Stern (2012). The lunar far-UV albedo: Indicator of hydration and weathering. 1262 
+JGR-Planets 117, E12001 (8 pp), doi: 10.1029/2012JE004252.  1263 
+Hubbard, G. S., A. B. Binder, and W. Feldman (1998). The Lunar Prospector Discovery 1264 
+Mission: mission and measurement description. IEEE Transactions on Nuclear 1265 
+Science 45, 880–887, doi: 10.1109/23.682655. 1266 
+Hurley, D. M., G. R. Gladstone, S. A. Stern, K. D. Retherford, P. D. Feldman, W. Pryor, 1267 
+A. F. Egan, T. K. Greathouse, D. E. Kaufmann, A. J. Steffl, J. W. Parker, P. F. Miles, 1268 
+D. Horvath, M. W. Davis, M. H. Versteeg, D. C. Slater, A. R. Hendrix, C. A. 1269 
+Hibbitts, C. M. Ernst, R. J. Vervack, Jr., and G. A. Grieves (2012). Modeling of the 1270 
+vapor release from the LCROSS impact: 2. Observations from LAMP. JGR-Planets 1271 
+117, E00H07, doi: 10.1029/2011JE003841.  1272 
+Lawrence, D. J., V. R. Eke, R. C. Elphic, W. C. Feldman, H. O. Funsten, T. H. 1273 
+Prettyman, and L. F. A. Teodoro (2011a). Technical Comment on “Hydrogen 1274 
+Mapping of the Lunar South Pole Using the LRO Neutron Detector Experiment 1275 
+LEND”. Science 334, 1058, doi: 10.1126/science.1203341.  1276 
+Lawrence, D. J., D. M. Hurley, W. C. Feldman, R. C. Elphic, S. Maurice, R. S. Miller, 1277 
+and T. H. Prettyman (2011b). Sensitivity of orbital neutron measurements to the 1278 
+thickness and abundance of surficial lunar water. JGR-Planets 116, E01002, doi: 1279 
+10.1029/2010JE003678. 1280 
+Lawrence, D. J., R. C. Elphic, W. C. Feldman, H. O. Funsten, and T. H. Prettyman 1281 
+(2010). Performance of Orbital Neutron Instruments for Spatially Resolved Hydrogen 1282 
+Measurements of Airless Planetary Bodies. Astrobiology 10, 183–200, doi: 1283 
+Page 39/46 
+10.1089/ast.2009.0401. 1284 
+Lawrence, D. J., W. C. Feldman, R. C. Elphic, J. J. Hagerty, S. Maurice, G. W. 1285 
+McKinney, and T. H. Prettyman (2006). Improved modeling of Lunar Prospector 1286 
+neutron spectrometer data: Implications for hydrogen deposits at the lunar poles. 1287 
+JGR-Planets 111, E08001, doi: 10.1029/2005JE002637.  1288 
+Little, R. C., W. C. Feldman, S. Maurice, I. Genetay, D. J. Lawrence, S. L. Lawson, O. 1289 
+Gasnault, B. L. Barraclough, R. C. Elphic, T. H. Prettyman, and A. B. Binder (2003). 1290 
+Latitude variation of the subsurface lunar temperature: Lunar Prospector thermal 1291 
+neutrons. JGR-Planets 108, 5046–5054, doi: 10.1029/2001JE001497.  1292 
+Litvak, M. L., I. G. Mitrofanov, A. B. Sanin, D. V. Golovin, A. V. Malakhov, W. V. 1293 
+Boynton, G. F. Droege, K. Harshman, and R. D. Starr (2012a). LEND neutron data 1294 
+processing for the mapping of the Moon. JGR-Planets 117, E00H32 (21 pp), doi: 1295 
+10.1029/2011JE004035.  1296 
+Litvak, M. L., I. G. Mitrofanov, A. Sanin, A. Malakhov, W. V. Boynton, G. Chin, G. 1297 
+Droege, L. G. Evans, J. Garvin, D. V. Golovin, K. Harshman, T. P. McClanahan, M. 1298 
+I. Mokrousov, E. Mazarico, G. Milikh, G. Neumann, R. Sagdeev, D. E. Smith, R. 1299 
+Starr, and M. T. Zuber (2012b). Global maps of lunar neutron fluxes from the LEND 1300 
+instrument. JGR-Planets 117, E00H22 (18pp), doi: 10.1029/2011JE003949. 1301 
+Litvak, M. L., I. G. Mitrofanov, A. B. Sanin, B. N. Bakhtin, J. G. Bodnarik, W. V. 1302 
+Boynton, G. Chin, L. G. Evans, K. Harshman, T. A. Livengood, A. Malakhov, M. I. 1303 
+Mokrousov, T. P. McClanahan, R. Sagdeev, and R. Starr (2016). The variations of 1304 
+neutron component of lunar radiation background from LEND/LRO observations. 1305 
+Planet. & Space Sci. 122, 53–65, doi: 10.1016/j.pss.2016.01.006.  1306 
+Livengood, T. A., G. Chin, R. Z. Sagdeev, I. G. Mitrofanov, W. V. Boynton, Evans, L. 1307 
+G., M. L. Litvak, T. P. McClanahan, A. B. Sanin, R. D. Starr, and J. J. Su (2015). 1308 
+Moonshine: Diurnally varying hydration through natural distillation on the Moon, 1309 
+detected by the Lunar Exploration Neutron Detector (LEND). Icarus 255, 100–115, 1310 
+doi: 10.1016/j.icarus.2015.04.004.  1311 
+Livengood, T. A., L. D. Deming, M. F. A'Hearn, D. Charbonneau, T. Hewagama, C. M. 1312 
+Lisse, L. A. McFadden, V. S. Meadows, T. D. Robinson, S. Seager, and D. D. 1313 
+Wellnitz (2011). Properties of an Earth-Like Planet Orbiting a Sun-Like Star: Earth 1314 
+Observed by the EPOXI Mission. Astrobiology 11, 907–930, doi: 1315 
+10.1089/ast.2011.0614.  1316 
+Maurice, S., D. J. Lawrence, W. C. Feldman, R. C. Elphic, and O. Gasnault (2004). 1317 
+Reduction of neutron data from Lunar Prospector. JGR-Planets 109, E07S04 (40pp), 1318 
+doi: 10.1029/2003JE002208. 1319 
+Page 40/46 
+Maurice, S., W. C. Feldman, D. J. Lawrence, R. C. Elphic, O. Gasnault, C. d'Uston, I. 1320 
+Genetay, and P. G. Lucey (2000). High-energy neutrons from the Moon. JGR-Planets 1321 
+105, E8, 20365–20376, doi: 10.1029/1999JE001151.  1322 
+Mazarico, E., G. A. Neumann, D. E. Smith, M. T. Zuber, and M. H. Torrence (2011). 1323 
+Illumination conditions of the lunar polar regions using LOLA topography. Icarus 1324 
+211, 1066–1081, doi: 10.1016/j.icarus.2010.10.030. 1325 
+McElhaney, S. A., M. L. Bauer, M. M. Chiles, M. B. Emmett, and J. H. Todd (1990). 1326 
+Monte Carlo and experimental evaluation of BC-454 for use as a multienergy neutron 1327 
+detector. IEEE Transactions on Nuclear Science 37, 1351–1358.  1328 
+Miller, R. S., G. Nerurkar, and D. J. Lawrence (2012). Enhanced Hydrogen at the Lunar 1329 
+Poles: New Insights From the Detection of Epithermal and Fast Neutron Signatures. 1330 
+JGR-Planets 117, E11007 (11012 pp), doi: 10.1029/2012JE004112. 1331 
+Mitrofanov, I. G., W. V. Boynton, M. L. Litvak, A. B. Sanin, and R. D. Starr (2011). 1332 
+Response to Comment on “Hydrogen Mapping of the Lunar South Pole Using the 1333 
+LRO Neutron Detector Experiment LEND”. Science 334, 1058-d, doi: 1334 
+10.1126/science.1203483.  1335 
+Mitrofanov, I. G., A. Bartels, Y. I. Bobrovnitsky, W. Boynton, G. Chin, H. Enos, L. 1336 
+Evans, S. Floyd, J. Garvin, D. V. Golovin, A. S. Grebennikov, K. Harshman, L. L. 1337 
+Kazakov, J. Keller, A. A. Konovalov, A. S. Kozyrev, A. R. Krylov, M. L. Litvak, A. 1338 
+V. Malakhov, T. McClanahan, G. M. Milikh, M. I. Mokrousov, S. Ponomareva, R. Z. 1339 
+Sagdeev, A. B. Sanin, V. V. Shevchenko, V. N. Shvetsov, R. Starr, G. N. 1340 
+Timoshenko, T. M. Tomilina, V. I. Tretyakov, J. Trombka, V. S. Troshin, V. N. 1341 
+Uvarov, A. B. Varenikov, and A. A. Vostrukhin (2010a). Lunar Exploration Neutron 1342 
+Detector for the NASA Lunar Reconnaissance Orbiter. Space Science Reviews 150, 1343 
+183–207, doi: 10.1007/s11214-009-9608-4. 1344 
+Mitrofanov, I. G., A. B. Sanin, W. V. Boynton, G. Chin, J. B. Garvin, D. Golovin, L. G. 1345 
+Evans, K. Harshman, A. S. Kozyrev, M. L. Litvak, A. Malakhov, E. Mazarico, T. 1346 
+McClanahan, G. Milikh, M. Mokrousov, G. Nandikotkur, G. A. Neumann, I. 1347 
+Nuzhdin, R. Sagdeev, V. Shevchenko, V. Shvetsov, D. E. Smith, R. Starr, V. I. 1348 
+Tretyakov, J. Trombka, D. Usikov, A. Varenikov, A. Vostrukhin, and M. T. Zuber 1349 
+(2010b). Hydrogen Mapping of the Lunar South Pole Using the LRO Neutron 1350 
+Detector Experiment LEND. Science 330, 483–486, doi: 10.1126/science.1185696. 1351 
+Pieters, C. M., J. N. Goswami, R. N. Clark, M. Annadurai, J. Boardman, B. Buratti, J.-P. 1352 
+Combe, M. D. Dyar, R. Green, J. W. Head, C. Hibbitts, M. Hicks, P. Isaacson, R. 1353 
+Klima, G. Kramer, S. Kumar, E. Livo, S. Lundeen, E. Malaret, T. McCord, J. 1354 
+Mustard, J. Nettles, N. Petro, C. Runyon, M. Staid, J. Sunshine, L. A. Taylor, S. 1355 
+Tompkins, and P. Varanasi (2009). Character and Spatial Distribution of OH/H2O on 1356 
+Page 41/46 
+the Surface of the Moon Seen by M3 on Chandrayaan-1. Science 326, 568–582, doi: 1357 
+10.1126/science.1178658.  1358 
+Press, W. H., B. P. Flannery, S. A. Teukolsky, and W. T. Vetterling (1989), Numerical 1359 
+Recipes in Pascal: The Art of Scientific Computing, 759 pp., Cambridge University 1360 
+Press, New York. 1361 
+Sanin, A. B., I. G. Mitrofanov, M. L. Litvak, A. Malakhov, W. V. Boynton, G. Chin, G. 1362 
+Droege, L. G. Evans, J. Garvin, D. V. Golovin, K. Harshman, T. P. McClanahan, M. 1363 
+I. Mokrousov, E. Mazarico, G. Milikh, G. Neumann, R. Sagdeev, D. E. Smith, R. D. 1364 
+Starr, and M. T. Zuber (2012). Testing lunar permanently shadowed regions for water 1365 
+ice: LEND results from LRO. JGR-Planets 117, E00H26, doi: 1366 
+10.1029/2011JE003971.  1367 
+Starukhina, L. V., and Y. G. Shkuratov (2000). NOTE: The Lunar Poles: Water Ice or 1368 
+Chemically Trapped Hydrogen? Icarus 147, 585–587, doi: 10.1006/icar.2000.6476. 1369 
+Sunshine, J. M., T. L. Farnham, L. M. Feaga, O. Groussin, F. Merlin, R. E. Milliken, and 1370 
+M. F. A'Hearn (2009). Temporal and Spatial Variability of Lunar Hydration As 1371 
+Observed by the Deep Impact Spacecraft. Science 326, 565–568, doi: 1372 
+10.1126/science.1179788.  1373 
+Teodoro, L. F. A., V. R. Eke, and R. C. Elphic (2010). Spatial distribution of lunar polar 1374 
+hydrogen deposits after KAGUYA (SELENE). Geophys. Res. Lett. 37, L12201, doi: 1375 
+10.1029/2010GL042889.  1376 
+Teodoro, L. F. A., V. R. Eke, R. C. Elphic, W. C. Feldman, and D. J. Lawrence (2014). 1377 
+How well do we know the polar hydrogen distribution on the Moon? JGR-Planets 1378 
+119, 574–593, doi: 10.1002/2013JE004421. 1379 
+Watson, K., B. C. Murray, and H. Brown (1961). The behavior of volatiles on the lunar 1380 
+surface. J. Geophys. Res. 66, 3033–3045, doi: 10.1029/JZ066i009p03033. 1381 
+Vasavada, A. R., J. L. Bandfield, B. T. Greenhagen, P. O. Hayne, M. A. Siegler, J.-P. 1382 
+Williams, and D. A. Paige (2012). Lunar equatorial surface temperatures and regolith 1383 
+properties from the Diviner Lunar Radiometer Experiment. JGR-Planets 117, 1384 
+E00H18 (12 pp), doi: 10.1029/2011JE003987.  1385 
+Vondrak, R. R. (2012). Introduction to special section on Results of the Lunar 1386 
+Reconnaissance Orbiter Mission. JGR-Planets 117, E00H01 (03 pp), doi: 1387 
+10.1029/2012JE004298.  1388 
+1389 
+Page 42/46 
+Table 1: LEND detector maps modeled using LP maps alone 1390 
+ LEND STN3 LEND SETN LEND CSETN 
+Mean count rate 24.93±0.02 cps 10.622±0.002 cps 5.082±0.001 cps 
+uniform count rate 
+component 
+0.0±1.0 cps 
+(0±4%) 
+0.4±0.9 cps 
+(4±8%) 
+2.9±0.3 cps 
+(57±6%) 
+count rate due to 
+LP thermal 
+component 
+8.4±0.4 cps 
+(34±2%) 
+0.3±0.1 cps 
+(3±1%) 
+0.00±0.02 cps 
+(0.0±0.3%) 
+count rate due to 
+LP epithermal 
+component 
+12.4±1.4 cps 
+(49±5%) 
+8.0±0.8 cps 
+(75±8%) 
+1.0±0.2 cps 
+(19±5%) 
+count rate due to 
+LP fast neutron 
+component 
+4.2±1.1 cps 
+(17±4%) 
+1.9±0.5 cps 
+(18±5%) 
+1.2±0.1 cps 
+(24±2%) 
+variance 0.0932 0.01500 0.002058 
+ 1391 
+1392 
+Page 43/46 
+Table 2: LEND detector maps modeled using a combination of LP and LEND maps 1393 
+ LEND STN3 LEND SETN LEND CSETN 
+Mean count rate 24.93±0.02 cps 10.622±0.002 cps 5.082±0.001 cps 
+uniform count rate 
+component 
+1.12 cps 
+(4.5%) 
+0.77 cps 
+(7%) 
+2.90±0.23 cps 
+(57±4%) 
+count rate due to LP 
+thermal component 
+7.54±0.11 cps 
+(30.3±0.4%)   
+count rate due to 
+STN3-thermal 
+componenta 
+ 0.35±0.14 cps 
+(3±1%) 
+0.00±0.02 cps 
+(0.0±0.3%) 
+count rate due to LP 
+epithermal 
+component 
+ 7.61±0.54 cps 
+(72±5%)  
+count rate due to 
+SETN-epithermal 
+componentb 
+16.26±0.12 cps 
+(65.2±0.5%)  1.18±0.21 cps 
+(23±4%) 
+count rate due to LP 
+fast neutron 
+component 
+ 1.89±0.42 cps 
+(18±4%) 
+1.00±0.10 cps 
+(20±2%) 
+variance 0.0395 0.01472 0.001813 
+# degrees of 
+freedom 7200 – 2 7200 – 3 7200 – 4 
+ratio of variances 
+(F) 2.36 1.019 1.135 
+confidence of Fc 100% 79% 100% 
+a For fitting SETN and CSETN detectors, STN3-thermal component = STN3 – 1394 
+1.651•(SETN – 0.77) – 1.12 cps. 1395 
+b For fitting STN3 detector, SETN-epithermal component = SETN – 0.77 cps; for 1396 
+fitting CSETN detector, SETN-epithermal component = SETN – 0.047•STN3-1397 
+thermal – 0.77 cps. 1398 
+c confidence of F = confidence that the ratio of fit variances is statistically 1399 
+distinguishable. 1400 
+ 1401 
+1402 
+Page 44/46 
+Table 3: Estimated LEND data-reduction coefficients 1403 
+ LEND STN3 LEND SETN LEND CSETN 
+Mean count rate 24.93±0.02 cps 10.622±0.002 cps 5.082±0.001 cps 
+uniform count rate 
+component 1.12 cps 0.77 cps 2.90±0.23 cps 
+coefficient of 
+STN3-thermal 
+component 
+ 
+0.047±0.019 • 
+(STN3 – 1.12 – 
+1.651±0.012 • 
+(SETN – 0.77)) 
+ 
+coefficient of SETN 
+epithermal 
+component 
+1.651±0.012 • 
+(SETN – 0.77)   
+ 1404 
+ 1405 
+Table 4: LEND individual collimated detector maps, 1406 
+modeled using a combination of LP and LEND maps 1407 
+ CSETN1 
+(cps) 
+CSETN2 
+(cps) 
+CSETN3 
+(cps) 
+CSETN4 
+(cps) 
+Sum of 
+CSETNx 
+(cps) 
+Mean count rate 1.1302 ± 
+0.0002 
+1.3087 ± 
+0.0003 
+1.2536 ± 
+0.0003 
+1.3758 ± 
+0.0003 
+5.0683 ± 
+0.0006 
+uniform 
+component 0.67±0.09 0.79±0.11 0.71±0.12 0.79±0.11 2.96±0.21 
+STN3_thermal 
+component a 0±0.01 0±0.01 0±0.01 0±0.01 0.00±0.03 
+SETN_epitherm
+al component b 0.24±0.09 0.27±0.11 0.32±0.11 0.33±0.09 1.17±0.21 
+LP fast neutron 
+component 0.22±0.05 0.25±0.06 0.22±0.07 0.25±0.06 0.95±0.12 
+for combined 
+CSETN, scale 
+by 
+0.527 / 0.460 
+= 1.146 
+0.527 / 0.520 
+= 1.013 
+0.527 / 0.541 
+= 0.974 
+0.527 / 0.589 
+= 0.895  
+a STN3_thermal component = STN3 – 1.651•(SETN – 0.77) – 1.12 cps. 1408 
+b SETN_epithermal component = SETN – 0.047•STN3_thermal – 0.77 cps. 1409 
+ 1410 
+1411 
+Page 45/46 
+Table 5: Neutron flux suppression at the lunar poles, within 10° 1412 
+ 
+Equator, 
+±10° North pole, 80°–90° South pole, 80°–90°S 
+ Neutron 
+count rate 
+Neutron 
+count rate 
+% 
+Equatorc 
+wt% 
+WEHd 
+Neutron 
+count rate 
+% 
+Equatorc 
+wt% 
+WEHd 
+LP thermal 
+neutrons   110.8±0.2   114.8±0.2  
+STN3 signal 24.911 
+±0.002 
+24.655 
+±0.003 
+98.97 
+±0.01  25.065 
+±0.003 
+100.62 
+±0.01  
+STN3 
+Thermala 
+7.31 
+± 0.11 
+7.81 
+± 0.11 106.9±0.1  8.11 
+± 0.11 111.0±0.2  
+        
+LP epithermal   98.38 
+±0.04 
+0.031 
+±0.001  98.18 
+±0.04 
+0.035 
+±0.001 
+LP fast   95.74 
+±0.06 
+0.085 
+±0.001  96.01 
+±0.05 
+0.079 
+0.001 
+SETN signal 10.752 
+±0.002 
+10.283 
+±0.002 
+95.64 
+±0.03 
+0.0871 
+±0.0005 
+10.353 
+±0.002 
+96.29 
+±0.03 
+0.0736 
+±0.0005 
+SETN 
+Epithermala 9.68±0.13 9.20±0.13 95.0±0.1 0.100 
+±0.001 9.25±0.13 95.6±0.1 0.088 
+±0.001 
+        
+CSETN signal 5.113 
+±0.001 
+5.001 
+±0.002 
+97.81 
+±0.04 
+0.043 
+±0.001 
+5.005 
+±0.002 
+97.89 
+±0.04 
+0.041 
+±0.001 
+CSETN HEEb 2.21±0.23 2.10±0.23 95.0±0.6 0.10±0.01 2.11±0.23 95.5±0.5 0.09±0.01 
+a Estimated background per this work, Table 2, uncertainty in thermal component since 1413 
+uniform component has fixed value and uncertainties in epithermal and fast 1414 
+components are covariant. 1415 
+b Estimated background per this work, Table 2, uncertainty in subtracted uniform 1416 
+component since uncertainties in epithermal and fast components are covariant. 1417 
+c Polar signal as percentage of equatorial signal. Uncertainty estimated from population 1418 
+statistics of adding/subtracting covariant uncertainty equally to polar and equatorial 1419 
+signal measurement. 1420 
+d Weight-percent water-equivalent hydrogen (WEH), calibration estimated from Fig. 1 1421 
+of Mitrofanov et al. (2010a), as wt% = 1.91•(C0/C1-1). 1422 
+ 1423 
+1424 
+Page 46/46 
+Table 6: Neutron flux suppression at the lunar poles, within 2° 1425 
+ 
+Equator, 
+±2° North pole, 88°–90° South pole, 88°–90°S 
+ Neutron 
+count rate 
+Neutron 
+count rate 
+% 
+Equatorc 
+wt% 
+WEHd 
+Neutron 
+count rate 
+% 
+Equatorc 
+wt% 
+WEHd 
+LP thermal 
+neutrons   110.7±0.4   117.9±0.4  
+STN3 signal 24.883 
+±0.006 
+24.436 
+±0.008 
+98.20 
+±0.04  25.012 
+±0.008 
+100.52 
+±0.04  
+STN3 
+Thermala 
+7.27 
+± 0.11 
+7.84 
+± 0.11 108.3±0.1  8.29 
+± 0.11 114.4±0.2  
+        
+LP epithermal   97.3±0.1 0.054 
+±0.002  96.9±0.1 0.061 
+±0.002 
+LP fast   95.3±0.1 0.095 
+±0.003  94.4±0.1 0.113 
+0.002 
+SETN signal 10.755 
+±0.004 
+10.147 
+±0.005 94.4±0.1 0.113 
+±0.002 
+10.211 
+±0.005 94.9±0.1 0.103 
+±0.002 
+SETN 
+Epithermala 9.69±0.13 9.05±0.13 93.6±0.1 0.130 
+±0.002 9.10±0.13 94.1±0.1 0.120 
+±0.002 
+        
+CSETN signal 5.120 
+±0.003 
+4.981 
+±0.004 97.3±0.1 0.053 
+±0.002 
+4.985 
+±0.004 97.4±0.1 0.051 
+±0.002 
+CSETN HEEb 2.22±0.23 2.08±0.23 93.7±0.7 0.13±0.02 2.09±0.23 94.1±0.7 0.12±0.02 
+a Estimated background per this work, Table 2, uncertainty in thermal component since 1426 
+uniform component has fixed value and uncertainties in epithermal and fast 1427 
+components are covariant. 1428 
+b Estimated background per this work, Table 2, uncertainty in subtracted uniform 1429 
+component since uncertainties in epithermal and fast components are covariant. 1430 
+c Polar signal as percentage of equatorial signal. Uncertainty estimated from population 1431 
+statistics of adding/subtracting covariant uncertainty equally to polar and equatorial 1432 
+signal measurement. 1433 
+d Weight-percent water-equivalent hydrogen (WEH), calibration estimated from Fig. 1 1434 
+of Mitrofanov et al. (2010a), as wt% = 1.91•(C0/C1-1). 1435 
+ 1436 

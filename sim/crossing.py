@@ -395,7 +395,9 @@ def make_sighting(true_crater, scout_true_xy, scout_err_xy, scout_bound95: float
 
 
 def deposit_at(true_xy, truth_ice, s: Settings) -> int | None:
-    """Index of the deposit really at this true position, or None.
+    """Index of the deposit really at this true position, or None. The one rule every
+    ice truth is scored by: the deposits alone, since the regolith's background
+    hydrogen (Settings.background_weh_wt), in every reading, is not ice to be found.
 
     "Really there" means the noise-free concentration is at or above the
     find threshold somewhere under the sensor footprint: each deposit is

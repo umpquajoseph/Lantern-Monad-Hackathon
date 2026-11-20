@@ -65,7 +65,8 @@ RATE_RUNS = 6                # newest finished camera runs the estimate is measu
 # ignored, so it is refused.
 IMPORT_TIME_FIELDS = {"camera_height_m", "lamp_below_camera_m", "stereo_baseline_m", "stereo_hfov_deg",
                       "stereo_width_px", "stereo_disparity_sigma_px", "rim_arc_share_headon",
-                      "rim_arc_share_route"}
+                      "rim_arc_share_route", "stereo_law_max_m", "stereo_band_rms_m", "stereo_hole_pct",
+                      "stereo_hole_model", "stereo_hole_block_px"}
 
 
 def measured_rates(n=RATE_RUNS):

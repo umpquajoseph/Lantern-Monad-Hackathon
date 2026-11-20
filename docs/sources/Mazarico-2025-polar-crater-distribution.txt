@@ -1,0 +1,206 @@
+THE DISTRIBUTION OF 20-900M CRATERS IN THE LUNAR POLAR REGIONS.  E. Mazarico1, P. Po-
+korny2,1, P. Mahanti3, J.-P. Williams4, C. Fassett5, M. Kinczyk5, M.S. Robinson3. 1NASA Goddard Space Flight Cen-
+ter, 8800 Greenbelt Road, Greenbelt, Maryland, USA (erwan.m.mazarico@nasa.gov). 2Catholic University of Amer-
+ica, Washington, DC, USA. 3Intuitive Machines, Inc., Phoenix, Arizona, USA. 4University of California, Los Angeles, 
+California, USA. 5Johns Hopkins University, Applied Physics Laboratory, Laurel, Maryland, USA. 
+ 
+Introduction: The mapping and analysis of the dis-
+tribution of impact craters on planetary surfaces is a crit-
+ical method for understanding the geologic history of 
+planetary bodies. The largest impacts define major geo-
+logic ages, but these larger events are not as relevant to 
+recent history because they are now exceedingly rare. 
+The smallest impacts, in contrast, with their short crater 
+degradation lifetime, inform recent geologic events. But 
+their extremely large number has so far prevented their 
+exhaustive mapping and analysis. These small crater 
+populations inform questions such as the effects of tar-
+get properties [1] and permanent shadow [2] on crater 
+retention. Here, we use the images of polar shadow ac-
+quired by the NASA ShadowCam instrument [2] 
+onboard the Korea Pathfinder Lunar Orbiter (KPLO) to 
+investigate the spatial distribution of small craters (<1 
+km), including areas in permanent shadow. This abstract 
+focuses on the southern polar region, but ShadowCam 
+has to date mapped significant portions of both polar re-
+gions in both summer and winter seasons in 2023/2024. 
+Crater Detection from ShadowCam Images: 
+Machine learning techniques enable large image da-
+tasets to be analyzed quickly, particularly useful for tra-
+ditionally time-consuming tasks such as feature detec-
+tion [3,4]. Automated crater detection is particularly 
+well-adapted to small craters, as they are typically sym-
+metric. As explained in detail in the companion abstract 
+[5], we used a neural network based on the YOLOv8 
+architecture for feature detection. We started with the 
+training data used to identify small craters in LROC-
+NAC images  [6], to which we added about 50,000 cra-
+ters, first detected from ShadowCam images and then 
+manually validated. This updated neural network was 
+then applied to the 13,121 full-resolution ShadowCam 
+images, available on the PDS. For each image, we ob-
+tain a list of georeferenced bounding boxes encompass-
+ing the detected crater and a corresponding image mask 
+(sampled, unsaturated pixels). Crater diameters are 
+computed from the size of the detection bounding 
+boxes, which may currently be slight overestimates. 
+Crater degradation state is also not observed and con-
+sidered at this time. In total, more than 1 billion craters 
+were detected. However, there is significant overlap and 
+repeat coverage in the ShadowCam image dataset, so 
+most of these detections are duplicates.  
+Crater Spatial Density Mapping: Because the ge-
+olocation accuracy of the images is on a par with the 
+size of the smallest detected craters (~20 m), it is diffi-
+cult to obtain a combined crater catalog for each polar 
+region. Instead, we first created, for each image, a set of 
+18 spatial density maps of craters over fixed diameter 
+bins, logarithmically covering the 14-900 m range (14 
+to 17.6 m, 17.6 to 22.2 m, etc.). The resolution of these 
+maps is 100 m/pixel. Because the geolocation accuracy 
+level is better, it allows combining density maps from 
+individual images with negligible smearing. For each 
+crater diameter bin, all the spatial density maps are com-
+bined into a single map covering each 80°-90° polar re-
+gion, minimizing coverage gaps and lighting biases pre-
+sent in single images. Figure 1 shows one of these maps 
+for the south polar region. Based on these, our current 
+total number of unique mapped craters in the southern 
+polar region is ~32.9 million. 
+With these two sets of 18 regional crater spatial 
+density maps in hand, we can compute the crater size-
+frequency distribution, either of the whole region or of 
+subregions. 
+Preliminary Crater Density Trends:  This com-
+prehensive mapping of the small-crater population al-
+lows us to study how the crater size-frequency distribu-
+tion (CSFD) varies spatially, due to other terrain char-
+acteristics. We first look at how slope affects the CSFD. 
+We use the LOLA 100m-baseline slope map [7], to de-
+fine eight spatial subsets, one for each 5° slope bin in 
+order to span the 0-40° range. We then compute each 
+CSFD using only the appropriate 100 m pixels. Figure 
+ 
+Figure 1. Map of spatial density of the 17.6-22.2 m 
+diameter craters in the 80-90°S region. The colorscale 
+is parula between 0 and 10-4 m-2. 
+
+2 shows the eight computed CSFDs, and with the corre-
+sponding “R-plots” (CSFD spectrum rectified by D3). A 
+clear trend appears, with lower slopes retaining more 
+small craters than higher slopes. While previously rec-
+ognized over small regions [8], we can quantitatively 
+confirm this result over a large region (80-90°S) and for 
+crater sizes down to ~18 m diameter. (Note that the very 
+first bin does not follow the trend, indicating the com-
+pleteness limit is ≲18 m). The apparent relative paucity 
+of 200-500 m craters for slopes >20°, which may be due 
+to the choice of the slope baseline (100 m), will be in-
+vestigated further. 
+We also computed the CSFD of the permanently 
+and non-permanently shadowed terrains, and we find 
+that the PSR CSFD lies above the non-PSR CSFD (not 
+shown). However, in the 80-90°S study region, the PSR 
+terrain does not follow the overall slope distribution, so 
+we instead repeat the slope-trend analysis described 
+above for both PSR and non-PSR terrain types (Figure 
+3). We find that, at comparable slopes, the PSR terrain 
+appears to be slightly less cratered than non-PSR terrain. 
+The log-log trend of the PSR CSFDs is less uniform than 
+for the non-PSR terrain, and needs further investigation. 
+Future Work: We will continue improving the 
+crater spatial density maps by adding more recent Shad-
+owCam images, investigate the effect of slope baseline 
+on the CSFDs and their interpretation. We will consider 
+other trends, e.g., vs. temperature or geological unit. We 
+will extend the study to the north pole, increasing the 
+sampled area and allowing inter-comparison.  
+Acknowledgements: We thank the KPLO and 
+ShadowCam operations and science teams for acquiring 
+the ShadowCam dataset. PP was supported by the 
+NASA Planetary Science Division Research Program 
+through the GSFC Planetary Geodesy ISFM. 
+References: [1] J.-P. Williams et al., AGU 2024; 
+[2] M.S. Robinson et  al., 2023, J. Astron. Space Sci., 
+10.5140/JASS.2023.40.4.149; [3] V. Bickel et al., 2022, 
+GRL, 10.1029/2022GL098812 ; [4] O. Rüsch et al., 
+2023, PSJ, 10.3847/PSJ/acd1ef ; [5] P. Pokorny et al., 
+LPSC 2025; [6] Fairweather et al., 2023, ESS, 
+10.1029/2021EA002177 ; [7] M.K. Barker et al., 2023, 
+PSJ, 10.3847/PSJ/acf3e1; [8] A.T. Basilevsky et al., 
+LPSC 1976.  
+ 
+Figure 2. (top) CSFD over the lunar south polar re-
+gion (80-90°S) computed for a series of terrain 
+slopes (0-40°). The whole-region CSFD is shown as 
+dashed black. (bottom) Corresponding R-plots. 
+101
+102
+103
+Crater Diameter
+10-8
+10-7
+10-6
+10-5
+10-4
+Crater Spatial Density (m-2) 
+0o < slope < 5 o
+5o < slope < 10 o
+10o < slope < 15 o
+15o < slope < 20 o
+20o < slope < 25 o
+25o < slope < 30 o
+30o < slope < 35 o
+35o < slope < 40 o
+101
+102
+103
+Crater Diameter
+10-1
+100
+101
+Crater Spatial Density normalized by Diameter^3(m}) 
+0o < slope < 5 o
+5o < slope < 10 o
+10o < slope < 15 o
+15o < slope < 20 o
+20o < slope < 25 o
+25o < slope < 30 o
+30o < slope < 35 o
+35o < slope < 40 o
+ 
+ 
+Figure 3. (top) Crater Size Frequency Distribution 
+over the lunar south polar region (80-90°S) com-
+puted for each illumination terrain type (solid: PSR; 
+dashed: not PSR) over a series of terrain slopes (0-
+40°). The whole-region CSFD is shown as dashed 
+black. (bottom) Corresponding R-plots. 
+101
+102
+103
+Crater Diameter
+10-8
+10-7
+10-6
+10-5
+10-4
+Crater Spatial Density (m-2) 
+0o < slope < 5 o
+5o < slope < 10 o
+10o < slope < 15 o
+15o < slope < 20 o
+20o < slope < 25 o
+101
+102
+103
+Crater Diameter
+10-1
+100
+101
+Crater Spatial Density normalized by Diameter^3(m}) 
+0o < slope < 5 o
+5o < slope < 10 o
+10o < slope < 15 o
+15o < slope < 20 o
+20o < slope < 25 o

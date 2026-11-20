@@ -66,8 +66,12 @@ From 16 Nov 2026 17:00 (the table the paper uses):
   filter    no-filter, plus A24 sec. III-D's contour filter (sim/vision.py) with C23's
             80% arc share (width >= 8 m)
   filter-measured  the same filter with Lantern's measured arc share (sim/arc_share.py)
-From 20 Nov 2026, 15:00, the noisy-depth configs (noisy_detect) also run C23 sec. 3A's
+From 20 Nov 2026, 12:40, the noisy-depth configs (noisy_detect) also run C23 sec. 3A's
 far-side test after the contour filter, as sim/vision.py detect() does (far_side=False: off).
+From 20 Nov 2026, 13:00, depth follows A24 Table 1 in every 10 m band, with stereo holes
+(sim/vision.py noisy_range), and detection steps over the holes (Vision.column_tests).
+  filter-route-nd-block    holes in squares of pixels (Settings.stereo_hole_block_px)
+  filter-route-nd-noholes  no holes (the band noise alone)
 Another grid (--terrain, --display-dir) gives the same traverse styles on
 other ground, e.g. one built at the equilibrium crater density.
 --combine writes combined.md from batches already run.
@@ -100,7 +104,7 @@ from sim.orbital_map import orbital_map
 from sim.rover import STEP_M, SlopeMap
 from sim.settings import C23_TRAJ1_FALSE_MATCH, C23_TRAJ2, C23_TRAJ3, Settings, WorldRanges
 from sim.terrain import DATA, load_terrain
-from sim.vision import FAR_SIDE_PX, SHADOW_PROBE_PX, Vision, contour_ok, contour_stats, depth_jump_ok, rover_to_world
+from sim.vision import FAR_SIDE_PX, HOLE_SEARCH_PX, SHADOW_PROBE_PX, Vision, contour_ok, contour_stats, depth_jump_ok, rover_to_world
 
 SITE = "s89_134e"
 TERRAIN = DATA / "terrain" / f"{SITE}.npz"
@@ -410,7 +414,9 @@ def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, ma
         # placed pixel. run_one draws one stereo noise field per frame over these.
         # FC: the renderer's range up each candidate's column above the placed pixel, for
         # C23 sec. 3A's far-side test (sim/vision.py far_side_keep; NaN off the image).
-        EV, EU, RB, RA, RP, ES, FC, eoff = [], [], [], [], [], [], [], [0]
+        # BC: the same down the column from the placed pixel, for the depth-jump test and the
+        # placed range with stereo holes stepped over (sim/vision.py column_tests).
+        EV, EU, RB, RA, RP, ES, FC, BC, eoff = [], [], [], [], [], [], [], [], [0]
         AX = []
         kp = SHADOW_PROBE_PX
         t = time.perf_counter()
@@ -426,6 +432,8 @@ def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, ma
             EV.append(ve.astype(np.int16)); EU.append(ue.astype(np.int16)); RP.append(rp)
             fr, fin = Vision.far_side_rows(vp)
             FC.append(np.where(fin, depth[fr, ue[:, None]], np.nan).astype(np.float32))
+            br, bin_ = Vision.below_rows(ve, depth.shape[0])
+            BC.append(np.where(bin_, depth[br, ue[:, None]], np.nan).astype(np.float32))
             RB.append(depth[ve + kp, ue].astype(np.float32)); RA.append(depth[ve - kp, ue].astype(np.float32))
             ES.append(source_ids(tp, pose, tree, craters).astype(np.int32))
             eoff.append(eoff[-1] + len(ve))
@@ -456,6 +464,7 @@ def render_routes(routes, terrain, out_dir, display, display_dir=DISPLAY_DIR, ma
                             ev=np.concatenate(EV), eu=np.concatenate(EU), rb=np.concatenate(RB),
                             ra=np.concatenate(RA), rp=np.concatenate(RP), esrc=np.concatenate(ES),
                             fc=np.concatenate(FC) if FC else np.zeros((0, FAR_SIDE_PX), np.float32),
+                            bc=np.concatenate(BC) if BC else np.zeros((0, SHADOW_PROBE_PX + HOLE_SEARCH_PX - 1), np.float32),
                             eoff=np.asarray(eoff), axes=np.asarray(AX), body_tilt=np.bool_(tilt))
         print(f"{name}: {len(poses)} frames in {time.perf_counter() - t:.0f} s", flush=True)
 
@@ -494,13 +503,19 @@ CONFIGS = {
                                  contour="route", noisy_detect=True, match="full_circle", gate_m=0.0),
     "filter-route-nd": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
                             contour="route", noisy_detect=True),
+    # Test cases of the stereo holes (A24 Table 1; Settings.stereo_hole_model): holes in squares
+    # of Settings.stereo_hole_block_px pixels, and no holes at all.
+    "filter-route-nd-block": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
+                                  contour="route", noisy_detect=True, holes="block"),
+    "filter-route-nd-noholes": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
+                                    contour="route", noisy_detect=True, holes="none"),
 }
 # The headline row: the config that detects and filters as live runs do (sim/vision.py
 # rims_detail on one noisy depth per frame, Settings.rim_arc_share_measured = the route share).
 FINAL_CONFIG = "filter-route-nd"
 _W = {}
 # Bumped when run_one's counting changes, so saved runs from older code are run again.
-RUN_CODE = "20nov-c23-far-side"
+RUN_CODE = "20nov-stereo-table1"
 
 
 TRUTHS = ("a24", "lantern")
@@ -560,14 +575,14 @@ def run_one(task):
     noise = PF_NOISE_COPIED_TRUTH if cfg["noise"] == "copied" else PFNoise()
     noise = replace(noise, sigma0_m=SIGMA0_C23)
     nav = ParticleNav(cfg["fixes"], g_nav, mp, noise=noise, match=cfg.get("match"), gate_m=cfg.get("gate_m"))
-    vis = Vision(_Cam(det["camera_model"]), g_vis, depth_model=cfg["depth"])
+    vis = Vision(_Cam(det["camera_model"]), g_vis, depth_model=cfg["depth"], holes=cfg.get("holes"))
     noisy_detect = cfg.get("noisy_detect", False)
     if noisy_detect and "ev" not in D:
         raise ValueError("noisy_detect needs detections rendered with edge candidates (render again)")
     far_side = noisy_detect and cfg.get("far_side", True)
-    if far_side and "fc" not in D:
-        raise ValueError("noisy_detect runs C23's far-side test, which needs detections rendered "
-                         "with each candidate's column (from 20 Nov 2026, 15:00; render again)")
+    if noisy_detect and not ("fc" in D and "bc" in D):
+        raise ValueError("noisy_detect reads each candidate's column (stereo holes, C23's far-side test): "
+                         "render again (detections from 20 Nov 2026, 13:00 on)")
     g_sd = np.random.default_rng([seed, ti, 4])     # one stereo noise field per frame, common to configs
     Hc, Wc = det["camera_model"]["height"], det["camera_model"]["width"]
     nav.start(poses[0, :2] + start_err, poses[0, 2])
@@ -586,24 +601,27 @@ def run_one(task):
         dh_o = dh + s.odom_heading_noise_rad * w_h[k]
         if noisy_detect:
             # sim/vision.py detect_contours() and rims_detail() on one noisy depth per frame.
+            # One noise field and one hole field per frame, read at each candidate's columns.
             nf = g_sd.standard_normal((Hc, Wc))
+            hf = vis.hole_field((Hc, Wc), g_sd) if vis.holes != "none" else None
             a, b = D["eoff"][k], D["eoff"][k + 1]
             ve, ue = D["ev"][a:b].astype(int), D["eu"][a:b].astype(int)
-            kp = SHADOW_PROBE_PX
             vp = Vision.placed_row(ve, Hc)
             cs = vis._cos
-            nb = vis.noisy_range(D["rb"][a:b], cs[ve + kp, ue], nf[ve + kp, ue])
-            na = vis.noisy_range(D["ra"][a:b], cs[ve - kp, ue], nf[ve - kp, ue])
-            npl = vis.noisy_range(D["rp"][a:b], cs[vp, ue], nf[vp, ue])
-            sel = np.flatnonzero(depth_jump_ok(nb, na))
+
+            def noisy_col(r_col, rows, inside):
+                cols = np.broadcast_to(ue[:, None], rows.shape)
+                return np.where(inside, vis.noisy_range(r_col, cs[rows, cols], nf[rows, cols],
+                                                        None if hf is None else hf[rows, cols]), np.nan)
+            nbc = noisy_col(D["bc"][a:b], *Vision.below_rows(ve, Hc))
+            nfc = noisy_col(D["fc"][a:b], *Vision.far_side_rows(vp))
+            ok, npl = Vision.column_tests(nbc, nfc)
+            sel = np.flatnonzero(ok)
             if cfg.get("contour", False) and len(sel):
                 wid, npx = contour_stats(vp[sel], ue[sel], npl[sel], (Hc, Wc), det["camera_model"]["fx"])
                 sel = sel[contour_ok(wid, npx, cfg["contour"])]
             if far_side and len(sel):                       # C23 sec. 3A, after the contours
-                fr, fin = Vision.far_side_rows(vp[sel])
-                fcol = np.broadcast_to(ue[sel][:, None], fr.shape)
-                nfc = np.where(fin, vis.noisy_range(D["fc"][a:b][sel], cs[fr, fcol], nf[fr, fcol]), np.nan)
-                sel = sel[vis.far_side_keep(vp[sel], ue[sel], npl[sel], nfc)]
+                sel = sel[vis.far_side_keep(vp[sel], ue[sel], npl[sel], nfc[sel])]
             pl = vis.place(vp[sel], ue[sel], D["rp"][a:b][sel], r_noisy=npl[sel])
             src_pl = D["esrc"][a:b][sel][pl["idx"]]
         else:
@@ -933,6 +951,8 @@ def main():
          "settings": {k: getattr(Settings(), k) for k in ("pf_drift_sigma", "pf_step_noise_frac", "pf_heading_walk_rad",
                                                           "pf_scale_walk", "stereo_baseline_m", "stereo_width_px",
                                                           "stereo_hfov_deg", "stereo_disparity_sigma_px",
+                                                          "stereo_law_max_m", "stereo_band_rms_m", "stereo_hole_pct",
+                                                          "stereo_hole_model", "stereo_hole_block_px",
                                                           "odom_noise_frac", "odom_heading_noise_rad")},
          "orbital_map": {"min_d_m": WorldRanges().orbital_map_min_d_m,
                          "missing_share_large": list(WorldRanges().missing_share_large)},

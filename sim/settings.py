@@ -246,6 +246,26 @@ class Settings:
                                              "0.484-0.620); width threshold 5.53 m")
     stereo_disparity_sigma_px: float = S(5.9, "A24 Table 1 row (SGBM, 1.5 m, -0.2 m, med), 10-20 m RMS 1.15 m "
                                               "at the bin's middle (15 m); the z^2 shape is assumed")
+    # The same Table 1 row, all four 10 m bands of true range (0-10/10-20/20-30/30-40 m).
+    # The z^2 law above reproduces the first two bands (RMS 0.16 / 1.06 m against 0.22 /
+    # 1.15; share off by more than 0.5 / 1 m 2.2 / 26.9% against 1.58 / 24.94%) but not
+    # the last two (RMS 3.13 / 6.67 m against 1.48 / 2.34): SGBM leaves the pixels it
+    # cannot match as holes, and the rest stay good. So from stereo_law_max_m out, the
+    # range error is Gaussian with the band's RMS (sim/vision.py noisy_range). Checked on
+    # the ground pixels of 29 calibration frames, 20 Nov 2026 (sensors report of 12:44).
+    stereo_law_max_m: float = S(20.0, "A24 Table 1 band edge: the z^2 law reproduces the 0-10 and 10-20 m "
+                                      "bands of the row above and not the 20-30 and 30-40 m bands")
+    stereo_band_rms_m: tuple = S((0.22, 1.15, 1.48, 2.34), "A24 Table 1 row (SGBM, 1.5 m, -0.2 m, med), RMS (m) "
+                                                           "by 10 m band 0-10/10-20/20-30/30-40; used from "
+                                                           "stereo_law_max_m out, beyond 40 m the last band's (assumed)")
+    stereo_hole_pct: tuple = S((6.71, 27.53, 50.30, 88.38), "A24 Table 1 row (SGBM, 1.5 m, -0.2 m, med), %hole by "
+                                                            "10 m band 0-10/10-20/20-30/30-40 m; beyond 40 m the "
+                                                            "last band's (assumed). Lantern's camera is 1.6 m up")
+    stereo_hole_model: str = S("pixel", ASSUMED + ": 'pixel', each render pixel a hole independently with its "
+                                        "band's share (one of the 640 px render's pixels spans 8 of the rig's "
+                                        "5120, wider than an SGBM window); test case 'block'")
+    stereo_hole_block_px: int = S(4, ASSUMED + ": the 'block' test case's square of render pixels that are "
+                                           "holes together")
     # The truth: how the odometer errs (sim/rover.py, sim/mission.py). The
     # bias is drift_frac above.
     odom_noise_frac: float = S(0.005, ASSUMED + "; white distance noise per step, share of the step")

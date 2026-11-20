@@ -21,12 +21,17 @@ Depth noise is stereo's (sim/settings.py stereo_*): the camera is ShadowNav's
 field rig (A24 sec. IV-B: 0.26 m baseline, 5120 px across a 60 deg view), and
 each pixel's disparity carries Gaussian noise of stereo_disparity_sigma_px.
 Depth is Z = f B / disparity, so its error grows as Z^2 (about 0.13 m at 5 m,
-1.15 m at 15 m, 2 m at 20 m). One noisy range image is drawn per frame
+1.15 m at 15 m). That law reproduces A24 Table 1 to 20 m and not beyond, where
+SGBM leaves what it cannot match as holes: from 20 m out the range error is
+the table's RMS for the band (1.48 m at 20-30 m, 2.34 m at 30-40 m), and at
+every range a pixel is a hole (no depth) with the table's share for its band
+(6.7 / 27.5 / 50.3 / 88.4% by 10 m band). One noisy range image is drawn per frame
 (Vision.noisy_depth) and every step reads it: the depth-jump test, the
 contour width, rim placement and the hazard points. The renderer's own
 depth is read only by the scoring outputs ("true" placements). Each pixel's
-noise is drawn independently (assumed: a stereo matcher's errors are
-correlated over its window, which this ignores).
+noise and hole are drawn independently (assumed: a stereo matcher's errors are
+correlated over its window, which this ignores; one render pixel spans 8 of
+the rig's; Settings.stereo_hole_model "block" is the test case).
 
 Obstacles: the depth is turned into rover-frame points, binned into a small
 height grid ahead of the rover, and a cell is a hazard if the ground steps
@@ -59,6 +64,8 @@ DEPTH_JUMP_M = 0.15             # assumed: the shadowed side must be at least th
 FAR_SIDE_PX = 80                # assumed: rows above the rim searched for the ground beyond it
 FAR_SIDE_WINDOW_M = (0.2, 2.5)  # assumed: "the region directly beyond the detected edge" (C23 sec. 3A), ground distance past the rim
 FAR_SIDE_MIN_POINTS = 5         # assumed: fewer stereo points than this in the window is "not enough stereo" (C23 sec. 3A)
+HOLE_SEARCH_PX = 10             # assumed: how far down or up a column the search steps over stereo holes
+                                # (A24 sec. III-D: columns "are searched from bottom to top with holes removed")
 FAR_SIDE_MIN_SLOPE = 0.0        # C23 sec. 3A: kept only on a positive slope (rise per metre of ground distance)
 MIN_EDGE_PX = 25                # assumed: drop edge fragments shorter than this (rock shadows, noise)
 MAX_RIM_POINTS = 80             # assumed: subsample to at most this many points per frame
@@ -76,13 +83,26 @@ CONTOUR_ARC_SHARE = 0.8         # C23 sec. 1: 80% of the leading arc at 10 m
 # the rig, and the disparity noise in the rig's pixels.
 STEREO_FB_PX_M = (_S.stereo_width_px / 2.0) / math.tan(math.radians(_S.stereo_hfov_deg / 2.0)) * _S.stereo_baseline_m
 DISPARITY_SIGMA_PX = _S.stereo_disparity_sigma_px
+# A24 Table 1 by 10 m band of true range (sim/settings.py stereo_*): the z^2 law to
+# STEREO_LAW_MAX_M, the band's RMS as range error beyond, and each band's share of holes.
+STEREO_LAW_MAX_M = _S.stereo_law_max_m
+STEREO_BAND_M = 10.0
+STEREO_BAND_RMS_M = np.asarray(_S.stereo_band_rms_m, float)
+STEREO_HOLE_SHARE = np.asarray(_S.stereo_hole_pct, float) / 100.0
+STEREO_HOLE_MODELS = ("pixel", "block", "none")
+
+
+def stereo_band(r):
+    """Index of A24 Table 1's 10 m band of true range r (beyond 40 m: the last band's)."""
+    return np.clip((np.asarray(r, float) // STEREO_BAND_M).astype(int), 0, len(STEREO_HOLE_SHARE) - 1)
 # The model before 16 Nov 2026: range noise a fixed 0.5% of range. Kept for
 # sim/calibrate.py's before/after numbers; never a default.
 DEPTH_NOISE_FRAC_OLD = 0.005
 
 
 def stereo_sigma_z(z):
-    """1-sigma stereo depth error at depth z (m), first order: z^2 sigma_d / (f B)."""
+    """1-sigma stereo depth error at depth z (m) of the z^2 law, first order: z^2 sigma_d / (f B).
+    Vision.noisy_range uses it to STEREO_LAW_MAX_M only."""
     return np.asarray(z, float) ** 2 * DISPARITY_SIGMA_PX / STEREO_FB_PX_M
 
 # --- obstacles
@@ -155,10 +175,12 @@ class Vision:
             "hazards from a height grid built from depth (sim/vision.py)")
 
     def __init__(self, scene, rng: np.random.Generator, depth_model: str = "stereo",
-                 contour_filter: bool = True, far_side: bool = True):
+                 contour_filter: bool = True, far_side: bool = True, holes: str | None = None):
         """depth_model: "stereo" (the default) or "old" (0.5% of range, before 16 Nov 2026).
         contour_filter: A24 sec. III-D's contour filter (default on; off only for sim/calibrate.py).
-        far_side: C23 sec. 3A's positive-obstacle rejection (far_side_ok; default on)."""
+        far_side: C23 sec. 3A's positive-obstacle rejection (far_side_ok; default on).
+        holes: stereo holes, "pixel" / "block" / "none" (default Settings.stereo_hole_model;
+        depth_model "old" has none)."""
         self.scene = scene
         self.rng = rng
         self.cam = scene.camera_model()
@@ -166,6 +188,9 @@ class Vision:
         self.depth_model = depth_model
         self.contour_filter = contour_filter
         self.far_side = far_side
+        self.holes = _S.stereo_hole_model if holes is None else holes
+        if self.holes not in STEREO_HOLE_MODELS:
+            raise ValueError(f"holes {self.holes!r}: one of {STEREO_HOLE_MODELS}")
         c = self.cam
         u = (np.arange(c["width"]) + 0.5 - c["cx"]) / c["fx"]
         v = (c["cy"] - (np.arange(c["height"]) + 0.5)) / c["fy"]
@@ -181,9 +206,14 @@ class Vision:
             self.axes = self.scene.rover_axes(pose)
 
     # -- helpers ------------------------------------------------------------
-    def noisy_range(self, rng_m, cos, n=None):
-        """Range along each pixel ray with depth noise. rng_m, cos: same shape.
-        n: the standard normal draws to use (default: drawn here)."""
+    def noisy_range(self, rng_m, cos, n=None, u=None):
+        """Range along each pixel ray as stereo reports it, NaN where it has no match.
+        rng_m, cos: same shape. n: standard normal draws, u: uniform draws for the holes
+        (Vision.hole_field); either drawn here per pixel if not given.
+
+        A24 Table 1 (sim/settings.py stereo_*): to STEREO_LAW_MAX_M of true range the
+        disparity carries Gaussian noise (depth error ~ z^2); beyond, the range error is
+        Gaussian with the band's RMS. A pixel is a hole with its band's share."""
         r = np.asarray(rng_m, np.float64)
         n = self.rng.standard_normal(r.shape) if n is None else np.asarray(n, np.float64)
         if self.depth_model == "old":
@@ -191,13 +221,35 @@ class Vision:
         z = r * cos
         with np.errstate(divide="ignore", invalid="ignore"):
             disp = STEREO_FB_PX_M / z + DISPARITY_SIGMA_PX * n      # disparity in the rig's pixels
-            zn = np.where(disp > 0, STEREO_FB_PX_M / disp, np.nan)  # no match beyond infinity
-        return zn / cos
+            rn = np.where(disp > 0, STEREO_FB_PX_M / disp, np.nan) / cos   # no match beyond infinity
+        with np.errstate(invalid="ignore"):
+            far = r >= STEREO_LAW_MAX_M
+            band = stereo_band(np.where(np.isfinite(r), r, 0.0))
+            rn = np.where(far, r + STEREO_BAND_RMS_M[band] * n, rn)
+            if self.holes != "none":
+                u = self.rng.random(r.shape) if u is None else np.asarray(u, np.float64)
+                rn = np.where(u < STEREO_HOLE_SHARE[band], np.nan, rn)
+        return rn
+
+    def hole_field(self, shape, rng=None):
+        """(h, w) uniform draws deciding one frame's stereo holes (a pixel is a hole where
+        its draw is under its band's share): one per pixel ("pixel"), or one per square of
+        Settings.stereo_hole_block_px pixels ("block"). rng: default self.rng."""
+        rng = self.rng if rng is None else rng
+        h, w = shape
+        if self.holes == "block":
+            b = _S.stereo_hole_block_px
+            f = rng.random((-(-h // b), -(-w // b)))
+            return np.repeat(np.repeat(f, b, 0), b, 1)[:h, :w]
+        return rng.random((h, w))
 
     def noisy_depth(self, depth):
-        """One frame's range image with stereo noise (NaN where no match): drawn once per
-        frame, and every step of that frame reads it."""
-        return self.noisy_range(depth.astype(np.float64), self._cos)
+        """One frame's range image with stereo noise and holes (NaN where no match):
+        drawn once per frame, and every step of that frame reads it."""
+        d = depth.astype(np.float64)
+        n = self.rng.standard_normal(d.shape)
+        u = self.hole_field(d.shape) if self.holes != "none" and self.depth_model != "old" else None
+        return self.noisy_range(d, self._cos, n, u)
 
     def points(self, depth, nd=None):
         """(h, w, 3) rover-frame points [x_fwd, y_left, z_up] from the camera, with stereo depth
@@ -243,13 +295,58 @@ class Vision:
         ve, u = self.edge_candidates(img)
         if len(ve) == 0:
             return ve, u, np.zeros(0), np.zeros(0, int)
-        k = SHADOW_PROBE_PX
-        ok = depth_jump_ok(nd[ve + k, u], nd[ve - k, u])
-        v, u = self.placed_row(ve[ok], nd.shape[0]), u[ok]
+        h = nd.shape[0]
+        vp = self.placed_row(ve, h)
+        br, bin_ = self.below_rows(ve, h)
+        ar, ain = self.far_side_rows(vp)
+        nd = np.asarray(nd, np.float64)
+        ok, rp = self.column_tests(np.where(bin_, nd[br, u[:, None]], np.nan),
+                                   np.where(ain, nd[ar, u[:, None]], np.nan))
+        v, u, rp = vp[ok], u[ok], rp[ok]
         if len(v) == 0:
             return v, u, np.zeros(0), np.zeros(0, int)
-        width_m, npx = contour_stats(v, u, nd[v, u], nd.shape, self.cam["fx"])
+        width_m, npx = contour_stats(v, u, rp, nd.shape, self.cam["fx"])
         return v, u, width_m, npx
+
+    @staticmethod
+    def below_rows(ve, h):
+        """(rows (N, SHADOW_PROBE_PX + HOLE_SEARCH_PX - 1), inside): the pixels down the column
+        of each Canny edge row ve, from the placed row (ve + 1); rows off the image bottom
+        are clipped and marked outside."""
+        rows = np.asarray(ve)[:, None] + 1 + np.arange(SHADOW_PROBE_PX + HOLE_SEARCH_PX - 1)[None, :]
+        return np.minimum(rows, h - 1), rows <= h - 1
+
+    @staticmethod
+    def first_valid(r):
+        """(N,) the first finite value along each row of r (N, L), NaN if none."""
+        r = np.asarray(r, np.float64)
+        fin = np.isfinite(r)
+        if r.shape[1] == 0:
+            return np.full(len(r), np.nan)
+        out = r[np.arange(len(r)), fin.argmax(1)]
+        return np.where(fin.any(1), out, np.nan)
+
+    @classmethod
+    def column_tests(cls, below, above):
+        """The depth-jump test and the placed range, with holes stepped over (A24 sec. III-D,
+        "holes removed from the search"). below: ranges at below_rows(ve); above: ranges at
+        far_side_rows(ve + 1) (row ve - 1 - j at column j). The ground before the edge is the
+        first stereo at or below SHADOW_PROBE_PX under it, the ground beyond the first at or
+        above SHADOW_PROBE_PX over it, each within HOLE_SEARCH_PX; the rim's range is the
+        first stereo at or below the placed row. Returns (ok (N,), placed range (N,))."""
+        k, n = SHADOW_PROBE_PX, HOLE_SEARCH_PX
+        before = cls.first_valid(below[:, k - 1:k - 1 + n])
+        beyond = cls.first_valid(above[:, k - 1:k - 1 + n])
+        return depth_jump_ok(before, beyond), cls.first_valid(below[:, :n])
+
+    def placed_range(self, v, u, nd):
+        """Range of placed rim pixels (v, u) from depth nd: the first stereo at or below
+        each within HOLE_SEARCH_PX (column_tests' placed range)."""
+        v, u = np.asarray(v), np.asarray(u)
+        rows = v[:, None] + np.arange(HOLE_SEARCH_PX)[None, :]
+        inside = rows <= nd.shape[0] - 1
+        r = np.where(inside, np.asarray(nd, np.float64)[np.minimum(rows, nd.shape[0] - 1), u[:, None]], np.nan)
+        return self.first_valid(r)
 
     @staticmethod
     def far_side_rows(v):
@@ -265,7 +362,7 @@ class Vision:
         v, u = np.asarray(v), np.asarray(u)
         rows, inside = self.far_side_rows(v)
         r = np.where(inside, np.asarray(nd, np.float64)[rows, u[:, None]], np.nan)
-        return self.far_side_keep(v, u, np.asarray(nd[v, u], np.float64), r)
+        return self.far_side_keep(v, u, self.placed_range(v, u, nd), r)
 
     def far_side_keep(self, v, u, r0, r_col):
         """C23 sec. 3A: "Detected edge points are kept only if, within the region directly
@@ -341,7 +438,7 @@ class Vision:
         both read it. pixels: detect()'s output for this nd, if already computed."""
         nd = self.noisy_depth(depth) if nd is None else nd
         v, u = self.detect(img, depth, nd) if pixels is None else pixels
-        return self.place(v, u, depth[v, u], r_noisy=nd[v, u])
+        return self.place(v, u, depth[v, u], r_noisy=self.placed_range(v, u, nd))
 
     def place(self, v, u, r0, P=None, r_noisy=None):
         """Place detected rim pixels (v, u), whose renderer range is r0: range cut, subsample,

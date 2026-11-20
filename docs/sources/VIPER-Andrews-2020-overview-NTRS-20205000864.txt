@@ -1,0 +1,316 @@
+1
+Overview
+Volatiles Investigating Polar Exploration Rover
+Daniel Andrews, PM
+European Lunar Symposium
+MAY 12-14, 2020
+
+VIPER & Artemis
+Our return to the Moon begins with 
+robots. NASA’s new Commercial 
+Lunar Payload Services (CLPS) 
+initiative will deliver its next robotic 
+lunar rover, the Volatiles Investigating 
+Polar Exploration Rover (VIPER)
+VIPER will conduct science 
+investigations of the lunar volatiles at 
+the Moon’s South Pole. The data 
+produced by VIPER will inform future 
+in-situ resource utilization (ISRU) 
+technologies.
+2
+
+Humans Return by 2024
+Why VIPER?
+Direct measurement of polar volatiles
+• LCROSS ground-truthed the water - VIPER will 
+reveal the lateral / vertical distribution and physical 
+state / composition of the volatiles
+• Q:  Are some polar regions better than others 
+(feasibility, economics, safety)?
+Enables research into In-Situ Lunar Resources
+• VIPER will Build Lunar resource maps, steering the 
+future commercial marketplace
+• Understand ore grade availability of lunar volatiles
+for human sustainment and fuel
+5
+Where will VIPER explore?
+VIPER will explore four “Ice Stability Regions” (ISRs)*:
+• Surface: Ice expected stable at the surface - Permanently Shadowed 
+Regions, (PSRs)
+• Shallow: Ice expected stable within 50cm of surface
+• Deep: Ice expected stable between 50-100 cm of the surface
+• Dry: Ice not expected (top meter to be too warm to be stable)
+*ISRs based on the predicted thermal stability of ice with depth
+• Mass: ~475kg (1050lbs)        Power (peak): ~450W
+• Comms (DTE1): X-band 
+• 256kbps (high-gain) Moon-to-Earth (as high as 4Mbps)
+• 2kbps (omni) Earth-to-Moon
+• Ground: DSN 34m dishes: Canberra, Goldstone, Madrid
+• Dimensions: 1.5m x 1.5m x 2.5m (5ft x 5ft x 8ft)
+• Top Speed: 20cm/s (0.5MPH)
+• Expected Cold Environment: -230degC (-382degF)
+• Prospecting Speed: 10cm/s (0.25MPH)
+• Distance Travelled (goal): 20km (~12mi)
+• Lunar delivery: CLPS2 commercial contract
+VIPER Performance Specs
+1 DTE = Direct-To-Earth
+2 CLPS = Commercial Lunar Payload Services
+VIPER Science Specs
+• Mission Duration: 100+ earth days 
+• Instruments: Neutron, Near-IR, and Mass Specs; 1m Drill
+• Detectable H2O Concentration: 0.5% (by weight)
+• Drill Depth: 1m (~3ft)
+• # of Surface Assays (drill sites): 18
+• Dark Survivability: 96hrs
+• PSR Working Duration: 6hrs
+• Surface Traverse Plan baselined: @CDR (Q2/FY21)
+(Resource Prospector driving case)
+(VIPER driving case)
+8
+Landing Site Requirements
+Surface/Subsurface 
+volatiles
+Sun illumination
+Direct to Earth 
+(DTE) comm
+Good candidate polar landing sites 
+meet these four criteria:
+1. Surface/Subsurface Volatiles
+2. Reasonable terrain for traverse
+3. Direct view to Earth for communication
+4. Sunlight for duration of mission for 
+power
+VIPER needs to find the 
+intersection of these 
+constraints
+Traversable 
+terrain
+The VIPER “Surface Segment”
+(Roving Instrument Platform)
+9
+VIPER Surface Segment (Rover + Instruments)
+Subsurface excavation
+TRIDENT Drill
+Prospecting                    
+Neutron Spectrometer 
+System (NSS) Instrument
+Prospecting & Evaluation 
+Near Infrared Volatiles 
+Spectrometer System 
+(NIRVSS) Instrument
+Rover Control     
+Flight Avionics (internal)
+Prospecting & Evaluation 
+Mass Spectrometer 
+Observing Lunar Operations 
+(MSolo) Instrument
+Power
+Solar Array (3-sides)
+Vision & Comm
+Camera/Antenna Mast
+Heat Rejection 
+Radiator (on top)
+11
+Historical Planetary Rovers & VIPER
+http://historicspacecraft.com/Probes_Mars.html
+*includes instruments
+• 0.6m x0.5m x0.3m
+• 11kg
+• Top Speed: 5cm/s  
+• 1.6m x2.3m x1.5m
+• 180kg*
+• Top Speed: 5cm/s
+• 3.0m x2.8m x2.1m
+• 900kg
+• Top Speed: 4cm/s
+• 1.3M x1.6m x1.5m, 840kg
+• Top Speed: 55cm/s
+• 1.3M x1.6m x1.5m, 840kg
+• Top Speed: 500cm/s
+Yutu (2013):
+• 1.5m x1.1m, 140kg
+• 5cm/s
+Spirit & Opportunity Curiosity
+• 1.5m x1.5m x2.0m, 300kg
+• Top Speed: 20cm/s
+(1970/1973):
+(1996): (2004): (2011):
+(1971/1972): VIPER (2022):
+12
+VIPER Science Manifest
+Neutron Spectrometer System (NSS) NASA-ARC
+• Prospects for hydrogen-rich materials while roving, mapping the distributions
+• Located on the front of the rover to have an unobstructed view of the lunar surface 
+Near InfraRed Volatiles Spectrometer System (NIRVSS) NASA-ARC
+• Prospects for surface water and oxide “frosts”, as well as mineralogical context
+• Located under the rover studying water/volatiles abundance while roving & drilling
+Mass Spectrometer observing lunar operations (MSolo) NASA-KSC
+• Analyzes volatiles excavated through rover traversing and drilling
+• Located under the rover studying water/volatiles abundance while roving & drilling
+The Regolith and Ice Drill for Exploring New Terrain (TRIDENT) HBR1
+• Excavates lunar regolith to a depth of 1-meter, in 10cm increments
+• Measures forces, displacements and temperatures for regolith bulk properties
+• Located under the center of the rover to minimize volatiles solar sublimation
+1 HBR = HoneyBee Robotics
+VIPER Environmental Test
+13
+• Drill testing at NASA-GRC’s VF-13 TVAC chamber
+• Studying volatiles loss while drilling a meter deep into lunar soil
+• Using engineered lunar-like soil conditions, doped with 5% water and chilled to -100C
+14
+15
+TVAC chamber testing of VIPER 
+rover wheels & steering 
+assemblies @ NASA-JSC
+
+16
+TVAC chamber Z-axis 
+testing of VIPER rover
+Drill undergoing 
+Vibration testing
+TVAC chamber Z-axis 
+testing of VIPER rover
+Studying impacts of the 
+poor lighting and long 
+shadows in polar regions
+Field testing in the dark
+- NASA-ARC Roverscape
+18
+Crab-walking tests with the new 
+1A wheel. Studying traction 
+performance while avoiding 
+overlapping wheel tracks.
+15º upslope with 45º cross slope
+20º upslope
+Rover undergoing soil 
+environments testing
+NASA-GRC Simulated 
+Lunar Operations Lab 
+(SLOPE)
+19
+Rover regolith simulant testing: NASA-KSC Regolith Lab
+20
+Rover auto-leveling testing
+NASA-JSC, B9 Highbay
+21
+Rover Driving Simulator Capability
+NASA-ARC Lunar Operations Lab
+Powerful, fully-synthetic, lunar 
+terrain sim based on Digital 
+Elevation Maps (DEM)
+– Establishing driver 
+decision-making times
+
+Notables
+22
+VIPER lunar-weight rover tested in 
+lunar simulant soil bin
+NASA-GRC, SLOPE laboratory
+23
+“Swimming”…
+Questions?
+24
+25
+NSS (NASA ARC, Lockheed Martin ATC)
+PI: Rick Elphic (NASA ARC)
+Instrument Type: Two channel neutron spectrometer
+Key Measurements: NSS assesses hydrogen and bulk 
+composition in the top meter of regolith, measuring 
+down to 0.5% (wt) WEH to 3-sigma while roving
+Operation: On continuously while roving
+Instrument Name NSS
+Mass [kg], CBE 1.9*
+Dimensions [cm] Sensor Module:
+21.3 x 32.1 x 6.8
+Data Processing Module:
+13.9 x 18.0 x 3.0
+Power [W] 1.6
+Sensitivity WEH to >0.5 wt% water-equivalent 
+at 10 cm/s
+Accuracy 5 – 10% absolute
+Sensor Module
+(HVPS and Front-End 
+Electronics) Thermal neutron  
+detector
+Epithermal  neutron detector Data Processing Module
+VIPER Neutron Spectrometer System (NSS)
+26
+NIRVSS (ARC, Brimrose Corporation)
+PI: Anthony Colaprete (NASA ARC)
+Instrument Type:  NIR Point Spectrometer, 4Mpxl Panchromatic 
+Imager with 7 LEDs, four channel thermal radiometer
+Key Measurements: Volatiles including H2O, OH, and CO2 and, 
+minerology, surface morphology and temperatures
+Operation: On continuously while roving and during drill operations
+Primary Measurements:
+• AOTF NIR Point Spectrometer: 1300-4000nm
+• Spectrometer Context Imager (SCI): 4Mpxl imager with seven LEDs 
+between 340-940nm
+• Longwave Calibration Sensor (LCS): IR flux and surface 
+temperature down to <100K to ± 5K
+• Lamp: Dual filament tungsten lamp provides even, calibrated 
+light source when in shadow
+Spec. Fiber Aperture
+IR Lamp
+SCI
+LEDs
+LCS
+Spectrometer Bracket Assembly
+Instrument Name NIRVSS
+Mass [kg] 3.57 kg (not including Fiber)
+Dimensions [cm] Spectrometer Module: 18x18x8.5
+Observation Bracket: 20.4x13x15.1
+Power [W], Avg
+Spectrometer = 12
+Bracket Assembly = 5.26
+Lamp = 12.3
+Sensitivity
+Range: 1.2 to 4.0 mm
+SNR>100 at 2 and 3 mm
+Water Ice to <0.25%
+Accuracy Radiance to <25%
+VIPER Near InfraRed Volatiles Spectrometer System (NIRVSS)
+27
+Instrument Name MSolo
+Mass, CBE 6 kg
+Dimensions 15.5  x 20 x 46 cm
+Power Average 35 W while scanning
+Detectors Faraday Cup (MDPP* 1.5e-12 Torr)
+Electron Multiplier (MDPP* 2e-15 Torr)
+MSolo (KSC, INFICON)
+PI: Janine Captain (NASA KSC)
+Instrument Type: Quadrupole mass spectrometer
+Key Measurements: Identify low-molecular weight volatiles 
+between 2-100 amu, unit mass resolution to measure isotopes 
+including D/H and 018/016
+Operation: Views below rover and at drill cuttings, volatile 
+analysis while roving and during drill activities
+14 cm
+20 cm
+46 cm
+15.5 cmMSolo Instrument
+MS Sensor
+*MDPP – minimum detectable partial pressure @ m/z 28 with open ion source
+VIPER Mass Spectrometer Observing Lunar Operations (MSolo)
+28
+Instrument Name TRIDENT
+Mass [kg], CBE 18 (includes launch locks). Can be 
+reduced for lander deployment.
+Dimensions (stowed) [cm] 27 x 22 x 177 (for 1-m depth).  Can be 
+reduced for lander deployment.
+Power [W] Idle: < 5
+Augering: ~20 nominal, 175 max
+Percussion: 0 nominal, 150 max
+Telemetry (while operating) ~3.4 kbits/s
+TRIDENT (Honeybee Robotics)
+PI: Kris Zacny (Honeybee)
+Instrument Type: 1-meter hammer drill
+Key Measurements: Excavation of subsurface material to 100 
+cm; Subsurface temperature vs depth; Strength of regolith vs 
+depth (info on ice-cemented ground vs. ice-soil mixture).
+Operation: Performs subsurface assays down to 100 cm in <1 hr, 
+depositing cuttings at surface for inspection
+TRL6 Drill
+ Lunar cryo-chamber tests at GRC
+VIPER The Regolith and Ice Drill for Exploring New Terrain (TRIDENT) Drill

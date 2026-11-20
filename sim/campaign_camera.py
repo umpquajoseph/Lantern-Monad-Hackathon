@@ -502,9 +502,10 @@ class CameraSortie(Sortie):
                 for k in range(n)]
 
     def _pick_landmark(self):
-        """The mapped crater, fix_crater_d_m across, whose near rim lies within
-        fix_reach_m of the estimate and whose half survey adds the least
-        driving on the way to the current goal. (row, cx, cy, d, points) or None."""
+        """The mapped crater, fix_crater_d_m across and ahead of the Scout toward
+        its current goal, whose near rim lies within fix_reach_m of the
+        estimate and whose half survey adds the least driving on the way to
+        that goal. (row, cx, cy, d, points) or None."""
         s, c = self.s, self.c
         if c.map_tree is None or not len(c.map_arr):
             return None
@@ -516,6 +517,13 @@ class CameraSortie(Sortie):
         for i in c.map_tree.query_ball_point((ex, ey), s.fix_reach_m + hi / 2):
             cx, cy, d = (float(v) for v in c.map_arr[i, :3])
             if not lo <= d <= hi or math.hypot(cx - ex, cy - ey) - d / 2 > s.fix_reach_m:
+                continue
+            # Only a crater ahead, toward the goal: A24 sec. III-E2's landmarks
+            # are craters the "planned trajectory" drives toward, and a half
+            # survey ends opposite where it starts. One already passed would
+            # carry the Scout back past it (nav-fix-check2: one crater
+            # surveyed 11 times, 6 h near it against 0.28 h without fixes).
+            if (cx - ex) * (gx - ex) + (cy - ey) * (gy - ey) <= 0:
                 continue
             pts = self._survey_points(cx, cy, d)
             arc = sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))

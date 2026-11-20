@@ -123,6 +123,24 @@ What differs from C23's setup, each a candidate for step 3:
 
 The filter itself matches C23 Algs. 1-3 and A24 eq. 3 line by line.
 
+**Rerun 20 Nov, 11:20, after two changes approved in chat:** the filter
+matches rims only to the near half of each mapped crater and skips the
+update when its estimate is over 20 m from every mapped rim (A24 sec.
+III-E2; `Settings.pf_match`, `pf_gate_m`; old matching kept as test case
+`filter-route-nd-full`). In calibrate only, the true odometer drifts as
+A24 eqs. 4-6: 2% in one random direction, heading known (`--truth a24`).
+
+| Traverse | Lantern error | old matching | odometry only | C23 error |
+|---|---|---|---|---|
+| T1 gap | 6.33 ± 4.31 | 6.41 ± 2.99 | 10.92 | 3.84 ± 2.78 |
+| T2 straight | 5.84 ± 4.90 | 9.98 ± 5.02 | 9.44 | 1.75 ± 0.78 |
+| T3 half survey | 3.85 ± 2.34 | 3.96 ± 2.42 | 6.56 | 1.68 ± 0.70 |
+
+Still no match. The filter updates on only 7-24 frames per traverse;
+the routes see a mapped crater on 11-46% of steps. C23's traverses were
+built around two landmark craters each. Eq. (6)'s covariance is read as a
+standard deviation (assumed; as printed its units do not agree).
+
 ### 3. If it does not match: audit Lantern
 
 Known problems, each seen in a run:
@@ -149,11 +167,9 @@ Known problems, each seen in a run:
 
 - **Dock registration.** `dock_reg_bound95_m` = 6.0 m, assumed
   (`sim/settings.py`). It sets how uncertain every sortie starts. It waits
-  on draft item 15. Ask the product owner whether the team has settled it.
-- **Slope test source.** The footprint plane test cites GESTALT (Goldberg,
-  Maimone and Matthies 2002) from a search summary only: UNVERIFIED.
-  Downloading the paper (robotics.jpl.nasa.gov, aero.pdf) into
-  `docs/sources/` needs the product owner's OK.
+  on draft item 15. Not settled (asked 20 Nov).
+- **Slope test source.** Done 20 Nov (`a06d44b`): GESTALT read, sec. 4
+  step 3, p.6, a best-fit plane over a rover-sized patch. Verified.
 - **The haynes return ramp.** In a 40 m box around (15062, -30199), the
   run ground's footprint tilt has median 13.6°, with 20% over the 15°
   limit. `footprint-check` passed it and `tilt-check` stuck there.

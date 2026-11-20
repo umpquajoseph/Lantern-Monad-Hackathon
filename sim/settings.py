@@ -266,6 +266,16 @@ class Settings:
                                   "assumed) is a labelled test case")
     pf_sigma0_m: float = S(1.0, "C23 sec. 1 'initial 3-sigma uncertainty of 3 m'. C23 sec. 6B ran "
                                 "Table 2 with sigma_0 = 3 m; sim/calibrate.py uses that")
+    pf_match: str = S("front_half", "A24 sec. III-E2: 'only the front half of a crater is used as ground truth', "
+                                    "'determined dynamically based on the heading of camera', because 'using the "
+                                    "entire crater rim for matching could lead to false positives'. Each rim point's "
+                                    "Q-Score distance is to the near half of a mapped rim, as seen along the "
+                                    "particle's heading. 'full_circle' (the whole rim; the main case until 20 Nov "
+                                    "2026) is a labelled test case")
+    pf_gate_m: float = S(20.0, "A24 sec. III-E2: 'When the estimated particle filter position was not within 20 m "
+                               "of the ground truth rim, the particle filter was not run' and odometry alone moved "
+                               "it. Here: no update when the filter's mean is over this far from every mapped rim. "
+                               "0 (no gate; the main case until 20 Nov 2026) is a labelled test case")
 
     # -------------------------------------------------------------- logging
     log_spacing_m: float = S(10.0, ASSUMED + " (record size, not physics)")

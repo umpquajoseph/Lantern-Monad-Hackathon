@@ -61,6 +61,26 @@ STEP_NOISE_FRAC = _S.pf_step_noise_frac     # A24 eqs. 3-6: 2D noise per axis, f
 HEADING_WALK_RAD = _S.pf_heading_walk_rad    # A24 sec. III-A: position-only filter, heading known (0)
 SCALE_WALK = _S.pf_scale_walk                # assumed: per-step jitter of each particle's scale error
 CRATER_NEIGHBOURS = 6       # assumed: nearest mapped craters checked per rim point (enough within 15 m)
+MATCH_MODES = ("front_half", "full_circle")
+MATCH = _S.pf_match          # A24 sec. III-E2: rims are matched to the near half of each mapped rim
+GATE_M = _S.pf_gate_m        # A24 sec. III-E2: no update unless the estimate is within 20 m of a mapped rim
+
+
+def rim_distance(px, py, cx, cy, r, hx=None, hy=None):
+    """Distance from points (px, py) to crater rims (centre cx, cy, radius r), arrays
+    broadcast together. With a heading (hx, hy, unit vector) only the rim's near half
+    counts (A24 sec. III-E2): the half facing back along the heading, toward the camera.
+    A point on the near side of the crater's centre line is nearest some point of that
+    half; one beyond it is nearest an end of the half circle."""
+    vx, vy = px - cx, py - cy
+    d_full = np.abs(np.hypot(vx, vy) - r)
+    if hx is None:
+        return d_full
+    along = vx * hx + vy * hy
+    # Ends of the near half: centre +- r along the left normal of the heading.
+    ex, ey = -hy * r, hx * r
+    d_end = np.minimum(np.hypot(vx - ex, vy - ey), np.hypot(vx + ex, vy + ey))
+    return np.where(along <= 0, d_full, d_end)
 
 
 @dataclass(frozen=True)
@@ -96,7 +116,14 @@ class ParticleNav:
     NAME = ("nav: ShadowNav particle filter (Cauligi et al. 2023, Algs. 1-3), 100 particles, "
             "on odometry and rim points only (sim/nav.py)")
 
-    def __init__(self, fixes_on: bool, rng: np.random.Generator, craters=None, noise: PFNoise | None = None):
+    def __init__(self, fixes_on: bool, rng: np.random.Generator, craters=None, noise: PFNoise | None = None,
+                 match: str | None = None, gate_m: float | None = None):
+        """match: MATCH_MODES (default Settings.pf_match); gate_m: Settings.pf_gate_m by default, 0 = off."""
+        self.match = MATCH if match is None else match
+        if self.match not in MATCH_MODES:
+            raise ValueError(f"match {self.match!r}: one of {MATCH_MODES}")
+        self.gate_m = GATE_M if gate_m is None else float(gate_m)
+        self.n_gated = 0
         self.fixes_on = fixes_on
         self.rng = rng
         self.noise = noise or PFNoise()
@@ -115,6 +142,7 @@ class ParticleNav:
         c = np.asarray(craters, dtype=np.float64)
         self.craters = c
         self.tree = cKDTree(c[:, :2])
+        self._r_max = float(c[:, 2].max()) / 2 if len(c) else 0.0
 
     def start(self, belief_xy, heading):
         """Starting belief: mean belief_xy, sigma noise.sigma0_m; heading as given.
@@ -155,6 +183,26 @@ class ParticleNav:
             d = d_odom * (1.0 - self.s) + np.concatenate([w_d, -w_d])
             self.p = self.p + np.column_stack([d * np.cos(a), d * np.sin(a)])
 
+    def predict_xy(self, dx, dy, dh_odom):
+        """predict() for an odometry step given as a world-frame vector (A24 eq. 3:
+        b_k+1 = b_k + s_k+1 + w_k), as sim/calibrate.py's A24 truth reports it. Same
+        per-particle scale error and isotropic noise as predict()."""
+        self.heading += dh_odom
+        d_odom = math.hypot(dx, dy)
+        if d_odom <= 0:
+            return
+        h = N_PARTICLES // 2
+        nz = self.noise
+        if nz.heading_walk_rad > 0:
+            w_h = self.rng.normal(0.0, nz.heading_walk_rad, h)
+            self.th = self.th + np.concatenate([w_h, -w_h])
+        w_s = self.rng.normal(0.0, nz.scale_walk, h)
+        self.s = self.s + np.concatenate([w_s, -w_s])
+        a = math.atan2(dy, dx) + self.th
+        d = d_odom * (1.0 - self.s)
+        w = self.rng.normal(0.0, nz.step_noise_frac * d_odom, (h, 2))
+        self.p = self.p + np.column_stack([d * np.cos(a), d * np.sin(a)]) + np.concatenate([w, -w])
+
     def q_score_log(self, rims):
         """Alg. 1 for every particle at once: log Q, shape (Ns,)."""
         rims = np.asarray(rims, float).reshape(-1, 2)
@@ -169,14 +217,35 @@ class ParticleNav:
         _, idx = self.tree.query(pts, k=k)
         idx = np.asarray(idx).reshape(len(pts), k)
         c = self.craters[idx]                       # (P, k, 3)
-        # Distance to each crater's edge, not its centre (Alg. 1 line 4).
-        d_edge = np.abs(np.hypot(c[..., 0] - pts[:, 0:1], c[..., 1] - pts[:, 1:2]) - c[..., 2] / 2)
+        # Distance to each crater's edge, not its centre (Alg. 1 line 4); with
+        # "front_half", to the half of the rim facing the particle's camera.
+        if self.match == "front_half":
+            hx = np.repeat(np.cos(a), m)[:, None]
+            hy = np.repeat(np.sin(a), m)[:, None]
+        else:
+            hx = hy = None
+        d_edge = rim_distance(pts[:, 0:1], pts[:, 1:2], c[..., 0], c[..., 1], c[..., 2] / 2, hx, hy)
         dcr = d_edge.min(axis=1).reshape(N_PARTICLES, m)
         q_inc = Q_EPS + dcr.sum(axis=1)             # Alg. 1 lines 1-6
         q = np.minimum(1.0, (q_inc / m) ** -1)      # Alg. 1 line 7
         return np.log(q)
 
+    def near_landmark(self):
+        """A24 sec. III-E2's gate: is the filter's mean within gate_m of a mapped rim?"""
+        if self.gate_m <= 0:
+            return True
+        mu = self._normalised() @ self.p
+        idx = self.tree.query_ball_point(mu, self.gate_m + self._r_max)
+        if not idx:
+            return False
+        c = self.craters[idx]
+        return bool(np.min(np.hypot(c[:, 0] - mu[0], c[:, 1] - mu[1]) - c[:, 2] / 2) <= self.gate_m)
+
     def correct(self, rims):
+        """The measurement update. Returns False when the gate skips it (odometry alone, A24 sec. III-E2)."""
+        if not self.near_landmark():
+            self.n_gated += 1
+            return False
         q = self.q_score_log(rims)                  # Alg. 2 line 9
         self.logw = self.logw + q - q.min()         # Alg. 2 lines 11-14
         self.n_updates += 1
@@ -187,6 +256,7 @@ class ParticleNav:
             self.p, self.s, self.th = self.p[keep], self.s[keep], self.th[keep]
             self.logw = np.zeros(N_PARTICLES)
             self.n_resamples += 1
+        return True
 
     def _normalised(self):
         w = np.exp(self.logw - self.logw.max())     # Alg. 3 lines 1-5, stable form

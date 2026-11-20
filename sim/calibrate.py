@@ -481,6 +481,10 @@ CONFIGS = {
                                contour="headon", noisy_detect=True),
     # The second and last arc-share measurement (sim/arc_share.py rule route: headings over
     # the whole field of view), with noisy-depth detection as the runs use it.
+    # The same with the filter's matching as before 20 Nov 2026: the whole rim of the
+    # nearest mapped craters, every frame (Settings.pf_match, pf_gate_m test cases).
+    "filter-route-nd-full": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
+                                 contour="route", noisy_detect=True, match="full_circle", gate_m=0.0),
     "filter-route-nd": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
                             contour="route", noisy_detect=True),
 }
@@ -489,12 +493,23 @@ CONFIGS = {
 FINAL_CONFIG = "filter-route-nd"
 _W = {}
 # Bumped when run_one's counting changes, so saved runs from older code are run again.
-RUN_CODE = "e158a84-paired-false-match"
+RUN_CODE = "20nov-a24-match-gate"
 
 
-def _init(out_dir, names, terrain_path):
+TRUTHS = ("a24", "lantern")
+# A24 sec. III-E1 eqs. (4)-(6): the true odometer's error per step is a Gaussian vector of mean
+# d * p|s| (d a unit direction drawn once per traverse, uniform) and covariance diag(|mean|).
+# p: C23 sec. 6B "utilizing 2% odometry noise"; A24 Table 2 "2% added error".
+A24_P = 0.02
+# Eq. (6) writes the covariance as diag(|mu_x|, |mu_y|), metres set equal to square metres.
+# Read here as the standard deviation, sigma = |mu| per axis (assumed; dimensionally
+# consistent). Heading is known: "For simulation, the ground truth orientation is used" (A24 sec. V-C).
+
+
+def _init(out_dir, names, terrain_path, truth="a24"):
     global TERRAIN
     TERRAIN = Path(terrain_path)
+    _W["truth"] = truth
     _W["det"] = load_detections(out_dir, names)
     _W["craters"] = np.asarray(load_terrain(terrain_path)[1], float)
 
@@ -517,6 +532,11 @@ def run_one(task):
     n = len(poses)
     w_d = g_truth.standard_normal(n)
     w_h = g_truth.standard_normal(n)
+    truth = _W.get("truth", "a24")
+    a24_dir = float(g_truth.uniform(0.0, 2 * np.pi))     # A24 eq. (5): d-hat, once per traverse
+    a24_n = g_truth.standard_normal((n, 2))
+    if truth == "a24":
+        drift = A24_P
     # The map.
     m_new, mask_new, share = orbital_map(craters, g_map, errors=cfg.get("map_err", False))
     if cfg["map"] == "old":
@@ -532,7 +552,7 @@ def run_one(task):
     mtree = cKDTree(mp[:, :2])
     noise = PF_NOISE_COPIED_TRUTH if cfg["noise"] == "copied" else PFNoise()
     noise = replace(noise, sigma0_m=SIGMA0_C23)
-    nav = ParticleNav(cfg["fixes"], g_nav, mp, noise=noise)
+    nav = ParticleNav(cfg["fixes"], g_nav, mp, noise=noise, match=cfg.get("match"), gate_m=cfg.get("gate_m"))
     vis = Vision(_Cam(det["camera_model"]), g_vis, depth_model=cfg["depth"])
     noisy_detect = cfg.get("noisy_detect", False)
     if noisy_detect and "ev" not in D:
@@ -578,8 +598,16 @@ def run_one(task):
             pl = vis.place(D["v"][sel].astype(int), D["u"][sel].astype(int), D["r0"][sel])
             src_pl = D["src"][sel][pl["idx"]]
         rims = pl["rims"]
-        nav.predict(d_o, dh_o)
-        if cfg["fixes"] and len(rims):
+        if truth == "a24":
+            # A24 eqs. (3)-(6): the estimated step is the true step plus r_k ~ N(mu, diag(|mu|)^2).
+            sx, sy = poses[k, :2] - poses[k - 1, :2]
+            mu_r = A24_P * d * np.array([math.cos(a24_dir), math.sin(a24_dir)])
+            r = mu_r + np.abs(mu_r) * a24_n[k]
+            nav.predict_xy(sx + r[0], sy + r[1], dh)
+        else:
+            nav.predict(d_o, dh_o)
+        # Frames the filter uses: A24 sec. III-E2's gate (sim/nav.py near_landmark) skips the rest.
+        if cfg["fixes"] and len(rims) and nav.near_landmark():
             # Pairing at the filter's mean pose, before the update (Alg. 1 line 4).
             mu, _ = nav.belief()
             wgt = nav._normalised()
@@ -799,6 +827,10 @@ def main():
                          "docs/terrain/position.md) over GROUND_BOX, with its own camera texture "
                          "(sim/terrain_display.py build_for_ground). grid: the 0.25 m --terrain grid, as before 20 Nov 2026")
     ap.add_argument("--ground-seed", type=int, default=GROUND_SEED, help="world seed of the run ground's craters")
+    ap.add_argument("--truth", choices=TRUTHS, default="a24",
+                    help="the true odometer: a24 (default, from 20 Nov 2026): A24 eqs. 4-6, 2%% bias in one random "
+                         "direction, heading known, as ShadowNav's tests; lantern: WorldRanges.drift_frac (1-4%%) "
+                         "along the track plus Settings odom_* noise, as campaign runs")
     ap.add_argument("--level", action="store_true", help="keep the body level (test case; as before 20 Nov 2026)")
     ap.add_argument("--workers", type=int, default=3)
     ap.add_argument("--configs", default=",".join(CONFIGS))
@@ -855,7 +887,7 @@ def main():
         rp = out_dir / f"runs_{cfg}.json"
         if rp.exists():
             saved = json.loads(rp.read_text(encoding="utf8"))
-            if saved["seeds"] == a.seeds and saved.get("code") == RUN_CODE:
+            if saved["seeds"] == a.seeds and saved.get("code") == RUN_CODE and saved.get("truth", "lantern") == a.truth:
                 rows += saved["rows"]
                 print(f"{cfg}: {len(saved['rows'])} runs read from {rp.name}", flush=True)
                 continue
@@ -864,9 +896,9 @@ def main():
             continue
         tasks = [(name, cfg, seed, ti) for ti, name in enumerate(sorted(routes)) for seed in range(a.seeds)]
         t = time.perf_counter()
-        with Pool(a.workers, initializer=_init, initargs=(str(out_dir), names, a.terrain)) as pool:
+        with Pool(a.workers, initializer=_init, initargs=(str(out_dir), names, a.terrain, a.truth)) as pool:
             got = pool.map(run_one, tasks, chunksize=4)
-        rp.write_text(json.dumps({"seeds": a.seeds, "code": RUN_CODE, "rows": got}), encoding="utf8")
+        rp.write_text(json.dumps({"seeds": a.seeds, "code": RUN_CODE, "truth": a.truth, "rows": got}), encoding="utf8")
         print(f"{cfg}: {len(got)} runs in {time.perf_counter() - t:.0f} s", flush=True)
         rows += got
         if a.max_configs is not None:
@@ -879,7 +911,7 @@ def main():
     (out_dir / "calibration.json").write_text(json.dumps(
         {"format": "lantern-calibration/1", "made_at": datetime.now().astimezone().isoformat(timespec="seconds"),
          "command": cmd, "site": SITE, "terrain": Path(a.terrain).name, "n_craters": int(len(craters)),
-         "ground": a.ground, "ground_meta": _ground_meta(a.terrain),
+         "ground": a.ground, "truth": a.truth, "ground_meta": _ground_meta(a.terrain),
          "body_tilt": bool(det[names[0]].get("body_tilt", False)),
          "display": det["display"], "step_m": STEP_M, "sigma0_m": SIGMA0_C23,
          "settings": {k: getattr(Settings(), k) for k in ("pf_drift_sigma", "pf_step_noise_frac", "pf_heading_walk_rad",

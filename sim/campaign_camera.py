@@ -551,7 +551,7 @@ class CameraSortie(Sortie):
         if len(rims):
             mrow, mdist = _edge_pair(self.c.map_tree, self.c.map_arr, _to_world(rims, mu[0], mu[1], hd))
         if used:
-            nav.correct(rims)
+            used = nav.correct(rims)      # False: A24's 20 m gate skipped the update (sim/nav.py)
         if odo is not None:
             est, r.sigma = nav.belief()
             r.estimate = np.asarray(est, dtype=np.float64)

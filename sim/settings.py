@@ -364,9 +364,31 @@ class WorldRanges:
     missing_share_large: tuple = S((0.0, 0.2), ASSUMED + "; share of resolved craters also absent")
     orbital_pos_err_px: float = S(1.0, ASSUMED + "; 1-sigma error per axis of a mapped crater's centre, in "
                                                  "orbital DEM pixels (2 m). C23 sec. 1 and 4A give the pixel, "
-                                                 "not the error")
+                                                 "not the error. No source gives a crater-position error for a "
+                                                 "DEM-derived map; the frame itself is far better: co-adjusted "
+                                                 "LOLA tracks are geolocated to 10-20 cm horizontally over each "
+                                                 "16 km site (Barker 2021 abstract); over 80-90 S, 1.00/1.00/0.15 m "
+                                                 "along/cross/radial, conservative (Barker 2023 sec. 3, p.10), and "
+                                                 "1 m NAC SfS DTMs are aligned to LOLA (Hemmi 2025 sec. 2.2, 4.3)")
     orbital_diam_err_px: float = S(1.0, ASSUMED + "; 1-sigma error of a mapped crater's diameter, in orbital "
-                                                  "DEM pixels (2 m)")
+                                                  "DEM pixels (2 m). ShadowCam diameters from detection boxes "
+                                                  "'may currently be slight overestimates' (Mazarico 2025), "
+                                                  "unquantified, so not modelled")
+    # A map cut at ShadowCam's completeness is a map made from ShadowCam
+    # images of the shadowed floor (docs/terrain/position.md row 7): 1 m SfS
+    # DTMs need sunlight (Hemmi 2025 keeps NoData in deep shadow, sec. 4.5),
+    # so a sub-5 m map of a PSR floor would come from ShadowCam. Its images
+    # are geolocated to about 20 m, so each image's craters share one offset.
+    shadowcam_map_from_cut_m: float = S(18.0, "Mazarico 2025: ShadowCam crater counts in polar shadow complete "
+                                              "from ~18 m. A starting map cut this large or larger is taken "
+                                              "to come from ShadowCam images and gets shadowcam_geoloc_m")
+    shadowcam_geoloc_m: float = S(20.0, "Mazarico 2025: 'the geolocation accuracy of the images is on a par "
+                                        "with the size of the smallest detected craters (~20 m)'. Read as a "
+                                        "1-sigma offset per axis, shared by every crater of one image "
+                                        "(assumed reading)")
+    shadowcam_image_m: float = S(5200.0, ASSUMED + "; side of the square patch that shares one offset. Lead, "
+                                         "not yet copied to docs/sources: the ShadowCam factsheet "
+                                         "(shadowcam.asu.edu) gives a 5.2 x 144 km image footprint")
     n_deposits: tuple = S((3, 12), ASSUMED)
     deposit_radius_m: tuple = S((3.0, 12.0), ASSUMED + "; code sim/ice.py:30 uses 6 m")
     deposit_peak_wt: tuple = S((1.0, 5.6), "upper end brief p.12 (LCROSS); lower end the find threshold")

@@ -174,6 +174,9 @@ Known problems, each seen in a run:
 - **Dock registration.** `dock_reg_bound95_m` = 6.0 m, assumed
   (`sim/settings.py`). It sets how uncertain every sortie starts. It waits
   on draft item 15. Not settled (asked 20 Nov).
+  If the dock is registered from the same ShadowCam image as the map,
+  ShadowCam's ~20 m shared offset (`sensors`, 18 m cut test case) is
+  shared by dock and map and largely cancels. Not modelled.
 - **Slope test source.** Done 20 Nov (`a06d44b`): GESTALT read, sec. 4
   step 3, p.6, a best-fit plane over a rover-sized patch. Verified.
 - **The haynes return ramp.** In a 40 m box around (15062, -30199), the

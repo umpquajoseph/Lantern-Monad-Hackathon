@@ -1,0 +1,989 @@
+ 
+National Aeronautics and Space Administration    
+ 
+VOLATILES INVESTIGATING POLAR 
+EXPLORATION ROVER 
+ 
+4/30/2021 
+  
+
+2 
+DOCUMENT REVISION RECORD 
+ 
+REVISION DATE Description of Change Author(s) Change Request 
+No. 
+NA 8/14/20 1st Draft Anthony Colaprete Draft 0.0 
+V1 1/5/20 Revised following internal 
+review 
+Anthony Colaprete. 
+Darlene Lim, 
+Kimberly Ennico-
+Smith 
+Draft 1.0 
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+     
+  
+3 
+CONTENTS 
+ 
+1. VIPER MISSION OVERVIEW ........................................................................................................................ 4 
+1.1. HERITAGE, SIGNIFICANCE AND IMPACT OF THE VIPER MISSION ................................................................. 4 
+2. VIPER SCIENCE OVERVIEW: OBJECTIVES AND BACKGOUND........................................................ 5 
+3. VIPER ROVER AND PAYLOAD .................................................................................................................... 7 
+3.1 VIPER ROVER ..................................................................................................................................................... 7 
+3.1.1 VIPER Navigation System ............................................................................................................................ 9 
+3.2 SCIENCE PAYLOAD ............................................................................................................................................... 9 
+3.2.1 Neutron Spectrometer System (NSS) ............................................................................................................ 9 
+3.2.2 Near-Infrared Volatiles Spectrometer System (NIRVSS) ........................................................................... 10 
+3.2.3 The Regolith and Ice Drill Exploration of New Terrain (TRIDENT)  ........................................................ 10 
+3.2.4 Mass Spectrometer Observing Lunar Observations (MSolo) .................................................................... 10 
+4. VIPER MISSION PHASES OVERVIEW........................................................................................................... 11 
+4.1 LUNAR TRANSIT/ORBIT...................................................................................................................................... 11 
+4.2 LANDING AND EGRESS ....................................................................................................................................... 11 
+4.3 SURFACE OPERATIONS ....................................................................................................................................... 12 
+4.3.1 On-Rails Traversing ................................................................................................................................... 12 
+4.3.2 Science Station Activities ........................................................................................................................... 13 
+4.3.3 Safe haven operations ................................................................................................................................ 13 
+4.4 DECOMMISSIONING & CLOSEOUT ...................................................................................................................... 14 
+4.5 MISSION SCIENCE PHASES.................................................................................................................................. 14 
+5 TRAVERSE PLANNING PROCESS ................................................................................................................... 14 
+5.1 TRAVERSE REQUIREMENTS ................................................................................................................................ 14 
+5.2 TRAVERSE PLANNING PHILOSOPHY ................................................................................................................... 15 
+5.3 LANDING AND TRAVERSE STUDY SITES ............................................................................................................. 16 
+6. VIPER SCIENCE OPERATIONS AND ORGANIZATIONAL ARCHITECTURE OVERVIEW  ......... 19 
+6.1 SCIENCE OPERATIONS DURING SURFACE OPERATION .................................................................... 19 
+6.2 VIPER SCIENCE TEAM ORGANIZATIONAL ARCHITECTURE ............................................................................... 19 
+6.3 VIPER SCIENCE TEAM ....................................................................................................................................... 19 
+6.4 PHASE I SURFACE OPS: SCIENCE TEAM OPERATIONAL ACTIVITIES ................................................................... 21 
+6.4.1 VST Activities and Real-Time Processing for Planning Support ............................................................... 21 
+7. VIPER DATA PRODUCTS .................................................................................................................................. 24 
+ 
+ 
+ 
+  
+4 
+DOCUMENT OVERVIEW  
+ 
+This Proposal Information Package (PIP) document supports the NASA Research Announcement for the 
+VIPER (Volatiles Investigating Polar Exploration Rover) Co-Investigators. This PIP includes an overview 
+of the VIPER Project and foundational knowledge about the mission science, phases, instruments, and 
+operations for proposers to consider.  
+1. VIPER MISSION OVERVIEW 
+VIPER is a lunar volatiles detection and measurement mission that will be launched as a payload on the 
+CLPS (Commercial Lunar Payload Services) provided Astrobotic's Griffin lander to the lunar south polar 
+region. VIPER includes a suite of rover-mounted instruments that will conduct science and map volatiles 
+(especially hydrogen-bearing volatiles). The VIPER rover is also designed to excavate volatiles such as 
+hydrogen, oxygen, and water from the Moon.  
+After landing the VIPER rover will travel to investigate a range of Ice Stability Regions (ISRs) across scales 
+from 100s of meters to kilometers and conduct surface and subsurface assessment of lunar water and other 
+volatiles. The VIPER science mission team will use the instrument data to characterize the nature of the 
+volatiles in the area and to extrapolate these data to create global lunar water resource maps. The expected 
+lunar surface mission duration is up to four lunar days, with active surface operations during the periods 
+when both Sun exposure and direct to Earth (DTE) communication conditions overlap. When comm and 
+Sun are not both available, VIPER will go into ‘Safe Haven operations’ and maintain survival temperatures 
+until Sun and comm return. The rover is controlled in near -real time and science decisions are made both 
+tactically (short-term) and strategically (longer -term) to achieve the mission science success criteria and 
+objectives. 
+1.1. HERITAGE, SIGNIFICANCE AND IMPACT OF THE VIPER MISSION 
+While the existence of lunar volatiles has been known since the Apollo era, only more recently (the last 10-
+20 years) has the extent and form of these volatiles been better understood.  It now appears that 
+economically significant amounts of water ice may exist at the poles of the Moon, however, the distribution 
+of this water is still not sufficiently characterized or understood in a manner that would enable their 
+evaluation as an economically viable resource. The water ice (and other potential volatiles), also termed the 
+“ore body”, needs to be understood at the scales of 10s to 100s of meters to evaluate localization, extraction 
+and processing techniques. VIPER  builds on the findings of the Lunar CRater Observation and Sensing 
+Satellite (LCROSS), Lunar Reconnaissance Orbiter (LRO)  and Chandryaan-1 missions that proved the 
+existence of water on the Moon by taking the next step to understand and evaluate the water as a potential 
+resource. In addition, VIPER will address key science objectives (Table 1-1) from the Planetary Science 
+Decadal Survey (2011), The Science Context for Exploration of the Moon (SCEM, 2007), and Advancing 
+Science of the Moon (ASM, 2018).  
+The mission objectives for VIPER  align with the National Research Council’s (NRC) stepping stone 
+approach to Mars with feed-forward technology development. VIPER is an early expedition in the proving 
+ground that will help NASA and its partners better understand the quality and quantity of water and other 
+volatiles on the Moon that could  support human explorers on the lunar surface, orbiting above in  cis-
+5 
+lunar space, or on their way to destinations such as Mars and the outer Solar System worlds. The 
+technologies and operational capabilities that VIPER validates will also have direct exten sibility toward 
+how we may someday harvest resources on Mars, asteroids, or other planetary bodies.  
+2. VIPER SCIENCE OVERVIEW: OBJECTIVES AND BACKGOUND 
+VIPER has two primary objectives: 
+1. Characterize the distribution and physical state of lunar polar water and other volatiles in lunar 
+cold traps and regolith to understand their origin. 
+ 
+2. Provide the data necessary for NASA to evaluate the potential return of In-Situ Resource 
+Utilization (ISRU) from the lunar polar regions. 
+ 
+To evaluate the potential return of ISRU, the distribution and physical state of the water must be better 
+understood.  Currently, several data sets indicate buried hydration (e.g., neutron spectrometer observations) 
+and surface abundances (often referred to as “frosts”) . However, these observations are ambiguous with 
+respect to physical state and vertical distribution. Lateral and vertical observations of the water (and other 
+volatiles) are required to assess volatiles abundance and form. 
+Ongoing ISRU architecture studies have proposed a critical cutoff of water ice ISRU at around 5 -10 wt% 
+and a desire to understand down to concentrations of 2 wt%.  Other volatiles are expected and may be 
+important as either resources or hazards, including H2, H2S, NH3, CO2 and CO. These should be identified 
+if present at concentrations greater than 5%, as these currently have less importance within an ISRU 
+architecture and greater overall uncertainty in the presence and distribution. 
+The high rate of small impacts that excavate to one meter or less means vertical mixing is expected to be 
+greatest in the top ~meter of regolith. Micrometeorite gardening is expected to desiccate the top 10-20 cm 
+Table 1-1. VIPER addresses key Agency science and exploration objectives 
+ 
+ 
+Understand the origin and diversity of terrestrial planets
+  Characterize Planetary Surfaces to Understand How They Are Modified by Geologic Processes
+  Develop an inventory and isotopic composition of lunar polar volatile deposits to understand their emplacement and origin, modeling conditions 
+and processes.
+Understand how the evolution of terrestrial planets enables and limits the origin and evolution of life
+  Understand the Composition and Distribution of Volatile Chemical Compounds
+  Determine the state, extent, and chemical and isotopic compositions of surface volatiles, particularly in the polar regions on the Moon.
+Determine the compositional state (elemental, isotopic, mineralogic) and compositional distribution (lateral and depth) of the volatile component in 
+lunar polar regions. (Goal 4a)
+Determine the source(s) for lunar polar volatiles (Goal 4b)
+Understand the transport, retention, alteration, and loss processes that operate on volatile materials at permamently shaded lunar regions (Goal 
+4c).
+Understand the physical properties of the extremely cold (and possibly volatile rich) polar regolith (Goal 4d)
+The lunar poles are special environments that may bear witness to the volatile flux over the latter part of solar system history (Concept 4)
+Lunar Volatile Cycle (New Concept)
+Understanding the Lunar Resource Potential (Theme 1)
+  D.3 Geotechnical characteristics of cold traps
+  D.4: Physiography and accessibility of cold traps
+  D.6 Composition, Form, and Distribution of Polar Volatiles
+  D.7. Temporal Variability and Movement Dynamics of Surface-Correlated OH and H2O deposits towards PSR retention
+Understand How to Work and Live on the Lunar Surface (Theme 3)
+  A.1 Technologies for excavation of lunar resources
+  C.2 Lunar surface trafficability - in situ measurements
+  D.2 Regolith adhesion to human systems and associated mechanical degradation
+Characterize the distribution and physical state of lunar polar water and other volatiles in lunar cold traps and regolith to understand their origin 
+Provide the data necessary for NASA to evaluate the potential return of In-Situ Resource Utilization (ISRU) from the lunar polar regions 
+Visions and Voyages Planetary Decadal  (2013)
+Advancing Science of the Moon (LEAG Community Report) (2018)
+NASA's Strategic Knowledge Gaps (SKG) (2016)
+Scientific Context Exploration of Moon (SCEM) (2007)
+VIPER Mission Objectives
+6 
+of regolith.  Global hydrogen maps made from neutron observations provide data down to about one meter 
+into the lunar subsurface . Converting these neutron data into water concentration (water equivalent 
+hydrogen or WEH) depends on the vertical distribution of water in the top meter of regolith. Understanding 
+this vertical distribution of water will reduce uncertainty in water resource maps, as well as ensuring the 
+water ice is characterized to a depth where the amount of ground material removal may be acceptable to 
+economic mining models. 
+Ice Stability Regions (ISRs) are areas in which it is expected that between the surface and one-meter depth, 
+the thermal environment would support water ice being stable for geologic periods of time (defined as a 
+loss of 1 mm/m2 per Gy). In these regions, water ice may exist and be extractable. 
+• “Surficial” means surface temperatures are sufficiently cold for ice to be stable at the surface 
+(such as in Permanently Shadowed Regions (PSRs));  
+• “Shallow” means ice could be stable between 0-50 cm deep;  
+• “Deep” means ice could be stable between 50-100 cm deep;  
+• “Dry” means ice should not be stable anywhere from the surface down to 100 cm.  
+ 
+ISRs are defined from models of the thermal environments, both at the surface and subsurface. Surf ace 
+temperature predictions in these models are validated with orbital observations of surface temperatures. 
+Characterizing the volatiles, including the distribution and form, in each of these types of ISRs will provide 
+a necessary link between surface ground truth and orbital data sets.   
+In order to extrapolate beyond sample points and build resource favorability maps, including developing 
+and testing resource distribution models, key geological contextual parameters must be measured along 
+with the volatile concentrations.  Some of these parameters are expected to have critical implications for 
+retention (e.g., surface and subsurface temperatures), while others may allow for important spatial proxies 
+that can be mapped at regional and global scales (e.g., surface mineralogy).  Finally, in order to assess the 
+accessibility of any volatile resource, bulk mechanical properties must be understood, including soil load 
+bearing strength and angle of repose. 
+The VIPER Level 1 mission requirements are listed in Tabl e 2-1.  Key VIPER Level 2 Measurement 
+Requirements are shown in Table 2-2. 
+Table 2-1: VIPER Level 1 Science Mission Requirements 
+ Science Requirement 
+1.1 VIPER shall operate on the surface at a lunar polar region to measure the physical state and abundance of 
+hydrogen-bearing volatiles, including H2O when present at concentrations >2 wt%, H 2, H2S, NH3, and other 
+non-hydrogen-bearing volatiles including CO2 and CO when present at concentrations >5 wt%, and the lateral 
+distribution of these volatiles at the decimeter scale. 
+1.2 VIPER shall operate at a lunar polar region to measure the subsurface extent of hydrogen bearing volatiles 
+as a function of depth at the decimeter scale down to a depth of 80 cm with a Water Equi valent Hydrogen 
+concentration detection limit of 0.5 wt%. 
+1.3 VIPER shall characterize the volatiles in the four types of Ice Stability Regions (ISRs), as predicted by current 
+ISR orbital data models, including Surficial, Shallow, Deep and Dry regions.  
+1.4 VIPER shall characterize the geologic context of the ice stability regions by measuring surface and subsurface 
+temperatures, identifying surface mineralogical features consistent with mafic minerals and hydrous mineral 
+phases present at >5 wt%, and determining the bulk mechanical characteristics of the lunar regol ith. 
+ 
+7 
+Table 2-2: VIPER Level 2 Science Measurement Requirements 
+ Science Requirement 
+L2-SPL-1 The Science Payload shall identify the presence of volatiles species on the lunar surface and in the 
+subsurface up to a 100 cm depth. 
+L2-SPL-2
+  
+The Science Payload shall identify, by direct measurement, the presence of hydrogen -bearing 
+volatiles, including H2O when present at concentrations >2 wt%, H2, H2S, NH3, and other non -
+hydrogen-bearing volatiles including CO2 and CO when present at concentr ations >5 wt%  on the 
+lunar surface and in exposed subsurface regolith  
+L2-SPL-3 The Science Payload shall identify the physical state of water on the lunar surface and exposed 
+subsurface regolith. 
+L2-SPL-4 The Science Payload shall measure water ice on the surface or in subsurface material at a 
+concentration as low as 0.5 wt%. 
+L2-SPL-5 The Science Payload shall measure the Water Equivalent  Hydrogen down to at least 80cm with a 
+horizontal spatial resolution of no greater than 5 m. 
+L2-SPL-6 The Science Payload shall determine subsurface temperatures at excavation sites. 
+L2-SPL-7 The Science Payload shall measure isotope ratios for D/H, and O18/O16. 
+L2-SPL-8 The Science Payload shall identify mineralogical features consistent with mafic minerals and 
+hydrous mineral phases present at >5 wt% in the lunar regolith. 
+L2-SPL-10
+  
+The Science Payload shall determine the lunar surface temperature below the Rover.  
+ 
+L2-SPL-11 The Science Payload shall expose regolith samples from any depth between 0 -cm and 100-cm. 
+L2-SPL-12 The Science Payload shall extract a regolith sample that is representative of a 4 -cm subsurface 
+minimum interval. 
+L2-SPL-23 The Science Payload shall measure water on the lunar surface at a scale of less than 10cm  
+L2-SPL-24 The Science Payload shall measure water on the lunar surface with a horizontal spatial resolution 
+of no greater than 5-m when water concentrations are greater than 2wt%. 
+ 
+3. VIPER ROVER AND PAYLOAD 
+The VIPER payload suite of instruments will be integrated with the rover platform to form the surface 
+segment.  The surface segment will be integrated with the system provided by the lunar landed service 
+partner, Astrobotic, which will be responsible for all activities necessary to deliver VIPER to the pre -
+selected landing site and time. 
+3.1 VIPER ROVER 
+The rover (Figure 3 -1) hosts the science payloads, providing structure, power, thermal management, 
+mobility, navigation, and communications services. The rover is being developed by NASA with principal 
+participation by NASA-JSC and NASA-ARC.  
+8 
+ 
+Figure 3-1. VIPER and its navigation, prospecting, surface and subsurface assay science 
+instruments.  
+ 
+The rover is a solar powered vehicle, consisting of a battery and three approximate 1 m2 solar arrays (one 
+each on the port, starboard, and aft surfaces), generating 410 (TBR) W of total power.  
+The rover is powered-off during launch and ascent and powers on using its own power after launch vehicle 
+separation, to enable operation of its survival heaters. After a brief period of time, rover power transitions 
+from rover to lander. The lander continues to power the rover until lunar surface touchdown. During the 
+lunar transfer phase, the surface segment performs initial checkout and calibration activities, 
+communicating with the ground via a communications link provided by the lander. Early on during the 
+lunar transfer phase the rover establishes communication with the ground via both its omnidirectional and 
+high gain antennas to verify its communications subsystem is functioning properly. During this checkout, 
+the rover’s high gain antenna relies upon the lander for pointing as its pan/tilt gimbal is locked -out to 
+minimize loads during descent and landing. Upon la nding on the lunar surface, the rover transitions to its 
+own power, establishes a direct-to-Earth ( DTE) communications link via its high gain antenna and 
+completes other post -landing surface segment checkout activities. After completion of the post landing  
+checkout activities, the surface segment egresses from the lander to begin surface operations. During 
+surface operations, the rover follows a specific surface traverse plan, primarily by teleoperation via 
+waypoint commands set several meters ahead of the vehicle. During the active traverse, the rover operates 
+with constant DTE communications while in the Sun and in shadows (for short periods of time). After the 
+rover loses direct line-of-site with the Earth and does not have DTE communications, it has periods in the 
+sunlight, where is charges its battery and thermally conditions the surface segment system, followed by 
+
+9 
+minimal periods of no sunlight, about 48 -96 hours. During period s of no sunlight, the surface segment 
+hibernates, operating survival heaters to keep the surface segment's systems above survival temperatures. 
+3.1.1 VIPER NAVIGATION SYSTEM 
+The rover navigation subsystem help enable Mission Operations to observe the lunar environment, 
+determine its absolute and relative positions (i.e., localize), and avoid hazards and obstacles. It accomplishes 
+these tasks using cameras, lights, a star tracker, wheel and suspension encoders and an inertial measurement 
+unit (IMU). 
+A pair of navigation cameras (NavCam) are mounted on a pan/tilt gimbal on the mast to provide a 360  
+degree  view of the mid- to far-field environment surrounding the rover. Images from these cameras provide 
+the primary feedback to ground operators for driving. These navigation cameras consist of two monochrome 
+imagers in a stereo mount. Their Field of View (FOV) is 70 degree Horizontal with 2048 x 2048 resolution 
+elements with a IFOV of about 0.5 cm at 10 meters distance. 
+Four monochrome hazard cameras (HazCam) are located around the chassis to provide a 360 degree view 
+of the near-field environment for hazard identification, hazard avoidance, and fault management. One can 
+be found in each of the four wheel wells providing an inside wheel view useful for gauging wheel sinkage.  
+In addition, a fixed stereo pair of rear facing monochrome cameras (AftCam) fill in the large navigation-
+camera blind spot caused by the solar arrays and radiator.   The hazard and rear-facing cameras have 110 
+degree Horizontal FOV with 2048 x 2048 resolution with an IFOV of about 1 cm at 10 meters.   
+All cameras will be operated with a narrow bandpass filter that corresponds to imaging illumination lamps. 
+The illumination lamps include a long range (spot) luminaries positioned at the same height as the camera, 
+outboard of each NavCam (~500W total when imaging), and a six short range (flood) luminaries positioned 
+around the chassis of the rover providing 360 degree of coverage (~60W each). 
+Both the IMU and star tracker provide data for localization, attitude, and body rate (rate of change in role, 
+pitch and yaw)  information to the rover’s navigation algorithms. The star tracker faces zenith for sun 
+avoidance, while the IMU is placed near the rover’s center of mass. 
+3.2 SCIENCE PAYLOAD 
+3.2.1 NEUTRON SPECTROMETER SYSTEM (NSS) 
+The Neutron Spectrometer System (NSS) will be used to “prospect” for the presence of hydrogen rich 
+materials while roving, mapping the distribution of these materials to assist in excavation site selection and 
+better understand the morphology of the resource.  The NSS instrument consists of the Sensor Module and 
+Data Processing Module.  The Data Processing Module contains support electronics and interfaces with the 
+Rover for commands, data processing, and power. The Sensor Module contains the detectors and is to be 
+positioned on the front of the rover in order to have an unobstructed view of the lunar surface.  The sensors 
+consist of helium-3 filled tubes with one coated such that it is sensitive to epithermal neutrons, while the 
+other uncoated tube is sensi tive to thermal and epithermal neutrons. The tubes are sized to achieve a 
+detection sensitivity of 0.5% (wt) at 3-sigma while roving at 10 cm/s.  
+10 
+3.2.2 NEAR-INFRARED VOLATILES SPECTROMETER SYSTEM (NIRVSS) 
+Operating during roving or drilling operations, the Near InfraRed Volatiles Spectrometer System (NIRVSS) 
+instrument will be used to look for near-real-time changes in the properties of the materials exposed.  Using 
+different wavelengths of light to illuminate the surface, NIRVSS will also be used to provide an additional 
+means of surveying the surface and immediate excavation site for water and other volatiles, providing 
+surface and regolith mineral context.  
+The NIRVSS instrument consists of a Spectrometer, Bracket Assembly, and Fiber Cables. The Bracket 
+Assembly (BA) is positioned strategically on the rover with the ability to view below the rover and measure 
+the cutting pile material as it comes up to the surface from down to 1 meter depth.  The Fiber Cables connect 
+the Bracket Assembly to the Spectrometer allowing the data to be evaluated on the ground. The BA includes 
+the aperture for the spectrometer, spectrometer lamp, Longwave Calibration Sensor (LCS), a four-channel 
+thermal radiometer, and the Ames Imaging Module (AIM), a Complementary Metal–Oxide–Semiconductor 
+(CMOS)camera with LED illumination. 
+The NIRVSS spectrometer is a dual -channel near infrared (NIR) spectrometer with the two channels 
+defined as the Shortwave (SW) and Longwave (LW) channels.  The SW channel operates over a range of 
+1300-2400 nm with a spectral resolution of approximately 10 -20 nm.  The LW channel operates over a 
+range of 2200-4000 nm with spectral resolution of approximately 20 -40 nm.  The spectrometer channels 
+are fed by a fiber optic bundle that runs to the Bracket Assembly wh ere it is interfaced to a single lens 
+system that provides input to the spectrometer. A tungsten filament lamp with cut -on filter (>1100  nm), 
+located on the BA, is used to illuminate the spectrometer FOV at the surface. 
+LCS consists of four thermopiles with filters at 10, 14, 18, and 6-25 microns.  These sensors are sampled 
+at several gains each once per second continuously while roving and drilling. 
+The AIM is an unfiltered 4 mega-pixel CMOS imager.  Seven sets of LEDs are used to provide illumination 
+for imaging.  The LED colors include 348, 410, 540, 640, 740, 905 and 940 nm.   
+3.2.3 THE REGOLITH AND ICE DRILL EXPLORATION OF NEW TERRAIN 
+(TRIDENT) 
+The Regolith and Ice Drill Exploration of New Terrain (TRIDENT) system includes the hardware to 
+physically excavate/extract regolith at 10 cm increments from the lunar surface to a depth of 1  meter and 
+deliver the samples to the surface.  Per an auger/percussion within the TRIDENT subsystem, sample 
+excavation will be done in such a way to minimize th e disturbance to volatiles as much as practical. In 
+addition, the excavation device will be instrumented to measure forces and displacements to determine 
+critical bulk properties of the regolith. TRIDENT drill bit also includes two temperature sensors imbedded 
+in the drill string at the drill bit tip and approximately 20 cm up from the drill bit tip.  These temperature 
+sensors are used to measure subsurface temperatures.  A heater imbedded within the drill bit at about 20 
+cm can be used to warm the drill (e.g., to perform thermal conductance experiments). 
+3.2.4 MASS SPECTROMETER OBSERVING LUNAR OBSERVATIONS (MSOLO) 
+Mass Spectrometer Observing Lunar Observations ( MSolo) is a modified, commercial off -the-shelf 
+(COTS) quadrupole mass spectrometer from INFICON. MSolo utilizes a 100 amu INFICON Transpector 
+11 
+MPH in a crossbeam configuration. The electronics and structural chassis have been modified for 
+spaceflight, and an Instrument Interface Unit has been added to provide  standard spacecraft interfaces 
+between the COTS instrument and the rover power and communication systems. A Dust Cover mechanism 
+is incorporated to protect the instrument until after lunar landing and checkout are completed. A Calibration 
+Gas System with a known gas mixture allows for periodic calibration. 
+The MSolo instrument analyzes volatiles released from the lunar regolith during lunar traverses as well as 
+subsurface regolith extraction via the TRIDENT payload.  MSolo will measure constituents below atomic 
+number 100 (including H 2, He, CO, CO 2, CH4, N 2, NH 3, H 2S, SO 2, etc.), and estimate water (H 2O) 
+abundance.  MSolo has the capability for isotope detection, specifically it is able to determine the difference 
+between protosolar (~20  ppm) and cometary (>200  ppm) D/H values.    Initial characteriza tion 
+measurements with the MSolo -VIPER configuration, the instrument peak widths were decreased to 
+improve peak separation and minimize abundance sensitivity.  Initial measurements are reproducible with 
+a relative standard deviation (RSD) between 1 -3%.   With an RSD of 1 -3%, the predicted performance is 
+95% confidence (2 sigma) in measuring differences greater than ~15 ppm.  
+4. VIPER MISSION PHASES OVERVIEW 
+The VIPER mission profile consists of the three major phases, including Lunar Transit/Orbit, Landing and 
+Egress, and Traverse (Fig ure 4-1).  Following mission completion there is a six -month closeout period 
+during which primary instrument and rover imaging data is prepared for archiving to the Planetary Data 
+System (PDS). Currently a second delivery of derived products is being considered for delivery after an 
+additional six months. 
+ 
+ Figure 4-1  VIPER Mission Phases 
+4.1 LUNAR TRANSIT/ORBIT 
+Lunar transfer and orbit are part of the Astrobotic delivery service.  During this period the landed system 
+will undergo checkouts and health and status monitoring.  The NSS instrument will operate away from the 
+Earth, at least at a Moon -radii from the Moon and in lunar orbit to acquire calibration data. MSolo and 
+NIRVSS will undergo checkouts and bakeouts to minimize contamination and facilitate outgassing. 
+4.2 LANDING AND EGRESS 
+After landing each instrument will undergo checkout to verify operation status.  NIRVSS will perform a 
+radiometric calibration of its spectrometer using a refle ctance target affixed to the rover /lander interface 
+
+12 
+assembly.  This calibration target remains behind with the lander.  After its checkout MSolo will also 
+perform a calibration.  It is the goal to egress from the lander with six hours after landing.  After egress the 
+TRIDENT will calibrate its system by deploying the drill footpad and applying sufficient force to the 
+footpad to allow for drilling.  No drilling will be performed. 
+4.3 SURFACE OPERATIONS 
+Surface operations activities and associated traverse pl anning activities are organized into two categories 
+which include those at a Science Station and those while traversing between Science Stations.  In-between 
+Science Stations all instruments will remain on, however, the goal is to get from one Science Stat ion to 
+another, or to an area of safety (in terms of Sun and comm, referred to as a Safe Heaven) as efficiently as 
+possible (e.g., power, time). An illustration of Surface Operations is shown in Figure 4 -2. Further details 
+about the measurement requirements for traverse planning and sizes of Science Stations are in Section 5. 
+ 
+ 
+Figure 4-2 Overview of VIPER Science Operations activities. 
+4.3.1 ON-RAILS TRAVERSING 
+The in-between Science Station traverse segments are referred to as being “on rails”. While “on rails” 
+instruments are not required to meet Level 2 measurement requirements (Table 2-2) and the rover speed is 
+allowed to exceed the science acquisition speed of 10 cm/s. 
+
+13 
+4.3.2 SCIENCE STATION ACTIVITIES 
+A Science Station is a designated 3800 m2 area that will include one or more ISR types (except in the case 
+of a PSR) and specific measurement activities are carried out. Each Science Station will be dominated by a 
+particular predicted Ice Stability Region (ISR) (i.e., Dry, Shallow, Deep, Surface).  “Dominated” is defined 
+here to be that a particular ISR comprises of at least 66% (1 ) of the total sampled area.  For example, a 
+“Shallow ISR Science Station” would h ave its planned boundaries around an area that is dominated (see 
+additional definition below) by Shallow ISR.  Currently ISRs are derived from thermal modeling (Paige et 
+al, 2010) using a 1 -meter Digital Elevation Model (DEM).   However, the exact extent/boundaries of any 
+ISR may be modified as new data is obtained by VIPER or other sources.   Typically, because net sunlight 
+tends to decrease as one moves towards a PSR, these Science Stations will be localized near PSRs.  Within 
+a Science Station t raverse, science operation s are organized into two  prime activities: Prospecting 
+(Mapping) and Subsurface Assay (SA).  Each are summarized below.  
+4.3.2.1 PROSPECTING 
+• While roving at speeds no greater than 10 cm/s, near continuous observations from NSS provides 
+bulk hydrogen down to 1  m, and NIRVSS and MSolo measure  surface hydration , volatile 
+composition and minerology. 
+• Key areas for subsurface evaluation activities are identified. 
+• The environment (e.g., temperatures, geomorphology, and minerology) is characterized. 
+• Drill site selection is pre-planned. However, the final drill site selection at a given science station 
+is evaluated in real-time and may be changed based on prospecting observations. 
+4.3.2.2 DRILLING/SUBSURFACE ASSAY 
+• Drilling to a specified depth, up to 1 m eter, each 10-cm segment is exposed for examination by 
+NIRVSS and MSolo. 
+• For traverse planning purposes the full 1 meter drill depth is assumed, however, it is possible that 
+this drill depth could be changed (e.g., drilling only to 50 cm). 
+• Volatile content with depth  is identified  and ‘Water Equivalent Hydrogen’( WEH) models 
+(predicted by neutron counts from NSS)  are constrained by measuring vertical extent of ice and 
+any dry overburden. 
+• The third drill site in each Science Station is evaluated and anticipated to be changed, based on 
+prospecting data and data obtained in the first two drill sites. 
+• To infer subsurface temperatures, the drill string will preload against the borehole floor, placing its 
+temperature sensor in contact with the regolith. A nominal 30 minute pause will be included in the 
+SA activity, with the assumed depth of this pause to be at 100 cm. Due to resource constraints, this 
+is not enough time to allow for the drill string to reach thermal equilibrium with  the regolith, and 
+therefore thermal modeling and correlation with laboratory testing will be used to infer regolith 
+subsurface temperature. 
+4.3.3 SAFE HAVEN OPERATIONS  
+At the end of each lunar day the Earth will set below the horizon and communication wi th the rover will 
+not be possible, and thus the rover cannot maintain itself unless it is positioned in sunlit areas.  During these 
+14 
+Loss of Signal (LOS) periods the rover will position itself in an area of persistent sunlight, or Safe Havens.  
+At Safe Have ns the rover will configure itself for a low -power state, shutting down all non -essential 
+subsystems including the payload.  This configuration allows for survival during periods of extended (<70 
+hours) of shadow.  This configuration is entered prior to Ea rth setting.  Once Earth rises again and 
+communications are regained the rover will prepare itself (e.g., warm critical systems and payload) for the 
+next portion of the planned traverse. 
+4.4 DECOMMISSIONING & CLOSEOUT 
+The end of the mission occurs when shadow periods at the Safe Havens are longer than what the rover can 
+survive.  The final disposition of the rover, for example driving deep into a PSR or parking at a Safe Haven 
+will be defined at around the time of the mission Critical Design Review (CDR). 
+4.5 MISSION SCIENCE PHASES  
+The VIPER mission surface operations are conceptualized as two science-driven Phases that will each be 
+in service of meeting mission success criteria: 
+• Phase I (“Early”): meeting Science Objectives, Science Requirements, and Minimum Mission 
+Success criteria. 
+• Phase II (“Late”): will commence when the total set of minimum traverse measurements (Level 1 
+Full Success) are met. However, Phase II science operations activities are contiguous and also 
+concurrent to Phase I, given that Phase II strategic planning will begin prior to the completion of 
+Phase I. During Phase II, the VIPER Science Team (VST) may introduce and recommend mission 
+activities that test relevant theories of water emplacement and retention and/or  test predictive 
+capabilities of developed Resource Maps and Models. Phase II Science Operations details will be 
+scoped after CDR. 
+ 
+Descriptions of VIPER science team roles during these phases are further described in Section 6. 
+ 
+5 TRAVERSE PLANNING PROCESS 
+5.1 TRAVERSE REQUIREMENTS 
+There are five primary science driven VIPER traverse planning requirements described within this section. 
+These requirements are separate and in addition to any measurement requirements called out within the 
+VIPER Level 2 Science Requirements (Table 2-2).   
+1. Determine water distribution and form across four defined ISRs (see Section 2 for definition) with 
+an uncertainty of <50% 
+a. Areal measurement density of >10% (floor) to 15% (goal) for an equivalent area of at least 
+3800 m2. 
+b. Total drive distance in ISR ≥224 m (floor) to 335 m (goal) assuming a 1.7 m sampling area. 
+2. To account for possible scales of variability, must measure at scales of <5 meters and as large as 
+1000 m. 
+3. Minimum of two additional ISR repeat measurements separated by at least 100 meters. 
+4. Minimum of three subsurface characterizations in each ISR separated by 10s of meters. 
+15 
+5. Subsurface measurements must sample across depths from 10 cm to 80 cm with a sampling interval 
+of at least 8 cm. 
+Rover navigation camera imagery is not specified here, however, this imagery is necessary to provide 
+geologic context, help in identifying drilling locations and rover localization, and help with quantifying 
+geotechnical properties of the lunar regolith. 
+Traverse planning within a Science station will maintain a goal of measuring across spatial scales between 
+10-100 meters in both x and y (to insure adequate sampling across possible physical length scales) .  Also, 
+spatial data interpolation me thods benefit greatly from tracks extending in both x and y (as opposed to 
+longer mono-directional tracks).  Integrated area mapping of any ISR type does not need to be contiguous 
+in time or space.  That is, total area mapping coverage can be accumulated for any ISR type over multiple 
+subsequent mapping activities in individual ISRs.  Area mapping density within a PSR is only valid (i.e., 
+count toward the 10% minimum area density) while the traverse is more than 30 meters from the predicted 
+PSR boundary.  This is to avoid possible miss -classification of a PSR boundary due to uncertainties in 
+DEMs (currently LOLA 20 meter DEM is used for PSR planning). 
+Three 1-meter drill tie points are required at each ISR except for PSRs: 
+• These drill sites are initially pre-planned; however, the third drill site may be relocated. 
+• Subsurface sampling intervals are in 10 cm increments, or “bites”.  After each bite a pause of at 
+least 5 minutes will occur to allow for observation of the cuttings pile. 
+• Due to thermal/power constraints it is required to plan only one 1-meter subsurface assay in a PSR.  
+However, multiple shallow subsurface assays should be allowed as long as they fit within the 
+allocated time/power planning for a PSR.  These shallow subsurface assays include assays down to 
+60 cm (just beyond the “S hallow/Deep ISR” boundary) and down to 40 cm (below the seasonal 
+thermal skin depth). 
+• At least one subsurface assay must include a subsurface temperature measurement, which includes 
+a nominal “pause” duration of at least 30 minutes (typically planned as part of the first drilling 
+activity). 
+5.2 TRAVERSE PLANNING PHILOSOPHY 
+Ultimately two pr oducts are to be generated with traverse observations: (1) Resource Maps and (2) 
+Resource Models.  A Resource Map is defined here to be a map of water abundance (total yield for a 
+specified volume of material) that is based entirely on observational data a nd interpolation or other data 
+modeling techniques.  These maps can be made at any scale but will have the highest confidence in areas 
+with the highest observation densities.  A Resource Model utilizes all data sets and applies physical models 
+of distribut ions, based on theories of emplacement and spatial, physical or chemical modification, to 
+provide additional predictive capability beyond interpolation and spatial/environmental proxies. 
+Initial traverse planning should work to meet observation density requirements at each of the ISRs (and ISR 
+duplicate visits) with little consideration to testing water emplacement or retention/redistribution theories.  
+Traversing should focus on total coverage across an ISR, noting trends in physical length scales and 
+correlation between instrument data sets (e.g., surface hydration and subsurface hydration, hydration with 
+surface temperature, etc.).  When the total set of minimum traverse measurements are met  then traverse 
+16 
+planning may introduce activities that test relevant theories of water emplacement and retention and/or test 
+predictive capabilities of developed Resource Maps / Models.  In so doing these plans may not necessarily 
+meet all observation density goals, but rather work toward alternate goals, for examp le, mapping radially 
+from craters of varying ages, or multiple shallow subsurface assays into micro PSR to test more recent 
+volatile accumulation. 
+5.3 LANDING AND TRAVERSE STUDY SITES 
+Several regions near the south pole have been used as study sites for evaluating the lander and rover design 
+and to develop traverse planning tools and data sets.  Figure 5-1 shows the three primary study sites that 
+have been evaluated in detail.  In each of these areas high resolution shape-from-shading Digital Elevation 
+Models (DEMs) have been produced.  These DEMs are then used to calculate critical data products, 
+including Sun and Direct to Earth (DT E) communication availability vs . time, surface and subsurface 
+temperatures vs. time, and slopes.  In addition to these data p roducts, map layers indicating hazards (e.g., 
+craters) and logically combined mission constraint layers (e.g., Sun AND communication AND slopes that 
+meet design constraints) are used for traverse planning. 
+Key to the selection of these study sites are the presence of areas with shadow durations less than 70 hours 
+(required rover design duration to survive without Sun in a hibernation mode).  These areas are referred to 
+as “Safe Havens” (yellow pixels in Figure 5-1).  Traverses are planned such that the rover returns to a Safe 
+Haven for hibernation (minimum power mode to maintain rover system temperatures during shadow 
+period).  It should be noted that while the longest shadow periods are no more than 70 hours, during this 
+same period Earth will be set and the rover will be without communication, that is in a Loss of Signal (LOS) 
+period, for up to 18 days.  During the LOS period the rover will be in its hibernation state at a Safe Haven. 
+Figure 5-2 shows a notional traverse at the Nobile study site. The total number of ISRs and drilling activities 
+are summarized in Table 5 -1.  This is a notional traverse used to evaluate rover design and for mission 
+planning development.  Along this drawn traverse are circles that represent Science Stations.  Within each 
+Science Station the traverse is planned to meet both the minimum success criteria for traverse coverage (i.e. 
+10% area coverage) and three Subsurface Assays  Within this notional traverse,  full mission success is 
+achieved in the second lunar day.  At other sites (i.e., Haworth and Shoemaker) , traverses typically meet 
+full mission success in the third or fourth lunar day.   The current schedule requires the “flight” site and 
+traverse be identified two months prior to the mission Critical Design Review (CDR).  Landing site and 
+traverse contingencies are developed following CDR. 
+ 
+17 
+ 
+Figure 5-1  VIPER south pole landing/traverse sites under study 
+ 
+
+18 
+ 
+Figure 5-2 Notional traverse at the Nobile study region.  The landing site is at the center of the smaller light 
+green circles at the upper left of the image (each of these light green circles are 100 meters apart).  The 
+colored areas indicate ISR types (see key). 
+Table 5-1 Summary of ISR numbers/area and other characteristics of the traverse shown in Figure 5-2. 
+Parameter  Quantity 
+Duration 91 days 
+Length 13.25 km 
+# of PSRs 2 (4 entries) 
+# of Shallow ISR Science Stations 6 
+# of Deep ISR Science Stations 3 
+# of Dry ISR Science Stations 2 
+# of Subsurface Assays (to 1 meter) 35 
+Total area mapped (m2):  
+Dry 765 
+Deep 1241 
+Shallow 2295 
+PSR 765 
+ 
+
+19 
+6. VIPER SCIENCE OPERATIONS AND ORGANIZATIONAL ARCHITECTURE 
+OVERVIEW 
+6.1 SCIENCE OPERATIONS DURING SURFACE OPERATION 
+VIPER Science Operations will be centered around providing timely, mission enhancing input throughout 
+Surface Operations. The Mission Science Center (MSC) organizational architecture (including roles and 
+responsibilities), VIPER Science Team (VST) data synthesis, analysis and decisioning work processes, and 
+timelines (e.g., tactical and strategic) to support VST decisioning cadence is described below. 
+ 
+6.2 VIPER SCIENCE TEAM ORGANIZATIONAL ARCHITECTURE 
+The VIPER Science Team (VST) will be located across mission workspaces at NASA-ARC and remote to 
+NASA-ARC.  The VST organization is shown in Figure 6-1.  In addition to science management, data 
+management, traverse planning and science operations, there are four science themes that have been defined.  
+These science themes help to organize science and analysis activities, especially during mission operations 
+when science theme leads will be charged with providing tactical and strategic input into traverse planning 
+and activities.  Each VST member will have a defined role and specific science operations protocols for 
+participating in tactical and strategic/long-term planning decision-making throughout Surface Operations. 
+ 
+ 
+ 
+ 
+Figure 6-1 VIPER Science Team Organization, including the Science Themes of Composition, Geologic 
+Context, Modeling and Mapping & Environments.  
+ 
+6.3 VIPER SCIENCE TEAM  
+VIPER’s science investigations in Table 1 -2 will be accomplished by the VIPER Science Team (VST).  
+The current Science Team membership (excluding Project Science Support roles) is listed along with their 
+
+20 
+roles in Table 6-1.  Instrument team members who provide science support that is specific to that instrument 
+are shown in Table 6-2. 
+Table 6-1. VIPER Science Team  
+Investigator Institution Role 
+Anthony Colaprete ARC Project Scientist 
+Darlene Lim ARC Dep. Proj Sci., Science Operations, Planning & 
+Integration Lead 
+Kimberly Ennico-Smith ARC Dep. Proj. Sci., Data Products, DAWG Lead, Science 
+EPO Lead 
+Ross Beyer ARC/SETI Map Cartographer Lead, Site Analysis, Geologic Context 
+Jennifer Heldmann ARC Science Mission Planning, Mission Science Center  
+Displays and Tools Lead 
+Matt Siegler PSI Thermal Science Lead, Site Analysis, Science Mission 
+Planning 
+Eldar Noe Dobrea ARC/PSI Surface Spectroscopy/Composition, Data Products, Dep 
+DAWG Lead 
+Josh Coyan USGS Economic Resource Mapping, Geo Stats Science Lead 
+Julie Kleinhenz JSC ISRU Requirement  Infusion and Application , Mission 
+Planning 
+Caleb Fassett MSFC Site Analysis, Geologic context 
+ 
+Table 6-2. VIPER Instrument Science Teams 
+Investigator Institution Role 
+Rick Elphic ARC NSS PI 
+David Lawrence APL NSS Instrument Scientist; Develop models of neutron 
+count rates for various WEH abundances and layering 
+scenarios.   
+Patrick N. Peplowski APL NSS Instrument Scientist; Simulations and 
+measurements to develop an instrument response 
+model. 
+Jack Thomas Wilson APL NSS Instrument Scientist; Developing a data processing 
+pipeline to de-noise the time series data and reconstruct the 
+spatial distribution of WEH around the rover’s path. 
+Janine Captain KSC MSolo PI 
+Roberto Aguilar Ayala UCF/KSC MSolo Instrument Scientist; C oordination of instrument 
+operation based on science objectives and mission activities 
+Kenneth Wright INFICON 
+Inc. 
+MSolo Instrument Scientist; Responsible with MSolo 
+team for instrument ops and data interpretation based 
+on science objectives. 
+Anthony Colaprete ARC NIRVSS PI 
+Ted L. Roush ARC NIRVSS Instrument Scientist; compositional, 
+morphological, and thermophysical measurements 
+near, and in, permanently shadowed regions on the 
+lunar surface. 
+21 
+Amanda Marie Cook ARC NIRVSS Instrument Scientist; Integration & Test Lead 
+for NIRVSS Instrument, Operations Lead for NIRVSS 
+Instrument 
+Vandana Jha ARC NIRVSS Instrument Scientist; Integration & Test, 
+calibration, and operations support. 
+Kris Zacny Honeybee 
+Robotics 
+TRIDENT PI 
+   
+ 
+6.4 PHASE I SURFACE OPS: SCIENCE TEAM OPERATIONAL ACTIVITIES 
+This section provides operational details on the science activities that will be conducted in support of VIPER 
+Surface Operations. These tasks will be linked  to the horizontal and vertical mission and  VST-specific 
+timelines. Broadly, the VST will utilize the science-relevant instrument  and rover (e.g., imaging)  
+capabilities in support of real-time science operations.  Prior to launch , traverses will be planned, with all 
+science stations and activities identified and scheduled.  However, traverse paths and the third drill site in 
+each science station may be modified based on rover/payload performance and/or observations to date.  
+These changes can originate from the Mission Systems Planners, for example, due to performance updates 
+on rover speed, or from the MSC . The MSC will work with the Mission Planners to develop changes in 
+plans which are then proposed to Mission Science for approval. 
+ 
+While the rover is ‘on rails’ or within a science station and ‘prospecting’, the NSS, NIRVSS, MSolo, and 
+the rover navigation (Navcam, Hazcam imaging, and positioning systems) instrument payload systems will 
+be active and transmitting data products (though at different rates depending on the instrument and 
+operational mode). 
+ 
+6.4.1 VST ACTIVITIES AND REAL-TIME PROCESSING FOR PL ANNING 
+SUPPORT 
+NSS: The NSS data products will be used to convert neutron data into water concentration (water equivalent 
+hydrogen (WEH)), which depends on the vertical distribution of water in the top 1  m of  regolith, and 
+particularly in the top 0.5 m. NSS measures thermal and epithermal neutrons, and these measurements can 
+be transformed into simple depth profile models. Ultimately, the profiles are ground-truthed at a specific 
+location by near-surface assay drill activities. 
+ 
+NIRVSS: NIRVSS data products will be used to characterize the surface hydration (including surface water 
+and hydroxyl), surface temperatures, mineralogy and fine scale geomorphology. NIRVSS will compute in 
+real-time various spectral properties relevant to surface composition, including water ice band depths. 
+While ‘on rails’, imaging (monochromatic) and spectra/temp data will be  continuously collected by 
+NIRVSS, with no additional imaging being provided at  the traverse waypoints. While ‘prospecting’,  
+NIRVSS will co ntinue to collect imaging and spectra/temp data (as during ‘on rails’ driving), however 
+during ‘prospecting’ mode, at least  three additional images (at four different colors) will be collected at 
+each waypoint (assumes a 4 m drive segment). In prospecting mode, NIRVSS relies on a maximum drive 
+rate of no more than 10 cm/s, in order to meet spatial coverage requirements with sufficient spectral SNR. 
+22 
+ 
+Temperature variations will be largely determined by lunar topography; thus, temperature variations will 
+likely be significant down to scales of <5  m. The correlation between accurately localized surface 
+temperatures and topography will be a priority analysis in order to update thermal models.  The NIRVSS 
+radiometer will report a brightness temperature, derived from radiometer counts and laboratory calibration, 
+for all four channels once per second. 
+ 
+MSolo: The MSolo instrument will provide 1 -100 AMU measurements of the (released) volatile content  
+from the regolith surface. These measurements will assist with the characterization (compositional) and 
+quantification (concentration) of regolith water content based on MSolo signal intensities.  MSolo captures 
+data through continuous scans. Each data set is tagged with a time stamp that can be used to plot the intensity 
+against time. From these scans,  the ion current values for each mass trace can be plotted  as a function of 
+time as long as the method retains the same peaks within range. 
+ 
+While ‘on rails’ and while ‘prospecting’, MSolo will be continuously scanning at 1  point per AMU 
+resolution, and conducting a full 1-100 AMU scan every 4 sec . This scan rate is faster than the rover will 
+be traversing whether ‘on rails’ or ‘prospecting’. This scan rate is  variable (for example, the rate can be 
+reduced to 7 kbps if necessary, depending on downlink rates).  Upon landing, MSolo will be able to begin 
+generating mass spectra, there is a chance that initial results will detect material outgassing from the rover 
+and the surrounding area, as initial  concentrations of propellant and or any contaminants will more than 
+likely be at their highest during early stages of the mission. 
+ 
+MSolo data immediately available and plotted real time is the signal intensity. Additional data reduction is 
+required to convert the intensity into a quantitative water value. Should the scan sensitivity be increased to 
+a higher resolution, then the longer it will take to integrate data and generate associated plots. These higher 
+resolution scans oversample the mass spectrum with 10-25 points per AMU and allow for calibration of the 
+spectral position during the mission. 
+ 
+TRIDENT: The TRIDENT drill will provide significant science data that can be used as stand -alone 
+information, and to constrain or supplement information fro m other instruments. Both of these data 
+applications will be in service of meeting mission success thresholds and enabling the science team to meet 
+their highest-level objective of characterizing ISR types through ground-truthed data, and thus significantly 
+reducing uncertainty related to modeled ISR determinations. Specifically, the TRIDENT will enable the 
+science team to constrain their ISR characterizations through a) Derived data products that will help to 
+constrain the VST’s science assessment of domin ant ISR type: Subsurface Thermal Data, Unconfined 
+Compressive Strength (UCS), Water weight %, Thermal Conductivity; as well as through b) Direct data 
+sources from NIRVSS and MSolo measurements of the TRIDENT cuttings pile. 
+ 
+The TRIDENT drill will use a bit e sampling approach to preserve layer stratigraphy during drilling, 
+minimize necessary power while drilling, and allow the subsurface to return to its ambient temperature 
+between two consecutive bites. The drill is retracted after each bite is completed to fully clean off the auger 
+drill string. A passive brush mounted alongside the auger will move the cuttings from the drill string down 
+a chute where a cuttings cone will form. As such, the most recently drilled material will be deposited on 
+23 
+top of the cone surface, covering the previous bite worth of material. Each bite nominally proceeds 10 cm 
+further than the previous bite. 
+ 
+The TRIDENT drill can be commanded to take smaller “bites” in a suspected shallow ISR if  higher 
+resolution sampling is desired by the Science Team. TRIDENT will have the capability to vary key drilling 
+parameters prior to, and during, drilling operations, to allow for efficient drilling. These parameters include, 
+but are not limited to auger speed, percussive frequency (in cluding turning percussion off  completely), 
+weight on bit (WOB), rate of penetration (ROP), drill depth, and “bite” size (up to 10 cm). 
+ 
+Geostatistics: The MSC will be performing tactical geostatistical  modeling during Surface Operations 
+Phases I (Early) and II (Late) to provide guidance and science-based fine-tuning for path plan optimization 
+in service of reaching mission objectives.  
+ 
+The following geostatistical tasks will be conducted during roving, drilling surface operations phases, and 
+likely continue into the Safe Haven Operations stage, where the application of these analytical methods will 
+take on more strategic planning elements: 
+ 
+1) Trend analysis 
+Trend analysis will be used to examine if any geospatial trends exist within each of the NSS, NIRVSS and 
+MSolo instrument datasets. This task is estimated to take less than  1 minute per dataset if the data arrives 
+to Geostatistics Lead in the correct format.  
+ 
+2) Simple Linear Regression analysis 
+Simple linear regression analysis will be used to examine relationships between NSS, NIRVSS, and MSolo 
+datasets. Other relationships and correlations will be explored  through simple linear regression as data is 
+provided (e.g., slope, soil color, roughness/level of soil deflation, particle size from camera). 
+ 
+3) Ordinary Kriging and Empirical Bayesian Kriging (EBK) 
+Ordinary kriging and empirical Bayesian kriging (EBK), using NIRVSS spectral  wavelength data, will 
+predict ice burial depths, temperatures, and mineralogy in the area  surrounding the data collection paths. 
+Ordinary kriging methods examine each data point and its relationship to all other data points in the vicinity, 
+weights are calculated using variogram analysis, taking into account distance between points, redundancy 
+of measurements, and continuity of data. The weights are applied to existing measurements to estimate the 
+value at locations not measured. EBK methods use expected maximum  likelihood, a variogram -based 
+assessment, to predict the values between measurements and produce a metric that our local area predictions 
+are accurate. Fundamentally, these  methods will enable the VST to assess how well we were capturing 
+reality. 
+ 
+4) Sequential Gaussian Simulation 
+Sequential Gaussian Simulation (SGS) is a procedure that uses the kriging mean and variance to generate 
+a Gaussian field. It uses input data and simulated data when computing a value at an unsimulated grid cell. 
+SGS repeats this process for all grid cells  producing a realization.  Subsequently, multiple (usually 100) 
+equiprobable realizations are produced. This provides a probability distribution that not only represents the 
+natural variability in the deposit but captures the uncertainty. In this way a 10, 50, and 90 percent probability 
+24 
+that there is ice can be reported. In addition to  providing a probability distribution, the 100 equiprobable 
+simulated realizations may be aggregated to produce a  map of the expected value, similar to the kriged 
+solution. Simulation can provide a more  robust answer than kriging, which may provide over an d under 
+estimation due to smoothing. 
+ 
+7. VIPER DATA PRODUCTS  
+VIPER Data products will be archived in the Planetary Data System (PDS) for use by the scientific 
+community. Data from MSolo, NIRVSS, TRIDENT and NSS will be archived at the Geoscience node at 
+Washington  University in St. Louis.  Data from the rover cameras will be archived at the Imaging node at 
+JPL. Trajectory and rover localization data will be archived at the NAIF node at JPL. At present the VIPER 
+project plans to produce a single PDS data delivery of standard science data products within six months 
+after the end of mission. A second PDS delivery of updated data products plus higher science products (e.g. 
+maps) is planned six months following. A list of archive products as they are currently known is listed in 
+Table 7-1. 
+Table 7-1 VIPER standard data products 
+Instrument Raw Partially Processed Calibrated Derived 
+MSolo 
+Time-stamped 
+intensity (Amps) 
+per channel 
+ Time-stamped intensity 
+separated by AMU 
+Geospatially 
+mapped ppm per 
+species; isotope 
+ratios 
+NIRVSS: 
+AIM 
+Time-stamped 
+images with raw 
+counts 
+  False color and 
+color- slope images 
+NIRVSS: 
+SPEC 
+Time-stamped 
+spectra with volts 
+per channel 
+ 
+Time-stamped spectra, 
+wavelength calibrated 
+and in radiance units 
+(W/m^2 um sr) 
+Geospatially 
+mapped band depths 
+NIRVSS: 
+LCS 
+Time-stamped 
+volts per channel  Time-stamped 
+temperatures per channel 
+Geospatially 
+mapped surface 
+temperature 
+NSS 
+Time-stamped 
+counts per 
+channel 
+ 
+Time-stamped neutron 
+flux (n/cm^2/sec) per 
+channel 
+Geospatially 
+mapped WEH maps 
+25 
+TRIDENT Time-stamped 
+raw counts 
+Rotation speed (rpm) 
+Rate of penetration 
+(m/s) 
+Time-stamped torque 
+(Nm) 
+Time-stamped 
+temperature (K) 
+Specific Energy 
+(kWhr/m^3) 
+ 
+Material strength 
+(MPa) and 
+temperature per 
+depth 
+Surface bearing 
+capacity (kPa) 
+Thermal gradient 
+(K/m) 
+Rover 
+Imagery 
+Time-stamped 
+images with raw 
+pixel values and 
+imaging 
+parameters 
+ 
+High Dynamic Range 
+Bracket (consisting of 
+multiple images of the 
+same scene under 
+varying exposure) 
+Radiometrically 
+calibrated images giving 
+luminous exposure from 
+the scene (e.g. Lux) 
+Depth/Disparity Image 
+(giving the range of each 
+pixel in a stereo image 
+pair - meters) 
+3D point cloud (one 
+stereo pair) 
+3D panoramas (6+ 
+stereo pairs stitched 
+from a single 
+location 
+DEMs created from 
+multiple point 
+clouds projected 
+onto a planar 
+surface 
+Hazard Maps 
+created from DEMs 
+and slopes, surface 
+normal, etc. 
+ 
+Appendix A – Acronyms 
+ 
+AIM Ames Imaging Module 
+AMU Atomic Mass Unit 
+APL Applied Physics Laboratory 
+ARC Ames Research Center 
+BA Bracket Assembly 
+CDR Critical Design Review 
+CLPS Commercial Lunar Payload Services 
+CMOS Complementary Metal–Oxide–Semiconductor 
+26 
+COTS Commercial Off the Shelf 
+DAWG Data Analysis Working Group 
+DEM Digital Elevation Model 
+DEM Digital Elevation Model 
+Direct To Earth DTE 
+EBK Empirical Bayesian Kriging 
+FOV Field of View 
+IMU Inertial Measurement Unit 
+ISR Ice Stability Region 
+ISRU In-Situ Resource Utilization 
+JPL Jet Propulsion Lab 
+JSC Johnson Space Center 
+KSC Kennedy Space Center 
+LCROSS Lunar CRater Observation and Sensing Satellite 
+LCS Longwave Calibration Sensor 
+LED Light Emitting Diode 
+LOS Loss of Signal 
+LRO Lunar Reconnaissance Orbiter 
+LW Longwave 
+MSC Mission Science Center 
+MSFC Marshall Space Flight Center 
+MSOLO Mass Spectrometer Observing Lunar Observations 
+NAIF Navigation and Ancillary Information Facility 
+NASA National Aeronautics and Space Administration 
+NIR Near Infra-Red 
+NIRVSS Near InfraRed Volatiles Spectrometer System 
+NRC National Research Council 
+27 
+NSS Neutron Spectrometer System 
+PDS Planetary Data System 
+PIP Proposal Information Package  
+PSI Planetary Science Institute 
+PSR Permanently Shadowed Region 
+ROP Rate of penetration 
+RSD Relative Standard Deviation 
+SA Subsurface Assay 
+SCEM Science Context for Exploration of the Moon 
+SETI Search for Extraterrestrial Intelligence 
+SGS Sequential Gaussian Simulation 
+SW Shortwave 
+TBR To Be Resolved 
+TRIDENT The Regolith and Ice Drill Exploration of New Terrain 
+UCF University of Central Florida 
+UCS Unconfined Compression Strength 
+USGS US Geological Survey 
+VIPER Volatiles Investigating Polar Exploration Rover 
+VST VIPER Science Team 
+WEH Water Equivalent Hydrogen 
+WOB Weight on bit 
+ 

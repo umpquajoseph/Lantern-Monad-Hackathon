@@ -23,6 +23,7 @@ Source tags, one per field, in `metadata["source"]`:
 from __future__ import annotations
 
 import hashlib
+import math
 import json
 from dataclasses import dataclass, field, fields, asdict, replace
 
@@ -115,7 +116,20 @@ class Settings:
     # ---------------------------------------------------------- survey, ice
     reading_spacing_m: float = S(5.0, ASSUMED)
     footprint_radius_m: float = S(1.0, "code sim/ice.py:28 (assumed there)")
-    sensor_noise_wt: float = S(0.15, "code sim/ice.py:29 (assumed there)")
+    # Reading noise of the neutron spectrometer, from VIPER's NSS (the draft names
+    # no instrument): 0.5 wt% WEH at 3-sigma while roving at 10 cm/s, over the 5 m
+    # its WEH map resolves. Counting noise falls as 1/sqrt(integration time), and a
+    # Scout reads every reading_spacing_m while driving at top_speed_mps
+    # (reading_stop_s 0), so sensor_noise_wt (a property below) is
+    # nss_3sigma_wt / 3 * sqrt(T_ref / T): 0.204 wt% at 5 m and 0.15 m/s.
+    nss_3sigma_wt: float = S(0.5, "Colaprete et al., VIPER Project Implementation Plan (NTRS 20210015009) "
+                                  "sec. 3.2.1: 'detection sensitivity of 0.5% (wt) at 3-sigma while roving at "
+                                  "10 cm/s'; Andrews 2020 VIPER overview (NTRS 20205000864) NSS slide: 'down to "
+                                  "0.5% (wt) WEH to 3-sigma while roving'")
+    nss_ref_speed_mps: float = S(0.10, "Colaprete PIP sec. 3.2.1 (same sentence): 'while roving at 10 cm/s'")
+    nss_ref_length_m: float = S(5.0, "Colaprete PIP Table 2-2 L2-SPL-5: WEH 'with a horizontal spatial "
+                                     "resolution of no greater than 5 m'; " + ASSUMED + ": the 3-sigma figure "
+                                     "is for one 5 m stretch of track (50 s at 10 cm/s)")
     find_threshold_wt: float = S(1.0, "brief p.9 '~1 wt% ice threshold we assumed' (code sim/ice.py:20)")
     rich_peak_wt: float = S(5.6, "brief p.12 LCROSS ~5.6% at Cabeus (code sim/ice.py:23)")
     survey_line_spacing_m: float = S(20.0, ASSUMED)
@@ -346,6 +360,15 @@ class Settings:
                                           "(code sim/terrain.py:106)")
 
     # ------------------------------------------------------------- helpers
+    @property
+    def sensor_noise_wt(self) -> float:
+        """1-sigma noise (wt% WEH) of one ice reading: the NSS's 3-sigma over 3, scaled by
+        counting statistics from its reference integration (nss_ref_length_m at
+        nss_ref_speed_mps) to the Scout's (reading_spacing_m at top_speed_mps)."""
+        t_ref = self.nss_ref_length_m / self.nss_ref_speed_mps
+        t = self.reading_spacing_m / self.top_speed_mps
+        return self.nss_3sigma_wt / 3.0 * math.sqrt(t_ref / t)
+
     def key(self) -> str:
         """Short stable hash of every setting: (seed, key) names a run."""
         blob = json.dumps(asdict(self), sort_keys=True, default=list)
@@ -406,9 +429,9 @@ class WorldRanges:
                                         "with the size of the smallest detected craters (~20 m)'. Read as a "
                                         "1-sigma offset per axis, shared by every crater of one image "
                                         "(assumed reading)")
-    shadowcam_image_m: float = S(5200.0, ASSUMED + "; side of the square patch that shares one offset. Lead, "
-                                         "not yet copied to docs/sources: the ShadowCam factsheet "
-                                         "(shadowcam.asu.edu) gives a 5.2 x 144 km image footprint")
+    shadowcam_image_m: float = S(5200.0, "ShadowCam factsheet (docs/sources/ShadowCam-factsheet.pdf): 'Image "
+                                         "Footprint (100 km alt.) 5.2 km x 144 km'; the cross-track width as the "
+                                         "side of a square patch that shares one offset (square " + ASSUMED + ")")
     n_deposits: tuple = S((3, 12), ASSUMED)
     deposit_radius_m: tuple = S((3.0, 12.0), ASSUMED + "; code sim/ice.py:30 uses 6 m")
     deposit_peak_wt: tuple = S((1.0, 5.6), "upper end brief p.12 (LCROSS); lower end the find threshold")

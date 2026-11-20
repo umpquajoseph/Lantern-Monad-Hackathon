@@ -141,6 +141,12 @@ the routes see a mapped crater on 11-46% of steps. C23's traverses were
 built around two landmark craters each. Eq. (6)'s covariance is read as a
 standard deviation (assumed; as printed its units do not agree).
 
+**Decided 20 Nov (product owner):** no parity test. ShadowNav's map is
+not available, so traverses built to match C23's would be synthetic. The
+comparison is reported as a finding, not a gate: on the approved terrain
+Lantern ends 3.9-6.3 m off against C23's 1.7-3.8 m. Step 3 goes ahead as
+the next work, starting with one test sortie under the new matching.
+
 ### 3. If it does not match: audit Lantern
 
 Known problems, each seen in a run:

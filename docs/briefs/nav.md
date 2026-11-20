@@ -62,8 +62,9 @@ If honest settings leave Scouts lost, that is a result for the paper.
 
 ## Your files
 
-`sim/nav.py`, `sim/campaign_camera.py`, `sim/rover.py`,
-`sim/campaign.py`, `sim/live_runs.py`, and the navigation and
+`sim/nav.py`, `sim/campaign_camera.py`, `sim/rover.py` (except its hazard
+map and planner, which moved to `sensors` on 20 Nov), `sim/campaign.py`,
+`sim/live_runs.py`, and the navigation and
 `check_*` / `fix_*` / `pf_*` / `cam_*` fields of `sim/settings.py`.
 `sensors` owns `sim/lidar.py`, `sim/ice.py`, `sim/orbital_map.py` and
 their settings; do not edit those. If you need a change there, mail

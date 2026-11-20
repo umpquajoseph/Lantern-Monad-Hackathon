@@ -54,11 +54,14 @@ Download only from the publisher or an author's or agency's page.
 
 ## Your files
 
-`sim/lidar.py`, `sim/ice.py`, `sim/orbital_map.py`, `sim/footprint.py`
-(read-only unless the slope test itself is wrong; then mail `leader`),
-their fields in `sim/settings.py`, `docs/sources/`, `docs/SOURCES.md`.
-`nav` owns `sim/nav.py`, `sim/campaign_camera.py`, `sim/rover.py`,
-`sim/campaign.py`, `sim/live_runs.py`; do not edit those. A format change
+`sim/lidar.py`, `sim/ice.py`, `sim/orbital_map.py`, `sim/vision.py`,
+`sim/footprint.py` (read-only unless the slope test itself is wrong; then
+mail `leader`), their fields in `sim/settings.py`, `docs/sources/`,
+`docs/SOURCES.md`. Since 20 Nov (items 6-7, by mail): the hazard map and
+planner in `sim/rover.py` (`add_hazards`, `haz_steep`, the slope map the
+planner reads, `plan`). `nav` owns `sim/nav.py`, `sim/campaign_camera.py`,
+the rest of `sim/rover.py`, `sim/campaign.py`, `sim/live_runs.py`; do not
+edit those. A format change
 in `docs/handoffs.md` is told to `leader` first and made in the same
 commit.
 

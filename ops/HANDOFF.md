@@ -214,7 +214,13 @@ batch on random seeds, Figure 1 and the fleet and site tables. Due
 
 ## Workers
 
-None running. A new job gets a new worker with a fresh brief in
+From 20 Nov: `nav` (branch `lantern-nav`, worktree
+`C:\Monad-Hackathon-nav`, brief `docs/briefs/nav.md`: step 3's filter
+item and the paper's position fixes in camera runs) and `sensors` (branch
+`lantern-sensors`, worktree `C:\Monad-Hackathon-sensors`, brief
+`docs/briefs/sensors.md`: step 3's lidar items, the ice sensor's false
+alarms, map crater error in shadow). Both Opus, both through the
+mailboxes. Before 20 Nov: none running. A new job gets a new worker with a fresh brief in
 `docs/briefs/`, branched from `lantern-workflow`, run through the
 mailboxes (`ops/PROTOCOL.md`). Retired workers' briefs are in
 `_archive/briefs/`, their mailboxes in `ops/mailboxes/_old/`.

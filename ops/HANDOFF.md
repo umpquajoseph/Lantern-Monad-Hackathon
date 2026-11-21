@@ -214,6 +214,17 @@ batch on random seeds, Figure 1 and the fleet and site tables. Due
 - Mission Control never opens a test case by default.
 - Hosting: local only until the product owner says it is right; never
   republish lantern-teal.vercel.app.
+- Position fixes (20 Nov): default is preplanned, since ShadowNav is the
+  precedent: landmark craters (7.5-20 m) are chosen when a leg is
+  planned, along the route at the draft's Table 1 spacing, and the route
+  drives toward them (A24 sec. III-E2). Test case for the paper's
+  comparison: straight through, fixing on landmark-sized craters as they
+  come into view (A24 lines 500-509, the field tests' "directed toward
+  large craters if any were present"). Compare fix error and drive time.
+- Paused at a checkpoint on 20 Nov at the product owner's word. Resume
+  only when told. On resume: short test runs while building
+  (`--set sortie_h=4`), full 22 h sorties only for a merge check; one sim
+  on the machine at a time.
 
 ## Workers
 

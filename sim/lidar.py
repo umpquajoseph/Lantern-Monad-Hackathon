@@ -534,6 +534,7 @@ class HazardMemory:
         self.tiles = {}
         self.cycle = 0
         self.z0 = None
+        self.changes = []   # (cells (N, 2) int, verdicts (N,)) since take_changes(): the replay's record
 
     def _tile(self, key):
         t = self.tiles.get(key)
@@ -673,10 +674,13 @@ class HazardMemory:
         box and the RING_CELLS around it (what a verdict reads); stores the verdicts
         (0 none, 1 crater, 2 rock, 3 slope)."""
         m = RING_CELLS
-        base, _ = self.window(i0 - m, i1 + m, j0 - m, j1 + m)
+        base, old = self.window(i0 - m, i1 + m, j0 - m, j1 + m)
         g = _judge_moments(base, self.c, slope_mode)
         code = np.select([g["crater"], g["rock"], g["slope"]], [1, 2, 3], 0)[m:m + i1 - i0, m:m + j1 - j0]
         code = code.astype(np.int8)
+        ci, cj = np.nonzero(code != old[m:m + i1 - i0, m:m + j1 - j0])
+        if len(ci):
+            self.changes.append((np.column_stack([i0 + ci, j0 + cj]), code[ci, cj]))
         for key, src, dst in self._parts(i0, i1, j0, j1):
             t = self.tiles.get(key)
             if t is None:
@@ -684,6 +688,17 @@ class HazardMemory:
                     continue
                 t = self._tile(key)
             t["verdict"][src] = code[dst]
+
+    def take_changes(self):
+        """(cells (N, 2) int32 [i, j], verdicts (N,) uint8) whose verdict changed since the
+        last call, in order (a later entry for a cell wins). Replaying them from an empty
+        map rebuilds the map's verdicts (sim/campaign_camera.py steps.npz map_*)."""
+        if not self.changes:
+            return np.zeros((0, 2), np.int32), np.zeros(0, np.uint8)
+        ij = np.concatenate([a for a, _ in self.changes]).astype(np.int32)
+        v = np.concatenate([b for _, b in self.changes]).astype(np.uint8)
+        self.changes = []
+        return ij, v
 
     def hazards_in(self, i0, i1, j0, j1):
         """(centres (K, 2) world xy, kinds) of the cells judged hazards in box [i0, i1) x [j0, j1)."""

@@ -17,7 +17,7 @@ import { MapView } from "./map.js";
 import { MissionPlayer, ensureStyles } from "./mission_player.js";
 import { ScienceRig, VERDICT_COLOR } from "./science_rig.js";
 import {
-  CampaignRun, FleetRun, loadPipeline, groundEverywhere, loadIndex, assetsBase,
+  CampaignRun, FleetRun, loadPipeline, groundEverywhere, loadIndex, assetsBase, mapCell,
   SCOUT_COLOR, STATUS_COLOR, STATUS_WORD, ACTIVITY, OUTCOME_WORD, DOCKED, fmtNum, fmtDay, standinOf, esc, isUnreached, sensitivityOf, NO_ROUGH_NOTE,
 } from "./campaign.js";
 import { reasonsOf, supersededShort, supersededLong } from "./superseded.js";
@@ -879,7 +879,7 @@ function drawFpOverlay(cv, k, pose, camZ, small) {
   const col = scol(a);
   const pp = pipePose(a, r);
   const toWorld = (f, l) => [pp[0] + f * Math.cos(pp[2]) - l * Math.sin(pp[2]), pp[1] + f * Math.sin(pp[2]) + l * Math.cos(pp[2])];
-  // Lidar hazard cells, translucent on the ground.
+  // The lidar map's hazard cells near the Scout (campaign.js loadPipeline), translucent on the ground.
   const g = run.lidarGrid;
   if (S.opts.hazards && pp && g && r.lidar) {
     for (let i = 0; i < g.nx; i++) for (let j = 0; j < g.ny; j++) {
@@ -959,7 +959,9 @@ function drawFpOverlay(cv, k, pose, camZ, small) {
 
 // ------------------------------------------------------------------ lidar
 // The logged scan of the followed Scout at the shown step. Top-down: the
-// hazard grid as sim/lidar.py view() draws it, forward up, rings every 5 m.
+// hazard grid, forward up, rings every 5 m: grey where this scan's returns
+// fell, hazards from the Scout's merged lidar map (sim/lidar.py HazardMemory;
+// runs before 20 Nov 2026: this scan's own verdicts).
 // First person: the logged range image, shaded by range, hazard cells coloured.
 let lidarKey = null, fpLidarCache = null;
 function drawLidar(k) {
@@ -1002,7 +1004,8 @@ function drawLidar(k) {
   c.beginPath(); c.moveTo(ox, oy - 7); c.lineTo(ox - 5, oy + 5); c.lineTo(ox + 5, oy + 5); c.closePath(); c.fill();
   let y = 18;
   c.font = "15px Barlow, sans-serif";
-  for (const [label, ch] of [["no-go: slope over 15° or rock", 3], ["crater floor: avoided", 2], ["seen, no hazard", 1]]) {
+  const src = g.merged ? "lidar map" : "this scan";
+  for (const [label, ch] of [[`no-go (${src}): slope over 15° or rock`, 3], [`crater floor (${src}): avoided`, 2], ["seen by this scan, no hazard", 1]]) {
     const [R_, G_, B_] = HAZ_RGB[ch];
     c.fillStyle = `rgb(${R_},${G_},${B_})`; c.fillRect(6, y - 11, 11, 11);
     c.fillStyle = "#e6e6e6"; c.fillText(label, 22, y); y += 20;
@@ -1046,7 +1049,7 @@ function lidarFp(c, W, H, r, g) {
   c.textAlign = "left";
   c.fillText(`${LIDAR.elHi}°`, 4, T + 16); c.fillText(`${LIDAR.elLo}°`, 4, H - B);
   c.font = "13px Barlow, sans-serif"; c.fillStyle = "rgba(255,255,255,.65)";
-  c.fillText(`logged range image, ${R} x ${C} beams; hazard cells coloured`, L + 6, T + 18);
+  c.fillText(`logged range image, ${R} x ${C} beams; ${g.merged ? "the lidar map's" : "this scan's"} hazard cells coloured`, L + 6, T + 18);
 }
 
 // -------------------------------------------------------- satellite map
@@ -1104,6 +1107,40 @@ class MissionMap extends MapView {
           const tc = a.true_crater != null && rec.truth.craters_missing[a.true_crater];
           if (tc) { c.moveTo(px, py); c.lineTo(X(tc[0]), Y(tc[1])); }
           c.stroke();
+        }
+      }
+    }
+    // The followed Scout's lidar map as it stood at t (sim/lidar.py HazardMemory,
+    // what its planner reads): crater floors amber, slope and rock red.
+    const k = S.run.stepAt(t), rv = S.run.rover(S.rover, k);
+    const mc = (S.run.lidarGrid && S.run.lidarGrid.map_cell_m) || 0.5;
+    if (S.opts.hazards && rv.mapAt && mc * s >= 0.6) {
+      const m = rv.mapAt(), w = mc * s;
+      for (const [key, v] of m) {
+        const [i, j] = mapCell(key), x = i * mc, y = j * mc;
+        const px = X(x), py = Y(y + mc);
+        if (px + w < 0 || px > W || py + w < 0 || py > H) continue;
+        const [R_, G_, B_] = HAZ_RGB[v === 1 ? 2 : 3];
+        c.fillStyle = `rgba(${R_},${G_},${B_},0.7)`;
+        c.fillRect(px, py, w + 0.3, w + 0.3);
+      }
+    }
+    // Steps onto ground truly over 15 deg (sim/rover.py _note_true_steep), up to t.
+    // Magenta: neither the orbital slope nor the lidar map flagged it, with the
+    // lidar's reason; grey: a map knew of it.
+    c.font = "600 11px Barlow, sans-serif";
+    for (const a of S.run.agencies) {
+      const r = S.run.rover(a, k);
+      for (const e of r.steep || []) {
+        if (e.t > t || !inView(e.x, e.y, 2)) continue;
+        const flagged = ["orbital", "lidar_steep", "lidar_crater"].includes(e.why);
+        c.strokeStyle = flagged ? "rgba(200,200,200,.8)" : "#ff3df2";
+        c.lineWidth = flagged ? 1.2 : 2.2;
+        c.beginPath(); c.arc(X(e.x), Y(e.y), flagged ? 4 : 7, 0, 2 * Math.PI); c.stroke();
+        if (!flagged) {
+          const label = `${e.deg.toFixed(1)}° (LOLA ${e.lola.toFixed(1)}°) · ${e.why.replace(/_/g, " ")}`;
+          c.lineWidth = 3; c.strokeStyle = "rgba(0,0,0,.75)"; c.strokeText(label, X(e.x) + 10, Y(e.y) - 8);
+          c.fillStyle = "#ff3df2"; c.fillText(label, X(e.x) + 10, Y(e.y) - 8);
         }
       }
     }

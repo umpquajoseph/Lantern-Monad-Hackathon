@@ -96,6 +96,46 @@ filter settled about 4.8 m off with a 1.6 m bound (Mahalanobis median
 7.3). C23 Table 2 shows ShadowNav's own filter understating its error,
 so this may be faithful. Check before changing anything.
 
+## Open problem: rovers spinning in circles
+
+On 20 Nov evening the product owner watched three Scouts spin in circles
+in Mission Control (port 8070). Not investigated: which run it was is
+unknown, and it may be a multi-Scout run older than 20 Nov's changes.
+My report that same evening, that most test sorties came home, was
+wrong to reassure: those were one-Scout runs on one seed. Reproduce it
+first (ask which run), then find the cause. Turning in place appears
+in sortie records as `turns in place` and `pingpong` (sensors' item 6
+report cut them from 503 to 38 on one run, so they were not zero).
+
+## Open problem: the slope limit ignores direction
+
+The planner, the lidar and the drive step all judge one number, the
+overall tilt of the plane under the Scout's 1.55 m footprint
+(`sim/footprint.py tilt_deg`), against `slope_limit_deg` = 15. Overall
+tilt is the same whatever the heading, so switchbacks cannot help.
+
+A real rover's limits depend on heading: driving up the fall line puts
+all the slope into pitch (traction, power); driving across puts it into
+roll (side slip, tip-over). At heading angle a off the fall line on a
+slope s, pitch = atan(tan s cos a) and roll = atan(tan s sin a). A 20 deg
+slope taken at 45 deg is about 14.4 deg pitch and 14.4 deg roll.
+
+Sources so far:
+- The team brief (`docs/sources/PROSPECT-Team-Brief-RASC-AL-2027-Theme-3-1.pdf`,
+  p.7): "A 15° slope limit for routes (VIPER's own design limit)". Not
+  yet found in the VIPER papers in `docs/sources/`. Unverified.
+- Andrews 2020 VIPER overview (`VIPER-Andrews-2020-overview-NTRS-20205000864.txt`,
+  slide 18) captions test photos "20º upslope" and "15º upslope with 45º
+  cross slope". So VIPER was tested at different limits by direction.
+- The brief also notes "Our slope numbers swing a lot with soil values".
+
+The work: find VIPER's published pitch and roll limits (or the
+mobility papers behind them), then make the planner, `_feasible` and the
+drive step judge pitch and roll against the Scout's heading. A* then
+needs heading in its state, or an edge cost by direction. Report how
+stranding changes; do not pick limits for a better result. Suggested
+owner: sensors, who owns the hazard map and planner.
+
 ## Suggested next steps
 
 1. nav: preplanned landmark choice, then the straight-through test

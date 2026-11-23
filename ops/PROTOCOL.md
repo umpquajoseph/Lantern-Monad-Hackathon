@@ -11,6 +11,24 @@ Handles: `leader` (the lead session), `joseph`, and from 20 Nov the workers
 (`workflow`, `control`, `ground`) is retired. A new worker gets a new
 handle, a mailbox and a brief in `docs/briefs/`.
 
+## Worker folders
+
+Each worker's checkout lives inside this repo, never beside it on `C:\`:
+
+    C:\Monad-Hackathon-Project\.claude\worktrees\<handle>\
+
+`.claude/` is git-ignored. The leader makes it before the worker's first
+session: `git worktree add .claude/worktrees/<handle> <branch>`. Data and
+mailboxes stay in the main checkout at their absolute paths, so a worker
+needs no copy of either.
+
+The leader removes a worker's folder when its branch is merged or the
+worker is retired. Before removing, check it holds nothing unsaved: no
+uncommitted or untracked files, nothing unpushed, no link or junction
+anywhere inside (a delete follows a link into the real folder; `rmdir` the
+link first). Then `git worktree remove .claude/worktrees/<handle>`. The
+branch stays. Never `rm -rf` a worker folder.
+
 ## First thing every session
 
 Read every file in your inbox, then the brief it names. Mail in an inbox is

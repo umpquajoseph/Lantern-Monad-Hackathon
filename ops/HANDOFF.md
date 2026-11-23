@@ -27,7 +27,7 @@ stopped and not watching their inboxes. Resume only when told.
 - `lantern-workflow` (`C:\Monad-Hackathon-Project`) holds all merged
   work, last merge `15145ee`. `main` takes nothing without the product
   owner's word.
-- `lantern-nav` (`C:\Monad-Hackathon-nav`, head `3ba89ad`) holds the
+- `lantern-nav` (`.claude\worktrees\nav`, head `3ba89ad`) holds the
   scheduled position fixes. **Not merged**: it fails its test (below).
   It already contains lantern-workflow up to `d8888ce`.
 - `lantern-sensors` is fully merged.
@@ -190,9 +190,9 @@ before step 2.
 
 ## Workers
 
-`nav` (branch `lantern-nav`, worktree `C:\Monad-Hackathon-nav`, brief
+`nav` (branch `lantern-nav`, worktree `.claude\worktrees\nav`, brief
 `docs/briefs/nav.md`) and `sensors` (branch `lantern-sensors`, worktree
-`C:\Monad-Hackathon-sensors`, brief `docs/briefs/sensors.md`). Both Opus,
+`.claude\worktrees\sensors`, brief `docs/briefs/sensors.md`). Both Opus,
 both through the mailboxes (`ops/PROTOCOL.md`); the product owner opens
 their sessions. sensors owns the hazard map and planner in `sim/rover.py`
 and the Mission Control web files since 20 Nov; nav owns the rest of

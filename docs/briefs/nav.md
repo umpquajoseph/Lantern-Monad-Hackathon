@@ -1,6 +1,6 @@
 # Brief: `nav` (camera navigation and the paper's position fixes)
 
-Handle `nav`. Branch `lantern-nav`, worktree `C:\Monad-Hackathon-nav`,
+Handle `nav`. Branch `lantern-nav`, worktree `.claude\worktrees\nav`,
 from `lantern-workflow`. Leader: `leader`. Model: Opus.
 
 Read first, in this order: `ops/HANDOFF.md`, `docs/campaign-spec.md`, this

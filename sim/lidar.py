@@ -453,9 +453,17 @@ def _judge_moments(base, c, slope_mode="footprint"):
             gx[b:-b, :] = (zmean[2 * b:, :] - zmean[:-2 * b, :]) / (2 * b * c)
             gy[:, b:-b] = (zmean[:, 2 * b:] - zmean[:, :-2 * b]) / (2 * b * c)
             slope = np.degrees(np.arctan(np.hypot(gx, gy)))
-    is_crater = known & (depr > DEPRESSION_M)
+    # GESTALT judges the pitch hazard on every cell's plane (Goldberg et al.
+    # 2002 sec. 4 step 3); "crater" is Lantern's own class, a cost for gentle
+    # ground below its ring. So a crater cell over the limit is a slope cell,
+    # judged by heading like any other. Before 24 Nov 2026 a crater cell was
+    # never a slope cell: a Scout drove 200 steps on 16-23 deg crater walls
+    # the lidar had measured, and could not tell the walls it could leave by
+    # from those it could not (spin-check-4, steps 2716-3000).
+    over = known & (slope > SLOPE_LIMIT_DEG)
+    is_crater = known & (depr > DEPRESSION_M) & ~over
     is_rock = known & ~is_crater & (rock > ROCK_STEP_M) & DETECT_ROCKS
-    is_slope = known & ~is_crater & ~is_rock & (slope > SLOPE_LIMIT_DEG)
+    is_slope = over & ~is_rock
     # gx, gy: the judged plane's gradient along the grid's two axes (axis 0,
     # axis 1), NaN where unjudged. HazardMemory's axes are world x and y.
     return dict(known=known, crater=is_crater, rock=is_rock, slope=is_slope, tilt=slope, gx=gx, gy=gy)

@@ -14,7 +14,8 @@ alone, from any step of a finished run:
   or with --warm W holds the scans taken from the run's own true poses at
   the W steps before --step (the ground the Scout had seen on its way in;
   the lidar's range noise is drawn afresh, so cells near a verdict's edge
-  can differ);
+  can differ), and the Scout's track (sim/rover.py retrace) starts with
+  those poses;
 - its estimate is the truth plus the run's error at --step, held fixed: no
   camera, so no rim fixes and no drift;
 - it steers for the waypoints the run steered for from --step on (steps.npz
@@ -107,6 +108,7 @@ def main(argv=None):
     err = (ex - tx, ey - ty)
     r = Rover("S", (tx, ty, th), _FixedOffsetNav(err), slope, np.random.default_rng(0))
     r.sensing = True
+    r.retrace_m = s.retrace_track_m
     lid = Lidar(scene, np.random.default_rng(1))
     lid.slope_mode = "footprint" if s.slope_test == "footprint" else "2m"
     t_setup = time.perf_counter() - t0
@@ -126,6 +128,8 @@ def main(argv=None):
         pts, _ = lid.scan(pose)
         hz, kinds, clear, grads = lid.judge(pts, pose, widen_m=r.slope.widen_m)
         r.add_hazards(hz, kinds, clear=clear, grads=grads)
+    if a.warm:   # the Scout's own track on its way in (sim/rover.py retrace)
+        r.seed_track(steps[max(k0 - a.warm, 0):k0 + 1, 1:3])
     goals = _goals_from(steps, k0)
     path = [tuple(r.true[:2])]
     log = {"steps": 0, "turns_in_place": 0, "reversals": 0, "arrived": 0, "skipped": {}, "deg_turned_in_place": 0.0}
@@ -147,7 +151,7 @@ def main(argv=None):
             if dist < s.cam_arrive_m or (dist < CC.BLOCKED_ARRIVE_M and r.goal_blocked()):
                 why = "arrived"
                 break
-            rev0 = r.reversals
+            rev0, rt0 = r.reversals, r.retrace_steps
             d, dh = r.follow()
             log["steps"] += 1
             if d == 0.0:
@@ -156,7 +160,7 @@ def main(argv=None):
             log["reversals"] += r.reversals - rev0
             path.append(tuple(r.true[:2]))
             if a.trace:
-                print(f"{k0 + log['steps']:6d} true ({r.true[0]:.2f}, {r.true[1]:.2f}) h {math.degrees(r.true[2]) % 360:5.1f}"
+                print(f"{k0 + log['steps']:6d}{' RT' if r.retrace_steps > rt0 else '   '} true ({r.true[0]:.2f}, {r.true[1]:.2f}) h {math.degrees(r.true[2]) % 360:5.1f}"
                       f" d {d:.2f} dh {math.degrees(dh):6.1f}{' REV' if r.reversals > rev0 else ''}"
                       f" goal ({gx:.1f}, {gy:.1f}) steep {len(r.steep_steps)}")
             sense()
@@ -179,6 +183,7 @@ def main(argv=None):
             log["skipped"][why] = log["skipped"].get(why, 0) + 1
     t_drive = time.perf_counter() - t1
     log["pingpong_blocks"] = r.pingpong_blocks
+    log["retraces"], log["retrace_steps"] = r.retraces, r.retrace_steps
     log["steps_over_limits"] = len(r.steep_steps)
     log["goals_tried"] = log["arrived"] + sum(log["skipped"].values())
     log["seconds"] = {"setup": round(t_setup, 1), "drive": round(t_drive, 1),

@@ -154,6 +154,12 @@ class Settings:
                                     "'adjustable chassis ground clearance (7-42 cm), pitch (+/-20 deg), and roll "
                                     "(+/-15 deg)'. Read as the cross slope the chassis can be held level on; "
                                     "no source gives VIPER a roll limit for routes")
+    # Decided 23 Nov 2026 (product owner): when the Scout's own map closes
+    # every way out of where it stands, it retraces its own track, ignoring
+    # the map, until its map leaves a way out (sim/rover.py _start_retrace).
+    # Its steps over the limits are still counted.
+    retrace_track_m: float = S(50.0, ASSUMED + "; how much of its own recent track a Scout keeps to retrace. "
+                                              "Over three times the width of spin-check-4's trap crater (14.2 m)")
 
     # --------------------------------------------------------- cross-checks
     search_radius_k: float = S(1.0, ASSUMED + "; search radius = k * hypot(both 95th-pct bounds) "

@@ -621,7 +621,12 @@ Record changes (additive unless marked):
   ended closes the turnaround's 2 m cell; 17 Nov 2026), `reversals`
   (23 Nov 2026: steps driven backwards out of a dead end, sim/rover.py
   `_follow_sensing`; the filter moves its particles back, sim/nav.py
-  `predict` with a negative distance), `drive_overhead`
+  `predict` with a negative distance), `retraces` and `retrace_steps`
+  (23 Nov 2026: times the Scout's own map closed every way out of where it
+  stood and it drove back along its own track, ignoring the map, and the
+  steps it drove back; sim/rover.py `_start_retrace`, Settings
+  `retrace_track_m`; its steps over the limits are counted as any other),
+  `drive_overhead`
   (sim/campaign_camera.py `CameraSortie.overhead`: drive time over the
   time straight driving at top speed would take for the same progress
   toward its waypoints, measured by the Scout on itself; its turn-back

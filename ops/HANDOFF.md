@@ -178,6 +178,11 @@ before step 2.
   eqs. 3-6. No parity test against C23.
 - 15 deg is a planning limit, not a physical one. Scouts strand only where
   the true ground stops them; unflagged steep steps are counted.
+- When a Scout's own map closes every way out of where it stands, it
+  retraces its own recent track (`retrace_track_m`, 50 m, assumed),
+  ignoring the map, until its map leaves a way out. Its climbs over the
+  limits still count as steps over the limits; the record counts
+  `retraces`. Product owner, 23 Nov, over a tilt stop or stranding.
 - Position fixes: preplanned by default, straight through as the test
   case (above).
 - Confirm rule stays 6 m, assumed. Dock registration stays 6 m, assumed;

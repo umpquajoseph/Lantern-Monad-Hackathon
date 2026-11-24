@@ -456,7 +456,7 @@ def _judge_moments(base, c, slope_mode="footprint"):
     # GESTALT judges the pitch hazard on every cell's plane (Goldberg et al.
     # 2002 sec. 4 step 3); "crater" is Lantern's own class, a cost for gentle
     # ground below its ring. So a crater cell over the limit is a slope cell,
-    # judged by heading like any other. Before 24 Nov 2026 a crater cell was
+    # judged by heading like any other. Before 23 Nov 2026 a crater cell was
     # never a slope cell: a Scout drove 200 steps on 16-23 deg crater walls
     # the lidar had measured, and could not tell the walls it could leave by
     # from those it could not (spin-check-4, steps 2716-3000).

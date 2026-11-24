@@ -194,7 +194,11 @@ before step 2.
 `docs/briefs/nav.md`) and `sensors` (branch `lantern-sensors`, worktree
 `.claude\worktrees\sensors`, brief `docs/briefs/sensors.md`). Both Opus,
 both through the mailboxes (`ops/PROTOCOL.md`); the product owner opens
-their sessions. sensors owns the hazard map and planner in `sim/rover.py`
+their sessions. From 23 Nov `drive` (brief `docs/briefs/drive.md`,
+branch cut from `lantern-heading`, Opus, reports to `leader`) owns the
+Scouts getting stuck, across `sim/rover.py`, `sim/lidar.py` and
+`sim/campaign_camera.py` `drive_to`, while nav and sensors stay paused.
+sensors owns the hazard map and planner in `sim/rover.py`
 and the Mission Control web files since 20 Nov; nav owns the rest of
 rover.py. The briefs predate the pause and the fix decision; update
 nav's before resuming it. `ops/_old/` is untracked and not this

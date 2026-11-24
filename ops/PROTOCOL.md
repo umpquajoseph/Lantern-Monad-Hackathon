@@ -7,7 +7,8 @@ every worktree shares, and they are git-ignored:
     C:\Monad-Hackathon-Project\ops\mailboxes\<handle>\archive\
 
 Handles: `leader` (the lead session), `joseph`, and from 20 Nov the workers
-`nav` (`docs/briefs/nav.md`) and `sensors` (`docs/briefs/sensors.md`). Every worker of 17 Nov
+`nav` (`docs/briefs/nav.md`) and `sensors` (`docs/briefs/sensors.md`), and from 23 Nov
+`drive` (`docs/briefs/drive.md`). Every worker of 17 Nov
 (`workflow`, `control`, `ground`) is retired. A new worker gets a new
 handle, a mailbox and a brief in `docs/briefs/`.
 

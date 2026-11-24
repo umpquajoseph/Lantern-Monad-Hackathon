@@ -17,8 +17,19 @@ import os
 import numpy as np
 
 
-# Spec ("How it works", step 4): the planner avoids slopes over 15 deg.
-SLOPE_LIMIT_DEG = 15.0
+# The Scout's slope limits by heading (sim/settings.py pitch_limit_deg,
+# roll_limit_deg, VIPER's; sim/footprint.py severity). Every drive step,
+# every planning move and the descent corridor judge pitch along the heading
+# and roll across it. SLOPE_LIMIT_DEG is the heading-free limit, the lower
+# of the two: ground under it is open to every heading. Displays read it.
+from sim.footprint import severity as _severity, open_any_heading as _open_any, grad_from_slope as _grad_from_slope
+PITCH_LIMIT_DEG = 15.0   # sim/settings.py Settings.pitch_limit_deg (VIPER requirement)
+ROLL_LIMIT_DEG = 15.0    # sim/settings.py Settings.roll_limit_deg (VIPER suspension roll range)
+SLOPE_LIMIT_DEG = min(PITCH_LIMIT_DEG, ROLL_LIMIT_DEG)
+# The 8 planning moves (di, dj) = (rows y, columns x), in A*'s order
+# (sim/astar_fast.py DI, DJ), and each move's heading.
+MOVES = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
+MOVE_HEADINGS = tuple(math.atan2(di, dj) for di, dj in MOVES)
 # docs/handoffs.md, step 2: slope for planning is measured across 2 m (assumed there).
 SLOPE_BASELINE_M = 2.0
 # PROSPECT brief p.3: the Scout must average at least ~7.4 cm/s in the dark.
@@ -107,14 +118,22 @@ class SlopeMap:
     samples, so the rover drove into craters steeper than 15 deg.
     """
 
-    def __init__(self, height, x0, y0, cell, widen_m=None, mode="footprint"):
+    def __init__(self, height, x0, y0, cell, widen_m=None, mode="footprint",
+                 pitch_deg=PITCH_LIMIT_DEG, roll_deg=ROLL_LIMIT_DEG):
         """widen_m: the margin lidar hazards (craters, rocks; slopes too except
         in "footprint") are widened by in add_hazards, so the rover's body
-        stays off them: the rover's half width by default, 0 in "point"."""
+        stays off them: the rover's half width by default, 0 in "point".
+        pitch_deg, roll_deg: the limits by heading (Settings.pitch_limit_deg,
+        roll_limit_deg). "footprint" keeps the plane's gradient, so its
+        slopes are judged by heading; the test cases "widened" and "point"
+        keep only a magnitude and judge it against the lower limit."""
         from scipy.ndimage import maximum_filter
         if mode not in SLOPE_TESTS:
             raise ValueError(f"slope test {mode!r}: one of {SLOPE_TESTS}")
         self.mode = mode
+        self.pitch_deg, self.roll_deg = float(pitch_deg), float(roll_deg)
+        self.tp, self.tr = math.tan(math.radians(self.pitch_deg)), math.tan(math.radians(self.roll_deg))
+        self.limit_deg = min(self.pitch_deg, self.roll_deg)   # open to every heading under this
         if widen_m is None:
             widen_m = 0.0 if mode == "point" else ROVER_HALF_WIDTH_M
         self.widen_m = float(widen_m)
@@ -124,12 +143,12 @@ class SlopeMap:
         b = k * cell
         h = np.asarray(height, dtype=np.float32)
         if mode == "footprint":
-            try:
-                from sim.footprint import tilt_deg
-            except ImportError:  # run as a script from sim/
-                from footprint import tilt_deg
-            fine = tilt_deg(h, cell)
+            from sim.footprint import tilt_grad
+            fgx, fgy = tilt_grad(h, cell)
+            fine = np.degrees(np.arctan(np.hypot(fgx, fgy)))
+            self.fine_gx, self.fine_gy = fgx, fgy
         else:
+            self.fine_gx = self.fine_gy = None
             half = k // 2                                   # +-1 m: a 2 m central difference
             hp = np.pad(h, half, mode="edge")
             gx = (hp[half:-half, 2 * half:] - hp[half:-half, :-2 * half]) / np.float32(2 * half * cell)
@@ -148,12 +167,64 @@ class SlopeMap:
         c0 = k // 2
         self.deg = fine[c0::k, c0::k].astype(np.float64)
         self.fine_deg = fine
+        self.gx2, self.gy2 = self._grad_of(self.fine_gx, self.fine_gy, fine, (slice(c0, None, k), slice(c0, None, k)))
         self.cell = cell
         self.x0, self.y0, self.b = x0, y0, b
         self.x1 = x0 + (height.shape[1] - 1) * cell
         self.y1 = y0 + (height.shape[0] - 1) * cell
 
-    def use_orbital(self, slope, x0, y0, cell):
+    @staticmethod
+    def _grad_of(gx, gy, deg, idx):
+        """(gx, gy) float64 at grid index idx: the gradient where it is kept,
+        else (tan deg, NaN), a magnitude judged against the lower limit."""
+        if gx is not None:
+            return gx[idx].astype(np.float64), gy[idx].astype(np.float64)
+        d = np.asarray(deg[idx], np.float64)
+        return np.tan(np.radians(np.clip(d, 0.0, 89.9))), np.full(d.shape, np.nan)
+
+    # ------------------------------------------------ slope by heading
+    def _fine_index(self, x, y):
+        j = np.clip(np.rint((np.asarray(x) - self.x0) / self.cell).astype(int), 0, self.fine_deg.shape[1] - 1)
+        i = np.clip(np.rint((np.asarray(y) - self.y0) / self.cell).astype(int), 0, self.fine_deg.shape[0] - 1)
+        return i, j
+
+    def grad_true(self, x, y):
+        """The ground's own gradient (gx, gy) at world points (see _grad_of)."""
+        return self._grad_of(self.fine_gx, self.fine_gy, self.fine_deg, self._fine_index(x, y))
+
+    def grad_at(self, x, y):
+        """The gradient the planner reads at world points: the orbital map's
+        after use_orbital(), else the ground's own (grad_true)."""
+        if self.orbital:
+            S, ox, oy, c = self._orbital
+            j = np.clip(np.rint((np.asarray(x) - ox) / c).astype(int), 0, S.shape[1] - 1)
+            i = np.clip(np.rint((np.asarray(y) - oy) / c).astype(int), 0, S.shape[0] - 1)
+            gx, gy = self._orbital_g
+            return gx[i, j].astype(np.float64), gy[i, j].astype(np.float64)
+        return self.grad_true(x, y)
+
+    def sev(self, x, y, heading):
+        """sim/footprint.py severity of the planner's slope at world points for
+        a rover facing heading: at or under 1 is within both limits."""
+        gx, gy = self.grad_at(x, y)
+        return _severity(gx, gy, heading, self.tp, self.tr)
+
+    def true_sev(self, x, y, heading):
+        """severity of the ground's own slope (what really happens)."""
+        gx, gy = self.grad_true(x, y)
+        return _severity(gx, gy, heading, self.tp, self.tr)
+
+    def open_any(self, x, y):
+        """True where the planner's slope lets some heading through."""
+        gx, gy = self.grad_at(x, y)
+        return _open_any(gx, gy, self.tp, self.tr)
+
+    def _move_ok(self):
+        """(8, ny, nx) bool: 2 m cell [i, j] may be entered by planning move t
+        (MOVES[t]): the cell's slope within both limits along that move."""
+        return np.stack([_severity(self.gx2, self.gy2, h, self.tp, self.tr) <= 1.0 for h in MOVE_HEADINGS])
+
+    def use_orbital(self, slope, x0, y0, cell, height=None):
         """Plan and steer on an orbital slope map instead of the ground itself
         (Settings.plan_slope 'orbital'). slope: (H, W) deg, sample [i, j] at
         (x0 + j * cell, y0 + i * cell), the site file's LOLA 5 m product
@@ -166,14 +237,21 @@ class SlopeMap:
         sample). No max, mean or interpolation: the product is read as it
         is, so a steep wall narrower than LOLA's own 5 m slope baseline is
         averaged away exactly as far as LOLA averages it. A NaN sample
-        (no LOLA slope) is read as over the limit."""
+        (no LOLA slope) is read as over the limit.
+
+        height: the site's LOLA heights on the same samples (psr_sites
+        'height', from ldem). The slope's direction, for the limits by
+        heading, is its gradient's; the magnitude stays the product's. Without
+        it every orbital slope is judged against the lower limit."""
         S = np.asarray(slope, np.float32)
         self._orbital = (np.where(np.isfinite(S), S, np.float32(90.0)), float(x0), float(y0), float(cell))
+        self._orbital_g = _grad_from_slope(S, height, float(cell))
         self.true_deg = self.deg
         ny, nx = self.deg.shape
         xc = self.x0 + (np.arange(nx) + 0.5) * self.b
         yc = self.y0 + (np.arange(ny) + 0.5) * self.b
         self.deg = self._orbital_at(xc[None, :], yc[:, None]).astype(np.float64)
+        self.gx2, self.gy2 = self.grad_at(xc[None, :], yc[:, None])
         self._ok_base = self._labels = self._astar_buf = None   # caches built on deg
 
     @property
@@ -204,15 +282,13 @@ class SlopeMap:
 
     def _may_connect(self, s, g):
         """False only when no path joins planning cells s and g through the
-        open cells plan() uses with no hazards (under the slope limit, off
-        the margin), s and g themselves open. Hazards only close cells, so
-        False holds for any plan() call. 8-connected components, cached."""
+        open cells plan() uses with no hazards (open to some move, off the
+        margin), s and g themselves open. Hazards only close cells, and a
+        cell open to some move is a superset of what plan() enters, so False
+        holds for any plan() call. 8-connected components, cached."""
         if getattr(self, "_labels", None) is None:
             from scipy.ndimage import label
-            m = int(math.ceil(MAP_MARGIN_M / self.b))
-            ok = self.deg <= SLOPE_LIMIT_DEG
-            ok[:m, :] = ok[-m:, :] = False
-            ok[:, :m] = ok[:, -m:] = False
+            ok = self._base_ok().any(axis=0)
             self._labels, _ = label(ok, structure=np.ones((3, 3), int))
         if max(abs(s[0] - g[0]), abs(s[1] - g[1])) <= 1:
             return True
@@ -222,6 +298,18 @@ class SlopeMap:
             blk = L[max(c[0] - 1, 0):c[0] + 2, max(c[1] - 1, 0):c[1] + 2]
             return set(blk[blk > 0].ravel().tolist())
         return bool(around(s) & around(g))
+
+    def _base_ok(self):
+        """(8, ny, nx) bool, cached: planning move t may enter 2 m cell [i, j]
+        (_move_ok), off the MAP_MARGIN_M margin. The slope map never changes
+        after use_orbital(), so it is built once."""
+        if getattr(self, "_ok_base", None) is None:
+            m = int(math.ceil(MAP_MARGIN_M / self.b))
+            base = self._move_ok()
+            base[:, :m, :] = base[:, -m:, :] = False
+            base[:, :, :m] = base[:, :, -m:] = False
+            self._ok_base = base
+        return self._ok_base
 
     def plan(self, start_xy, goal_xy, max_expand=None, blocked=None, cost=None):
         """A* over the 2 m grid, 8-connected, through cells under the slope limit.
@@ -234,12 +322,7 @@ class SlopeMap:
         """
         import heapq
         ny, nx = self.deg.shape
-        if getattr(self, "_ok_base", None) is None:   # deg never changes: open cells and margin, once
-            m = int(math.ceil(MAP_MARGIN_M / self.b))
-            base = self.deg <= SLOPE_LIMIT_DEG
-            base[:m, :] = base[-m:, :] = False
-            base[:, :m] = base[:, -m:] = False
-            self._ok_base = base
+        base8 = self._base_ok()
         def cell(p):  # same floor convention as at(): cell j spans [x0 + j*b, x0 + (j+1)*b)
             return (int(np.clip(math.floor((p[1] - self.y0) / self.b), 0, ny - 1)),
                     int(np.clip(math.floor((p[0] - self.x0) / self.b), 0, nx - 1)))
@@ -257,7 +340,7 @@ class SlopeMap:
                 N = ny * nx
                 self._astar_buf = dict(g=np.zeros(N, np.float32), came=np.zeros(N, np.int64),
                                        stamp=np.zeros(N, np.int32), tag=0, hyp=_astar.hypot_table(ny, nx),
-                                       okb=np.ascontiguousarray(self._ok_base).reshape(-1))
+                                       okb=np.ascontiguousarray(base8).reshape(-1))   # move t, cell n: [t * N + n]
             B = self._astar_buf
             B["tag"] += 1
             st, fl = _astar.search(B["okb"], np.ascontiguousarray(blocked).reshape(-1),
@@ -271,19 +354,19 @@ class SlopeMap:
             path = [divmod(int(v), nx) for v in fl]
             pts = [(self.x0 + (j + 0.5) * self.b, self.y0 + (i + 0.5) * self.b) for i, j in path[1:-1]]
             return pts[::2] + [tuple(goal_xy)]
-        if blocked is not None:              # hazards the rover's camera found (2 m cells)
-            ok = self._ok_base & ~blocked
-        else:
-            ok = self._ok_base.copy()
-        ok[s] = ok[g] = True
+        # A cell is entered by a move only when its slope is within both
+        # limits along that move (_base_ok), and it is not a hazard cell.
+        ok = base8 & ~blocked[None] if blocked is not None else base8.copy()
+        ok[:, s[0], s[1]] = ok[:, g[0], g[1]] = True
         # Cells are flat indices i * nx + j: heap ties then break in the same
         # (i, j) order as tuples, and lookups are on bytes and dicts, so the
         # search, its float arithmetic and its result are as before, faster.
-        okb = memoryview(np.ascontiguousarray(ok).reshape(-1))   # bool lookups, no copy
+        N = ny * nx
+        okb = memoryview(np.ascontiguousarray(ok).reshape(-1))   # move t, cell n: [t * N + n]
         costf = cost.ravel() if cost is not None else None
         nbrs = [(-1, -1, 1.4142), (-1, 0, 1.0), (-1, 1, 1.4142), (0, -1, 1.0),
-                (0, 1, 1.0), (1, -1, 1.4142), (1, 0, 1.0), (1, 1, 1.4142)]
-        nbrs = [(di, dj, di * nx + dj, w) for di, dj, w in nbrs]
+                (0, 1, 1.0), (1, -1, 1.4142), (1, 0, 1.0), (1, 1, 1.4142)]   # MOVES' order
+        nbrs = [(di, dj, di * nx + dj, w, t * N) for t, (di, dj, w) in enumerate(nbrs)]
         gi, gj = g
         sf, gf = s[0] * nx + s[1], gi * nx + gj
         gcost = {sf: 0.0}
@@ -300,12 +383,12 @@ class SlopeMap:
                 break
             gc = gcost[c]
             ci, cj = divmod(c, nx)
-            for di, dj, dn, w in nbrs:
+            for di, dj, dn, w, tN in nbrs:
                 ni, nj = ci + di, cj + dj
                 if not (0 <= ni < ny and 0 <= nj < nx):
                     continue
                 n = c + dn
-                if not okb[n]:
+                if not okb[tN + n]:
                     continue
                 ng = gc + (w * (1.0 + costf[n]) if costf is not None else w)
                 if ng < gcost.get(n, 1e18):
@@ -345,6 +428,12 @@ class Rover:
         self.haz_steep = np.zeros(slope.fine_deg.shape, dtype=bool)   # no-go, widened by half width
         self.haz_crater = np.zeros(slope.fine_deg.shape, dtype=bool)  # avoided, widened by half width
         self.haz_2m = np.zeros(slope.deg.shape, dtype=bool)           # closed planning cells
+        # Lidar slope cells open to some heading (sim/lidar.py: the footprint
+        # plane's gradient, world frame): (gx, gy), NaN where none. A step
+        # crosses one only within both limits along its heading (_feasible).
+        # Slope cells closed to every heading go to haz_steep.
+        self.haz_gx = np.full(slope.fine_deg.shape, np.nan, dtype=np.float16)
+        self.haz_gy = np.full(slope.fine_deg.shape, np.nan, dtype=np.float16)
         # Cells closed by the back-and-forth guard (_note_move). Kept apart from
         # haz_2m because _refresh_cells reassigns haz_2m from the lidar grids
         # every step, which would reopen them; it ORs these back in.
@@ -355,6 +444,9 @@ class Rover:
         self.point_turns = 0      # sensing runs: turns in place
         self.n_hazard_cells = 0
         self.stuck_turns = 0      # turns in place because no way forward was clear
+        self.reversals = 0        # sensing runs: steps driven backwards out of a dead end
+        self._backed_from = None  # where the last reversal started (one reversal per dead end)
+        self.last_reverse = False # the last step was driven backwards (odometry reads it)
         # Steps a sensing rover planning on the orbital map drove onto ground truly
         # over the limit (_note_true_steep): (x, y, true deg, orbital deg, flag).
         self.steep_steps = []
@@ -383,7 +475,7 @@ class Rover:
         if self.sensing:
             return self._follow_sensing()
         est = self.estimate
-        if getattr(self, "_replan", False) and self.slope.at(self.true[0], self.true[1]) <= SLOPE_LIMIT_DEG:
+        if getattr(self, "_replan", False) and self.slope.open_any(self.true[0], self.true[1]):
             self.set_goal(self.goal)
         # Drop waypoints already passed: everything before the nearest one ahead,
         # then any within 3 m. The local plan may pass a waypoint off to the side.
@@ -429,7 +521,7 @@ class Rover:
         is (waypoint minus estimate, plus the true position): the stereo and
         lidar frame. Drops waypoints already passed."""
         est = self.estimate
-        if getattr(self, "_replan", False) and self.slope.at(self.true[0], self.true[1]) <= SLOPE_LIMIT_DEG:
+        if getattr(self, "_replan", False) and self.slope.open_any(self.true[0], self.true[1]):
             self.set_goal(self.goal)
         head = self.path[:12]
         near = int(np.argmin([math.hypot(p[0] - est[0], p[1] - est[1]) for p in head]))
@@ -445,6 +537,7 @@ class Rover:
         lidar found (steep = closed, crater = costly), then a turn of at most
         MAX_TURN_DEG toward the plan AIM_M ahead, or a turn in place."""
         est = self.estimate
+        self.last_reverse = False
         tgt = self._waypoint_target()
         x, y = self.true[0], self.true[1]
         local = self.slope.plan((x, y), tgt, max_expand=LOCAL_PLAN_MAX_CELLS, blocked=self.haz_2m, cost=self.cost_2m)
@@ -492,6 +585,32 @@ class Rover:
             self._note_true_steep(x, y, h + turn, d)
             self._note_move()
             return d, turn
+        backed_here = self._backed_from is not None and math.hypot(x - self._backed_from[0], y - self._backed_from[1]) < 0.5
+        if turn is not None and abs(want) <= math.pi / 2 + lim and abs(turn) >= math.pi - lim and not backed_here:
+            # A dead end ahead with the aim not behind, and the way clear
+            # only back the way it faces from: back out, as a rover does,
+            # instead of turning 180 deg and turning back. VIPER drives in any
+            # direction (Bluethmann, LSIC 2024, p.5 "Omni-directional
+            # driving"); GESTALT scores backward arcs with the forward ones
+            # (Goldberg et al. 2002, Table 1, num-backward-arcs 23). The body
+            # keeps facing the aim, within the turn limit; the step is judged
+            # on its direction of travel (pitch and roll are the same either
+            # way). Before 23 Nov 2026 the Scout turned 180 deg in place here,
+            # drove 2 m, turned again, until its waypoint timed out: about 11
+            # full turns per stuck spell (spin-check-1).
+            # Once per dead end: back at the spot it backed out of, it turns
+            # in place instead, so it faces new ground. Backing out every
+            # time kept its heading, so it drove forward into the same dead
+            # end and back again for 12 h (spin-check-2).
+            self._backed_from = (x, y)
+            travel = h + turn
+            body = (turn - math.pi + math.pi) % (2 * math.pi) - math.pi
+            self.true = np.array([x + d * math.cos(travel), y + d * math.sin(travel), h + body])
+            self._note_true_steep(x, y, travel, d)
+            self._note_move()
+            self.reversals += 1
+            self.last_reverse = True
+            return d, body
         if turn is None:
             turn = math.radians(POINT_TURN_DEG)
         self.true = np.array([x, y, h + turn])
@@ -500,9 +619,11 @@ class Rover:
         return 0.0, turn
 
     def _note_true_steep(self, x, y, h, d):
-        """Record a step onto ground truly over the limit, judged as _feasible
-        samples a step (every half cell), at its steepest sample. 15 deg is a
-        planning limit (no source gives the Scout a physical one), so the
+        """Record a step onto ground truly over the limits for the heading it
+        was driven on (pitch along it, roll across it), judged as _feasible
+        samples a step (every half cell), at its worst sample; the record
+        keeps that sample's tilt in degrees. The limits are
+        planning limits (no source gives the Scout a physical one), so the
         step is driven; this only counts it. flag: what the Scout knew there,
         "none" (neither the orbital slope nor the lidar flagged it), "orbital"
         (allowed only as the way off orbital-steep ground, _feasible),
@@ -514,17 +635,19 @@ class Rover:
         n = max(1, int(math.ceil(d / (0.5 * sm.cell))))
         f = np.arange(1, n + 1) / n
         px, py = x + f * d * math.cos(h), y + f * d * math.sin(h)
-        t = sm.true_at(px, py)
+        # Over the limits for the heading driven (sim/footprint.py severity).
+        t = sm.true_sev(px, py, h)
         k = int(np.argmax(t))
-        if t[k] <= SLOPE_LIMIT_DEG:
+        if t[k] <= 1.0:
             return
         c = sm.cell
         i = int(np.clip(round((py[k] - sm.y0) / c), 0, self.haz_fine.shape[0] - 1))
         j = int(np.clip(round((px[k] - sm.x0) / c), 0, self.haz_fine.shape[1] - 1))
         orb = float(sm.at(px[k], py[k]))
-        flag = ("orbital" if orb > SLOPE_LIMIT_DEG else "lidar_steep" if self.haz_steep[i, j]
+        lid = bool(self.haz_steep[i, j]) or float(self._lidar_sev(px[k:k + 1], py[k:k + 1], h)[0]) > 1.0
+        flag = ("orbital" if float(sm.sev(px[k], py[k], h)) > 1.0 else "lidar_steep" if lid
                 else "lidar_crater" if self.haz_crater[i, j] else "none")
-        self.steep_steps.append((float(px[k]), float(py[k]), float(t[k]), orb, flag))
+        self.steep_steps.append((float(px[k]), float(py[k]), float(sm.true_at(px[k], py[k])), orb, flag))
 
     def _note_move(self):
         """Back-and-forth guard for a sensing rover, follow()'s rule: when a
@@ -611,9 +734,10 @@ class Rover:
         c = self.slope.cell
         i = int(np.clip(round((gy - self.slope.y0) / c), 0, self.haz_fine.shape[0] - 1))
         j = int(np.clip(round((gx - self.slope.x0) / c), 0, self.haz_fine.shape[1] - 1))
-        return bool(self.haz_fine[i, j]) or float(self.slope.at(gx, gy)) > SLOPE_LIMIT_DEG
+        # The orbital slope blocks the goal only when no heading may enter it.
+        return bool(self.haz_fine[i, j]) or not bool(self.slope.open_any(gx, gy))
 
-    def add_hazards(self, world_xy, kinds=None, clear=None):
+    def add_hazards(self, world_xy, kinds=None, clear=None, grads=None):
         """Mark hazard points from the lidar (world xy, true frame), widened
         by the rover's half width, for _feasible and the local planner.
         kinds: "crater" | "slope" | "rock" per point (sim/lidar.py); on a
@@ -622,7 +746,12 @@ class Rover:
         clear (sensing rover): world boxes (xmin, xmax, ymin, ymax) the
         lidar's map has judged afresh (sim/lidar.py Lidar.judge). Their marks
         are cleared first and world_xy holds every hazard now judged around
-        them, so ground the map now judges safe reopens."""
+        them, so ground the map now judges safe reopens.
+        grads (sensing rover, "footprint"): each point's footprint-plane
+        gradient (gx, gy), world frame, from the lidar's map (NaN for none).
+        A slope point some heading may cross is kept as its gradient
+        (haz_gx, haz_gy) and judged per step by heading; one no heading may
+        cross is no-go (haz_steep), as every slope point was before."""
         pts = np.asarray(world_xy, float).reshape(-1, 2)
         if len(pts) == 0 and not clear:
             return
@@ -636,14 +765,27 @@ class Rover:
                 if i1 > i0 and j1 > j0:
                     self.haz_steep[i0:i1, j0:j1] = False
                     self.haz_crater[i0:i1, j0:j1] = False
+                    self.haz_gx[i0:i1, j0:j1] = np.nan
+                    self.haz_gy[i0:i1, j0:j1] = np.nan
                 corners += [(xa, ya), (xb, yb)]
             soft = kinds == "crater"
             # A slope hazard is already judged on the footprint (lidar.hazards,
             # slope_mode "footprint"), so it closes only its own point; rocks
             # and craters keep the body margin.
             flat = (kinds == "slope") & (self.slope.mode == "footprint")
+            bydir = np.zeros(len(pts), dtype=bool)
+            if grads is not None and self.slope.mode == "footprint" and len(pts):
+                G = np.asarray(grads, float).reshape(-1, 2)
+                fin = np.isfinite(G[:, 0]) & np.isfinite(G[:, 1])
+                bydir = flat & fin & _open_any(np.where(fin, G[:, 0], 0.0), np.where(fin, G[:, 1], 0.0),
+                                               self.slope.tp, self.slope.tr)
+                if bydir.any():
+                    gi = np.clip(np.rint((pts[bydir, 1] - self.slope.y0) / c).astype(int), 0, H - 1)
+                    gj = np.clip(np.rint((pts[bydir, 0] - self.slope.x0) / c).astype(int), 0, W - 1)
+                    self.haz_gx[gi, gj] = G[bydir, 0]
+                    self.haz_gy[gi, gj] = G[bydir, 1]
             self._mark(pts[~soft & ~flat], self.haz_steep)
-            self._mark(pts[flat], self.haz_steep, r=0)
+            self._mark(pts[flat & ~bydir], self.haz_steep, r=0)
             self._mark(pts[soft], self.haz_crater)
             # _mark sets cells only within r of a point: refresh haz_fine and
             # its count in that window (and the cleared boxes), not over the
@@ -734,8 +876,9 @@ class Rover:
         return 0.0, 0.0
 
     def _feasible(self, x, y, h, d, steep_only=False):
-        """True if a straight move of d metres on heading h stays under the
-        slope limit, checked at every 0.25 m cell along it.
+        """True if a straight move of d metres on heading h stays within the
+        slope limits along and across h (pitch and roll), checked at every
+        0.25 m cell along it, lidar slope cells included.
 
         A rover already standing on steep ground (a scenario may start one
         inside a crater) may still move, but only onto ground no steeper than
@@ -752,20 +895,36 @@ class Rover:
         px, py = x + f * d * math.cos(h), y + f * d * math.sin(h)
         if not (self.slope.inside(px[-1], py[-1]) and self.slope.inside(px[0], py[0])):
             return False
-        s = self.slope.at(px, py)
-        here = float(self.slope.at(x, y))
+        # Slopes judged by heading (sim/footprint.py severity: 1 = at a limit).
+        s = self.slope.sev(px, py, h)
+        here = float(self.slope.sev(x, y, h))
         c = self.slope.cell
         hz = self.haz_steep if steep_only else self.haz_fine
         hi = np.clip(np.rint((py - self.slope.y0) / c).astype(int), 0, hz.shape[0] - 1)
         hj = np.clip(np.rint((px - self.slope.x0) / c).astype(int), 0, hz.shape[1] - 1)
-        haz = hz[hi, hj]
-        on_haz = bool(hz[int(np.clip(round((y - self.slope.y0) / c), 0, self.haz_fine.shape[0] - 1)),
-                                    int(np.clip(round((x - self.slope.x0) / c), 0, self.haz_fine.shape[1] - 1))])
+        haz = hz[hi, hj] | (self._lidar_sev(px, py, h) > 1.0)
+        i0 = int(np.clip(round((y - self.slope.y0) / c), 0, self.haz_fine.shape[0] - 1))
+        j0 = int(np.clip(round((x - self.slope.x0) / c), 0, self.haz_fine.shape[1] - 1))
+        on_haz = bool(hz[i0, j0]) or float(self._lidar_sev(np.array([x]), np.array([y]), h)[0]) > 1.0
         if haz.any() and not (on_haz and not haz[-1]):   # standing on a hazard: may only step off it
             return False
-        if here <= SLOPE_LIMIT_DEG:
-            return bool(np.all(s <= SLOPE_LIMIT_DEG))
+        if here <= 1.0:
+            return bool(np.all(s <= 1.0))
         return bool(np.all(s <= here) and s[-1] < here)
+
+    def _lidar_sev(self, px, py, h):
+        """severity, for heading h, of the lidar slope cells (haz_gx, haz_gy)
+        at world points; 0 where the lidar holds no such cell. Broadcasts h
+        against the points (one heading per row in _feasible_many)."""
+        sm, c = self.slope, self.slope.cell
+        hi = np.clip(np.rint((np.asarray(py) - sm.y0) / c).astype(int), 0, self.haz_gx.shape[0] - 1)
+        hj = np.clip(np.rint((np.asarray(px) - sm.x0) / c).astype(int), 0, self.haz_gx.shape[1] - 1)
+        gx = self.haz_gx[hi, hj].astype(np.float64)
+        gy = self.haz_gy[hi, hj].astype(np.float64)
+        have = np.isfinite(gx)
+        if not have.any():
+            return np.zeros(np.broadcast(gx, np.asarray(h)).shape)
+        return np.where(have, _severity(np.where(have, gx, 0.0), np.where(have, gy, 0.0), h, sm.tp, sm.tr), 0.0)
 
     def _feasible_many(self, x, y, hs, d):
         """[_feasible(x, y, h, d, steep_only=True) for h in hs] and
@@ -782,19 +941,19 @@ class Rover:
         fd = (np.arange(1, n + 1) / n) * d
         px, py = x + fd[None, :] * ch, y + fd[None, :] * sh
         ins = np.array([sm.inside(a, b) and sm.inside(e, f) for a, b, e, f in zip(px[:, -1], py[:, -1], px[:, 0], py[:, 0])])
-        s = sm.at(px, py)
-        here = float(sm.at(x, y))
+        hcol = np.array(hs, dtype=np.float64)[:, None]          # one heading per row
+        s = sm.sev(px, py, hcol)
+        here = sm.sev(np.full((len(hs), 1), x), np.full((len(hs), 1), y), hcol)    # (K, 1)
         hz = self.haz_steep
         hi = np.clip(np.rint((py - sm.y0) / c).astype(int), 0, hz.shape[0] - 1)
         hj = np.clip(np.rint((px - sm.x0) / c).astype(int), 0, hz.shape[1] - 1)
-        haz = hz[hi, hj]
-        on_haz = bool(hz[int(np.clip(round((y - sm.y0) / c), 0, self.haz_fine.shape[0] - 1)),
-                         int(np.clip(round((x - sm.x0) / c), 0, self.haz_fine.shape[1] - 1))])
+        haz = hz[hi, hj] | (self._lidar_sev(px, py, hcol) > 1.0)
+        i0 = int(np.clip(round((y - sm.y0) / c), 0, self.haz_fine.shape[0] - 1))
+        j0 = int(np.clip(round((x - sm.x0) / c), 0, self.haz_fine.shape[1] - 1))
+        on_haz = bool(hz[i0, j0]) | (self._lidar_sev(np.full((len(hs), 1), x), np.full((len(hs), 1), y), hcol)[:, 0] > 1.0)
         bad_haz = haz.any(axis=1) & ~(on_haz & ~haz[:, -1])
-        if here <= SLOPE_LIMIT_DEG:
-            ok_s = np.all(s <= SLOPE_LIMIT_DEG, axis=1)
-        else:
-            ok_s = np.all(s <= here, axis=1) & (s[:, -1] < here)
+        steep_here = here[:, 0] > 1.0
+        ok_s = np.where(steep_here, np.all(s <= here, axis=1) & (s[:, -1] < here[:, 0]), np.all(s <= 1.0, axis=1))
         feas = ins & ~bad_haz & ok_s
         # _crater_share: every cell along the step
         m = max(1, int(math.ceil(d / c)))

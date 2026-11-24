@@ -1,0 +1,259 @@
+VIPER Rover Overview and
+      Mobility and Hardware
+
+                                     Bill Bluethmann, PhD
+
+                                                                            Nov 14, 2024
+
+                                                                                                                  1
+  VIPER Rover Overview
+
+Mass
+      · Launch: 490 kg (with lander I/F), roving: 447 kg
+
+Dimensions: 1.7m x 1.7m x 2.5m
+
+Power
+      · Solar arrays: 320W per panel (450W on corner)
+      · Battery capacity (start of life @ 0C): 5,420 W-hr
+
+Communications
+      · X-band Direct-To-Earth (no relay)
+      · Transmit: 250 sps / 8 Msps (min/max)
+      · Receive: 250 sps / 75 ksps (min/max)
+      · Gimballed high gain + fixed low-gain antennas
+
+Unique Environments
+      · Temperature extremes
+            · 50 hours survival in low power mode
+            · 9 hours ops in permanently shadowed region
+      · Demanding lighting
+      · Uncertain lunar pole trafficability
+VIPER Rover Overview                                         Mast
+
+                       Subsurface excavation                  Nav cameras/lights (gimballed)
+                                                              High gain antenna (gimballed)
+                          1m TRIDENT Drill                    Low gain antenna
+
+                  Power                                            Thermal Management
+
+                     Solar Array (3-sides)                           Radiators (on top)
+                     2x Batteries (internal)                         Looped heat pipes (as transport)
+
+                      Localization                                      Rover Control
+
+                         Star tracker                                     Flight Avionics (in warm box)
+                         IMU (in warm box)
+                                                     Prospecting
+Situational Awareness   Prospecting & Evaluation
+                                                     Neutron Spectrometer
+4x Hazard Cameras       Mass Spectrometer Observing  System (NSS) Instrument
+6x Hazard Lights        Lunar Operations (MSolo)
+Aft stereo camera pair  Instrument                   Prospecting & Evaluation
+
+                                                     Near Infrared Volatiles
+                                                     Spectrometer System (NIRVSS)
+                                                     Instrument
+
+                                                                                                                               3
+Mobility Overview
+
+· Four-wheel architecture
+      · Slopes up to 15 deg (reqt)
+      · Obstacles to 15 cm (reqt)
+      · Mobility system qualified to 2x20 km surface life
+      · Launch restraints on suspension and steering
+
+· Wheel Modules
+      · Wheels: diameter 50 cm, with 2.5 cm grousers, spoked
+      · Drive: top speed 20cm/s, nominal speed 10 cm/s
+      · Steering: explicit with +/-50 deg range
+      · Suspension: adjustable with individual wheel downforce control
+             · IMU feedback used for chassis pitch/roll control
+             · Adjustable ground clearance from 7-43cm
+
+· Motor Controllers
+      · Each avionics box controls 6 BLDC actuators
+             · 20A output current peak for 10 sec per axis
+             · Two wheel modules controlled by each box
+             · Current, voltage, temperature, load cell measurement
+             · Cascaded control loops: Position -> Velocity -> Current
+      · Contained within warm box
+Mobility Cont.
+
+· Driving Modes
+      · Omni-directional driving with sun on corner
+            · Maximizing power generation
+      · Hybrid mobility
+            · Entrapment escapement
+            · Inch-worming/crawling
+      · Precision movement
+      · Slip/embedding detection
+
+· Moon Gravity Representation Units (MGRU)
+      · VIPER Flight Unit unable to support its own weight
+         on earth
+      · Basic configuration is lunar weight
+            · Mobility only: power, control, computing off
+               board
+      · Can "violate" lunar weight to add capability
+            · Examples: cameras, mast, lighting
+      · V&V, driver training, ops scenario development
+Egress Engineering/Training (2021-2024)
+
+2021 @ NASA JSC  2023 @ NASA ARC
+
+2022 @ NASA GRC  2024 @ NASA ARC
+
+                                                                                                                   6
+    Gimbals Overview                                                  Gimbal Controlled by Flight Mtr Ctrl in TVAC
+
+· Pan-tilt units for high gain antenna and              Pointing at moon HGA while roving
+    navigation cameras pointing
+
+      · High Gain Antenna Gimbals
+            · Height: 2.3 meters
+            · Pan: 400 deg range, ~14 deg/s
+            · Tilt: +25/-29 deg, ~8 deg/s
+
+      · Navigation camera Gimbals
+            · Height: 2 meters
+            · Pan: 400 deg, ~14 deg/s
+            · Tilt: +0/-77 deg, ~8 deg/s
+
+      · Speeds designed to match rover rotating in
+         place/falling off rock at minimum voltage
+
+      · Hardstops for each joint
+      · Frangibolt launch restraints on each axis
+· Motor control common with mobility motor controllers
+VIPER Navigation Hardware
+
+Navigation Lights     2x Nav Cameras (also used for Science)
+                                   Star Tracker
+                                        2x Aft Cameras
+
+Camera Control             4x Hazard Cameras
+Unit                        6x Hazard Lights
+                             IMU
+    Light Controller       Wheel and joint encoders
+Camera Qualification and Calibration
+
+VIPER Visible Imaging System (VIS)                                    NavCam lens      Camera MTF
+                                                                             close-up  testing
+· 8x cameras: 2x NavCams, 4x HazCams, and 2x AftCams.
+                                                                    Rover-mounted
+· In-house lens/body integration and flight qualification of         checker board
+    NavCams.
+                                                                 calibration targets
+· NavCams satisfied Wide FOV, Low Distortion, and additional
+    Metric Stereo requirements.
+
+Testing & Calibration
+
+· Acceptance testing of MTF, depth of field, and field of view;
+    geometric calibration for all cameras.
+
+· Pre-launch calibration of optical geometry (all cameras).
+
+· In-mission calibration of NavCams using rover-mounted
+    "checker board" targets.
+Lunar Rover Lights
+
+VIPER Lighting System                                          NavLight EDU      NavLights flashing
+                                                                        Testing  during burn-in tests
+· Lighting for human driving and robot navigation in PSRs
+                                                                                 HazLights covering
+· 8x LED-array lights and avionics qualified for Lunar                           terrain near wheels
+    polar conditions
+
+· Blue wavelength tuned for sensitivity in Permanently
+    Shadowed Regions.
+
+NavLights
+
+· "Headlights" tuned for long-range stereo imaging and
+   decision making
+
+HazLights
+
+· "Parking lights" provide near-field illumination needed for
+   maneuvering and inspection of wheels
+Star Tracker
+
+First use of a star tracker on a planetary rover
+
+· Compares positions of stars in view to an on-board star catalog
+    to estimate attitude
+
+ST benefits for VIPER
+
+· Provides absolute orientation far better than our orientation
+   requirements
+      · Arcsecond measurement accuracy
+
+· "Drop in" orientation solution with dedicated compute resources
+   and software outputting final navigation products
+
+· Perfect for lunar environment which has no atmosphere            VIPER Star Tracker made by Rocket Lab
+                                                                    (formerly Sinclair Interplanetary) ST-
+· No views of the sun in Lunar polar PSRs (sun is low on the       16RT2, 28V dual RS-485 with short rigid
+   horizon)
+                                                                                        baffle
+Thermal Environmental Driving System Design
+
+· To satisfy VIPER full mission success science           Possible VIPER Traverse at Nobile Site in 2023
+   requirements, the rover operate                        Rover location notated by arrow, pauses are
+      · multiple lunar days of operation on the lunar
+         surface and ...
+            · Requiring extended shadow survival
+               multiple times
+      · in Permanently Shadowed Regions (PSR)
+      · in full sunlight
+
+· The extended shadow survival drives much of the
+   VIPER design
+      · Reject heat when operating in sunlight
+      · Disconnect radiators in cold environments
+      · Specialized hibernation circuitry in IAU/PDU
+            · Wakeup timers
+            · Heater circuits for systems that need heat
+               but can be kept colder than available
+               thermostats
+
+                                                                                                          12
+Thermal system overview
+
+· VIPER's Outer Mold Line of VIPER defined by solar          Radiators (x4)    Looped heat
+   arrays, radiators, mast and mobility                                        pipes (x4)
+
+· Core of vehicle is the thermal management system                           Thermal control
+      · Avionics boxes attached to heat spreaders                                  values (4x)
+         forming warm box
+      · Heat rejection through radiators                                        Balancing CCHPs  Compensation chamber
+      · Heat transport                                                          (x7)             + evaporation (x4)
+            · warm box->radiator using looped heat pipes
+            · instruments->warm box using thermosiphons      Thermosiphons (x3)                            Heat spreaders
+      · Thermal control value shuts down radiators at                                                      with CCHPs (x4)
+         10C
+      · Thermal isolation through multiple levels of multi-                                                                    13
+         layer insulation (MLI) and ULTEM blocks
+      · Heaters, thermostats, sensors
+
+· Post system TVAC correlation is underway
+      · VIPER ran 57 hours on battery during TVAC
+      · Different boundary conditions
+Closing Remarks
+
+· VIPER approach
+      · Purchase proven components when available
+            · Example: same core battery components as Orion
+      · Do engineering development when possible
+            · Example: IAU/PDU derived from LADEE mission's IAU/PDU
+      · Develop technology development only necessary
+
+· Many on the team spent much of their career working tech development
+      · Investment in people along with the technologies the people develop
+
+                                                                                                                                                                                                                      14
+

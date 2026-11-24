@@ -584,7 +584,11 @@ Record changes (additive unless marked):
     end of a pass, in the Scout's estimated frame: `est`, `d_est`,
     `bound95`, `anchor` as above, plus `points`, `fit_rms_m`.
   - `waypoint_skipped`: `reason` `blocked` (no progress for
-    `Settings.cam_stuck_steps` steps) or `off_ground`; `goal` (map frame).
+    `Settings.cam_stuck_steps` steps), `off_ground`, or `hazard` (from
+    23 Nov 2026: the Scout drove back to where it was two moves ago and
+    its own map puts the goal on ground it may not enter, so it is as
+    close as it can get; sim/campaign_camera.py `drive_to`); `goal` (map
+    frame).
   - `search_abandoned` (workflow, 17 Nov 2026; either engine): a search
     that did not finish. `find_id`, `reason`: `unreached` (the drive to
     the find ended with the searcher's estimate outside the search circle,
@@ -614,7 +618,10 @@ Record changes (additive unless marked):
 - Sorties add `steps` (camera steps), `point_turns`, `waypoints_skipped`,
   `pingpong_blocks` (planning cells closed by sim/rover.py's back-and-forth
   guard: a move that ends within 0.5 m of where the move before last
-  ended closes the turnaround's 2 m cell; 17 Nov 2026), `drive_overhead`
+  ended closes the turnaround's 2 m cell; 17 Nov 2026), `reversals`
+  (23 Nov 2026: steps driven backwards out of a dead end, sim/rover.py
+  `_follow_sensing`; the filter moves its particles back, sim/nav.py
+  `predict` with a negative distance), `drive_overhead`
   (sim/campaign_camera.py `CameraSortie.overhead`: drive time over the
   time straight driving at top speed would take for the same progress
   toward its waypoints, measured by the Scout on itself; its turn-back
@@ -623,9 +630,13 @@ Record changes (additive unless marked):
   `orbital`, the Scout plans and steers on the site's LOLA 5 m slope plus
   its lidar map, sim/rover.py `SlopeMap.use_orbital`; `truth`, the test
   case on the ground's own slope) and the steps it drove onto ground
-  whose true footprint tilt is over 15 deg (sim/rover.py
-  `_note_true_steep`; 15 deg is a planning limit, so these are driven, not
-  refused). `steep_unflagged`: steps neither the orbital slope nor the
+  truly over its slope limits for the heading driven (sim/rover.py
+  `_note_true_steep`; from 23 Nov 2026 pitch along the heading against
+  `Settings.pitch_limit_deg` and roll across it against `roll_limit_deg`,
+  sim/footprint.py `severity`; before, the footprint tilt over 15 deg
+  whatever the heading. The limits are planning limits, so these steps
+  are driven, not refused; the record keeps the step's tilt in
+  degrees). `steep_unflagged`: steps neither the orbital slope nor the
   lidar map flagged. `steep_unflagged_by`: why the lidar's map missed
   each one (sim/lidar.py `HazardMemory.why_missed`): `never_in_band`,
   `shadow`, `too_sparse`, `under_read` or `judged`. Every unflagged step

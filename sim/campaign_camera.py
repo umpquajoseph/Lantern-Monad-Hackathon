@@ -190,13 +190,15 @@ class CameraRig:
             self.display_dir = TD.build_for_ground(self.ground_path)
         self.scene = Scene(h, cr, x0, y0, cell, display=s.cam_display, display_dir=self.display_dir)
         # docs/terrain/position.md row 9: the Scout's footprint tilt, or a test case.
-        self.slope = SlopeMap(h, x0, y0, cell, mode=s.slope_test)
+        self.slope = SlopeMap(h, x0, y0, cell, mode=s.slope_test,
+                              pitch_deg=s.pitch_limit_deg, roll_deg=s.roll_limit_deg)
         if s.plan_slope == "orbital":
             # What the Scout knows of the ground before it sees it: the site's
             # LOLA 5 m slope (Settings.plan_slope; SlopeMap.use_orbital).
             from sim.psr_sites import load_site
             site = load_site(w.site)
-            self.slope.use_orbital(site["slope"], site["x0"], site["y0"], site["cell"])
+            # The slope's direction (limits by heading) from the LOLA heights it was made from.
+            self.slope.use_orbital(site["slope"], site["x0"], site["y0"], site["cell"], height=site["height"])
             del site
         elif s.plan_slope != "truth":
             raise ValueError(f"plan_slope {s.plan_slope!r}: 'orbital' or 'truth'")
@@ -469,6 +471,7 @@ class CameraSortie(Sortie):
             return True
         r.set_goal((gx, gy))
         best, since = math.hypot(gx - self.ex, gy - self.ey), 0
+        pp = r.pingpong_blocks
         while True:
             if self.lost or (self.returning and act != ACT["return"]):
                 return False
@@ -484,6 +487,19 @@ class CameraSortie(Sortie):
                 best, since = nd, 0
             else:
                 since += 1
+            if r.pingpong_blocks > pp and r.goal_blocked():
+                # The Scout drove back to where it was two moves ago (the
+                # back-and-forth guard, Rover._note_move) and its own map puts
+                # the goal on ground it may not enter: it is as close as it
+                # can get. A route planned on the orbital map can put a
+                # waypoint inside a crater too small for LOLA; the Scout's
+                # lidar sees it on arrival. Before 23 Nov 2026 it drove back
+                # and forth at the crater's edge until cam_stuck_steps ran out
+                # (all 4 skipped waypoints of spin-check-1, about 45 steps each).
+                self.event("waypoint_skipped", reason="hazard", goal=[rnd(gx, 2), rnd(gy, 2)])
+                self.skipped += 1
+                return True
+            pp = r.pingpong_blocks
             if since >= s.cam_stuck_steps:
                 self.event("waypoint_skipped", reason="blocked", goal=[rnd(gx, 2), rnd(gy, 2)])
                 self.skipped += 1
@@ -494,6 +510,8 @@ class CameraSortie(Sortie):
         error) and Settings' per-step noise; the filter never sees these."""
         s, rg = self.s, self.rng_odo
         d_o = d * (1.0 + self.drift_true) + (rg.normal(0.0, s.odom_noise_frac * d) if d > 0 else 0.0)
+        if self.rover.last_reverse:
+            d_o = -d_o            # driven backwards: the wheels turned the other way (nav.predict)
         # With a star tracker (Settings.star_tracker, draft 4.6) the Scout's
         # heading is measured, not dead-reckoned (A24 sec. III-A, the filter's
         # pf_heading_walk_rad = 0), as the sampled engine already does
@@ -580,8 +598,8 @@ class CameraSortie(Sortie):
         hz, kinds = self.lid.hazards(pts)     # this scan's own verdicts, for the step record
         # The rover drives on the sortie's lidar map, every cell judged afresh as
         # data merges in (sim/lidar.py HazardMemory; GESTALT sec. 4 steps 2-3).
-        mhz, mkinds, clear = self.lid.judge(pts, pose, widen_m=r.slope.widen_m)
-        r.add_hazards(mhz, mkinds, clear=clear)
+        mhz, mkinds, clear, mgrads = self.lid.judge(pts, pose, widen_m=r.slope.widen_m)
+        r.add_hazards(mhz, mkinds, clear=clear, grads=mgrads)
         map_ij, map_v = self.lid.memory.take_changes()   # for the replay (steps.npz map_*)
         t3 = time.perf_counter()
         if look:

@@ -46,6 +46,7 @@ if _nb is not None:
         """Returns (status, path): status 0 = reached or emptied (path from
         start to goal if reached, else empty), 1 = budget spent (None)."""
         cap = 8 * max_expand + 16
+        N = ny * nx   # okb: (8, ny, nx) flat, move t may enter cell n at okb[t * N + n]
         hk = np.empty(cap, np.float32)
         hn = np.empty(cap, np.int64)
         size = 0
@@ -97,7 +98,7 @@ if _nb is not None:
                 if not (0 <= ni < ny and 0 <= nj < nx):
                     continue
                 n = ni * nx + nj
-                if not ((okb[n] and not blk[n]) or n == sf or n == gf):
+                if not ((okb[t * N + n] and not blk[n]) or n == sf or n == gf):
                     continue
                 ng = gc + W[t] * (one + costf[n])
                 old = gcost[n] if stamp[n] == tag else big

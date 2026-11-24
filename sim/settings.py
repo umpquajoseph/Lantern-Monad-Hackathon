@@ -142,7 +142,18 @@ class Settings:
     find_threshold_wt: float = S(1.0, "brief p.9 '~1 wt% ice threshold we assumed' (code sim/ice.py:20)")
     rich_peak_wt: float = S(5.6, "brief p.12 LCROSS ~5.6% at Cabeus (code sim/ice.py:23)")
     survey_line_spacing_m: float = S(20.0, ASSUMED)
-    slope_limit_deg: float = S(15.0, "existing planner rule (docs/handoffs.md, Step 2)")
+    # The Scout's slope limits by heading (sim/footprint.py severity): pitch is
+    # the slope along its heading, roll the slope across it. Both are planning
+    # limits: Scouts strand only where the true ground stops them.
+    pitch_limit_deg: float = S(15.0, "VIPER's mobility requirement: Bluethmann, LSIC 2024 VIPER mobility "
+                                     "(NTRS 20240013903) p.4 'Slopes up to 15 deg (reqt)'; Rezich et al. 2025, "
+                                     "PSJ 6:169 (doi 10.3847/PSJ/add13f) sec. 3.5: 'the mobility design "
+                                     "requirements of the VIPER mission defined a maximum of 40% slip up a "
+                                     "maximum slope of 15 deg'")
+    roll_limit_deg: float = S(15.0, "VIPER's suspension roll range: Rezich et al. 2025, PSJ 6:169 sec. 3.4: "
+                                    "'adjustable chassis ground clearance (7-42 cm), pitch (+/-20 deg), and roll "
+                                    "(+/-15 deg)'. Read as the cross slope the chassis can be held level on; "
+                                    "no source gives VIPER a roll limit for routes")
 
     # --------------------------------------------------------- cross-checks
     search_radius_k: float = S(1.0, ASSUMED + "; search radius = k * hypot(both 95th-pct bounds) "
@@ -484,7 +495,9 @@ class SiteBuild:
     window_m: float = S(8000.0, ASSUMED + "; square window centred on the dock, 4 km each way, "
                                           "so all ground within ice_reach_m of the dock is inside it")
     cell_m: float = S(5.0, "PGDA product 81 (ldem_87s_5mpp): native 5 m/pixel LOLA mosaic")
-    slope_limit_deg: float = S(15.0, "brief p.7 '15 deg slope limit for routes (VIPER's own design limit)'")
+    slope_limit_deg: float = S(15.0, "brief p.7 '15 deg slope limit for routes (VIPER's own design limit)'; "
+                                     "VIPER: Bluethmann, LSIC 2024 (NTRS 20240013903) p.4 'Slopes up to "
+                                     "15 deg (reqt)'. Site choice only, heading-free")
     reach_m: float = S(3000.0, ASSUMED + "; driving distance from the dock to PSR floor counted as "
                                         "surveyable (1.5 km descent + half the 4 km survey, brief p.6)")
     dock_max_from_psr_m: float = S(1500.0, "brief p.6 '1.5 km descent'")

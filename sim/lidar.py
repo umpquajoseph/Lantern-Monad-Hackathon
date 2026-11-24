@@ -56,7 +56,9 @@ ROCK_STEP_M = 0.15              # this far above its 1.5 m ring: a rock
 DETECT_ROCKS = False             # off: at this scan density no setting found real rocks (precision 0 on
                                  # shoemaker.npz), and the tallest display rock stands 0.28 m, under
                                  # the 0.3 m wheel radius in sim/scene.py
-SLOPE_LIMIT_DEG = 15.0           # spec step 4
+SLOPE_LIMIT_DEG = 15.0           # the heading-free limit, sim/rover.py SLOPE_LIMIT_DEG (the lower of
+                                 # pitch_limit_deg and roll_limit_deg): a "slope" cell is steeper than
+                                 # this; the rover judges it by heading from its gradient (judge())
 FOOTPRINT_CELLS = 3              # slope patch, cells a side: 1.5 m, the nearest whole-cell patch to the
                                  # Scout's 1.55 m footprint (sim/footprint.py FOOTPRINT_M, brief p.6)
 MIN_PATCH_COVERAGE = 0.5         # GESTALT Table 1 (Goldberg et al. 2002, p.6) min-cell-coverage 0.5: "Min
@@ -317,7 +319,9 @@ class Lidar:
         every cell the change can reach. pts: the scan's level-frame points, from
         scan(pose) just before. widen_m: the rover's hazard margin (SlopeMap.widen_m).
 
-        Returns (centres (K, 2) world xy, kinds, clear): clear lists the changed regions
+        Returns (centres (K, 2) world xy, kinds, clear, grads (K, 2)): grads is each
+        slope cell's plane gradient, world frame (NaN for other kinds), for the
+        rover's limits by heading. clear lists the changed regions
         widened past widen_m as world boxes (xmin, xmax, ymin, ymax); centres and kinds
         are every hazard now judged within twice that, so marking them after clearing
         the boxes (Rover.add_hazards) leaves the rover's grids as the map judges them."""
@@ -342,15 +346,17 @@ class Lidar:
             mem.judge(*bx, slope_mode=mode)
         c = mem.c
         w = int(math.ceil(widen_m / c)) + 1            # clear margin, cells: past the rover's marks
-        clear, cen, kinds = [], [], []
+        clear, cen, kinds, grads = [], [], [], []
         for i0, i1, j0, j1 in boxes:
             clear.append(((i0 - w) * c, (i1 + w) * c, (j0 - w) * c, (j1 + w) * c))
             k = 2 * w + 1                              # hazards whose marks reach the cleared box
-            hz, kd = mem.hazards_in(i0 - k, i1 + k, j0 - k, j1 + k)
+            hz, kd, gd = mem.hazards_in(i0 - k, i1 + k, j0 - k, j1 + k)
             cen.append(hz)
             kinds += kd
+            grads.append(gd)
         cen = np.concatenate(cen) if cen else np.zeros((0, 2))
-        return cen, kinds, clear
+        grads = np.concatenate(grads) if grads else np.zeros((0, 2))
+        return cen, kinds, clear, grads
 
     def to_camera_frame(self, centres):
         """Hazard centres from the lidar to the rover's reference point (the pose),
@@ -439,7 +445,7 @@ def _judge_moments(base, c, slope_mode="footprint"):
             # judged nothing where any cell of its 3.5 m window lacked
             # returns: it flagged 18-28% of the truly steep ground it had
             # returns on in tilt-check, and showed the rest as safe.
-            slope = _patch_tilt_deg(base, c)
+            slope, gx, gy = _patch_tilt_deg(base, c, grad=True)
         else:
             gx = np.full((nx, ny), np.nan)
             gy = np.full((nx, ny), np.nan)
@@ -450,14 +456,17 @@ def _judge_moments(base, c, slope_mode="footprint"):
     is_crater = known & (depr > DEPRESSION_M)
     is_rock = known & ~is_crater & (rock > ROCK_STEP_M) & DETECT_ROCKS
     is_slope = known & ~is_crater & ~is_rock & (slope > SLOPE_LIMIT_DEG)
-    return dict(known=known, crater=is_crater, rock=is_rock, slope=is_slope, tilt=slope)
+    # gx, gy: the judged plane's gradient along the grid's two axes (axis 0,
+    # axis 1), NaN where unjudged. HazardMemory's axes are world x and y.
+    return dict(known=known, crater=is_crater, rock=is_rock, slope=is_slope, tilt=slope, gx=gx, gy=gy)
 
 
-def _patch_tilt_deg(base, cell):
+def _patch_tilt_deg(base, cell, grad=False):
     """(nx, ny) tilt in degrees of the least-squares plane through every point
     in the FOOTPRINT_CELLS-square patch of cells centred on each cell, from the
     cells' moments (_cell_moments); NaN where under half the patch's cells hold
-    more than 1 point (GESTALT sec. 4 step 3)."""
+    more than 1 point (GESTALT sec. 4 step 3). grad=True: (tilt, gx, gy), the
+    plane's gradient along axis 0 and axis 1, NaN where the tilt is."""
     from scipy.ndimage import correlate
     nx, ny = base["n"].shape
     k = np.ones((FOOTPRINT_CELLS, FOOTPRINT_CELLS))
@@ -498,6 +507,8 @@ def _patch_tilt_deg(base, cell):
     side = FOOTPRINT_CELLS * cell
     full = correlate((base["n"] > 1).astype(float), k, mode="constant", cval=0.0)
     ok = (full > k.size / 2) & (det > 0) & (spread >= MIN_PATCH_COVERAGE * side / math.sqrt(12.0))
+    if grad:
+        return np.where(ok, tilt, np.nan), np.where(ok, gx, np.nan), np.where(ok, gy, np.nan)
     return np.where(ok, tilt, np.nan)
 
 
@@ -542,6 +553,7 @@ class HazardMemory:
             T = self.T
             t = dict(m=np.zeros((len(MOMENT_KEYS), T, T), np.float32), zmax=np.full((T, T), -np.inf, np.float32),
                      last=np.zeros((T, T), np.int64), verdict=np.zeros((T, T), np.int8),
+                     g=np.full((2, T, T), np.nan, np.float32),   # slope cells' plane gradient (gx, gy), world
                      seen=np.full((T, T), -MAX_IDLES, np.int64),   # last scan with the cell in the judged band
                      oldest=math.inf, touched=-MAX_IDLES, seen_max=-MAX_IDLES)   # scalars: expire() skips quiet tiles
             self.tiles[key] = t
@@ -678,6 +690,8 @@ class HazardMemory:
         g = _judge_moments(base, self.c, slope_mode)
         code = np.select([g["crater"], g["rock"], g["slope"]], [1, 2, 3], 0)[m:m + i1 - i0, m:m + j1 - j0]
         code = code.astype(np.int8)
+        inner = (slice(m, m + i1 - i0), slice(m, m + j1 - j0))
+        grad = np.stack([np.where(code == 3, g["gx"][inner], np.nan), np.where(code == 3, g["gy"][inner], np.nan)])
         ci, cj = np.nonzero(code != old[m:m + i1 - i0, m:m + j1 - j0])
         if len(ci):
             self.changes.append((np.column_stack([i0 + ci, j0 + cj]), code[ci, cj]))
@@ -688,6 +702,7 @@ class HazardMemory:
                     continue
                 t = self._tile(key)
             t["verdict"][src] = code[dst]
+            t["g"][(slice(None),) + src] = grad[(slice(None),) + dst]
 
     def take_changes(self):
         """(cells (N, 2) int32 [i, j], verdicts (N,) uint8) whose verdict changed since the
@@ -701,12 +716,19 @@ class HazardMemory:
         return ij, v
 
     def hazards_in(self, i0, i1, j0, j1):
-        """(centres (K, 2) world xy, kinds) of the cells judged hazards in box [i0, i1) x [j0, j1)."""
+        """(centres (K, 2) world xy, kinds, grads (K, 2)) of the cells judged hazards in
+        box [i0, i1) x [j0, j1); grads: a slope cell's plane gradient (gx, gy), world
+        frame, NaN for the other kinds."""
         _, verdict = self.window(i0, i1, j0, j1)
+        grad = np.full((2, i1 - i0, j1 - j0), np.nan, np.float32)
+        for key, src, dst in self._parts(i0, i1, j0, j1):
+            t = self.tiles.get(key)
+            if t is not None:
+                grad[(slice(None),) + dst] = t["g"][(slice(None),) + src]
         hi, hj = np.nonzero(verdict)
         names = {1: "crater", 2: "rock", 3: "slope"}
         centres = np.column_stack([(i0 + hi + 0.5) * self.c, (j0 + hj + 0.5) * self.c])
-        return centres, [names[int(v)] for v in verdict[hi, hj]]
+        return centres, [names[int(v)] for v in verdict[hi, hj]], grad[:, hi, hj].T.astype(np.float64)
 
 
 def fp_name(name):

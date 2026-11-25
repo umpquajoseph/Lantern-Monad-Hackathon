@@ -121,16 +121,34 @@ both 15 deg (`sim/settings.py`). Pitch: Bluethmann, LSIC 2024, p.4
 (copy in `docs/sources/`). Roll: Rezich et al. 2025 sec. 3.4, read
 online, no copy in `docs/sources/` yet.
 
+## Proof run, 24 Nov (`proof-2x2/w00003-d06bbd2b`, code `d835d3c`)
+
+2 Scouts x 2 sorties, haynes seed 3, no position fixes, watched in
+Mission Control. All four sorties home and completed, no Scout lost.
+S1-01 logged find 1 (1.7 wt%, bound95 26.3 m, true error 18.9 m) at
+day 1 02:01. S2-02 searched it (day 2 03:37-05:41, radius 32.8 m):
+`unconfirmed`, `bound_too_large`, combined bound 31.8 m against the 6 m
+confirm rule, with a real deposit there. The shared map gained one
+crater (C1) from two sightings, at S2-02's docking. This is the spec's
+first "done when", on camera Scouts.
+
+Turns in place: 19, 23, 18 and 55 (S2-02, 37 of them the search
+pattern's line ends). Most are re-aims with progress after. The
+suspect ones are 2-4 spells per sortie of opposite turns near a crater
+rim, the plan flipping sides as the lidar map fills in (S1-01 steps
+2685-2690, 3326-3330; S1-02 3503-3512; S2-01 1356-1358, 2187-2189).
+`drive_check` from S1-02 step 3490 (`--warm 100`) did NOT reproduce it,
+so nothing was changed.
+
 ## Next steps (agreed with the product owner, 24 Nov)
 
 1. Merge the driving work into lantern-workflow. Done, `18ae1da`.
-2. Survey-length fix (leader): the lane loop stops when the next lane
-   would pass `survey_m`, but `survey_done` needs `survey_m -
-   lane_segment_m`, so a full survey can be marked not done.
-3. A run with 2 or more Scouts, watched in Mission Control: the map
-   grows, one Scout discovers a find, another checks it (leader).
+2. Survey-length fix. Done, `d835d3c`: `survey-fix-s2` reran
+   drive-full-s2 exactly (3,764.9 m) and now reads `survey_end` "lanes",
+   survey done, completed.
+3. A run with 2 or more Scouts, watched in Mission Control. Done, above.
 4. Turn-arounds: fix only the ones the proof run shows are faults, each
-   with a replay before and after.
+   with a replay before and after. Not reproduced yet (above).
 5. Position fixes (nav): preplanned landmark choice, straight through as
    the comparison case.
 6. Merge them once a short run shows them working; rerun step 3.

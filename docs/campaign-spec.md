@@ -38,7 +38,11 @@ drill. When the paper changes, the numbers change and the workflow stays.
 - **Rovers navigate by their live camera.** Each step renders the lamp-lit
   view, detects crater rims and updates the particle filter. Nothing is drawn
   from a table of published errors.
-- **Lantern produces the paper's numbers** from many seeded runs.
+- **Lantern produces the paper's numbers** from many seeded runs. This
+  overrides the 16 Nov area 3 draft, which says Lantern "is not a source
+  of performance figures" (sec. 4.6) and that it "is never a source of
+  numbers" (future-work preamble). The product owner has said the sim's
+  results go in the paper; read those two lines as out of date.
 
 ## Done when
 

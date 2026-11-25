@@ -1,6 +1,7 @@
 # Lantern handoff
 
-20 Nov 2026, evening. For the next leader. **Non-authoritative**: it is
+20 Nov 2026, evening; "Where it stands", the spinning and slope sections
+and "Next steps" rewritten 24 Nov. For the next leader. **Non-authoritative**: it is
 one leader's notes, not orders. Use your own judgement, and check every
 claim here against the code, the runs and the sources before relying on
 it. It replaces the handoff of 20 Nov morning (in git history at
@@ -21,20 +22,22 @@ settings are a result for the paper.
 
 ## Where it stands
 
-**Paused** at a checkpoint at the product owner's word. Both workers are
-stopped and not watching their inboxes. Resume only when told.
+**Resumed 24 Nov** at the product owner's word. The leader does the
+survey-length fix and the multi-Scout proof run; `nav` builds the
+preplanned position fixes. `sensors` stays paused; `drive` is done.
 
 - `lantern-workflow` (`C:\Monad-Hackathon-Project`) holds all merged
-  work, last merge `15145ee`. `main` takes nothing without the product
-  owner's word.
-- `lantern-nav` (`.claude\worktrees\nav`, head `3ba89ad`) holds the
-  scheduled position fixes. **Not merged**: it fails its test (below).
-  It already contains lantern-workflow up to `d8888ce`.
+  work, last merge `18ae1da` (the driving work: `lantern-heading` and
+  `claude/lantern-drive-8d2ae1`, sim code identical to `9311549`).
+  `main` takes nothing without the product owner's word.
+- `lantern-nav` (head `3ba89ad`, plus a merge of `lantern-workflow`
+  `18ae1da`) holds the scheduled position fixes. **Not merged**: its
+  crater choice fails its test (below). nav resumes from it.
 - `lantern-sensors` is fully merged.
 
-My rough estimate: about 70% of the way to the spec's "done when". The
-workflow's three steps exist in `sim/campaign.py`; what is missing is
-working position fixes, one end-to-end proof run, and the paper batch.
+What is missing for the spec's "done when": working position fixes, one
+end-to-end multi-Scout proof run, and the paper batch. Every run since
+17 Nov has had one Scout.
 
 ## What changed on 20 Nov
 
@@ -96,62 +99,46 @@ filter settled about 4.8 m off with a 1.6 m bound (Mahalanobis median
 7.3). C23 Table 2 shows ShadowNav's own filter understating its error,
 so this may be faithful. Check before changing anything.
 
-## Open problem: rovers spinning in circles
+## Scouts stuck or spinning (drive, 23 Nov)
 
-On 20 Nov evening the product owner watched three Scouts spin in circles
-in Mission Control (port 8070). Not investigated: which run it was is
-unknown, and it may be a multi-Scout run older than 20 Nov's changes.
-My report that same evening, that most test sorties came home, was
-wrong to reassure: those were one-Scout runs on one seed. Reproduce it
-first (ask which run), then find the cause. Turning in place appears
-in sortie records as `turns in place` and `pingpong` (sensors' item 6
-report cut them from 503 to 38 on one run, so they were not zero).
+`drive` (`docs/briefs/drive.md`) found the class: a Scout could drive
+into a small crater its lidar misread from the rim, then find every wall
+over the limit from inside. Fixed by judging slope on crater cells
+(`f2b6c82`) and, at the product owner's choice, retracing the track when
+the map closes every way out (`9311549`). Full one-Scout sorties on
+haynes seeds 1-3 (`drive-full-s1/s2/s3`) came home with no stuck
+episode; turns in place 13, 18 and 33. Turns in place are not faults by
+themselves: a real rover turns in place too. Only ones a replay shows
+to be thrashing are faults. The three Scouts the product owner saw
+spinning on 20 Nov were a multi-Scout run, never reproduced; the proof
+run is the first multi-Scout run on today's code.
 
-## Open problem: the slope limit ignores direction
+## Slope limits by heading (done, `a0a9d2e`)
 
-The planner, the lidar and the drive step all judge one number, the
-overall tilt of the plane under the Scout's 1.55 m footprint
-(`sim/footprint.py tilt_deg`), against `slope_limit_deg` = 15. Overall
-tilt is the same whatever the heading, so switchbacks cannot help.
+The planner, the lidar and the drive step judge pitch along the heading
+against `pitch_limit_deg` and roll across it against `roll_limit_deg`,
+both 15 deg (`sim/settings.py`). Pitch: Bluethmann, LSIC 2024, p.4
+(copy in `docs/sources/`). Roll: Rezich et al. 2025 sec. 3.4, read
+online, no copy in `docs/sources/` yet.
 
-A real rover's limits depend on heading: driving up the fall line puts
-all the slope into pitch (traction, power); driving across puts it into
-roll (side slip, tip-over). At heading angle a off the fall line on a
-slope s, pitch = atan(tan s cos a) and roll = atan(tan s sin a). A 20 deg
-slope taken at 45 deg is about 14.4 deg pitch and 14.4 deg roll.
+## Next steps (agreed with the product owner, 24 Nov)
 
-Sources so far:
-- The team brief (`docs/sources/PROSPECT-Team-Brief-RASC-AL-2027-Theme-3-1.pdf`,
-  p.7): "A 15° slope limit for routes (VIPER's own design limit)". Not
-  yet found in the VIPER papers in `docs/sources/`. Unverified.
-- Andrews 2020 VIPER overview (`VIPER-Andrews-2020-overview-NTRS-20205000864.txt`,
-  slide 18) captions test photos "20º upslope" and "15º upslope with 45º
-  cross slope". So VIPER was tested at different limits by direction.
-- The brief also notes "Our slope numbers swing a lot with soil values".
+1. Merge the driving work into lantern-workflow. Done, `18ae1da`.
+2. Survey-length fix (leader): the lane loop stops when the next lane
+   would pass `survey_m`, but `survey_done` needs `survey_m -
+   lane_segment_m`, so a full survey can be marked not done.
+3. A run with 2 or more Scouts, watched in Mission Control: the map
+   grows, one Scout discovers a find, another checks it (leader).
+4. Turn-arounds: fix only the ones the proof run shows are faults, each
+   with a replay before and after.
+5. Position fixes (nav): preplanned landmark choice, straight through as
+   the comparison case.
+6. Merge them once a short run shows them working; rerun step 3.
 
-The work: find VIPER's published pitch and roll limits (or the
-mobility papers behind them), then make the planner, `_feasible` and the
-drive step judge pitch and roll against the Scout's heading. A* then
-needs heading in its state, or an edge cost by direction. Report how
-stranding changes; do not pick limits for a better result. Suggested
-owner: sensors, who owns the hazard map and planner.
-
-## Suggested next steps
-
-1. nav: preplanned landmark choice, then the straight-through test
-   case. Short test runs while building.
-2. Merge lantern-nav. Then one run with 2 or more Scouts, watched in
-   Mission Control: the map grows, one Scout discovers a find, another
-   checks it. This is the spec's first "done when", and, as far as I
-   know, it has not yet played end to end on camera-driven Scouts.
-   Unverified.
-3. Agree the run count with the product owner.
-4. The paper batch, preplanned and straight through side by side, then
-   Figure 1 and the fleet and site tables. Due 15 Jan 2027. Site and
-   video 10 Feb, proposal 24 Feb.
-
-sensors has no open item. It could check the find-and-confirm logic
-before step 2.
+Then: agree the run count with the product owner; the paper batch,
+preplanned and straight through side by side; Figure 1 and the fleet
+and site tables. Due 15 Jan 2027. Site and video 10 Feb, proposal
+24 Feb.
 
 ## How to run things without hurting the machine
 
@@ -195,19 +182,16 @@ before step 2.
 
 ## Workers
 
-`nav` (branch `lantern-nav`, worktree `.claude\worktrees\nav`, brief
-`docs/briefs/nav.md`) and `sensors` (branch `lantern-sensors`, worktree
-`.claude\worktrees\sensors`, brief `docs/briefs/sensors.md`). Both Opus,
-both through the mailboxes (`ops/PROTOCOL.md`); the product owner opens
-their sessions. From 23 Nov `drive` (brief `docs/briefs/drive.md`,
-branch cut from `lantern-heading`, Opus, reports to `leader`) owns the
-Scouts getting stuck, across `sim/rover.py`, `sim/lidar.py` and
-`sim/campaign_camera.py` `drive_to`, while nav and sensors stay paused.
-sensors owns the hazard map and planner in `sim/rover.py`
-and the Mission Control web files since 20 Nov; nav owns the rest of
-rover.py. The briefs predate the pause and the fix decision; update
-nav's before resuming it. `ops/_old/` is untracked and not this
-project's work; leave it.
+From 24 Nov `nav` (brief `docs/briefs/nav.md`, rewritten 24 Nov; a
+session the leader starts, its branch cut from `lantern-nav`, its
+worktree under `.claude\worktrees\`, Opus, high effort) builds the
+position fixes through the mailboxes (`ops/PROTOCOL.md`). `sensors`
+(branch `lantern-sensors`, brief `docs/briefs/sensors.md`) is paused;
+it owns the hazard map and planner in `sim/rover.py` and the Mission
+Control web files. `drive` (brief `docs/briefs/drive.md`) is done and
+merged. The leader owns `sim/campaign.py`'s lane loop and `_completion`
+for the survey fix. `ops/_old/` is untracked and not this project's
+work; leave it.
 
 ## Running Mission Control
 

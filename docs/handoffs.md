@@ -583,7 +583,24 @@ Record changes (additive unless marked):
     was in reach. `est`, `bound95`, `reason` `no_landmark`, `reach_m`,
     `d_since_fix_m`, truth `true_err_m`; retried after
     `check_min_spacing_m` more. Crater passes still end, but only make
-    sightings. Everything below about passes is `cam_fix_mode`
+    sightings.
+  - Since 24 Nov 2026 the default `cam_fix_mode` is "preplanned"
+    (`CameraSortie.drive_to`, `_plan_leg_fix`): when a leg is planned, the
+    landmark for the fix due on it is chosen along the leg's route and the
+    Scout leaves the route for its half survey; "scheduled" (above) is a
+    labelled test case. The comparison case "straight" (`_straight_tick`)
+    plans nothing: once a fix is due, the first landmark-sized mapped crater
+    in the camera's view within `fix_view_m` is fixed on as the Scout drives
+    past, one exposure every `fix_survey_spacing_m`. Every `check` of these
+    three modes adds `mode`, `d_since_fix_m` (distance driven since the last
+    fix when this one began), `due_m` (the spacing); `reason` is
+    "preplanned", "straight" or "schedule". Preplanned adds `late` (the
+    survey left the route after the due point), `detour_planned_m` (the
+    planned survey's extra driving over the route it replaced),
+    `depart_at_m`, `due_at_m` (along the leg's route). In "straight",
+    `detour_m` is the distance driven during the fix, along the route.
+    `fix_unavailable` `reason` "no_landmark_on_leg": a fix was due and the
+    leg held no landmark; the next leg plans it. Everything below about passes is `cam_fix_mode`
     "opportunistic", the test case and every camera record before 20 Nov.
   - `check` is one **crater pass**: consecutive steps whose rims matched
     mapped craters, ended by `Settings.cam_pass_gap_steps` steps without, or

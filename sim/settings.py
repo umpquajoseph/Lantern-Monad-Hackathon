@@ -113,15 +113,34 @@ class Settings:
                                            "A24 sec. V-C1: observation points 7-13 m from the rim")
     fix_min_craters: int = S(2, ASSUMED + "; A24 Table 2 traverses used 2-3 landmarks")
     # A camera Scout's scheduled fix (sim/campaign_camera.py CameraSortie.check).
-    cam_fix_mode: str = S("scheduled", "'scheduled': the filter's measurement update runs only at the observation "
-                                       "stops of a scheduled fix, against the one landmark crater chosen for it; "
-                                       "between fixes, odometry alone (draft 4.2 'e(d) = efix + 0.02d'; A24 sec. I, "
-                                       "contribution 2, 'intermittent localization wherein only specific landmark "
-                                       "craters are used and other craters that may appear along a trajectory are "
-                                       "ignored'; A24 sec. III-E2, landmarks 'require a planned trajectory to drive "
-                                       "towards'). 'opportunistic' (every frame with rims corrects against the whole "
-                                       "map, no scheduled fixes; the main case until 20 Nov 2026) is a labelled "
-                                       "test case")
+    cam_fix_mode: str = S("preplanned", "How a camera Scout takes its position fixes. In every mode but "
+                                        "'opportunistic' the filter's measurement update runs only on a fix's "
+                                        "exposures, against the one landmark crater chosen for it; between fixes, "
+                                        "odometry alone (draft 4.2 'e(d) = efix + 0.02d'; A24 sec. I, contribution 2, "
+                                        "'intermittent localization wherein only specific landmark craters are used "
+                                        "and other craters that may appear along a trajectory are ignored'), and a "
+                                        "fix falls due by distance driven (draft 4.2, 'schedule fixes by distance "
+                                        "driven'). 'preplanned' (the default, product owner 24 Nov 2026): when a leg "
+                                        "is planned, the landmark for the fix that falls due on it is chosen along "
+                                        "the leg's route and the route drives a half survey of it (A24 sec. III-E2, "
+                                        "landmarks 'require a planned trajectory to drive towards'; A24 Table 2, "
+                                        "'Localization accuracy is optimal when a half survey around the landmark "
+                                        "crater occurs'). 'straight' (the comparison case): no landmark is planned; "
+                                        "once a fix is due the Scout drives on along its route and fixes on the "
+                                        "first landmark-sized mapped crater that comes into its camera's view, "
+                                        "stopping every fix_survey_spacing_m to face it for an exposure (A24 sec. "
+                                        "V-C1's straight trajectory, 'stops every 10 m and travels directly past the "
+                                        "crater'; A24 sec. IV-B field tests, 'the rig was directed toward large "
+                                        "craters if any were present'). Labelled test cases: 'scheduled' (the 20 Nov "
+                                        "reactive choice: the nearest landmark ahead when a fix falls due), "
+                                        "'opportunistic' (every frame with rims corrects against the whole map, no "
+                                        "scheduled fixes; the main case until 20 Nov 2026)")
+    fix_plan_early_m: float = S(40.0, ASSUMED + "; 'preplanned': a landmark's survey may begin up to this far "
+                                                "before the fix falls due (the draft's spacing is a maximum, draft "
+                                                "4.2); with none in that stretch of the leg, the first one after it")
+    fix_view_m: float = S(20.0, "A24 sec. IV-B perception tests, 'moving the data collection rig from approximately "
+                                "20 m away to 5 m from the leading crater edge'; 'straight': a landmark is in view "
+                                "when its near rim is this close and it lies inside the camera's field of view")
     fix_crater_d_m: tuple = S((7.5, 20.0), "A24 sec. V-B: 'craters of diameters between 7.5 m and 20 m can be "
                                            "detected reliably'; a landmark must be in the Scout's own map too")
     fix_reach_m: float = S(40.0, ASSUMED + "; a landmark's near rim must lie within this of the estimate when a fix "

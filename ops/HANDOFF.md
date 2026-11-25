@@ -152,7 +152,17 @@ so nothing was changed.
    with a replay before and after. Not reproduced yet (above).
 5. Position fixes (nav): preplanned landmark choice, straight through as
    the comparison case. Done, merged at `0c6166f` (below).
-6. Rerun step 3 with the fixes on.
+6. Rerun step 3 with the fixes on. Done, `proof-2x2-fix/w00003-513086d3`
+   (code `635aa76`, preplanned), watched in Mission Control. All four
+   sorties home, none completed: each turned back for time with 544 to
+   1,604 m surveyed. S1-01 logged find 1 with bound95 1.8 m (true error
+   2.4 m; 26.3 m bound without scheduled fixes). S2-02 searched it in
+   22 min (radius 8.8 m): `unconfirmed`, `bound_too_large`, combined
+   7.83 m against the 6 m rule, with a real deposit there. S2 arrived
+   about 10 m off: 24 of its 42 fixes saw no rim, and its last fix
+   before the search left it 9.8 m off. The shared map gained 10
+   craters (1 before). Turns in place 432-475 per sortie, most of them
+   facing the landmark at each exposure stop.
 
 ## Position fixes, 24 Nov (nav, merged `0c6166f`)
 

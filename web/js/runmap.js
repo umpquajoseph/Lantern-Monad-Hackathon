@@ -72,7 +72,7 @@ async function loadShade(rec) {
   let wgrid = null;
   if (win) { T.meta.window = win; wgrid = await T.loadBackdrop("window"); }
   for (const g of [far, near, wgrid, T.coarse]) if (g) shade.push(hillshade(g));
-  $("mapnote").textContent = `Ground: LOLA elevation, 20 m and 5 m (real). Inside the 1 km ${T.meta.site && T.meta.site !== "shoemaker" ? "showcase grid" : "drive area"}, 1 m with made-up small craters.` +
+  $("mapnote").textContent = `Ground: LOLA elevation, 20 m and 5 m (real). Inside the 1 km drive area, 1 m with made-up small craters.` +
     (rec.crater_map.scope ? ` Craters: ${rec.crater_map.scope}.` : "");
 }
 
@@ -421,7 +421,7 @@ function drawSide() {
         <span class="grow" style="flex:1"></span><a class="btn sm" href="replay.html?batch=${encodeURIComponent(run.batch)}&run=${encodeURIComponent(rec.run_id)}&sortie=${encodeURIComponent(s.sortie_id)}">Replay in 3D</a></h3>
       <dl class="kv">
         <dt>Launched</dt><dd>${fmtDay(s.t_start)}</dd>
-        <dt>${s.outcome === "showcase" ? "Ended" : "Home"}</dt><dd>${fmtDay(s.t_end)} <span class="dim">(${fmtHM(s.t_end - s.t_start)})</span></dd>
+        <dt>Home</dt><dd>${fmtDay(s.t_end)} <span class="dim">(${fmtHM(s.t_end - s.t_start)})</span></dd>
         <dt>Distance</dt><dd>${fmtNum(s.distance_m / 1000, 2)} km</dd>
         <dt>Position checks</dt><dd>${s.checks}, ${s.wrong_matches} wrong match${s.wrong_matches === 1 ? "" : "es"}</dd>
         <dt>Battery at the dock</dt><dd>${fmtNum(s.energy_end_kwh, 2)} kWh <span class="dim">of ${fmtNum(rec.settings.battery_kwh, 1)}</span></dd>
@@ -482,7 +482,7 @@ function checksHtml(run, s) {
 
 function info() {
   const rec = state.run.rec, s = rec.settings || {}, w = rec.world || {}, m = rec.summary || {};
-  // A row whose value the record does not hold (the showcase run has no world draws) is left out.
+  // A row whose value the record does not hold is left out.
   const kv = (rows) => rows.filter(([, b]) => b != null && !/undefined|NaN/.test(String(b)))
     .map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join("");
   $("setup").innerHTML = kv([

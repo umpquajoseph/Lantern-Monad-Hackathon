@@ -41,7 +41,7 @@ async function main() {
   }
   const p = new URLSearchParams(location.search);
   const bsel = $("batch");
-  const groups = [["psr", "PSR terrain"], ["shoemaker", "Shoemaker stand-in terrain"], ["showcase", "Showcase (camera navigation)"], ["site", "This site's own stand-in"]];
+  const groups = [["psr", "PSR terrain"], ["shoemaker", "Shoemaker stand-in terrain"]];
   bsel.innerHTML = groups.map(([g, label]) => {
     const bs = state.batches.filter((b) => kind(b) === g).sort((x, y) => y.runs.length - x.runs.length || (y.made > x.made ? 1 : -1));
     return bs.length ? `<optgroup label="${label}">${bs.map((b) => `<option value="${esc(b.batch_id)}">${esc(b.batch_id)} · ${b.runs.length} run${b.runs.length === 1 ? "" : "s"}</option>`).join("")}</optgroup>` : "";
@@ -64,10 +64,8 @@ async function main() {
   draw();
 }
 
-// Which kind of batch: the engine on PSR terrain, the engine on the Shoemaker stand-in, the showcase, or this site's stand-in.
+// Which kind of batch: the engine on PSR terrain or on the Shoemaker stand-in.
 function kind(b) {
-  if (b.showcase) return "showcase";
-  if (b.batch_id === "standin" || /make_standin_campaign/.test(b.standin || "")) return "site";
   const sites = b.sites || [];
   return sites.length && sites.every((s) => !/shoemaker/i.test(s)) ? "psr" : "shoemaker";
 }
@@ -85,8 +83,7 @@ function pick(id) {
 function about(b) {
   const n = b.runs.length, maps = b.maps ?? n;
   const k = kind(b);
-  const what = { psr: "The campaign engine on PSR terrain", shoemaker: "The campaign engine on the Shoemaker stand-in terrain, not shadowed crater floor",
-    showcase: "The showcase run, with camera navigation; not a source of the paper's numbers", site: "This site's own stand-in, scripted; no number here is a result" }[k];
+  const what = { psr: "The campaign engine on PSR terrain", shoemaker: "The campaign engine on the Shoemaker stand-in terrain, not shadowed crater floor" }[k];
   const sites = (b.sites || []).length ? ` Sites: <b>${b.sites.map(esc).join(", ")}</b>.` : "";
   const made = b.made ? ` Written ${fmtDay(b.made)}.` : "";
   const withMaps = state.batches.filter((x) => x !== b && kind(x) === "psr" && x.maps);
@@ -110,7 +107,7 @@ function fillFilters() {
   $("f-policy").innerHTML = opts(runs.map((r) => r.check_policy), (v) => v);
   $("f-refine").innerHTML = opts(runs.map((r) => String(r.map_refinement)), (v) => (v === "true" ? "on" : "off"));
   state.f = { scouts: "", policy: "", refine: "", q: $("f-q").value.trim().toLowerCase() };
-  $("standin-slot").innerHTML = standinBanner(state.batch.showcase, "Showcase") + standinBanner(state.batch.standin) + supersededBanner(state.batch.batch_id)
+  $("standin-slot").innerHTML = standinBanner(state.batch.standin) + supersededBanner(state.batch.batch_id)
     + (state.batch.runs.some((r) => sensitivityOf(r)) ? standinBanner(`Some runs in this batch are a ${NO_ROUGH_NOTE}.`, "Sensitivity") : "");
 }
 

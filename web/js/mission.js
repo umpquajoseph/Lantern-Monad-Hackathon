@@ -1368,10 +1368,10 @@ function runInfo() {
   $("run-title").textContent = rec.run_id;
   document.title = `Lantern Mission Control · ${rec.run_id}`;
   const kv = (rows) => `<dl class="kv">${rows.filter(([, v]) => v != null && v !== "–").map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
-  // Made-up parts ("Not real yet") apart from labels on a real run (a showcase,
-  // a sensitivity case, a superseded batch).
+  // Made-up parts ("Not real yet") apart from labels on a real run (a
+  // sensitivity case, a superseded batch).
   const notes = [standinOf(rec)].filter(Boolean);
-  const labels = [rec.showcase, sensitivityOf(rec.settings) && `This run is a ${NO_ROUGH_NOTE}.`, supersededLong(S.batch)].filter(Boolean);
+  const labels = [sensitivityOf(rec.settings) && `This run is a ${NO_ROUGH_NOTE}.`, supersededLong(S.batch)].filter(Boolean);
   $("run-info").innerHTML = `<p class="small hint">Batch ${esc(S.batch)} · seed ${rec.seed} · made ${esc(String(rec.made_at || "").slice(0, 16).replace("T", " "))}</p>` +
     `<div class="mini-h">Setup</div>` + kv([["Site", esc(rec.terrain && rec.terrain.site)], ["Scouts", st.n_scouts], ["Sorties per Scout", st.sorties_per_scout],
       ["Check policy", esc(st.check_policy)], ["Map refinement", st.map_refinement == null ? null : st.map_refinement ? "on" : "off"],
@@ -1449,7 +1449,7 @@ function openRuns() {
     <div id="dr-about" class="small hint"></div><div class="runs-wrap"><table class="runs"><thead><tr><th>Run</th><th>Site</th><th title="Scouts">Sc.</th><th title="Sorties ok of all">Sorties</th><th>Finds</th><th title="Confirmed by a second Scout">Conf.</th><th title="Camera runs: false-match rate, of rim points paired with a mapped crater the share paired with the wrong one. Sampled runs: share of position checks that matched the wrong crater.">Wrong</th><th title="How the Scouts navigated, and what per-step data the views draw">Navigation</th></tr></thead><tbody id="dr-runs"></tbody></table></div>
     <p class="small"><a href="runs.html">Every column, as a table</a></p>`;
   const fill = (b) => {
-    $("dr-about").textContent = [supersededLong(b.batch_id), b.standin, b.showcase].filter(Boolean).join(" ").slice(0, 400);
+    $("dr-about").textContent = [supersededLong(b.batch_id), b.standin].filter(Boolean).join(" ").slice(0, 400);
     $("dr-runs").innerHTML = b.runs.filter((r) => r.map).slice(0, 400).map((r) => `<tr data-b="${esc(b.batch_id)}" data-r="${esc(r.run_id)}" class="${b.batch_id === S.batch && r.run_id === S.cr.rec.run_id ? "cur" : ""}">
       <td class="mono">${esc(r.run_id)}</td><td>${esc(r.site || "")}</td><td>${r.n_scouts ?? "–"}</td><td>${r.sorties != null ? `${r.sorties_ok}/${r.sorties}` : "–"}</td>
       <td>${r.finds ?? "–"}</td><td>${r.confirmed ?? "–"}</td><td>${r.pipeline === "camera" ? (r.false_match_rate != null && r.false_match_rate !== "" ? `<span title="False-match rate (paired rims), from the run's summary">${fmtNum(r.false_match_rate * 100, 0)}% of paired rims</span>` : `<span class="hint" title="This record predates the summary's false_match_rate">–</span>`) : r.wrong_match_rate != null ? `<span title="Position checks that matched the wrong crater">${fmtNum(r.wrong_match_rate * 100, 0)}% of checks</span>` : "–"}</td>

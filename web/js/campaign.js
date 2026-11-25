@@ -13,8 +13,8 @@ export const TIME_KINDS = [
   ["drive", "driving", "var(--t-drive)"], ["check", "position checks", "var(--t-check)"],
   ["reading", "readings", "var(--t-reading)"], ["drill", "drilling", "var(--t-drill)"], ["wait", "dock queue", "var(--t-wait)"],
 ];
-export const OUTCOME_WORD = { showcase: "showcase run", ok: "home with reserve", below_reserve: "home below reserve", fault_return: "turned back on a fault", lost: "lost" };
-export const OUTCOME_SHORT = { showcase: "showcase", ok: "", below_reserve: "below reserve", fault_return: "fault", lost: "lost" };
+export const OUTCOME_WORD = { ok: "home with reserve", below_reserve: "home below reserve", fault_return: "turned back on a fault", lost: "lost" };
+export const OUTCOME_SHORT = { ok: "", below_reserve: "below reserve", fault_return: "fault", lost: "lost" };
 
 
 const T_EPS_S = 0.5;   // display only: float32 rounding of pose times, see FleetRun.findsAt
@@ -205,9 +205,9 @@ export function fitPage() {
   addEventListener("resize", set);
 }
 
-// Every banner a record needs: the showcase note, then what is a stand-in.
+// Every banner a record needs: what is a stand-in, superseded or a sensitivity case.
 export function bannersOf(rec, batch = null) {
-  return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec)) + supersededBanner(batch) + standinBanner(sensitivityOf(rec.settings), "Sensitivity");
+  return standinBanner(standinOf(rec)) + supersededBanner(batch) + standinBanner(sensitivityOf(rec.settings), "Sensitivity");
 }
 
 // Settings.ground_roughness false: the labelled

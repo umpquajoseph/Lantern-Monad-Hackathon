@@ -6,21 +6,7 @@
 // banner, run.html, runs.html and replay.html. Mission Control's default run
 // never comes from a batch with more reasons than another camera batch.
 
-const HOMING = "homing used the old free last hop: a Scout shown reaching the dock may never have found its way home";
-
-const HEADING = "heading drifted from the truth: the camera odometer added heading noise with the star tracker on, about doubling survey error";
-
-export const SUPERSEDED = {
-  "live-nav": [HOMING, HEADING],
-  "live-nav-check": [HOMING, HEADING],
-  "live-nav-check2": [HOMING, HEADING],
-  "live-nav-first3": [HOMING, HEADING],
-  "workflow-check1": [HOMING, HEADING],
-  "workflow-check2": [HEADING],
-  "workflow-first3": [HOMING, HEADING],
-  "workflow-first3b": [HOMING, HEADING],
-  "workflow-first3c": [HEADING],
-};
+export const SUPERSEDED = {};
 
 export const reasonsOf = (batch) => SUPERSEDED[batch] || [];
 

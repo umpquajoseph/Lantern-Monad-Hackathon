@@ -38,7 +38,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             batch, run, name = m.groups()
             src = SRC / batch / run
             if (src / "record.json").exists():
-                if name == "record.json" or name.startswith("fp/"):   # fp/: the showcase's frames
+                if name == "record.json":
                     return str(src / name)
                 with CONVERT:
                     if name.startswith("steps/"):

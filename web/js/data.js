@@ -1,8 +1,6 @@
 // Loading the terrain assets and the run logs, and reading a run at time t.
 // The run-log format is docs/handoffs.md, "Run log". Nothing here draws.
 
-export const AGENCIES = ["A", "B"];
-
 async function fetchOk(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`${url}: ${r.status}`);
@@ -132,67 +130,16 @@ export class Terrain {
 
 // ---------------------------------------------------------------------------
 
-// web/runs/index.json: {"runs": [...]} or a plain list. Each
-// entry has run_id, label, and path (relative to web/) or dir (in runs/).
-export async function loadIndex(base) {
-  const j = await (await fetchOk(base + "index.json")).json();
-  return (Array.isArray(j) ? j : j.runs).map((r) => ({ ...r, path: r.path || `runs/${r.dir}/log.json` }));
-}
-
+// A run in the "Run log" shape (docs/handoffs.md): steps, each with its time
+// and every rover's poses. FleetRun (campaign.js) builds one per sortie.
 export class Run {
-  static async load(base, entry) {
-    const rel = entry.path.replace(/^runs\//, "");
-    const log = await (await fetchOk(base + rel)).json();
-    const dir = base + rel.replace(/log\.json$/, "");
-    return new Run(log, dir);
-  }
-
   constructor(log, dir) {
     this.log = log;
     this.dir = dir;
     this.steps = log.steps;
     this.times = this.steps.map((s) => s.t);
     this.tEnd = this.times[this.times.length - 1];
-    this.agencies = AGENCIES.filter((a) => this.steps[0].rovers[a] && this.steps[0].rovers[a].true_pose);
-    this.events = [];
-    this.steps.forEach((s, k) => (s.events || []).forEach((e) => this.events.push({ ...e, t: s.t, k })));
-    this.tracks = {};
-    for (const a of this.agencies) {
-      this.tracks[a] = {
-        truth: this.steps.map((s) => s.rovers[a].true_pose.slice(0, 2)),
-        odom: this.steps.map((s) => (s.rovers[a].odom_pose || s.rovers[a].true_pose).slice(0, 2)),
-        est: this.steps.map((s) => s.rovers[a].estimate),
-      };
-    }
-    // What is not real yet: `standin`, or `standins`, one line per part.
-    const si = log.standins || log.standin || null;
-    this.standin = si && Object.keys(si).length ? si : null;
-    const chainLine = si && (si.chain || si.tx);
-    this.fakeTx = !!chainLine || !(log.chain && log.chain.explorer);
-    this.unit = log.truth && /wt%/.test(log.truth.ice_units || "") ? " wt%" : "";
     this.truth = log.truth || null;
-    // What made the estimate and sigma, when the run says ("nav").
-    this.nav = typeof log.nav === "string" ? log.nav.replace(/^nav:\s*/, "") : null;
-    // Real parts get a top-level line like nav (docs/handoffs.md): the planner.
-    this.planner = typeof log.planner === "string" ? log.planner.replace(/^planner:\s*/, "") : null;
-    // The navigation filter's particles after each step, when logged
-    // (docs/handoffs.md: per rover `particles`, [[x, y, w], ...]).
-    this.hasParticles = this.steps.some((s) => this.agencies.some((a) => (s.rovers[a].particles || []).length));
-    this.chain = log.chain || {};
-    // The rover's real driving speed, from the log: median distance per
-    // logged step over dt_s, counting only steps where it moved.
-    this.speed = {};
-    const dt = log.dt_s || (this.times[1] - this.times[0]);
-    for (const a of this.agencies) {
-      const v = [];
-      for (let k = 1; k < this.steps.length; k++) {
-        const p = this.steps[k].rovers[a].true_pose, q = this.steps[k - 1].rovers[a].true_pose;
-        const d = Math.hypot(p[0] - q[0], p[1] - q[1]), dtk = this.times[k] - this.times[k - 1];
-        if (d > 1e-3 && dtk > 0) v.push(d / dtk);
-      }
-      v.sort((x, y) => x - y);
-      this.speed[a] = v.length ? v[v.length >> 1] : null;
-    }
   }
 
   // Index of the last step at or before t.
@@ -220,68 +167,6 @@ export class Run {
   }
 
   rover(a, k) { return this.steps[k].rovers[a]; }
-
-  // The most recent first-person frame at or before step k.
-  frameAt(a, k) {
-    for (let i = k; i >= 0 && i > k - 50; i--) {
-      const f = this.steps[i].rovers[a].fp_frame;
-      if (f) return { src: this.dir + f, k: i };
-    }
-    return null;
-  }
-
-  // The recorded frame nearest time t, so the camera panel and the 3D rover
-  // (at its interpolated pose for t) show the same moment: they differ by at
-  // most half a stop. Returns {src, k}, k being the step the frame belongs to.
-  // With fp_sub (docs/handoffs.md: frames between step k and k+1 at fraction
-  // f of the way, about every 0.5 m), the candidates are step k's frame at
-  // f = 0, its sub-frames, and step k+1's frame at f = 1; the nearest to the
-  // 3D view's fraction wins. `sub` is false for a step's own frame, the only
-  // kind the logged rim points belong to.
-  frameNear(a, t) {
-    const k0 = this.stepAt(t);
-    const k1 = Math.min(k0 + 1, this.steps.length - 1);
-    const span = this.times[k1] - this.times[k0];
-    const frac = span > 0 ? Math.min(1, Math.max(0, (t - this.times[k0]) / span)) : 0;
-    const r0 = this.steps[k0].rovers[a], r1 = this.steps[k1].rovers[a];
-    const cand = [];
-    if (r0.fp_frame) cand.push({ f: 0, src: r0.fp_frame, k: k0, sub: false });
-    for (const [f, src] of r0.fp_sub || []) cand.push({ f, src, k: k0, sub: true });
-    if (k1 !== k0 && r1.fp_frame) cand.push({ f: 1, src: r1.fp_frame, k: k1, sub: false });
-    let best = null;
-    for (const c of cand) if (!best || Math.abs(c.f - frac) < Math.abs(best.f - frac)) best = c;
-    if (best) return { ...best, src: this.dir + best.src };
-    return this.frameAt(a, k0);
-  }
-
-  // Metres driven between recorded frames, from the log: the rover's speed
-  // times dt_s, split by the sub-frames per step when there are any.
-  frameSpacing(a) {
-    const stepM = this.speed[a] && this.log.dt_s ? this.speed[a] * this.log.dt_s : null;
-    if (!stepM) return null;
-    const subs = this.steps.map((s) => (s.rovers[a].fp_sub || []).length).filter((n) => n > 0);
-    if (!subs.length) return stepM;
-    subs.sort((x, y) => x - y);
-    return stepM / (subs[subs.length >> 1] + 1);
-  }
-
-  eventsUpTo(k) { return this.events.filter((e) => e.k <= k); }
-
-  // Finds and their status after the events up to step k, using the
-  // contract's rule: disputed if any agency disagrees, confirmed if at least
-  // one agrees and none disagree, else reported (spec, contract functions).
-  findsAt(k) {
-    const finds = new Map();
-    for (const e of this.eventsUpTo(k)) {
-      if (e.type === "find") finds.set(e.find_id, { ...e, checks: [], status: "reported" });
-      else if (e.type === "check" && finds.has(e.find_id)) finds.get(e.find_id).checks.push(e);
-    }
-    for (const f of finds.values()) {
-      if (f.checks.some((c) => !c.agrees)) f.status = "disputed";
-      else if (f.checks.some((c) => c.agrees)) f.status = "confirmed";
-    }
-    return [...finds.values()];
-  }
 }
 
 export function fmtClock(t) {

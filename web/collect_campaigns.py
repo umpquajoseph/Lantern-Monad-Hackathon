@@ -156,7 +156,7 @@ def record_rows(bdir: Path, runs: list[Path], say) -> tuple[list[dict], dict]:
             row = dict(rec.get("summary") or {"run_id": rec["run_id"], "seed": rec.get("seed")})
             row.setdefault("site", (rec.get("terrain") or {}).get("site"))
             c = {"mtime": mt, "row": row,
-                 "standin": standin_text(rec), "terrain": rec.get("terrain"), "showcase": rec.get("showcase")}
+                 "standin": standin_text(rec), "terrain": rec.get("terrain")}
             cache[d.name] = c
             read += 1
             if read % 50 == 0:
@@ -164,7 +164,6 @@ def record_rows(bdir: Path, runs: list[Path], say) -> tuple[list[dict], dict]:
         c["row"].setdefault("site", (c.get("terrain") or {}).get("site"))
         rows.append(c["row"])
         meta.setdefault("standin", c["standin"])
-        meta.setdefault("showcase", c.get("showcase"))
         meta.setdefault("terrains", {})[json.dumps(c["terrain"], sort_keys=True)] = c["terrain"]
     if read:
         cache_p.parent.mkdir(parents=True, exist_ok=True)
@@ -258,7 +257,7 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
                     info = {k: b[k] for k in ("worlds", "sweeps", "set") if k in b}
                 except ValueError:
                     pass
-            batches.append({"batch_id": bdir.name, "standin": meta.get("standin"), "showcase": meta.get("showcase"),
+            batches.append({"batch_id": bdir.name, "standin": meta.get("standin"),
                             "sites": sorted({str(r.get("site")) for r in rows if r.get("site")}),
                             "made": datetime.fromtimestamp(made).astimezone().isoformat(timespec="minutes"),
                             "maps": sum(1 for r in rows if r["map"]), **info, "runs": rows})

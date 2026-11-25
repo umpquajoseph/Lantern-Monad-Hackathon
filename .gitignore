@@ -13,6 +13,5 @@ frames/
 *.mp4
 # mailboxes: shared by all worktrees at an absolute path, never committed
 ops/mailboxes/
-# local Claude Code config, worker folders and screenshots
+# local Claude Code config and worker folders
 .claude/
-ops/shots/

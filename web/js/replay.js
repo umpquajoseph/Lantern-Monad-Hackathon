@@ -69,7 +69,6 @@ async function main() {
   world.setRun(run);
   dock();
   searchMarks();
-  fpInit();
   vis();
   acts();
   bind();
@@ -207,34 +206,6 @@ function toggle(on = !state.playing) {
   $("play").textContent = on ? "Pause" : "Play";
 }
 
-// Showcase run: the first-person frames the followed Scout's navigation read, newest at or before t.
-let fpFrames = null, fpShown = null;
-function fpInit() {
-  const by = cr.rec.frames && cr.rec.frames.by_sortie;
-  if (!by) return;
-  fpFrames = {};
-  for (const s of cr.sorties) for (const [t, f] of by[s.sortie_id] || []) (fpFrames[s.scout] ||= []).push([t, f]);
-  for (const k in fpFrames) fpFrames[k].sort((p, q) => p[0] - q[0]);
-  $("fpcam").hidden = false;
-}
-function fpUpdate() {
-  if (!fpFrames) return;
-  const a = state.follow === "site" ? sortie.scout : state.follow;
-  const list = fpFrames[a] || [];
-  let lo = 0, hi = list.length - 1, k = -1;
-  while (lo <= hi) { const m = (lo + hi) >> 1; if (list[m][0] <= state.t) { k = m; lo = m + 1; } else hi = m - 1; }
-  const key = k < 0 ? `${a}:none` : `${a}:${list[k][1]}`;
-  if (key === fpShown) return;
-  fpShown = key;
-  if (k < 0) {
-    $("fp-img").removeAttribute("src");
-    $("fp-cap").textContent = `${a}: no camera frame yet (at the dock)`;
-  } else {
-    $("fp-img").src = cr.dir + list[k][1];
-    $("fp-cap").textContent = `${a}'s lamp camera: the frame its navigation read, ${fmtDay(list[k][0])}`;
-  }
-}
-
 function render() {
   world.currentT = state.t;
   world.update(state.t, { tracks: true, particles: false });
@@ -251,7 +222,6 @@ function render() {
     const res = state.t > t1 && s.end ? ` · ${s.end.result === "confirmed" ? "confirmed" : "not confirmed"}` : "";
     s.lbl.element.innerHTML = `<span>${s.start.scout} ${state.t <= t1 ? "searching" : "searched"} ${s.find.scout}'s find ${s.find.find_id}${res}</span>`;
   }
-  fpUpdate();
   hud();
 }
 

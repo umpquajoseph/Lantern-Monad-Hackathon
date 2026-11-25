@@ -123,8 +123,9 @@ online, no copy in `docs/sources/` yet.
 
 ## Proof run, 24 Nov (`proof-2x2/w00003-d06bbd2b`, code `d835d3c`)
 
-2 Scouts x 2 sorties, haynes seed 3, no position fixes, watched in
-Mission Control. All four sorties home and completed, no Scout lost.
+2 Scouts x 2 sorties, haynes seed 3, watched in Mission Control. Before
+`cam_fix_mode`: the filter corrected on every frame with rims (now the
+"opportunistic" test case), not on the draft's scheduled fixes. All four sorties home and completed, no Scout lost.
 S1-01 logged find 1 (1.7 wt%, bound95 26.3 m, true error 18.9 m) at
 day 1 02:01. S2-02 searched it (day 2 03:37-05:41, radius 32.8 m):
 `unconfirmed`, `bound_too_large`, combined bound 31.8 m against the 6 m
@@ -150,8 +151,40 @@ so nothing was changed.
 4. Turn-arounds: fix only the ones the proof run shows are faults, each
    with a replay before and after. Not reproduced yet (above).
 5. Position fixes (nav): preplanned landmark choice, straight through as
-   the comparison case.
-6. Merge them once a short run shows them working; rerun step 3.
+   the comparison case. Done, merged at `0c6166f` (below).
+6. Rerun step 3 with the fixes on.
+
+## Position fixes, 24 Nov (nav, merged `0c6166f`)
+
+`cam_fix_mode` "preplanned" (default): the landmark for each of the
+draft's fixes (every 79 m at the 10 m limit, draft lines 45-48) is
+chosen when its leg is planned, a 7.5-20 m crater beside the route, and
+the Scout drives a half survey of it, 1 min stops every 10 m (A24 line
+401, line 794, sec. V-D). "straight": fix on landmark craters as they
+come into view within `fix_view_m` 20 m (A24 sec. IV-B). A fix whose
+exposures saw no rim does not reset the schedule. nav's report:
+`ops/mailboxes/leader/archive/20261124-221500_nav_report.md`.
+
+Haynes seed 3, one full sortie each, numbers checked against the records:
+
+| run | mode | h | survey m | turn back | fixes updated | true error p50 / max m |
+|---|---|---|---|---|---|---|
+| drive-full-s3 | opportunistic (old) | 14.1 | 3,861 | none | every frame | 5.0 / 32.8 |
+| nav-pre-s3a | preplanned | 19.5 | 569 | time, 9.6 h | 31 of 40 | 1.4 / 5.1 |
+| nav-str-s3a | straight, 20 m | 17.1 | 3,786 | none | 8 of 51 | 44.2 / 102.7 |
+| nav-str12-s3a | straight, 12 m (sensitivity) | 15.9 | 3,800 | none | 7 of 41 | 41.1 / 84.1 |
+
+For the paper: at the draft's spacing a preplanned fix costs a median
+0.34 h (6 min stopped, a 99 m survey drive), so fixes fill the sortie
+and the Scout surveys a seventh of the baseline's ground, within the
+10 m limit. Straight through, on a route not built to pass landmarks at
+survey range, saw rims in 4% of exposures and did not hold position.
+One seed, one Scout, one sortie per mode: no spread yet. The 20 Nov
+"4.8 m off with a 1.6 m bound" was the map's own 3.5 m error on the
+landmark; C23 Alg. 1 treats the map as truth, so it stands.
+
+`live_runs --set`: a second `--set` flag replaces the first. Give
+several overrides in one flag, `--set a=1 b=2`.
 
 Then: agree the run count with the product owner; the paper batch,
 preplanned and straight through side by side; Figure 1 and the fleet
@@ -167,8 +200,10 @@ and site tables. Due 15 Jan 2027. Site and video 10 Feb, proposal
   To stop a run, end its whole process tree (`taskkill /PID <pid> /T /F`);
   live_runs restarts a killed child otherwise.
 - **Short test runs while building**: `--set sortie_h=4` cuts a 20 min
-  test sortie to about 4 min. Full 22 h sorties only for a merge check
-  or anything about the return leg.
+  test sortie to about 4 min. With preplanned fixes (since `0c6166f`)
+  a 4 h or 10 h sortie turns back before the lanes, so it tests the
+  corridor only. Full 22 h sorties only for a merge check or anything
+  about the return leg.
 - A test sortie: `python -m sim.live_runs --sites haynes --scouts 1
   --sorties 1 --batch-id <name> --serial --progress 500`.
 

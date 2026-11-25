@@ -94,7 +94,7 @@ PROGRESS_MIN_M = 50.0       # assumed: progress measured before CameraSortie.ove
 # the s89_134e Scouts of workflow-first3d sat within 2 m for 17-24 h.
 STUCK_RADIUS_M = 10.0
 STUCK_MIN_H = 1.0
-BLOCKED_ARRIVE_M = 2.0       # run_demo.py BLOCKED_ARRIVE_M (assumed there): arrived, when the goal is on no-go ground
+BLOCKED_ARRIVE_M = 2.0       # assumed: arrived, when the goal is on no-go ground
 SIGHT_LINK_M = 2.0           # assumed: unmatched rim points this close are one arc
 SIGHT_CELL_M = 0.25          # unmatched points are thinned to one per cell of this size before clustering (memory:
                              # a long pass held 42k points and 5 GB of point pairs); the fit sees the cell means
@@ -104,7 +104,7 @@ PROGRESS_EVERY = int(os.environ.get("LANTERN_CAM_PROGRESS", "0"))   # print a li
 # could be in the camera's view. Otherwise the frame holds no rim, and a frame
 # without rims leaves the filter unchanged (nav.correct runs only on rims), so
 # skipping it changes nothing but Vision's random stream. Measured on check 2
-# (live-nav-check2 w00003-c44d133e, bench/render/gatecheck.py): 990 frames
+# (live-nav-check2 w00003-c44d133e): 990 frames
 # outside a narrower gate (craters >= 10 m within 15 m) rendered, 0 with rims;
 # kept rims reached 19.7 m. Every crater counts here, out to 25 m.
 GATE_RANGE_M = 25.0          # assumed: rims are kept to 19.7 m on check 2; 5 m spare

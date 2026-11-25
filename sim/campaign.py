@@ -386,7 +386,7 @@ def energy_model(s: Settings) -> dict:
 
 
 def concentration(x, y, ice, threshold) -> float:
-    """sim/ice.py field: each deposit is peak * (threshold/peak)^(r^2/R^2),
+    """Each deposit is peak * (threshold/peak)^(r^2/R^2),
     equal to the threshold at its radius R. The same field crossing.deposit_at
     scores against."""
     c = 0.0
@@ -397,7 +397,7 @@ def concentration(x, y, ice, threshold) -> float:
 
 
 def footprint(s):
-    """sim/ice.py IceSensor: the centre plus six points at half the footprint radius."""
+    """The ice sensor footprint: the centre plus six points at half the footprint radius."""
     r = s.footprint_radius_m / 2
     return [(0.0, 0.0)] + [(r * math.cos(a), r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 6, endpoint=False)]
 
@@ -1580,7 +1580,7 @@ class Campaign:
             "truth": {"label": "hidden truth",
                       "ice": [{k: rnd(v, 3) for k, v in d.items()} for d in w.ice],
                       "craters_missing": missing_rec,
-                      "ice_profile": "sim/ice.py: peak * (threshold/peak)^(r^2/R^2), summed over deposits"},
+                      "ice_profile": "peak * (threshold/peak)^(r^2/R^2), summed over deposits"},
             "summary": self.summary(),
         }
 

@@ -10,7 +10,7 @@
 // replaced, so three's own light loop still supplies the lamp cone, the
 // inverse-square falloff and the shadow maps. Every light is shaded as
 //   radiance = light colour * radf(mu0, mu, g) * albedo factor
-// which matches sim/terrain_look.py: E = A * radf * cone * lit / d^2.
+// i.e. E = A * radf * cone * lit / d^2.
 import * as THREE from "three";
 
 // --- Hapke radiance factor, the same formula in JS for exposure maths. ---
@@ -190,8 +190,8 @@ export function lampIntensity(hp, { camH, lampBelow, pitchDeg, refRange, refLeve
   return (radianceFor(refLevel) * d * d) / radf;
 }
 
-// Fill-light intensity as sim/terrain_look.py: flat ground under the fill
-// alone shows at `level`, using that file's reference geometry (sun at elDeg,
+// Fill-light intensity: flat ground under the fill
+// alone shows at `level`, using the reference geometry (sun at elDeg,
 // mu = 0.7, phase 60 deg).
 // sim/scene.py _fill_rgb (step-6-scene, scene.py:1131), in display-linear
 // light before the tone curve: albedo * level * (wrap + (1 - wrap) * max(N.s, 0)).

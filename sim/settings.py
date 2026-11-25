@@ -169,7 +169,7 @@ class Settings:
 
     # ---------------------------------------------------------- survey, ice
     reading_spacing_m: float = S(5.0, ASSUMED)
-    footprint_radius_m: float = S(1.0, "code sim/ice.py:28 (assumed there)")
+    footprint_radius_m: float = S(1.0, ASSUMED)
     # Reading noise of the neutron spectrometer, from VIPER's NSS (the draft names
     # no instrument): 0.5 wt% WEH at 3-sigma while roving at 10 cm/s, over the 5 m
     # its WEH map resolves. Counting noise falls as 1/sqrt(integration time), and a
@@ -193,8 +193,8 @@ class Settings:
                                        "~140 ppmw, or 0.13+/-0.02 wt% water-equivalent hydrogen'; every "
                                        "Lantern site is poleward of 88 S (sim/psr_sites.py). An orbital average "
                                        "over km-scale footprints; a PSR floor's own background is not measured")
-    find_threshold_wt: float = S(1.0, "brief p.9 '~1 wt% ice threshold we assumed' (code sim/ice.py:20)")
-    rich_peak_wt: float = S(5.6, "brief p.12 LCROSS ~5.6% at Cabeus (code sim/ice.py:23)")
+    find_threshold_wt: float = S(1.0, "brief p.9 '~1 wt% ice threshold we assumed'")
+    rich_peak_wt: float = S(5.6, "brief p.12 LCROSS ~5.6% at Cabeus")
     survey_line_spacing_m: float = S(20.0, ASSUMED)
     # The Scout's slope limits by heading (sim/footprint.py severity): pitch is
     # the slope along its heading, roll the slope across it. Both are planning
@@ -312,7 +312,7 @@ class Settings:
                                    "surface texture below the grid (C23 sec. 4A, A24 sec. IV-A), its amplitude "
                                    "the ground's own k^-4 spectrum continued (sim/terrain_display.py "
                                    "run_ground_params); no rocks, lips or albedo mottling. 'off': Lambert, "
-                                   "no texture, the GPU path (bench/render), a labelled test case")
+                                   "no texture, the GPU path, a labelled test case")
     # Batch runs with nav='sampled' never read the fields below.
     camera_height_m: float = S(1.6, "brief p.6 '1.6 m mast'; draft item 24. Camera assumed at the mast top. "
                                     "A24 sec. IV tested 1.5, 2.5 and 3 m")
@@ -330,19 +330,14 @@ class Settings:
     # 3-10 m against the measured 0.22 m. Gaussian: Table 1's outliers
     # (25% beyond 1 m at 10-20 m) are folded into one spread.
     # The contour filter's width threshold is this share x the map cut
-    # (sim/vision.py contour_ok). Measured by sim/arc_share.py on held-out
-    # frames under a rule fixed before measuring; NaN until measured, and
-    # then C23 sec. 1's 0.8 is used.
-    # Second and last measurement (rule "route", sim/arc_share.py): headings over the
-    # whole field of view, as route frames see craters. NaN until measured; then it is
-    # rim_arc_share_measured, the share the runs use.
-    rim_arc_share_route: float = S(0.476, "sim/arc_share.py rule route (commits b356a4d, 12a0ac0), batch "
-                                          "campaigns/calibration/arcshare-route, `python -m sim.arc_share --rule "
-                                          "route --batch arcshare-route --frames 120`: median of 96 held-out frames "
+    # (sim/vision.py contour_ok). Measured on held-out frames under a rule fixed
+    # before measuring, by sim/arc_share.py (removed; in git at f8de9b4).
+    # "route": headings over the whole field of view, the share the runs use.
+    rim_arc_share_route: float = S(0.476, "measured, rule route (commits b356a4d, 12a0ac0), batch "
+                                          "campaigns/calibration/arcshare-route: median of 96 held-out frames "
                                           "on s89_014e_s2027 (quartiles 0.337-0.540); width threshold 4.76 m")
-    rim_arc_share_headon: float = S(0.553, "sim/arc_share.py rule (commit 89a6d8a), batch "
-                                             "campaigns/calibration/arcshare-1, `python -m sim.arc_share --batch "
-                                             "arcshare-1 --frames 120`: median of 120 held-out frames (quartiles "
+    rim_arc_share_headon: float = S(0.553, "measured, rule head-on (commit 89a6d8a), batch "
+                                             "campaigns/calibration/arcshare-1: median of 120 held-out frames (quartiles "
                                              "0.484-0.620); width threshold 5.53 m")
     stereo_disparity_sigma_px: float = S(5.9, "A24 Table 1 row (SGBM, 1.5 m, -0.2 m, med), 10-20 m RMS 1.15 m "
                                               "at the bin's middle (15 m); the z^2 shape is assumed")
@@ -366,7 +361,7 @@ class Settings:
                                         "5120, wider than an SGBM window); test case 'block'")
     stereo_hole_block_px: int = S(4, ASSUMED + ": the 'block' test case's square of render pixels that are "
                                            "holes together")
-    # The truth: how the odometer errs (sim/rover.py, sim/mission.py). The
+    # The truth: how the odometer errs (sim/rover.py). The
     # bias is drift_frac above.
     odom_noise_frac: float = S(0.005, ASSUMED + "; white distance noise per step, share of the step")
     odom_heading_noise_rad: float = S(0.0005, ASSUMED + "; heading noise per step (~0.7 deg after 1 km)")
@@ -466,7 +461,7 @@ class Settings:
     @property
     def rim_arc_share_measured(self) -> float:
         """The arc share the contour filter uses: the route measurement once it is set,
-        else the head-on one (sim/arc_share.py)."""
+        else the head-on one."""
         import math as _m
         return self.rim_arc_share_route if _m.isfinite(self.rim_arc_share_route) else self.rim_arc_share_headon
 
@@ -519,7 +514,7 @@ class WorldRanges:
                                          "Footprint (100 km alt.) 5.2 km x 144 km'; the cross-track width as the "
                                          "side of a square patch that shares one offset (square " + ASSUMED + ")")
     n_deposits: tuple = S((3, 12), ASSUMED)
-    deposit_radius_m: tuple = S((3.0, 12.0), ASSUMED + "; code sim/ice.py:30 uses 6 m")
+    deposit_radius_m: tuple = S((3.0, 12.0), ASSUMED)
     deposit_peak_wt: tuple = S((1.0, 5.6), "upper end brief p.12 (LCROSS); lower end the find threshold")
     drift_frac: tuple = S((0.01, 0.04), "draft 4.6 'odometry drift from 1 to 4%'")
     dock_reg_sigma_m: tuple = S((0.5, 5.0), ASSUMED + "; draft item 15")

@@ -52,7 +52,7 @@ async function main() {
   state.batch = state.batches.find((b) => b.batch_id === want) || psr[0] ||
     state.batches.filter((b) => kind(b) === "shoemaker").sort((x, y) => y.runs.length - x.runs.length)[0] || state.batches[0];
   if (!state.batch) {
-    $("body").innerHTML = `<div class="empty">No campaign batches found. The campaign engine writes them to <code>data/campaigns/</code>; <code>python web/make_standin_campaign.py</code> makes a labelled stand-in.</div>`;
+    $("body").innerHTML = `<div class="empty">No campaign batches found. The campaign engine writes them to <code>data/campaigns/</code>: run <code>python -m sim.live_runs</code>.</div>`;
     return;
   }
   bsel.value = state.batch.batch_id;

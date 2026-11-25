@@ -27,8 +27,8 @@ const CHASE_BACK_M = 14, CHASE_UP_M = 8;  // scene.py, assumed
 // Exposure as sim/scene.py (step-6-scene 2c8af7e), assumed there: flat ground
 // 5 m ahead of the rover shows at 0.55 on screen through the tone curve.
 const EXPOSURE_REF_RANGE_M = 5, EXPOSURE_REF_LEVEL = 0.55;  // scene.py:80-81 (2c8af7e)
-const LAMP_RGB = [1.0, 0.93, 0.8];   // sim/terrain_look.py, assumed (linear)
-const FILL_RGB = [0.62, 0.68, 0.82]; // sim/terrain_look.py, assumed (linear)
+const LAMP_RGB = [1.0, 0.93, 0.8];   // assumed (linear)
+const FILL_RGB = [0.62, 0.68, 0.82]; // assumed (linear)
 const FILL_LEVEL = 0.22;                    // sim/scene.py:156, assumed: display-linear, before gamma
 const FILL_AZ_DEG = 200, FILL_EL_DEG = 35;  // sim/scene.py:157, assumed: where the fill comes from (fixed)
 
@@ -709,7 +709,7 @@ uniform vec4 uP1;`)
       this.overlay.add(d, ring, frost);
       this.truthObjs.push(d, ring, frost);
     }
-    // Mission sites the Surveyor called ice (run_mission.py's log): a frost
+    // Mission sites a run log called ice: a frost
     // patch from the moment of that verdict. It is the find, not hidden truth,
     // so it shows whatever the truth toggle says.
     this.iceSites = [];

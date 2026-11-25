@@ -1,12 +1,9 @@
 """Lantern, one command: python app.py
 
-Builds whatever is missing, collects the campaign runs and opens the local
-site on them: the runs list, each run's top-down map, and a 3D replay of any
-sortie. Every step is skipped when its output is newer than its inputs, so a
-second launch takes a few seconds.
+Builds whatever is missing, collects the campaign runs and opens Mission
+Control on them. Each step is skipped when its output is newer than its inputs.
 
     python app.py              build what is missing, open the site
-    python app.py --standin    remake the labelled stand-in batch first
     python app.py --no-open    do not open a browser
     python app.py --port 8001
     python app.py --max-runs N host at most N runs per batch
@@ -17,15 +14,13 @@ Pieces, in order:
     2. display layer sim/terrain_display.py build   -> data/terrain/display/
     3. web assets    web/build_assets.py            -> web/assets/terrain/
                      web/build_assets.py --run-ground, per camera run -> web/assets/terrain/runs/<run_id>/
-    4. campaigns     the campaign engine            -> data/campaigns/<batch_id>/
-                     (none yet: web/make_standin_campaign.py writes a labelled stand-in)
+    4. campaigns     python -m sim.live_runs        -> data/campaigns/<batch_id>/
     5. site index    web/collect_campaigns.py       -> web/campaigns/index.json (+ terrain windows)
     6. site          web/serve.py                   -> http://localhost:<port>
 
 Data lives where sim/terrain.py says: LANTERN_DATA if set, else the main
 checkout (C:/Monad-Hackathon-Project/data), else ./data. Set
-LANTERN_DATA=lantern_data to use the committed terrain. Hosting is off: the
-site runs locally only.
+LANTERN_DATA=lantern_data to use the committed terrain. The site runs locally only.
 """
 from __future__ import annotations
 
@@ -68,7 +63,7 @@ def stale(out: Path, *inputs: Path) -> bool:
     return not out.exists() or any(mtime(i) > mtime(out) for i in inputs)
 
 
-def build(standin: bool):
+def build():
     if not TERRAIN.exists():
         run(["sim/terrain.py", "build"], "terrain")
     else:
@@ -89,12 +84,8 @@ def build(standin: bool):
     else:
         say(f"web assets: {ASSETS_META.parent} (kept)")
 
-    have = any(CAMPAIGNS.glob("*/summary.csv")) if CAMPAIGNS.exists() else False
-    if standin or not have:
-        # No batch from the campaign engine yet: a stand-in in the same format, labelled on every page.
-        run(["web/make_standin_campaign.py"], "stand-in campaign")
-    else:
-        say(f"campaigns: {', '.join(p.parent.name for p in sorted(CAMPAIGNS.glob('*/summary.csv')))}")
+    batches = sorted(CAMPAIGNS.glob("*/summary.csv")) if CAMPAIGNS.exists() else []
+    say(f"campaigns: {', '.join(p.parent.name for p in batches) or 'none; run python -m sim.live_runs'}")
 
 
 def run_grounds():
@@ -161,7 +152,6 @@ def serve(port: int, open_browser: bool):
 
 def main():
     ap = argparse.ArgumentParser(description="Build what is missing, collect the campaign runs, open the site.")
-    ap.add_argument("--standin", action="store_true", help="remake the labelled stand-in batch")
     ap.add_argument("--max-runs", type=int, help="host at most this many runs per batch")
     ap.add_argument("--no-open", action="store_true", help="do not open a browser")
     ap.add_argument("--no-serve", action="store_true", help="build and sync only")
@@ -169,7 +159,7 @@ def main():
     ap.add_argument("--site", type=Path, help="copy the finished static site here")
     a = ap.parse_args()
 
-    build(a.standin)
+    build()
     run_grounds()
     sync_runs(a.max_runs, copy=bool(a.site))
     if a.site:

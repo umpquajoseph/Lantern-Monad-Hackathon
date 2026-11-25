@@ -132,7 +132,7 @@ export class Terrain {
 
 // ---------------------------------------------------------------------------
 
-// web/runs/index.json: {"runs": [...]} or run_demo.py's plain list. Each
+// web/runs/index.json: {"runs": [...]} or a plain list. Each
 // entry has run_id, label, and path (relative to web/) or dir (in runs/).
 export async function loadIndex(base) {
   const j = await (await fetchOk(base + "index.json")).json();
@@ -164,15 +164,14 @@ export class Run {
         est: this.steps.map((s) => s.rovers[a].estimate),
       };
     }
-    // What is not real yet. Stand-in runs from web/make_standin_run.py carry
-    // `standin`; run_demo.py carries `standins`, one line per part.
+    // What is not real yet: `standin`, or `standins`, one line per part.
     const si = log.standins || log.standin || null;
     this.standin = si && Object.keys(si).length ? si : null;
     const chainLine = si && (si.chain || si.tx);
     this.fakeTx = !!chainLine || !(log.chain && log.chain.explorer);
     this.unit = log.truth && /wt%/.test(log.truth.ice_units || "") ? " wt%" : "";
     this.truth = log.truth || null;
-    // What made the estimate and sigma, when the run says (run_demo.py "nav").
+    // What made the estimate and sigma, when the run says ("nav").
     this.nav = typeof log.nav === "string" ? log.nav.replace(/^nav:\s*/, "") : null;
     // Real parts get a top-level line like nav (docs/handoffs.md): the planner.
     this.planner = typeof log.planner === "string" ? log.planner.replace(/^planner:\s*/, "") : null;

@@ -402,7 +402,7 @@ def deposit_at(true_xy, truth_ice, s: Settings) -> int | None:
     "Really there" means the noise-free concentration is at or above the
     find threshold somewhere under the sensor footprint: each deposit is
     evaluated at the footprint point nearest its centre. Same field as
-    sim/ice.py: each deposit is Gaussian in r, equal to the threshold at its
+    campaign.concentration: each deposit is Gaussian in r, equal to the threshold at its
     radius. Returns the largest contributor.
     """
     p = _xy(true_xy)

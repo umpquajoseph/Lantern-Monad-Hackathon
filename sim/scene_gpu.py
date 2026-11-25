@@ -5,7 +5,7 @@ The same formulas and number types as the numpy path in scene.py (first_person
 kernels: horizon maps (one thread per azimuth ray, running max) and the
 per-pixel shade. Sensor noise is drawn on the CPU from the same pose seed, so a
 frame matches the numpy frame: on 50 check-2 poses Vision.rims was identical on
-every frame, pixels within 1 DN, depth exact (bench/render/gpu_fused_test.json).
+every frame, pixels within 1 DN, depth exact.
 Needs CuPy and an NVIDIA GPU; Scene falls back to numpy without them.
 """
 import math

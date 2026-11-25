@@ -205,7 +205,7 @@ export function fitPage() {
   addEventListener("resize", set);
 }
 
-// Every banner a record needs: the showcase note (sim/showcase.py), then what is a stand-in.
+// Every banner a record needs: the showcase note, then what is a stand-in.
 export function bannersOf(rec, batch = null) {
   return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec)) + supersededBanner(batch) + standinBanner(sensitivityOf(rec.settings), "Sensitivity");
 }

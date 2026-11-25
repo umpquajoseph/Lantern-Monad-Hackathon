@@ -63,7 +63,7 @@ STEEP_CELL_FRAC = 0.01     # assumed: any steep point closes its cell, as the fi
 CRATER_COST = 4.0          # assumed: a crater cell costs 1 + 4 x its crater share to cross
 HAZARD_CELL_FRAC = STEEP_CELL_FRAC   # old name, kept for readers of this module
 
-# Assumed: how a sensing rover steers (run_demo.py --vision). A real rover
+# Assumed: how a sensing rover steers. A real rover
 # drives arcs and turns at a bounded rate; here it turns by at most
 # MAX_TURN_DEG per 2 m step (a turn radius of about 5.7 m) and aims at the
 # local plan AIM_M ahead, so the grid's 45 deg corners are cut, not driven.
@@ -474,9 +474,8 @@ class Rover:
         # Steps a sensing rover planning on the orbital map drove onto ground truly
         # over the limit (_note_true_steep): (x, y, true deg, orbital deg, flag).
         self.steep_steps = []
-        # True when the rover drives on its camera and lidar (run_demo.py
-        # --vision). The back-and-forth guard and turning in place apply only
-        # then, so stand-in runs keep exactly the spine's routes.
+        # True when the rover drives on its camera and lidar. The back-and-forth
+        # guard and turning in place apply only then.
         self.sensing = False
 
     def set_goal(self, goal_xy):

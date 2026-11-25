@@ -128,7 +128,7 @@ def copy_run(src: Path, dst: Path) -> None:
     if stale(src / "record.json", dst / "record.json"):
         shutil.copy2(src / "record.json", dst / "record.json")
     convert_poses(src / "poses.npz", dst)
-    if (src / "fp").is_dir():   # the showcase run's first-person frames (sim/showcase.py)
+    if (src / "fp").is_dir():   # first-person frames, when a run saved them
         shutil.copytree(src / "fp", dst / "fp", dirs_exist_ok=True)
     if (src / "steps.npz").exists():   # camera runs: every Scout-step the pipeline ran (docs/handoffs.md steps.npz)
         convert_steps(src / "steps.npz", dst)
@@ -229,7 +229,7 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
                 rows.append({**r, "map": False})
         for r in rows:
             r.setdefault("map", r["run_id"] in by_name)
-            # Per-step pipeline data for Mission Control's views: "standin" (web/make_standin_pipeline.py),
+            # Per-step pipeline data for Mission Control's views: "standin" (an old labelled stand-in),
             # "camera" (the engine's steps.npz), or absent.
             if r["map"] and (by_name[r["run_id"]] / "steps.npz").exists():
                 r["pipeline"] = "standin" if "standin" in np.load(by_name[r["run_id"]] / "steps.npz").files else "camera"
@@ -267,7 +267,7 @@ def collect(max_runs: int | None = None, copy: bool = False, say=print) -> list[
     DST.mkdir(parents=True, exist_ok=True)
     (DST / "index.json").write_text(json.dumps({"batches": batches}, separators=(",", ":")), encoding="utf8")
     if not batches:
-        say(f"campaigns: none under {SRC}. Run python web/make_standin_campaign.py for a labelled stand-in.")
+        say(f"campaigns: none under {SRC}. Run python -m sim.live_runs.")
     return batches
 
 

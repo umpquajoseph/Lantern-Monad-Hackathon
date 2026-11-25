@@ -24,7 +24,6 @@ vision step can turn extra edges down in one place.
 
 Usage:
     python sim/terrain_display.py build     # writes data/terrain/display/
-Then sim/terrain_look.py renders it.
 
 Asset format: see FORMAT below, written to display/display.json.
 

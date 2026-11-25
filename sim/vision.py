@@ -150,13 +150,13 @@ def contour_stats(v, u, r, shape, fx):
 
 def contour_arc_share(source="default"):
     """Share of the leading arc the width threshold assumes. "c23": C23 sec. 1's 0.8;
-    "headon": Settings.rim_arc_share_headon (sim/arc_share.py rule head-on, 0.553);
+    "headon": Settings.rim_arc_share_headon (0.553);
     "route": Settings.rim_arc_share_route (rule route); "measured" / "default":
     Settings.rim_arc_share_measured, the route share once it is set, else the head-on one."""
     m = {"c23": CONTOUR_ARC_SHARE, "headon": _S.rim_arc_share_headon, "route": _S.rim_arc_share_route,
          "measured": _S.rim_arc_share_measured, "default": _S.rim_arc_share_measured}[source]
     if not math.isfinite(m):
-        raise ValueError(f"arc share {source!r} is not measured yet (python -m sim.arc_share)")
+        raise ValueError(f"arc share {source!r} is not measured yet")
     return m
 
 

@@ -57,7 +57,7 @@ async function main() {
   ensureStyles();
   try { S.index = await loadIndex(); } catch { S.index = []; }
   const pick = pickRun(S.index, P.get("batch"), P.get("run"));
-  if (!pick) { $("loading").textContent = "No campaign runs yet. Run python app.py, or python web/make_standin_campaign.py for a labelled stand-in."; return; }
+  if (!pick) { $("loading").textContent = "No campaign runs yet. Run python -m sim.live_runs, then python app.py."; return; }
   S.batch = pick.batch;
   try {
     S.cr = await CampaignRun.load(pick.batch, pick.run);
@@ -469,11 +469,11 @@ function checkpointsFor(run) {
 // The hackathon's drill rig (science_rig.js): arm out, drill down, dust, core
 // up, stow, played at each drill event. A campaign drill is one stop of
 // settings.drill_h hours that ends at the event's t (sim/campaign.py drill),
-// so the hackathon's phase list (sim/science.py PHASES, 28 s) is stretched
-// over the stop; the split between phases is the hackathon's, assumed. While
+// so the phase list (28 s) is stretched over the stop; the split between
+// phases is assumed. While
 // a drill plays the clock slows so the stop takes DRILL_FOCUS_S real seconds,
 // and the camera closes in on the drill, as the hackathon page did.
-const DRILL_PHASES = [["park", 2], ["arm_deploy", 4], ["drill", 10], ["sample_lift", 3], ["analyze", 5], ["arm_stow", 4]];   // sim/science.py PHASES
+const DRILL_PHASES = [["park", 2], ["arm_deploy", 4], ["drill", 10], ["sample_lift", 3], ["analyze", 5], ["arm_stow", 4]];   // assumed
 const DRILL_WORD = { idle: "parking", park: "parking", arm_deploy: "arm out", drill: "drilling", sample_lift: "core up", analyze: "reading the core", arm_stow: "arm back", done: "done" };
 const DRILL_FOCUS_S = 30;   // display only
 let rigs = {}, drills = [];

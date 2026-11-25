@@ -1,8 +1,0 @@
-{
-  "name": "lantern-web",
-  "private": true,
-  "description": "Lantern demo site: static viewer plus one serverless uplink (api/chain.js) that signs the mission's chain calls.",
-  "dependencies": {
-    "ethers": "6.13.4"
-  }
-}

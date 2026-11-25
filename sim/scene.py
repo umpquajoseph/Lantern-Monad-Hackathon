@@ -88,7 +88,7 @@ LAMP_OUTER_DEG = 32.0         # assumed: no light beyond this angle. Was 30/45 (
                               # read evenly grey); 15/32 puts a visible pool inside the 60 deg view that falls off
                               # to dark at the sides, centre brightness unchanged (exposure is set on the axis).
 EXPOSURE_REF_RANGE_M = 5.0    # assumed: flat ground this far ahead renders at EXPOSURE_REF_LEVEL.
-EXPOSURE_REF_LEVEL = 0.55     # assumed: 0..1 display level of that reference ground (sim/terrain_look.py uses the same).
+EXPOSURE_REF_LEVEL = 0.55     # assumed: 0..1 display level of that reference ground.
 DISPLAY_GAMMA = 2.2           # assumed: sensor-to-display curve.
 # Tone curve, in display-linear light y = L * EXPOSURE_REF_LEVEL^gamma (L = 1 at
 # the reference): straight below TONE_KNEE, so mid-tones and the 1/r^2 falloff
@@ -1256,8 +1256,8 @@ class Scene:
         x0 = lx - NEAR_HALF_M
         y0 = ly - NEAR_HALF_M
         # "full" also puts the detail tile's relief into the shadow surface: its
-        # bumps along a ridge cast the dashed lip lines terrain_look's 2 cm
-        # geometry shows. Its albedo stays per pixel, so it is divided out here.
+        # bumps along a ridge cast dashed lip lines. Its albedo stays per pixel,
+        # so it is divided out here.
         detail = self.display == "full"
         layers = self._mesh_layers + (("detail",) if detail else ())
         ph, pa = self.disp.patch(x0 + self.origin[0], y0 + self.origin[1], n, n, NEAR_RES_M, layers=layers)

@@ -1,8 +1,7 @@
 // Science stop rig: arm out, drill down, dust up, core back, stow.
 //
-// Mounts on a rover group and plays a science event's `phases` (sim/science.py
-// run_log_event) against the replay clock. Works in a y-up scene (the
-// preview page) or a z-up one (world.js, where the rover frame is x forward,
+// Mounts on a rover group and plays a science event's `phases` against the
+// replay clock. Works in a y-up scene or a z-up one (world.js, where the rover frame is x forward,
 // y left, z up), chosen by `up`.
 //
 //   const rig = new ScienceRig(roverGroup, scene, { up: "z" });

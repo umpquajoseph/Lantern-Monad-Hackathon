@@ -52,7 +52,7 @@ _S = _Settings()
 # 1 km), as the drift of a biased odometer does.
 ODOM_DRIFT = _S.pf_drift_sigma
 # Cauligi et al. 2023, sec. 1: "initial 3-sigma uncertainty of 3 m" -> 1 m.
-# (Sec. 6B writes sigma_0 = 3 m; this follows sec. 1 and sim/standins.py.)
+# (Sec. 6B writes sigma_0 = 3 m; this follows sec. 1.)
 SIGMA0_M = _S.pf_sigma0_m
 # Alg. 1 line 1: a negligibly small positive value to avoid divide-by-zero.
 Q_EPS = 1e-6

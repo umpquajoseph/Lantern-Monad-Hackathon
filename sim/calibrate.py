@@ -65,7 +65,7 @@ From 16 Nov 2026 17:00 (the table the paper uses):
   no-filter after, plus an orbital pixel's map error (sim/orbital_map.py)
   filter    no-filter, plus A24 sec. III-D's contour filter (sim/vision.py) with C23's
             80% arc share (width >= 8 m)
-  filter-measured  the same filter with Lantern's measured arc share (sim/arc_share.py)
+  filter-measured  the same filter with Lantern's measured arc share (Settings.rim_arc_share_headon)
 From 20 Nov 2026, 12:40, the noisy-depth configs (noisy_detect) also run C23 sec. 3A's
 far-side test after the contour filter, as sim/vision.py detect() does (far_side=False: off).
 From 20 Nov 2026, 13:00, depth follows A24 Table 1 in every 10 m band, with stereo holes
@@ -115,7 +115,7 @@ SIGMA0_C23 = 3.0              # C23 sec. 6B: "initial belief distribution with s
 MATCH_TOL_M = 1.0             # live-nav Settings.cam_match_tol_m (assumed there): a rim point is paired with a
                               # map crater whose edge lies this close; for the second false-match column
 SOURCE_TOL_M = 1.0            # assumed: a rim point comes from a crater if it lies this close to its edge
-                              # (2 x sim/rim_truth.py TOL_M; one 640 px row spans ~0.45 m of ground at 20 m)
+                              # (one 640 px row spans ~0.45 m of ground at 20 m)
 AVOID_D_M = 5.0               # assumed: routes go round craters this wide and wider
 AVOID_MARGIN_M = 1.5          # assumed: and keep this far outside their rims
 VIEW_RANGE_M = 20.0           # vision.RIM_RANGE_M upper end
@@ -489,14 +489,13 @@ CONFIGS = {
     # From 16 Nov 2026 17:00: the map also carries an orbital pixel's error (sim/orbital_map.py).
     "no-filter": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour=False),
     "filter":    dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="c23"),
-    # The same filter with Lantern's own measured arc share (sim/arc_share.py, held-out frames).
+    # The same filter with Lantern's own measured arc share (Settings.rim_arc_share_headon).
     "filter-measured": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="headon"),
     # The same, with every depth step reading one noisy stereo depth per frame: the
     # depth-jump test and the contour width as well as placement (16 Nov 2026, 20:00).
     "filter-measured-nd": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
                                contour="headon", noisy_detect=True),
-    # The second and last arc-share measurement (sim/arc_share.py rule route: headings over
-    # the whole field of view), with noisy-depth detection as the runs use it.
+    # The route arc share (Settings.rim_arc_share_route), with noisy-depth detection as the runs use it.
     # The same with the filter's matching as before 20 Nov 2026: the whole rim of the
     # nearest mapped craters, every frame (Settings.pf_match, pf_gate_m test cases).
     "filter-route-nd-full": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,

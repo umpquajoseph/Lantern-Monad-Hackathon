@@ -1,8 +1,7 @@
 """The Scouts' starting crater map: the craters an orbital product resolves.
 
 One cut, used by the campaign (sim/campaign.py, sim/terrain.py
-campaign_world) and by every camera run (sim/showcase.py, run_demo.py with
-vision, sim/calibrate.py). The truth keeps every crater; the map keeps
+campaign_world) and by sim/calibrate.py. The truth keeps every crater; the map keeps
 
 - only craters at least WorldRanges.orbital_map_min_d_m across
   (orbital_dem_px_m x orbital_resolve_px, 2 m x 5 px = 10 m by default;

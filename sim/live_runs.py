@@ -2,7 +2,6 @@
 
     python -m sim.live_runs --dry-run     # print the plan and the expected wall time, run nothing
     python -m sim.live_runs               # run them (again: skips finished runs)
-    scripts/launch_first3.ps1             # the same, in its own window
 
 Each run: 3 Scouts x 3 sorties, map refinement on, camera navigation
 (Settings.nav = "camera", the default), on sites s89_134e, s89_014e and
@@ -60,8 +59,8 @@ BATCH_ID = "live-nav-first3"
 S_PER_STEP_FALLBACK = 0.20
 STEPS_PER_PLANNED_FALLBACK = 2.37
 RATE_RUNS = 6                # newest finished camera runs the estimate is measured on
-# Settings read once at import by sim/scene.py, sim/vision.py and
-# sim/mission.py, not from the run's Settings: a --set of these would be
+# Settings read once at import by sim/scene.py and sim/vision.py,
+# not from the run's Settings: a --set of these would be
 # ignored, so it is refused.
 IMPORT_TIME_FIELDS = {"camera_height_m", "lamp_below_camera_m", "stereo_baseline_m", "stereo_hfov_deg",
                       "stereo_width_px", "stereo_disparity_sigma_px", "rim_arc_share_headon",

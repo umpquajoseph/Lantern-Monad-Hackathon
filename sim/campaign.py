@@ -458,6 +458,7 @@ class Sortie:
         self.search_results: list = []     # (find_id, result, detail)
         self.drilled: list = []            # find ids
         self.lanes_done: list = []
+        self.survey_end = None             # how the lane plan ended (run, _completion)
         self.drills_left = s.drill_sites_max
         self.act = ACT["descent"]
         self.true_find_xy = camp.true_find_xy  # engine-side truth, never in a Scout field
@@ -914,6 +915,12 @@ class Sortie:
             elif self.drills_left > 0:
                 self.drill(f, f["est"])
         ex, ey = c.entry
+        # How the lane plan ends: "lanes" (every lane given was driven),
+        # "budget" (the next lane and the drive to it would pass survey_m,
+        # the rule _reserve_lanes reserved them by), "turned_back" or "lost".
+        # drive_to is False only when the sortie must stop, so a skipped
+        # waypoint still ends its lane.
+        self.survey_end = "lanes"
         for i, ln in enumerate(lanes):
             if self.returning or self.lost:
                 break
@@ -921,6 +928,7 @@ class Sortie:
             da, db = math.hypot(ax - self.ex, ay - self.ey), math.hypot(bx - self.ex, by - self.ey)
             fx, fy = (bx, by) if da <= db else (ax, ay)
             if i and self.survey_used + min(da, db) + s.lane_segment_m > s.survey_m:
+                self.survey_end = "budget"
                 break
             if i == 0:
                 # Transit to the first lane: driven, not counted as survey.
@@ -928,6 +936,8 @@ class Sortie:
                 if not self.transit_to(c.route((self.ex, self.ey), (sx, sy))):
                     break
             self.lane(ln)
+        if self.lost or self.returning:
+            self.survey_end = "lost" if self.lost else "turned_back"
         self.survey_back = math.hypot(self.ex - ex, self.ey - ey)
         if not self.lost:
             self.returning = True
@@ -1328,15 +1338,20 @@ class Campaign:
 
         Planned work is survey_m of survey and drill_sites_max drill sites
         (brief p.6). `completed` means: home with the reserve; the survey is
-        done (survey_m driven, or every lane it was given); every drill it
+        done (its lane plan ran to the end: every lane it was given driven,
+        or the next lane would not fit in survey_m, the same rule the lanes
+        were reserved and driven by; not turned back or lost); every drill it
         was given is done; and the sortie, plus the drill time of any of its
         drill_sites_max sites it did not drill, fits in sortie_h and in the
         energy above the reserve. A sortie with nothing to drill is charged
         for the drill slots, so fixes that eat the stop budget show up even
-        before any find is confirmed.
+        before any find is confirmed. Until 24 Nov 2026 the survey counted
+        as done at survey_m - lane_segment_m driven, which ignored the drive
+        to the next lane: drive-full-s2 stopped by the lane rule at 3,765 m
+        and read not done.
         """
         s = self.s
-        survey_done = so.survey_used >= s.survey_m - s.lane_segment_m
+        survey_done = so.survey_end in ("lanes", "budget")
         n_drill = len(so.drilled)
         slots = max(s.drill_sites_max - n_drill, 0)
         dur_h = (so.t - so.rows[0][0]) / 3600.0
@@ -1345,7 +1360,8 @@ class Campaign:
         fits_energy = e_left >= s.reserve_frac * s.battery_kwh
         completed = (so.outcome == "ok" and survey_done and n_drill >= getattr(so, "planned_drills", 0)
                      and fits_time and fits_energy)
-        return {"completed": bool(completed), "survey_done": bool(survey_done), "drills": n_drill,
+        return {"completed": bool(completed), "survey_done": bool(survey_done), "survey_end": so.survey_end,
+                "drills": n_drill,
                 "drills_planned": getattr(so, "planned_drills", 0), "duration_h": rnd(dur_h, 3),
                 "fits_time": bool(fits_time), "fits_energy": bool(fits_energy)}
 

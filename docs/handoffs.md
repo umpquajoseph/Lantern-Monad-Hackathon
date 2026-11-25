@@ -511,6 +511,12 @@ Part 1 also writes (2026-11-16, additive):
 - Sorties: `fixes`, `survey_m`, `map_craters` (dock map size after this
   sortie's merge), `turn_back` (`energy` / `fault` / null). Sorties are
   ordered by `t_start`.
+- Sorties (24 Nov 2026, additive): `survey_end`, how the lane plan ended:
+  `lanes` (every lane given driven), `budget` (the next lane and the drive
+  to it would pass `survey_m`), `turned_back` or `lost`. `survey_done` is
+  true for `lanes` and `budget` (sim/campaign.py `_completion`). Earlier
+  records have no `survey_end`, and their `survey_done` meant `survey_m`
+  minus `lane_segment_m` driven.
 - Sightings are made only at checks (crossing's rule), of rims in view
   with no map partner.
 - `crater_map.start` and `truth.craters_missing` list only craters within

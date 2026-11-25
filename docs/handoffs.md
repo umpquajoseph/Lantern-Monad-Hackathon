@@ -1,447 +1,113 @@
-# Hand-offs between steps
+# Interfaces between parts
 
-Proposed formats. Agree them in the first 20 minutes of the build, then change
-one only by telling the others and editing this file in the same commit.
+Change a format here only by telling the other workers and editing this
+file in the same commit.
 
 ## Frames and units
 
-- World frame: metres, x east, y north. On a real LOLA tile, south polar
+- World frame: metres, x east, y north. On a LOLA tile, south polar
   stereographic metres, the frame the LOLA files use.
 - Heading: radians, counterclockwise from +x.
-- Rover frame: metres, level (z straight up), x along the heading, y left;
-  x, y from the pose, z from the camera. On level ground the camera is
-  straight above the pose, so this is the old "origin at the camera".
-  The body tilts with the ground under its footprint (`scene.body_frame`),
-  and camera and lidar readings are levelled with that known tilt
-  (18 Nov 2026).
-- Uncertainty `sigma`: one number in metres, the filter's 1-sigma radial
-  spread, `sqrt(trace(cov) / 2)` of the particle cloud.
+- Rover frame: metres, level (z up), x along the heading, y left; x, y from
+  the pose, z from the camera. The body tilts with the ground under its
+  footprint (`scene.body_frame`); camera and lidar readings are levelled
+  with that known tilt.
+- `sigma`: the filter's 1-sigma radial spread in metres,
+  `sqrt(trace(cov) / 2)` of the particle cloud. `bound95` is `K95_2D * sigma`
+  (sim/nav.py `belief`): the bound the Scout believes, not its true error.
 
-## Step 2, terrain, gives
+## Terrain (`sim/terrain.py`)
 
-- `height`: `np.ndarray (H, W)`, float32, metres, cell size 0.25 m, cell `[0, 0]`
-  at world `(x0, y0)`. Cell `[i, j]` is at `x = x0 + j * cell`,
-  `y = y0 + i * cell`: rows run north. A GeoTIFF's rows run south, so flip it.
-- `craters`: `np.ndarray (N, 3)`, rows `[x, y, diameter]` in metres. This is the
-  rover's orbital map.
-- Slope for planning: measure it across `SLOPE_BASELINE_M` = 2 m (ASSUMED,
-  about one rover length), not across one 0.25 m cell. Across single cells
-  the walls of the deeper mapped craters reach about 27°, so a 0.25 m slope
-  map would wall off every crater interior. Across 5 m the drive area is
-  99.8% under 15° (terrain report, 2026-11-15). The 15° limit itself is the
-  spec's.
-- On disk: `sim/terrain.py` has `load_terrain(path) -> (height, craters, x0, y0,
-  cell)`. The built file is `data/terrain/*.npz` in the main checkout
-  (`C:\Monad-Hackathon-Project\data\terrain\`), git-ignored and rebuilt by the
-  script.
+- `load_terrain(path) -> (height, craters, x0, y0, cell)`. `height`: float32
+  (H, W) metres; cell `[i, j]` is at `x = x0 + j * cell`, `y = y0 + i * cell`,
+  so rows run north (flip a GeoTIFF). `craters`: (N, 3) rows `[x, y, d]`.
+- Built files live in `DATA/terrain/` (sim/terrain.py `DATA`), git-ignored.
+- `campaign_world(site, seed, ranges) -> CampaignWorld`, the fields of
+  sim/campaign.py `World`: `site`, `file`, `x0`, `y0`, `cell`, `height`,
+  `slope` (LOLA slope product), `floor` (PSR patches of at least
+  `SiteBuild.psr_min_km2`), `craters` (N, 3), `map_start` (M, 3, from
+  sim/orbital_map.py with orbital error), `map_index` (M,) (the `craters`
+  row each map row stands for; match by index, never by position), `dock`,
+  `draws`, `ice`, `standin=None`. `clear_dock` drops every crater whose rim
+  comes within `WorldRanges.dock_clear_m` of the dock: a lander is set down
+  on clear ground.
+- Sites (sim/psr_sites.py `SITES`): `haynes`, `s89_014e`, `s89_134e` (87-90 S,
+  5 m mosaic) and `nobile` (10 m product). Windows in
+  `DATA/terrain/psr_sites/<site>.npz` (`python -m sim.psr_sites build`).
+  `shoemaker` is not PSR floor; sim/campaign.py `standin_world` serves it.
 
-## Terrain display (the hackathon's display layer; camera runs now read it)
+## Terrain display (`sim/terrain_display.py`)
 
-Camera runs (`cam_display` "detail", the default since 18 Nov 2026) render
-with a display layer built per run ground, `data/terrain/run_ground/<run>_display/`
-(`sim/terrain_display.py build_for_ground`): texture only, no rocks, lips
-or mottling (docs/terrain/position.md row 12). `web/build_assets.py
---run-ground` draws Mission Control's ground with the same layer. The
-Shoemaker layer below is the hackathon's and keeps its made-up values.
+Camera runs render with a display layer built per run ground,
+`DATA/terrain/run_ground/<run>_display/` (`build_for_ground`): texture only,
+no rocks, lips or mottling (docs/terrain/position.md row 12).
+`web/build_assets.py --run-ground` draws Mission Control's ground with the
+same layer. `display.json` lists files, parameters and sources. Real: the
+LOLA backdrops. Everything else is made up and marked so. Shading is Hapke,
+Xu et al. 2020 Eqs. (5)-(12). Arrays run rows north; PNG row 0 is the south
+edge.
 
-`data/terrain/display/display.json` in the main checkout lists the files,
-parameters and sources. Built by `python sim/terrain_display.py build`.
-Real: the LOLA backdrops (`backdrop_near.npz`, 5 m over 5 km; `backdrop.npz`,
-20 m over the 20 km tile). Everything else is made up and marked so.
-
-At strength `s` (`display.json`, default 1; one knob for all made-up detail):
-
-- height = sim grid (bicubic) + s x (8 m detail tile at world xy mod 8 m +
-  rim lips + rocks)
-- albedo = (1 + s(albedo - 1)) x (1 + s(detail_albedo - 1)); rocks at
-  `rock_albedo`
-- shading: Hapke, Xu et al. 2020 Eqs. (5)-(12) (Cauligi 2023 ref. [26]), with
-  the `hapke_*` parameters
-- backdrop: `backdrop_near` over `backdrop`, the drive area over both; lower
-  each backdrop by 0.5 m plus r^2/2R; add s x `far_detail_height` (512 m
-  period) to both
-- rocks: `rocks.npy` rows `[x, y, long, short, height, yaw, seed]`; draw the
-  first round(s x K)
-- Python: `terrain_display.Display().patch(xmin, ymin, nx, ny, res)`
-- Arrays run rows north, like the sim grid. PNG row 0 is the south edge.
-
-## Scene (`sim/scene.py`), gives
-
-One 3D scene draws both views, so the camera image the vision step reads is
-the one the judges see.
+## Scene (`sim/scene.py`)
 
 ```python
 scene = Scene(height, craters, x0, y0, cell)
 scene.set_rover(agency, true_pose)            # (x, y, heading)
-img, depth = scene.first_person(agency)       # img (h, w, 3) uint8,
-                                              # depth (h, w) float32: straight-line
-                                              # range in metres from the camera
-                                              # along each pixel's ray (not
-                                              # z-depth), NaN for sky
-img = scene.third_person(agency, overlays)    # (h, w, 3) uint8
+img, depth = scene.first_person(agency)       # img (h, w, 3) uint8; depth (h, w) float32,
+                                              # range along each ray in metres, NaN for sky
 ```
 
-- `overlays`: optional dict with `true_track (K, 2)`, `odom_track (K, 2)`,
-  `estimate (x, y)`, `sigma` (metres), `finds` (list of `get_finds()` dicts).
-- Also: `scene.camera_model()` gives the intrinsics and pitch (on the body),
-  `scene.rover_axes(pose)` the camera's axes in the level rover frame for a
-  pose, and `scene.depth_to_rover(depth, axes)` turns depth into rover-frame
-  points `[x_fwd, y_left, z_up]` for the vision step (`Vision.set_pose(pose)`
-  before each frame). Camera, lamp and lidar sit on the body and pitch and
-  roll with it.
-- The first-person camera sits on the Scout's mast, `Settings.camera_height_m`
-  (1.6 m, brief p.6); the lamp is `Settings.lamp_below_camera_m` (0.2 m) below
-  it, 60° horizontal field of view (Atha et al. 2024, sections IV and V).
-  ShadowNav's own camera was 2.5 m up.
+`scene.camera_model()` gives intrinsics and pitch, `scene.rover_axes(pose)`
+the camera axes for a pose, `scene.depth_to_rover(depth, axes)` rover-frame
+points `[x_fwd, y_left, z_up]`. Camera at `Settings.camera_height_m`, lamp
+`Settings.lamp_below_camera_m` below it, 60 deg horizontal view.
 
-## Run log (`run_demo.py` writes it, the web viewer replays it)
+## Navigation parts
 
-The hosted demo replays real runs, so everything the viewer shows comes from
-this log. One folder per run, `data/runs/<run_id>/` in the main checkout
-(`C:\Monad-Hackathon-Project\data\runs\`, git-ignored):
-
-- `log.json`:
-
-```json
-{
-  "run_id": "run1-20261115-1400",
-  "label": "Run 1: crater fixes on",
-  "terrain": {"file": "shoemaker.npz", "x0": 73250.125, "y0": 36000.125, "cell": 0.25},
-  "chain": {"chain_id": 0, "contract": "0x...", "explorer": "https://..."},
-  "truth": {"ice": [{"x": 0, "y": 0, "radius": 5.0, "peak": 0.0}]},
-  "steps": [
-    {
-      "t": 0.0,
-      "rovers": {
-        "A": {"true_pose": [x, y, heading], "odom_pose": [x, y, heading],
-              "estimate": [x, y], "sigma": 0.8, "nav_on": true,
-              "rims": [[x_fwd, y_left]], "fp_frame": "fp/A_0000.jpg"},
-        "B": {}
-      },
-      "events": [
-        {"type": "find", "agency": "A", "find_id": 1, "x": 0, "y": 0,
-         "sigma": 0.8, "reading": 0.0, "tx": "0x..."},
-        {"type": "check", "agency": "B", "find_id": 1, "x": 0, "y": 0,
-         "sigma": 0.9, "reading": 0.0, "agrees": true, "tx": "0x..."}
-      ]
-    }
-  ]
-}
-```
-
-- `fp/<agency>_<step>.jpg`: the first-person frame from `scene.first_person`,
-  a sensor frame. It is rendered live in the sim loop, right after the rover
-  drives and before it localises, so vision can read it there.
-- Per rover, optional `fp_sub`: `[[f, "fp/A_0039_1.jpg"], ...]`, extra
-  first-person frames between step k and step k+1, f in (0, 1) ascending,
-  about every 0.5 m driven (`run_demo.py --sub-frame-m`). Frame f is at the
-  pose interpolated as `web/js/data.js poseAt` does: x, y linear, heading
-  along the shorter turn, the camera's own rover only. A player shows the
-  last frame with f at or below the playback fraction, else `fp_frame`.
-  These are display frames, not sensor frames: they are rendered after the
-  sim from the logged poses, in parallel, and no rover ever sees them.
-- Per rover `particles`: `[[x, y, w], ...]`, the navigation filter's
-  particles after the step (ParticleNav, 100), world metres to 1 cm, `w`
-  the normalised weight (sums to 1, 4 decimals). Empty list without a filter.
-- Top level `frames`: one sentence each for `fp_frame` and `fp_sub` saying
-  how they were made (sensor frame vs interpolated display frame).
-- Also written by `run_demo.py` (additive): top level `standins`, `dt_s`,
-  `final_finds`, `truth.ice_units`, `truth.find_threshold_wt`; per rover
-  `mode`, `ice_reading`, `est_error`, `distance`. `index.json` in
-  `data/runs/` lists the runs.
-- `standins` lists only parts that are stand-ins for something still to be
-  built. A real part gets its own top-level string naming what it is: `nav`
-  (the particle filter) and `planner` (A* under the 15 deg slope limit, 2 m
-  baseline, 0.25 m grid). The viewer shows those as real.
-- `truth` is what the rovers cannot know: the hidden ice map. The viewer may
-  show it only as a labelled reveal ("hidden truth"), never as something a
-  rover saw. Ice is under the surface, so it is never drawn as visible
-  ground.
-- Units and frames as above: world metres, heading radians, `t` in simulated
-  seconds. `events` lists what happened at that step, with the transaction
-  hash once step 1 exists.
-- Proposed. The viewer and `run_demo.py` may change it, by telling the lead
-  and editing this section in the same commit.
-
-## Step 4, rover loop, gives each step, per rover
-
-- `true_pose`: `(x, y, heading)`.
-- `odom`: `(distance_m, dheading_rad)` since the last step, with distance noise
-  of 2% (ShadowNav section 1). Until step 4 exists, step 3 uses a scripted drive
-  that produces the same tuple.
-
-## Steps 3 and 6 rim points
-
-- `rims`: `np.ndarray (M, 2)`, rows `[x_forward, y_left]` in metres, rover frame.
-- Stand-in until step 6: points on the near rims of mapped craters within 15 m
-  of the true pose, with noise added and some missed.
-- Answer key (step 6 scoring, `sim/rim_truth.py`, details in
-  `_archive/docs/requests/rim-answer-key.md`): `rim_truth(scene, agency, depth)`
-  gives the mapped rims in the frame: per point `xy` (rover frame
-  `[x_forward, y_left]`), `uv` (pixels), `crater_id`, `near` (the half
-  arc nearest the camera, Cauligi 2023 sec. 5A), `visible` (3-15 m, 60
-  deg view, not occluded by the frame's depth) and `shadow` (casts the
-  lamp shadow); `rims` (M, 2) is the visible front arc in this format.
-  `score(pred_rims, truth)` returns precision, recall (front arc),
-  recall_shadow, mean_dist_m and the paper's Gaussian score (sigma 0.25
-  m), at a 0.5 m tolerance (assumed).
-- About a third of the rim shadow in `display="full"` frames comes from the
-  invented rim lips (terrain, 4 poses, 15/32 deg lamp cone: 430
-  shadow-casting front-arc points in full against 270 in `display="detail"`;
-  dark rim pixels 1156 against 816).
-
-## Step 3, navigation, gives each step
-
-- `estimate`: `(x, y)` in metres, world frame.
-- `sigma`: metres, as defined above. Logged next to the true error.
-
-## Camera navigation realism (16 Nov 2026, worker `realism`)
-
-- Starting map: `sim/orbital_map.py`. `in_orbital_map(d, u, d_min_m,
-  missing_share_large)` is the one cut the campaign (`campaign.py`,
-  `terrain.campaign_world`) and every camera run (`showcase.py`,
-  `run_demo.py` with vision, `calibrate.py`) use. `orbital_map(craters, rng)`
-  returns `(map (M, 3), mask (N,), share)`. `WorldRanges.orbital_map_min_d_m`
-  is now a property, `orbital_dem_px_m x orbital_resolve_px` (2 m x 5 px =
-  10 m); the record's `orbital_map_min_d_m` key is unchanged. `orbital_map()`
-  also gives each mapped crater an orbital pixel's error (1-sigma 2 m in
-  position per axis and in diameter, `orbital_pos_err_px`,
-  `orbital_diam_err_px`); row i of the map is truth crater
-  `np.flatnonzero(mask)[i]`. The campaign's `map_start` is built with
-  `orbital_map()` too (live-nav, 16 Nov), so it carries the same error;
-  `World.map_index` names each row's true crater.
+- `sim/orbital_map.py orbital_map(craters, rng) -> (map (M, 3), mask (N,), share)`:
+  the one starting-map cut. Each mapped crater carries an orbital pixel's
+  error (`orbital_pos_err_px`, `orbital_diam_err_px`). Map row i is truth
+  crater `np.flatnonzero(mask)[i]`.
 - `ParticleNav(fixes_on, rng, craters=None, noise=None)`: `noise` is a
-  `nav.PFNoise` (default: `Settings.pf_*`, the filter's own model). New:
-  `covariance()` -> `(mean, cov 2x2)`, `sigma_max()` (C23 sec. 6B's sqrt
-  of the largest eigenvalue). `step()` and `belief()` are unchanged.
-- `Vision(scene, rng, depth_model="stereo")`: rim depth noise is stereo's
-  (`Settings.stereo_*`). `rims(img, depth)` is unchanged; new
-  `detect(img, depth)` -> rim pixels `(v, u)` (no noise drawn),
-  `place(v, u, r0)` and `rims_detail(img, depth)` -> dict `rims`, `true`
-  (noiseless placement, scoring only), `uv`, `idx`. `detect()` applies A24
-  sec. III-D's contour filter (`contour_ok`: at least 25 px, estimated width
-  at least 0.8 x the map cut = 8 m); `detect_contours()` gives the pixels
-  before it with each one's contour width and pixel count;
-  `Vision(..., contour_filter=False)` turns it off. The width threshold is
-  `Settings.rim_arc_share_measured` x the map cut. That share is
-  `rim_arc_share_route` (sim/arc_share.py rule route, headings over the
-  whole field of view) once measured, else `rim_arc_share_headon` (0.553,
-  5.53 m). `contour_ok(..., source=)` takes "c23" (8 m), "headon",
-  "route" or "measured".
-- From 16 Nov 2026 20:00, one noisy depth per frame: `vis.noisy_depth(depth)`
-  draws the frame's stereo range image once, and the depth-jump test, the
-  contour width, rim placement and `points()` all read it. `rims`,
-  `rims_detail`, `detect` and `detect_contours` take `nd=` (that image; drawn
-  inside when not given, so `detect()` now draws noise). `nd=depth` gives
-  the renderer's noiseless depth (sim/arc_share.py uses it, as measured).
-  `place(..., r_noisy=)` places pixels at their noisy ranges. `process()`
-  draws once for rims and hazards. Only the `true` placements read the
-  renderer's depth.
+  `nav.PFNoise` (default `Settings.pf_*`). `covariance() -> (mean, cov)`,
+  `sigma_max()` (C23 sec. 6B).
+- `Vision(scene, rng, depth_model="stereo")`: `rims(img, depth)`;
+  `detect(img, depth)` rim pixels after A24 sec. III-D's contour filter;
+  `rims_detail` adds noiseless `true` placements (scoring only).
+  `vis.noisy_depth(depth)` draws one stereo range image per frame, which
+  every depth reader of that frame takes as `nd=`.
 - Calibration: `python -m sim.calibrate`, output in
-  `campaigns/calibration/<batch>/` (`table.md`, `calibration.json`,
-  format `lantern-calibration/1`).
+  `campaigns/calibration/<batch>/` (`table.md`, `calibration.json`).
 
-## Step 1, chain client (`sim/chain.py`), gives
-
-```python
-post_find(agency, x, y, sigma, reading, data_hash) -> find_id
-check_find(agency, find_id, x, y, sigma, reading, agrees) -> tx_hash
-get_finds() -> list[dict]   # each: id, agency, x, y, sigma, reading,
-                            # agree (agencies), disagree (agencies), status
-                            # plus: address, data_hash, time (block timestamp)
-```
-
-- `agency` is `"A"` or `"B"`; the client maps it to the key in `.env`.
-- On chain, positions and sigmas are whole centimetres, `data_hash` is
-  `bytes32`, and status is reported, confirmed or disputed. The client takes
-  metres and gives back metres; `status` comes back as one of the strings
-  `"reported"`, `"confirmed"`, `"disputed"`.
-- `reading` is the ice sensor reading as wt% water-equivalent (float, e.g.
-  `5.6`); on chain it is hundredths of wt% (`uint32`, ASSUMED unit, see
-  `contracts/src/Lantern.sol`).
-- `data_hash`: `bytes` (32) or a `0x` hex string. `chain.hash_raw(obj)` makes
-  one from the raw readings (canonical JSON, sorted keys, keccak256).
-- Check rule: refused if the checker's agency is the finder's, or if
-  `dx² + dy² > (3 × (sigma_find + sigma_check))²`, all in centimetres. Also
-  refused: a second check of the same find by the same agency, and any write
-  from an address that is not one of the agencies fixed at deployment. A
-  refusal raises `chain.LanternRefused` with `.name` in `OwnFind`,
-  `AlreadyChecked`, `TooFar`, `NoSuchFind`, `NotAnAgency` and `.values` its
-  arguments; nothing is sent.
-- Also available: `chain.client().tx_log` (every transaction sent: `kind`,
-  `agency`, `tx_hash`, `url`, `block`, `gas_used`, `seconds`, `find_id`),
-  `chain.client().last_tx` (hash of the last one, as the spine's stand-in
-  has it), `chain.client().run_log_chain()` (the run log's `chain` block:
-  `chain_id`, `contract`, `explorer` as the explorer's *base* URL so the
-  viewer links `<explorer>/tx/<hash>`, plus `contract_url` and `verified`),
-  `post_safety_zone(agency, x, y, radius, until, purpose) -> zone_id` and
-  `get_zones()` (Artemis Accords section 11 upgrade).
-- For `run_demo.py`: `chain.run_scope()` is a drop-in for `ChainStandin`,
-  with the same `post_find`, `check_find`, `get_finds`, `last_tx` and a
-  `STANDIN` of `None`. Its `get_finds()` returns only the finds posted since
-  the scope was made (the contract keeps every find from every run), with
-  their real on-chain IDs (0-based), and is cached for 2 s between the
-  scope's own writes so a rover polling every step stays under the public
-  RPC's 20 req/s. Verified end to end: the unmodified spine ran both demo
-  runs against the testnet contract (2026-11-15, see `contracts/README.md`).
-- Read-only use needs no keys: the address and ABI come from
-  `sim/lantern_deployment.json` and `sim/lantern_abi.json` (committed, written
-  by `contracts/deploy.sh`). The web viewer can read the same two files.
-
-## Results ledger (`sim/results.py`, `sim/survey.py`, `survey/`), gives
-
-After a run, one master file per run and its results on Monad, next to Lantern:
-
-- `python sim/results.py build data/runs/<run_id>` reads `log.json` (above) and
-  writes `data/runs/<run_id>/results.json`: per rover the path it believes it
-  drove (`estimate`, or `odom_pose` when nav is off) with sigma, its length and a
-  downsampled copy for the chain; per find x, y, sigma, lat/lon, reading, a
-  modelled ice quantity (`ice.area_m2`, `ice.depth_m`, `ice.mass_kg`), modelled
-  volatiles (`volatiles_ppm`, `volatiles_kg`, 8 species from LCROSS, Colaprete
-  et al. 2010 Table 2), its checks and its status; run totals; and
-  `results_hash`, keccak256 of the canonical file without `truth` and `chain`.
-- `python sim/survey.py post data/runs/<run_id>` posts to `LanternSurvey`
-  (`survey/src/LanternSurvey.sol`): one traverse per rover, one assay per find
-  (signed by the finder, refused for anyone else), one run record with
-  `results_hash`. It writes the transactions into `results.json` under `chain`.
-  `--post-finds` first posts finds and checks that have no `tx` (stand-in chain
-  runs) to Lantern. Re-running skips what is already on chain.
-- Reads for the viewer: `SurveyClient().runs()`, `.traverses()`, `.assays()`;
-  ABI and address in `sim/survey_abi.json`, `sim/survey_deployment.json`.
-- Optional, asked of the spine: a per-step `"reading"` (wt%) in each rover's
-  dict. With it the deposit extent is measured along the track; without it the
-  area is one sensor footprint (sim/ice.py FOOTPRINT_RADIUS_M). Nothing breaks either way.
-- Writers are Lantern's agencies (`isAgency`), so it needs no keys of its own.
-
-## Step 5, dashboard, takes
-
-- The per-step state above for both rovers, `get_finds()`, and from step 6 the
-  camera image `np.ndarray (h, w)` or `(h, w, 3)` with `rims` to overlay.
-
-## Mission (`sim/roles.py`, `sim/mission.py`), gives
-
-The Surveyor and Prospector mission behind Mission Control (`web/mission.html`).
-Its parts and storage rules are in `_archive/docs/ARCHITECTURE.md` and `_archive/docs/storage.md`;
-this is only what crosses into other steps.
-
-- `python sim/roles.py run [--render] --publish-run data/runs` writes the
-  mission's store (`mission.json`, `run_log.json`, `evidence/<cid>.json`) and
-  publishes it as a run: `data/runs/<id>/log.json` plus an entry in
-  `data/runs/index.json`, beside `run_demo.py`'s entries. `app.py` then copies
-  it into `web/runs/` like any other run.
-- The run log follows "Run log" above, with the mission's additions read only
-  by `web/js/mission.js`: per-step `science`, and `report_cid`, `route_cid`,
-  `record_id` on its events.
-- Navigation is `sim/nav.py` (ParticleNav) on the rim-point stand-in, the same
-  as `run_demo.py`. First-person frames come from `sim/scene.py` through
-  `sim/mission_render.py`.
-- Chain: the demo's chain is Lantern (step 1 above). The mission's own
-  registry, `registry/` and `sim/registry_client.py`, runs on a local anvil or
-  an offline mock and is not used by the demo.
-
-## Mission log (`run_mission.py` writes it; the demo page replays it with checkpoints)
-
-The demo is one precomputed run of the real autonomy, replayed on the hosted
-site. It is a run log as above, with these additions. Everything here is
-additive: a viewer that reads only the run-log fields still works.
-
-Top level:
-
-- `roles`: `{"A": "Surveyor", "B": "Prospector"}`.
-- `mission.sites`: the orbital candidates, in visiting order:
-  `[{"id": "S1", "x", "y", "radius", "order": 1, "verdict": "dry" | "ice" | null, "kind": "orbital candidate"}]`
-  (world metres). The map highlights them from the start; `verdict` is the
-  end state, so a viewer that wants the reveal in order uses the `site`
-  events below.
-- `mission.checkpoints`: where playback pauses, in step order:
-  `[{"id", "step", "t", "label", "say", "pause": true}]`. The player, on
-  crossing `step` while playing, stops there when `pause` is true and shows
-  `label`; `say` is one line for whoever is talking. Pressing play goes on.
-  Ids today: `overview` (step 0), `divert-A` (the step before the Surveyor's
-  lidar first marks a crater its orbital map does not show), `arrive-S1`,
-  `arrive-S2`, `dispatch-B`, `divert-B`, `arrive-B`, `end`. A checkpoint is
-  absent when its moment did not happen in the run.
-- `mission.unmapped_craters`: `[{"x", "y", "diameter", "for": "A" | "B"}]`, the
-  craters left out of the planning map on purpose (as a 5 m orbital DEM would
-  miss them), one per rover's first leg; `mission.unmapped_note` says so in
-  words. Each rover's `sees_unmapped_crater` (per step) turns true when its
-  lidar first marks that crater; the `divert-A` / `divert-B` checkpoint is
-  the step before. Empty when the run had no sensors.
-- `mission.survey_phases`, `mission.prospect_phases`: the instrument phase
-  names in order (see `instrument` below).
-- `satellite_sites` and `states` (`{"A": [{"t", "state", "objective"}]}`):
-  the same shapes `sim/roles.py` writes, for the mission page.
-- `lidar`: a sentence saying the lidar is simulated from the terrain, or null.
-
-Per step:
-
-- `mission_events`: beside `events` (which stays chain transactions only,
-  `find` and `check`): `{"type": "site", "agency": "A", "site_id", "verdict": "dry" | "ice",
-  "reading", "x", "y", "sigma", "on_chain": bool, "find_id"?, "tx"?}` when a
-  survey ends, and `{"type": "dispatch", "agency": "B", "find_id", "site_id", "x", "y", "read_from": "chain"}`
-  when the Prospector reads a find and sets off. A dry site is not posted on
-  chain; its `site` event is the only record.
-- `events` entries carry `site_id` too.
-
-Per rover, per step (added to the run-log fields):
-
-- `role`: `"Surveyor"` or `"Prospector"`.
-- `phase`: one short line of what it is doing: `"to S1"`, `"survey S1"`,
-  `"to S2"`, `"done"`, `"wait for a find"`, `"to find 17"`, `"prospect find 17"`.
-- `site_id`: the site it is heading for or working at, else null.
-- `plan`: the path it is about to drive, `[[x, y], ...]` world metres from
-  the rover forward (the dashed line), on steps where it moved; `[]` otherwise.
-  The planned route bends when the lidar marks a hazard on it.
-- `instrument`: `{"name", "progress" (0..1), "step", "of"}` while a survey or
-  prospecting sequence runs, else null. Names come from the phase lists above.
-- `lidar_hazard_total`: hazard cells the lidar marked on this frame (0 off),
-  beside the spine's `lidar_hazards` by kind and `lidar_frame`.
-
-Honesty: `standins` lists what is still simulated (the ice sensor and the
-instrument sequences). The chain block, the hashes and the finds are real
-when the run was made with the agency keys; the page shows "fake tx" otherwise.
-
-## Campaign simulator (docs/campaign-spec.md), shared by parts 1-4
-
-Written first, by the lead, 2026-11-16. Change it only by editing this
-section in the same commit and mailing every part.
+## Campaign simulator
 
 ### Settings
 
-`sim/settings.py`: `Settings` (design choices plus fixed constants) and
+`sim/settings.py`: `Settings` (design choices and constants) and
 `WorldRanges` (what a world seed draws). Every field carries its source in
 `metadata["source"]`, or `assumed`. `python sim/settings.py` lists them and
 must print `unlabelled: none`. A new constant is a new field there, never a
-literal in another file. `Settings.drift_frac` is used by a single run; a
-batch draws drift from `WorldRanges.drift_frac` per world.
+literal elsewhere.
 
-`Settings.site` picks the world: a PSR site from `sim/psr_sites.py`
-(`haynes`, `s89_014e`, `s89_134e`; default `s89_134e`) or `shoemaker`
-(engine stand-in, not PSR floor). It is part of `Settings.key()`, so runs
-on different sites never share a folder, and it is a summary.csv column.
+`Settings.site` picks the world. A run is named
+`w<seed:05d>-<Settings.key()>`; the key includes the site. Same seed and key
+give the same record apart from `made_at`.
 
-A run is named `w<seed:05d>-<Settings.key()>`. Same seed and same key give
-the same record, byte for byte apart from `made_at`. A single run's world
-ranges come from its Settings (sim/campaign.py `single_run_ranges`: drift,
-crater density, map cut), so they are in the key; a drawn batch passes its
-own ranges, which are not.
+### Run record
 
-### Run record (part 1 writes it; parts 2-4 read it)
+One folder per run, `data/campaigns/<batch_id>/<run_id>/` (git-ignored).
 
-One folder per run, `data/campaigns/<batch_id>/<run_id>/` (git-ignored):
-
-- `record.json`:
+`record.json`:
 
 ```json
 {
   "format": "campaign-record/1",
   "run_id": "w00042-6e3f2e33", "seed": 42, "made_at": "2026-11-16T15:00:00-08:00",
-  "nav": "sampled",
+  "nav": "camera",
   "settings": {"n_scouts": 3, "...": "every Settings field"},
   "world": {"crater_n_ge10_per_km2": 640.0, "drift_frac": 0.021,
             "dock_reg_err": [1.2, -0.4], "...": "every WorldRanges draw"},
-  "terrain": {"site": "shoemaker", "file": "shoemaker.npz",
-              "x0": 0.0, "y0": 0.0, "cell": 5.0, "bounds": [xmin, ymin, xmax, ymax]},
+  "terrain": {"site": "haynes", "file": "...", "x0": 0.0, "y0": 0.0, "cell": 5.0,
+              "bounds": [xmin, ymin, xmax, ymax]},
   "dock": {"x": 0.0, "y": 0.0},
   "scouts": ["S1", "S2", "S3"],
   "crater_map": {
@@ -456,484 +122,138 @@ One folder per run, `data/campaigns/<batch_id>/<run_id>/` (git-ignored):
      "time_s": {"drive": 0, "check": 0, "reading": 0, "drill": 0, "wait": 0},
      "energy_end_kwh": 2.1, "distance_m": 7012.0, "checks": 21, "wrong_matches": 0}
   ],
-  "events": [
-    {"t": 0.0, "sortie_id": "S1-01", "scout": "S1", "type": "check",
-     "x": 0, "y": 0, "est": [0, 0], "bound95": 2.8, "wrong_match": false}
-  ],
+  "events": [{"t": 0.0, "sortie_id": "S1-01", "scout": "S1", "type": "check", "...": "below"}],
   "truth": {"label": "hidden truth",
             "ice": [{"x": 0, "y": 0, "radius": 6.0, "peak": 3.0}],
             "craters_missing": [[x, y, d]]},
-  "summary": {"...": "the summary row below, for this run"}
+  "summary": {"...": "the summary row, for this run"}
 }
 ```
 
-- `poses.npz`: one float32 array per sortie, key = `sortie_id`, a row every
-  `log_spacing_m` driven plus one at every event:
-  `[t, true_x, true_y, true_heading, est_x, est_y, bound95, energy_kwh, activity]`.
-  `activity` codes: 0 descent, 1 survey, 2 return, 3 check, 4 reading,
-  5 drill, 6 search, 7 docked, 8 waiting at dock.
-- Units and frames as "Frames and units" above. `t` is campaign seconds from
-  the first launch. `bound95` is the 95th-percentile radial position bound in
-  metres the Scout believes, not the true error. Truth is never mixed into a
-  Scout field.
+Also top level: `world_ranges`, `corridor` (descent waypoints, map frame),
+`energy`, `standins`, `finds` (each find as the dock holds it at the end,
+with `history` and `confirm_est`), `pipeline` (each part's `NAME`),
+`timing.frames` (`rendered`, `skipped_no_crater`, `skipped_camera_off`), and
+`ground`: the fine ground the camera saw,
+`{"file": "run_ground/<run_id>.npz", "x0", "y0", "cell", "bounds", "display"}`,
+relative to `DATA/terrain/`. A viewer that wants that ground loads this file.
+Runs from sim/live_runs.py add `seed_choice` and `paper_statistics: false`:
+their seeds were picked for the site and video, so the paper must not use
+them.
 
-`outcome`: `ok` (home with the reserve), `below_reserve` (home, under it),
-`fault_return` (turned back on a fault, home), `lost` (never home; the run
-goes on with one Scout fewer).
+`poses.npz`: one float32 array per sortie, key `sortie_id`, a row every
+`log_spacing_m` driven and at every event:
+`[t, true_x, true_y, true_heading, est_x, est_y, bound95, energy_kwh, activity]`.
+Activity: 0 descent, 1 survey, 2 return, 3 check, 4 reading, 5 drill,
+6 search, 7 docked, 8 waiting at dock. `t` is seconds from the first launch.
+Truth is never mixed into a Scout field.
 
-Event `type`s and their extra fields:
+Sortie fields beyond the example: `fixes`, `survey_m`, `map_craters`,
+`turn_back`, `survey_end` (`lanes`, `budget`, `turned_back` or `lost`;
+`survey_done` is true for the first two), `steps`, `point_turns`,
+`waypoints_skipped`, `pingpong_blocks`, `reversals`, `retraces`,
+`retrace_steps`, `drive_overhead`, `plan_slope`, `rim_points`, `rim_wrong`,
+`rim_unpaired`, `rim_matched`, and the steep-step counts: steps onto ground
+truly over the pitch or roll limit for the heading driven
+(sim/rover.py `_note_true_steep`), `steep_unflagged` with
+`steep_unflagged_by` (sim/lidar.py `HazardMemory.why_missed`: `never_in_band`,
+`shadow`, `too_sparse`, `under_read`, `judged`), and `steep_flagged_by`
+(`orbital`, `lidar_steep`, `lidar_crater`).
+
+`outcome`: `ok` (home with the reserve), `below_reserve`, `fault_return`,
+`lost` (never home; the run goes on with one Scout fewer).
+
+Events:
 
 | type | fields |
 |---|---|
 | `launch`, `dock_arrive` | `energy_kwh` |
-| `check` | `est`, `bound95`, `wrong_match`, `craters_in_view` (detectable true rims in view), `matched` (map craters matched), `fixed` (false: under `fix_min_craters` matched, no fix), `reason` (`schedule` / `find` / `search` / `drill`), truth: `true_err_before_m`, `true_err_m`; `wrong_match_cause` (null unless `wrong_match`): `base` / `missing` / `misplaced:<crater_id or start-map row>` |
-| `reading` | only above `find_threshold_wt`, else counted in `time_s`: `reading_wt`, `est`, `bound95`, `anchor` |
+| `check` | one position fix: `est`, `bound95`, `wrong_match`, `wrong_match_cause` (`base` / `missing` / `misplaced:<id>`), `craters_in_view`, `matched`, `fixed`, `reason`, `mode`, `d_since_fix_m`, `due_m`, `points`, `wrong_points`; truth `true_err_before_m`, `true_err_m`. Scheduled and preplanned fixes add `landmark` `[x, y, d]`, `landmark_row`, `stops`, `stops_planned`, `frames_used`, `stop_s`, `detour_m`, `fix_h`; preplanned adds `late`, `detour_planned_m`, `depart_at_m`, `due_at_m`. In `opportunistic` a check is one crater pass and adds `steps` |
+| `fix_unavailable` | a fix was due and no landmark was in reach: `est`, `bound95`, `reason` (`no_landmark`, `no_landmark_on_leg`), `reach_m`, `d_since_fix_m`, truth `true_err_m` |
+| `reading` | only above `find_threshold_wt`: `reading_wt`, `est`, `bound95`, `anchor` |
 | `find` | `find_id`, `est`, `bound95`, `reading_wt`, `anchor` |
-| `search_start`, `search_end` | `find_id`, `radius_m`; end adds `result`: `confirmed` / `unconfirmed`, `reason`: `match` / `no_readings` / `no_match` / `bound_too_large`, `truth_has_deposit`, `false_confirmed`, `missed` |
-| `drill` | `find_id`, `est`, `true_err_m` (the Scout's position error), truth: `miss_m` (to the find's true reading point), `hit` (a deposit under the drill) |
-| `sighting` | `est`, `d_est`, `bound95`, `anchor` (a rim seen but not matched) |
-| `crater_added` | `crater_id` (at the dock, `sortie_id` = the sortie just ended) |
-| `turn_back` | `reason`: `energy` / `fault` |
-| `fault` | `module`: `camera` / `lamp` / `neutron` |
-| `swap` | `module`, `downtime_h` |
-| `contact_lost`, `contact_regained` | none; `sortie_id` and `scout` are null |
-| `lost` | `energy_kwh` (0): battery empty before the dock. Since 17 Nov 2026 also `reason`: `battery` (that case) or `stranded` (camera: its return route driven, the dock lies farther than its `bound95` + 25 m, sim/campaign_camera.py `DOCK_SIGHT_M`, assumed; `energy_kwh` is what it had left, `dist_m` the true distance to the dock). Before, the last hop to the dock was driven free whatever its length (up to 2,355 m in live-nav-first3), so those sorties read `ok` or `below_reserve`. Also `stuck` (camera, added later on 17 Nov 2026): the battery ran flat with the Scout's true position within 10 m of where it died for at least 1 h (sim/campaign_camera.py `STUCK_RADIUS_M`, `STUCK_MIN_H`, assumed), plus `stuck_h`, the hours since it was last farther. Earlier records call those losses `battery` |
+| `search_start`, `search_end` | `find_id`, `radius_m`; end adds `result` (`confirmed` / `unconfirmed`), `reason` (`match` / `no_readings` / `no_match` / `bound_too_large`), `truth_has_deposit`, `false_confirmed`, `missed` |
+| `search_abandoned` | `find_id`, `reason` (`unreached` / `energy` / `time` / `fault` / `lost`), `dist_m`, `radius_m`, `points_done`, `points_planned`, `partial`, `combined_bound95`. The find stays `find`. Old records call the unreached case `search_unreached` |
+| `drill` | `find_id`, `est`, `true_err_m`; truth `miss_m`, `hit` |
+| `sighting` | an unmatched rim arc fitted with a circle: `est`, `d_est`, `bound95`, `anchor`, `points`, `fit_rms_m` |
+| `crater_added` | `crater_id` (at the dock) |
+| `waypoint_skipped` | `reason` (`blocked`, `off_ground`, `hazard`, `passed_by_fix`), `goal` |
+| `turn_back` | `reason`: `energy` / `fault` / `time` |
+| `fault`, `swap` | `module` (`camera` / `lamp` / `neutron`); swap adds `downtime_h` |
+| `contact_lost`, `contact_regained` | none |
+| `lost` | `reason`: `battery`, `stranded` (return driven, dock farther than `bound95` + `DOCK_SIGHT_M`) or `stuck` (battery flat within `STUCK_RADIUS_M` of one spot for `STUCK_MIN_H`, adds `stuck_h`); `energy_kwh`, `dist_m` |
 
-Part 1 also writes (2026-11-16, additive):
+`cam_fix_mode` (sim/campaign_camera.py): `preplanned` (default) picks each
+fix's landmark when its leg is planned and drives a half survey of it;
+`straight` fixes on landmark-sized craters as they come into view within
+`fix_view_m`; `scheduled` and `opportunistic` (the filter corrects on every
+frame with rims) are test cases. Only `opportunistic` updates the filter
+outside a fix.
 
-- Top level: `world_ranges` (the ranges the world was drawn from; a single
-  run uses a zero-width drift range at `Settings.drift_frac`), `corridor`
-  (descent waypoints, map frame, from the dock's registered position),
-  `energy` (the per-activity draws after scaling to `avg_load_w`),
-  `standins` (parts still stand-ins), `finds` (every find as the dock
-  holds it at the end: the find dict plus `history` [[sortie_id, status]]
-  and `confirm_est` when confirmed).
-- Sorties: `fixes`, `survey_m`, `map_craters` (dock map size after this
-  sortie's merge), `turn_back` (`energy` / `fault` / null). Sorties are
-  ordered by `t_start`.
-- Sorties (24 Nov 2026, additive): `survey_end`, how the lane plan ended:
-  `lanes` (every lane given driven), `budget` (the next lane and the drive
-  to it would pass `survey_m`), `turned_back` or `lost`. `survey_done` is
-  true for `lanes` and `budget` (sim/campaign.py `_completion`). Earlier
-  records have no `survey_end`, and their `survey_done` meant `survey_m`
-  minus `lane_segment_m` driven.
-- Sightings are made only at checks (crossing's rule), of rims in view
-  with no map partner.
-- `crater_map.start` and `truth.craters_missing` list only craters within
-  `fix_range_m + 10` m of a driven pose (`crater_map.scope` says so), plus
-  every crater an added one points at; `true_crater` indexes that cut
-  list. The full lists are regenerated from the seed.
-- `truth.ice_profile`: the field readings and `crossing.deposit_at` use
-  (sim/ice.py's profile).
-- `poses.npz`: after `dock_arrive`, rows with activity 8 (waiting) while
-  the dock is busy and 7 (docked) from charge start to charge end, the last
-  with a full battery.
-- `terrain` (stand-in world): the 5 m Shoemaker window; `bounds` covers the
-  dock and every pose.
+**False-match rate** (one definition for the summary, the page and the
+paper; draft 4.2): of the rim points the filter paired with a mapped
+crater, the share whose paired crater is not the rim's true crater.
+Pairing is the filter's own (sim/nav.py Alg. 1 line 4, nearest edge at the
+mean pose before the update). The true crater is the one whose edge lies
+within `cam_match_tol_m` of the point placed at the true pose. Unpaired
+points are left out and reported as `unpaired_share`. `wrong_match_rate` is
+the per-check rate, not this.
 
-#### Camera navigation (`nav: "camera"`, the default; worker live-nav, 16 Nov 2026)
+### `steps.npz` (camera runs)
 
-`Settings.nav` is `"camera"` (default) or `"sampled"` (the paper's
-comparison column, the engine above). It is a Settings field, so it is
-part of the run id and a summary.csv column. With `"camera"` every Scout,
-at every step (`sim/rover.py` `STEP_M`, 2 m driven or one turn in place),
-renders its lamp view (`sim/scene.py`), finds rims (`sim/vision.py`),
-updates its particle filter (`sim/nav.py` `ParticleNav`, on the dock's
-current crater map), scans with the lidar (`sim/lidar.py`) and plans on
-its estimate and the lidar's hazards (`sim/rover.py`). Frames are never
-written to disk. Sorties are simulated one at a time, so a Scout's view
-never shows another Scout.
-
-Render gate (worker render, 16 Nov 2026): a step whose camera could see no
-true crater rim (none within `GATE_RANGE_M`, 25 m, inside the view plus
-`GATE_MARGIN_DEG`) is not rendered; its rims are empty, as the rendered
-frame's would be, and it still draws the frame's depth noise, so a run is
-step-for-step identical with the gate off (`LANTERN_CAM_GATE=0`). Record:
-`timing.frames` = `{"rendered", "skipped_no_crater", "skipped_camera_off"}`
-(additive).
-
-Record changes (additive unless marked):
-
-- Top level `nav`: `"camera"` or `"sampled"`. `pipeline`: one string per
-  part (`nav`, `vision`, `lidar`, `planner`, `scene`), each part's `NAME`.
-- Top level `ground`: the fine ground the camera saw, built by
-  `sim/site_ground.py build_ground` before the run over the dock, the
-  corridor and every lane the run could reserve, plus a margin:
-  `{"file": "run_ground/<run_id>.npz", "x0", "y0", "cell" (1.0),
-  "bounds": [xmin, ymin, xmax, ymax], "display": "off"}`. `file` is
-  relative to `DATA/terrain/`. A viewer that wants the ground the camera
-  saw loads this file; `site_ground.from_run` would build a different box
-  with different roughness. A Scout's planner never drives within
-  `sim/rover.py` `MAP_MARGIN_M` of its edge, so a sortie cannot leave fine
-  ground: a waypoint off it is skipped (event `waypoint_skipped`).
-- Events, camera only:
-  - Since 20 Nov 2026 a camera Scout fixes on schedule (`Settings.cam_fix_mode`
-    "scheduled", the default; sim/campaign_camera.py `CameraSortie.check`):
-    a fix falls due by odometer distance (`check_policy` "fixed", draft
-    Table 1 spacing, 79.3 m at the 10 m limit), and the Scout drives a half
-    survey of one mapped crater 7.5-20 m across whose near rim is within
-    `fix_reach_m`. At each observation point it turns to face the crater,
-    takes one frame and stops `fix_exposure_stop_s` (`fix_stop_model`).
-    The filter updates only on those frames, against that crater alone;
-    between fixes it runs on odometry. `check` then means one fix:
-    `est`, `bound95`, `wrong_match` (over half the fix's rim points
-    false), `wrong_match_cause`, `craters_in_view` (distinct true craters
-    its points lie on), `matched` (1 when a point lay within
-    `cam_match_tol_m` of the landmark's edge), `fixed` (at least one frame
-    updated the filter), `reason` `schedule`, plus `landmark` `[x, y, d]`
-    (map frame), `landmark_row` (map row), `stops`, `stops_planned`,
-    `frames_used`, `points`, `wrong_points`, `stop_s`, `detour_m` (true
-    distance driven during the fix), `fix_h`, truth `true_err_before_m`,
-    `true_err_m` (when the fix ends). A fix point's false match: its source
-    is not the landmark. `fix_unavailable`: a fix was due and no landmark
-    was in reach. `est`, `bound95`, `reason` `no_landmark`, `reach_m`,
-    `d_since_fix_m`, truth `true_err_m`; retried after
-    `check_min_spacing_m` more. Crater passes still end, but only make
-    sightings.
-  - Since 24 Nov 2026 the default `cam_fix_mode` is "preplanned"
-    (`CameraSortie.drive_to`, `_plan_leg_fix`): when a leg is planned, the
-    landmark for the fix due on it is chosen along the leg's route and the
-    Scout leaves the route for its half survey; "scheduled" (above) is a
-    labelled test case. The comparison case "straight" (`_straight_tick`)
-    plans nothing: once a fix is due, the first landmark-sized mapped crater
-    in the camera's view within `fix_view_m` is fixed on as the Scout drives
-    past, one exposure every `fix_survey_spacing_m`. Every `check` of these
-    three modes adds `mode`, `d_since_fix_m` (distance driven since the last
-    fix when this one began), `due_m` (the spacing); `reason` is
-    "preplanned", "straight" or "schedule". Preplanned adds `late` (the
-    survey left the route after the due point), `detour_planned_m` (the
-    planned survey's extra driving over the route it replaced),
-    `depart_at_m`, `due_at_m` (along the leg's route). In "straight",
-    `detour_m` is the distance driven during the fix, along the route.
-    `fix_unavailable` `reason` "no_landmark_on_leg": a fix was due and the
-    leg held no landmark; the next leg plans it. Everything below about passes is `cam_fix_mode`
-    "opportunistic", the test case and every camera record before 20 Nov.
-  - `check` is one **crater pass**: consecutive steps whose rims matched
-    mapped craters, ended by `Settings.cam_pass_gap_steps` steps without, or
-    after `Settings.cam_pass_max_steps` steps.
-    The filter itself corrects at every step with rims; a pass groups
-    those steps for the timeline and the counts. Fields as above, with:
-    `reason: "camera"`; `matched` (distinct map craters matched in the
-    pass); `craters_in_view` (distinct true craters the pass's rim points
-    lie on); `fixed` (true when `matched` >= 1: the filter corrected on
-    the map; `fix_min_craters` is not used); `wrong_match` (more than half
-    of the pass's rim points are false matches, as defined below);
-    `wrong_match_cause` (the most common cause among its false matches:
-    `missing`: the source crater is not in the map;
-    `misplaced:<crater_id>`: paired with an added crater that is not its
-    source; `base`: paired with another mapped crater, or the point has no
-    source); `points`, `wrong_points` (false matches), `steps` (first and last step index of the pass in
-    `steps.npz`); truth `true_err_before_m` (at the step before the
-    pass), `true_err_m` (when the pass ends, `cam_pass_gap_steps` after
-    its last rim). A pass is any run of steps with rim points; `fixed` is
-    false when none of them paired with a map crater.
-  - `sighting`: an unmatched rim arc fitted with a circle (Kasa fit) at the
-    end of a pass, in the Scout's estimated frame: `est`, `d_est`,
-    `bound95`, `anchor` as above, plus `points`, `fit_rms_m`.
-  - `waypoint_skipped`: `reason` `blocked` (no progress for
-    `Settings.cam_stuck_steps` steps), `off_ground`, or `hazard` (from
-    23 Nov 2026: the Scout drove back to where it was two moves ago and
-    its own map puts the goal on ground it may not enter, so it is as
-    close as it can get; sim/campaign_camera.py `drive_to`), or
-    `passed_by_fix` (from 24 Nov 2026, "preplanned": a half survey carried
-    the Scout past this waypoint, so it is not driven back to;
-    `_passed_by_survey`); `goal` (map frame).
-  - `search_abandoned` (workflow, 17 Nov 2026; either engine): a search
-    that did not finish. `find_id`, `reason`: `unreached` (the drive to
-    the find ended with the searcher's estimate outside the search circle,
-    after a skipped waypoint; no `search_start` was logged), `energy` /
-    `time` / `fault` / `lost` (cut short after `search_start`); `dist_m`
-    (estimated distance to the find's `est` when it stopped), `radius_m`,
-    `points_done`, `points_planned`, `partial` (what
-    `judge_search_detail` said of the readings so far: `no_readings` /
-    `no_match` / `bound_too_large`; null when unreached),
-    `combined_bound95` (when started). No `search_end` follows; the find
-    keeps `status: "find"` and a later sortie may search it. A search cut
-    short whose readings so far already confirm ends with a normal
-    `search_end` instead. Summary adds `searches_abandoned`. Batch
-    `workflow-first3` (commit 68e2047) wrote the earlier name
-    `search_unreached` (`find_id`, `dist_m`, `radius_m`) and summary column
-    `searches_unreached`; read them as `search_abandoned` with reason
-    `unreached`.
-- `time_s.check`: the fix stops ("scheduled"); 0 under "opportunistic",
-  where a camera Scout does not stop to fix. `check_policy` sets when a
-  fix is due ("scheduled" only); `check_stop_s` is used only by
-  `fix_stop_model` "draft". `drift_mode` and the sampled fix-error fields
-  are not used. The truth's odometer is a scale error of
-  the world's `drift_frac` plus `odom_noise_frac` and
-  `odom_heading_noise_rad` (sim/rover.py's model); the filter has its own
-  (`pf_*`). The filter starts at the dock's registered position with its
-  particles spread to `dock_reg_bound95_m`.
-- `bound95` everywhere is `K95_2D * sigma`, sigma the filter's per-axis
-  spread (sim/nav.py `belief`).
-- Sorties add `steps` (camera steps), `point_turns`, `waypoints_skipped`,
-  `pingpong_blocks` (planning cells closed by sim/rover.py's back-and-forth
-  guard: a move that ends within 0.5 m of where the move before last
-  ended closes the turnaround's 2 m cell; 17 Nov 2026), `reversals`
-  (23 Nov 2026: steps driven backwards out of a dead end, sim/rover.py
-  `_follow_sensing`; the filter moves its particles back, sim/nav.py
-  `predict` with a negative distance), `retraces` and `retrace_steps`
-  (23 Nov 2026: times the Scout's own map closed every way out of where it
-  stood and it drove back along its own track, ignoring the map, and the
-  steps it drove back; sim/rover.py `_start_retrace`, Settings
-  `retrace_track_m`; its steps over the limits are counted as any other),
-  `drive_overhead`
-  (sim/campaign_camera.py `CameraSortie.overhead`: drive time over the
-  time straight driving at top speed would take for the same progress
-  toward its waypoints, measured by the Scout on itself; its turn-back
-  rule multiplies the return's straight-driving time and energy by it).
-- Camera sorties also add (20 Nov 2026) `plan_slope` (Settings.plan_slope:
-  `orbital`, the Scout plans and steers on the site's LOLA 5 m slope plus
-  its lidar map, sim/rover.py `SlopeMap.use_orbital`; `truth`, the test
-  case on the ground's own slope) and the steps it drove onto ground
-  truly over its slope limits for the heading driven (sim/rover.py
-  `_note_true_steep`; from 23 Nov 2026 pitch along the heading against
-  `Settings.pitch_limit_deg` and roll across it against `roll_limit_deg`,
-  sim/footprint.py `severity`; before, the footprint tilt over 15 deg
-  whatever the heading. The limits are planning limits, so these steps
-  are driven, not refused; the record keeps the step's tilt in
-  degrees). `steep_unflagged`: steps neither the orbital slope nor the
-  lidar map flagged. `steep_unflagged_by`: why the lidar's map missed
-  each one (sim/lidar.py `HazardMemory.why_missed`): `never_in_band`,
-  `shadow`, `too_sparse`, `under_read` or `judged`. Every unflagged step
-  is also LOLA averaging, since the orbital slope there was 15 deg or
-  less. `steep_unflagged_true_deg_max` and `steep_unflagged_lola_deg_mean`
-  describe them. `steep_flagged_by` counts the steep steps the Scout
-  knew about: `orbital` (allowed only as the way off orbital-steep
-  ground), `lidar_steep` (stepping off a lidar hazard) and `lidar_crater`
-  (a costed crater interior). They come from sim/campaign_camera.py
-  `CameraSortie.extra`, which sim/campaign.py merges into the sortie
-  record.
-- **False-match rate** (one definition for the summary, the page and the
-  paper; draft 4.2 "detected rims were paired with the wrong mapped
-  crater"): of the rim points the filter paired with a mapped crater, the
-  share whose paired crater is not the rim's true crater. A spurious rim
-  (no true crater) that got paired counts as wrong; so does a rim from a
-  crater missing from the map. Pairing is the filter's own: the map
-  crater whose edge is nearest the point placed at the filter's weighted
-  mean pose before the update (sim/nav.py Alg. 1 line 4, among its
-  `CRATER_NEIGHBOURS` nearest craters, no distance limit). The true crater
-  is the one whose edge lies within `cam_match_tol_m` (1 m) of the point
-  placed at the true pose. Unpaired points (no map crater in reach, only
-  with an empty map) are left out of both counts and reported as
-  `unpaired_share`; with the filter's pairing it is 0 in practice. Summary
-  `false_match_rate`, `unpaired_share`; per sortie `rim_points` (paired
-  rims the filter used), `rim_wrong`, `rim_unpaired`; per sortie number in
-  `by_sortie.csv`. Camera runs only: sampled runs leave it empty.
-- `wrong_match_rate` keeps its per-check meaning (wrong checks over fixes;
-  for camera runs, crater passes) and is not the paper's false-match rate.
-- Summary adds `nav`, `steps`, `s_per_step` (wall seconds per Scout-step),
-  `rim_points`, `false_match_rate`, `unpaired_share`,
-  `waypoints_skipped`. Sorties add `rim_points`, `rim_wrong`,
-  `rim_unpaired`, `rim_matched` (points within `cam_match_tol_m` of their
-  paired map edge: what crater passes and sightings call matched).
-- Runs launched by sim/live_runs.py add, in record.json, `seed_choice`
-  (how the seed was picked, and that the run is excluded from the paper's
-  statistics) and `paper_statistics: false`; their summary row (row.json,
-  the batch's summary.csv) carries `paper_statistics: false` too, and the
-  batch folder gets a README.md saying the same. The seeds are chosen so
-  the site and the video show finds; section 4.6 and Figure 1 must not
-  use these runs.
-
-`steps.npz` (camera runs only), next to `poses.npz`: every Scout-step the
-pipeline ran, per sortie. Keys are `<sortie_id>.<name>`; ragged lists use
-an offset array `o` of length K+1 (step k owns rows `o[k]:o[k+1]`).
+Every Scout-step, per sortie. Keys `<sortie_id>.<name>`; ragged lists use an
+offset array `o` of length K+1 (step k owns rows `o[k]:o[k+1]`).
 
 | key | dtype, shape | meaning |
 |---|---|---|
-| `<sid>.step` | float32 (K, 12) | `t, true_x, true_y, true_heading, est_x, est_y, est_heading, bound95, energy_kwh, activity, goal_x, goal_y`. Activity codes as poses.npz. Goal: the waypoint steered for, map frame. |
-| `<sid>.particles` | float16 (K, 100, 3) | each particle `dx, dy` from `est`, metres, and weight (sums to 1) |
-| `<sid>.rim_o` | int32 (K+1) | offsets into the rim rows |
-| `<sid>.rims` | float16 (R, 2) | rim points `[x_forward, y_left]`, metres, rover frame, as the filter got them |
-| `<sid>.rim_map` | int32 (R) | map crater the filter pairs the point with (nearest edge at its mean pose before the update, no limit), row of `map_craters` |
-| `<sid>.rim_map_m` | float16 (R) | distance from the point to that crater's edge, metres; within `cam_match_tol_m` counts as matched (passes, sightings) |
-| `<sid>.rim_true` | int32 (R) | true crater the point lies on (truth, nearest edge within `cam_match_tol_m` of the true pose's point), row of `true_craters`; -1 none |
-| `<sid>.rim_wrong` | uint8 (R) | 1: a false match, as defined above (0 for points the filter did not use: the dock frame, camera off) |
-| `<sid>.lidar` | uint16 (K, 20, 121) | range image, every other beam row and column of sim/lidar.py's 40 x 241 scan (elevations `lidar_el_deg`, azimuths `lidar_az_deg`), centimetres, 0 = no return |
-| `<sid>.haz_o`, `<sid>.haz`, `<sid>.haz_kind` | int32 (K+1), float16 (H, 2), uint8 (H) | lidar hazard cells `[x_forward, y_left]` from the lidar, kind 0 crater, 1 slope, 2 rock |
-| `<sid>.plan_o`, `<sid>.plan` | int32 (K+1), float32 (P, 2) | the route the Scout is about to drive, true frame world xy, from the Scout forward, about 20 m (sim/rover.py `planned_route`) |
-| `<sid>.map_o`, `<sid>.map_ij`, `<sid>.map_v` | int32 (K+1), int32 (C, 2), uint8 (C) | the lidar's merged map (sim/lidar.py `HazardMemory`, what the Scout plans on) as the cells whose verdict changed at each step: world cell `[i, j]` = `floor(x / map_cell_m)`, `floor(y / map_cell_m)`, verdict 0 none, 1 crater, 2 rock, 3 slope. Replaying them in order from an empty map gives the map at any step. From 20 Nov 2026 |
-| `<sid>.steep`, `<sid>.steep_why` | float32 (S, 5), uint8 (S) | each step onto true footprint tilt over 15 deg (sim/rover.py `_note_true_steep`): `[step index, x, y, true deg, orbital deg]`, and why: 0 never_in_band, 1 shadow, 2 too_sparse, 3 under_read, 4 judged (unflagged; sim/lidar.py `why_missed`), 5 orbital, 6 lidar_steep, 7 lidar_crater (flagged). Empty when the Scout plans on the truth. From 20 Nov 2026 |
-| `map_craters` | float32 (M, 3) | every map crater any rim paired with, `[x, y, d]` |
-| `true_craters` | float32 (N, 3) | every true crater any rim lay on, `[x, y, d]` |
-| `lidar_el_deg`, `lidar_az_deg` | float32 | beam angles of the stored range image |
-| `map_cell_m` | float32 | cell side of `map_ij` (sim/lidar.py `HAZ_CELL_M`, 0.5 m) |
+| `<sid>.step` | float32 (K, 12) | `t, true_x, true_y, true_heading, est_x, est_y, est_heading, bound95, energy_kwh, activity, goal_x, goal_y` (goal in map frame) |
+| `<sid>.particles` | float16 (K, 100, 3) | `dx, dy` from `est`, and weight |
+| `<sid>.rim_o`, `<sid>.rims` | int32 (K+1), float16 (R, 2) | rim points `[x_forward, y_left]`, rover frame |
+| `<sid>.rim_map`, `<sid>.rim_map_m` | int32 (R), float16 (R) | paired map crater (row of `map_craters`) and distance to its edge |
+| `<sid>.rim_true` | int32 (R) | true crater (row of `true_craters`), -1 none |
+| `<sid>.rim_wrong` | uint8 (R) | 1: a false match |
+| `<sid>.lidar` | uint16 (K, 20, 121) | range image, every other beam of sim/lidar.py's 40 x 241 scan, cm, 0 = no return |
+| `<sid>.haz_o`, `<sid>.haz`, `<sid>.haz_kind` | int32, float16 (H, 2), uint8 | lidar hazard cells, kind 0 crater, 1 slope, 2 rock |
+| `<sid>.plan_o`, `<sid>.plan` | int32, float32 (P, 2) | the route about to be driven, true frame, about 20 m |
+| `<sid>.map_o`, `<sid>.map_ij`, `<sid>.map_v` | int32, int32 (C, 2), uint8 | lidar map cells whose verdict changed at each step (0 none, 1 crater, 2 rock, 3 slope); replay from empty |
+| `<sid>.steep`, `<sid>.steep_why` | float32 (S, 5), uint8 | `[step, x, y, true deg, orbital deg]`; why 0-4 unflagged (as above), 5 orbital, 6 lidar_steep, 7 lidar_crater |
+| `map_craters`, `true_craters` | float32 (M, 3), (N, 3) | every crater a rim paired with or lay on |
+| `lidar_el_deg`, `lidar_az_deg`, `map_cell_m` | float32 | beam angles; map cell side (0.5 m) |
 
-
-### Summary row (part 1)
+### Summary row
 
 `data/campaigns/<batch_id>/summary.csv`, one row per run: `run_id`, `seed`,
-every swept Settings field, every world draw, then
-`sorties`, `sorties_ok`, `sorties_below_reserve`, `sorties_fault_return`,
-`scouts_lost`, `drill_err_p95_m`, `checks_per_sortie`, `wrong_match_rate`,
-`finds`, `confirmed`, `false_confirmed`, `deposits_missed`, `area_km2`,
-`h_drive`, `h_check`, `h_reading`, `h_drill`, `h_wait`. By-sortie-number
-series for Figure 1b go in `by_sortie.csv`: `run_id`, `sortie_n`,
-`checks`, `wrong_matches`, `map_craters`.
+every swept Settings field, every world draw, then `sorties`, `sorties_ok`,
+`sorties_below_reserve`, `sorties_fault_return`, `scouts_lost`,
+`drill_err_p95_m`, `checks_per_sortie`, `wrong_match_rate`, `finds`,
+`confirmed`, `false_confirmed`, `deposits_missed`, `area_km2`, `h_drive`,
+`h_check`, `h_reading`, `h_drill`, `h_wait`, `dock_reg_err_m`, `fixes`,
+`drills`, `drill_hit_rate`, `survey_err_p95_m`, `deposits_in_area`,
+`deposits_unfound`, `added_misplaced`, `craters_added`, `campaign_days`,
+`nav`, `steps`, `s_per_step`, `rim_points`, `false_match_rate`,
+`unpaired_share`, `waypoints_skipped`, `searches_abandoned`.
+`by_sortie.csv`: `run_id`, `sortie_n`, `checks`, `wrong_matches`,
+`map_craters`, `fixes`, `sorties`. `python -m sim.batch` also writes
+`drills.csv`, `report.md`, `batch.json`, `fig1a.png`, `fig1b.png`.
 
-As built (part 1, 2026-11-16): `deposits_missed` counts searches that came
-back unconfirmed over a real deposit (`crossing.score_search` `missed`).
-`checks_per_sortie` counts every check stop, fixed or not. Added columns:
-`dock_reg_err_m` (length of the hidden draw), `fixes`, `drills`,
-`drill_hit_rate`, `survey_err_p95_m` (95th-pct true error over survey and
-search poses), `deposits_in_area`, `deposits_unfound` (deposits inside the
-surveyed area that no find landed in), `added_misplaced`, `craters_added`,
-`campaign_days`. `by_sortie.csv` sums over the fleet's n-th sorties and
-adds `fixes` and `sorties`; `map_craters` is the largest dock map after
-any of them. A batch also writes `drills.csv` (`run_id`, `sortie_id`,
-`true_err_m`, `miss_m`, `hit`), `report.md` (hand checks, timings,
-stand-ins), `batch.json`, `fig1a.png`, `fig1b.png`. Command:
-`python -m sim.batch --batch-id <id> --worlds N --sweep name=v1,v2 ...`.
+### Cross-checks (`sim/crossing.py`, pure functions)
 
-### Part 2 gives part 1 (`sim/crossing.py`, pure functions, no I/O)
+`anchor`: `"dock"` until the Scout's first fix of the sortie, then
+`"<sortie_id>#<check n>"`. Positions with one anchor share one error, so
+they are never treated as independent (draft 4.4).
 
-`anchor` (on `reading`, `find`, `sighting` and the find dict): `"dock"` until
-the Scout's first check of the sortie, then `"<sortie_id>#<check n>"`.
-Positions with one anchor share one error (the dock registration, or one
-fix), so they are never treated as independent (draft 4.4). A dock-anchored
-`bound95` should include `Settings.dock_reg_bound95_m`, the bound the Scouts
-believe; the world's drawn error stays hidden.
+Scout side, no truth: `search_area`, `pick_searcher`, `search_points`,
+`judge_search` / `judge_search_detail`, `merge_sightings`.
+World side, truth, for scoring only: `crater_view`, `wrong_match_cause`,
+`make_sighting`, `deposit_at`, `score_search`, `score_added`.
 
-Scout and dock side; none takes truth:
+A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95",
+"reading_wt", "anchor", "status"}`, `status` one of `find`, `confirmed`,
+`unconfirmed`, `drilled`.
 
-- `search_area(find, searcher_bound95, s) -> radius_m`:
-  `search_radius_k * hypot(both bound95) + footprint_radius_m`.
-- `pick_searcher(find, scouts_ready) -> scout_id | None`: first id that is
-  not the finder, only while `status == "find"`.
-- `search_points(find, radius_m, s) -> (K, 2)`: reading points in the
-  searcher's estimated frame, drive order.
-- `judge_search(find, readings, s) -> "confirmed" | "unconfirmed"`, where
-  `readings` are the searcher's `(est_x, est_y, bound95, reading_wt, anchor)`
-  inside the area. `judge_search_detail` adds `reason`, `match` (index),
-  `dist_m`, and the confirmed deposit's `est`, `bound95`.
-- `merge_sightings(sightings, crater_map, s, next_index=None) -> list[added crater]`,
-  at the dock after each sortie, on every sighting not yet used. `sightings`
-  as the `sighting` events; `crater_map` `(M, 3)`, start plus added. Each
-  added crater: `crater_id, x, y, d, bound95, sightings, members, scouts,
-  sorties`; `members` index into `sightings` and leave the pool.
+### Mission Control (`web/`)
 
-World side; takes truth, for part 1's world model and scoring only:
-
-- `crater_view(true_xy, true_craters, map_craters, s)`: `in_view`,
-  `missing` (make a sighting of each), `misplaced` (map rows), `share_bad`,
-  the share used in `p_wrong`, `matched` (map rows), and `fix_bias` `[dx, dy]`,
-  the mean map-minus-true offset of the matched craters. Add `fix_bias` to
-  the Scout's error after every check, on top of the sampled error: a fix
-  on an added crater inherits its error (draft 4.3). The Scout's believed
-  `bound95` does not see it.
-- `wrong_match_cause(view, s, rng)`, `make_sighting(true_crater,
-  scout_true_xy, scout_err_xy, scout_bound95, anchor, rng, s)`.
-- `deposit_at`, `score_search` (`truth_has_deposit`, `false_confirmed`,
-  `missed`), `score_added(added, truth_craters_missing, s)` (`true_crater`,
-  `true_offset_m`, `misplaced`), all three written into `crater_map.added`.
-  `true_crater` indexes `truth.craters_missing`. `misplaced` (offset beyond
-  `map_match_tol_m`) means that crater is still effectively missing.
-
-A find is `{"find_id", "scout", "sortie_id", "est": [x, y], "bound95", "reading_wt", "anchor", "status"}`,
-`status` one of `find`, `confirmed`, `unconfirmed`, `drilled`.
-
-### Part 3 gives part 1 (`sim/terrain.py`)
-
-- `campaign_world(site, seed, ranges: WorldRanges) -> CampaignWorld`: the
-  fields of `sim/campaign.py` `World`, same names and units: `site`, `file`,
-  `x0`, `y0`, `cell` (5 m, or 10 m for `nobile`), `height`, `slope` (LOLA
-  slope product at the native cell),
-  `floor` (PSR patches of at least `SiteBuild.psr_min_km2`), `craters` `(N, 3)`
-  (sizes `WorldRanges.crater_d_m`), `map_start` `(M, 3)`, `dock` (sunlit rim
-  ground), `draws` (every `WorldRanges` draw plus `dock_reg_err`, keys as
-  `campaign.draw_world_values`), `ice` (on floor within
-  `WorldRanges.ice_reach_m` driving of the dock), `standin=None`,
-  `map_index` `(M,)` (the `craters` row each `map_start` row stands for;
-  `map_start` is `sim/orbital_map.py orbital_map()`, with orbital error,
-  so membership is by index, never by position). No crater's rim comes
-  within `WorldRanges.dock_clear_m` (10 m) of the dock: `sim/terrain.py
-  clear_dock` drops those craters and their map rows after every draw
-  (both `campaign_world` and `standin_world`), so the rest of the world is
-  what the seed drew. The run ground is rebuilt when a crater it carved is
-  no longer in the world. Why: uniform draws put a rim within 5 m of the
-  dock on about 1 seed in 5 (41 of 200 per site). On haynes seed 3 the
-  dock sat 3.4 m inside a 13 m crater, and a camera Scout on the 1 m run
-  ground could not climb out: it turned in place for a whole sortie and
-  ran out of energy 4 m from the dock. A lander is set down on ground
-  clear of hazards, so a world with a crater at the dock is not one the
-  mission would fly. The live_runs seeds (6, 9, 3) still meet their rule
-  after this change (sampled engine, seeds below each re-run).
-- Sites (`sim/psr_sites.py` `SITES`): `haynes`, `s89_014e`, `s89_134e`
-  (87-90 S, 5 m mosaic) and `nobile` (84.5-87 S, 10 m 83 S product).
-  Built windows live in `DATA/terrain/psr_sites/<site>.npz`
-  (`python -m sim.psr_sites build`). `site="shoemaker"` raises: that tile is
-  not PSR floor; `sim/campaign.py` `standin_world` still serves it.
-- The site is not a `Settings` field, so a run id `w<seed>-<key>` does not
-  name it. Runs on different sites need different batch ids until the site
-  enters the run id.
-
-### Part 4 reads (`web/`)
-
-Records and `summary.csv` only. For the 3D replay it converts one sortie to
-the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
-`web/js/world.js` replays it unchanged.
-
-- `web/collect_campaigns.py` writes `web/campaigns/index.json`: the batches
-  with their summary rows, from `summary.csv` when the batch has one, else
-  from each `record.json` `summary` (so a batch still writing is listed).
-  Only runs with `record.json` and `poses.npz` are listed.
-- Locally `web/serve.py` answers `campaigns/<batch_id>/<run_id>/record.json`
-  from the data folder and converts `poses.npz` on first request to
-  `poses.bin` (float32, rows back to back) plus `poses.json`
-  (`{"columns": [...], "sorties": {sortie_id: [first_row, n_rows]}}`),
-  cached in `web/campaigns/`. `--copy` (and `python app.py --site`) copies
-  every run there instead, for a static host.
-- `web/build_windows.py` cuts each distinct `terrain` window (site
-  `shoemaker`, cell 5 m) from the LOLA tile the engine reads, for the 3D
-  ground and the map's hillshade. Display only.
-- Banner: the record's `standins` list, plus an optional top-level `standin`
-  string written only by `web/make_standin_campaign.py`.
-- The showcase run (`sim/showcase.py`, spec 6.4) writes the same record
-  under `data/campaigns/showcase/<run_id>/`, plus two keys only it writes:
-  `showcase` (string, shown as a banner: camera navigation, not the source
-  of the paper's numbers) and `frames`
-  (`{"note", "display", "by_sortie": {sortie_id: [[t, "fp/<file>.jpg"], ...]}}`,
-  paths relative to the run folder). Its sortie `outcome` is `"showcase"`.
-  The replay shows the followed Scout's latest frame at or before t.
-- 3D and map ground: `web/assets/terrain/` for Shoemaker records; for any
-  other `terrain.site` with a 0.25 m grid at `data/terrain/<site>.npz`,
-  `web/build_assets.py --site <site>` writes `web/assets/terrain/<site>/`
-  (backdrops from `data/terrain/psr_sites/<site>.npz`), and the site uses it.
-- The site reads event `x`, `y` as the Scout's true position (hidden truth
-  only), `crater_map.added[].true_crater` as an index into the cut
-  `truth.craters_missing`, and fits the map to `terrain.bounds`
-  (all three confirmed by the engine, 16 Nov).
-- Mission Control (`web/index.html`, `web/js/mission.js`, worker mission,
-  16 Nov) plays a whole run sortie by sortie from the same record and
-  poses, and reads a camera run's `steps.npz` (format under "Camera
-  navigation" above) for the first-person box, rim points, particle cloud,
-  planned route and both lidar views. `web/serve.py` (and
-  `collect_campaigns.py convert_steps`) serves it as
-  `campaigns/<batch>/<run>/steps/index.json` (`sorties`, `map_craters`,
-  `true_craters`, `lidar_el_deg`, `lidar_az_deg`, `map_cell_m`, `standin`) plus one
-  `steps/<sortie_id>.bin` and `.json` per sortie: each array little-endian,
-  4-byte aligned, float16 widened to float32, the .json mapping each name
-  to `[dtype, shape, byte offset]`. `campaigns/index.json` marks such runs
-  `"pipeline": "camera"`, or `"standin"` when steps.npz holds a `standin`
-  string. A run without steps.npz plays in 3D and on the map, and those
-  views say no pipeline data was logged. Mission Control also reads
-  event `crater_added` `crater_id` and `t` (when an added crater appears) and
-  event `drill` `miss_m` and `hit` when present.
-- Mission Control draws a camera run on the ground its cameras saw: it
-  reads the record's `ground` (`file`, `run_id`) and loads
-  `web/assets/terrain/runs/<run_id>/`, built by `python web/build_assets.py
-  --run-ground <batch>/<run_id>` from `DATA/terrain/<ground.file>`; without
-  it, the site's grid. It plays each `drill` event as the hackathon's drill
-  rig over the `settings.drill_h` hours before the event's `t`.
-- Mission Control shows a camera run's summary `false_match_rate` as
-  "False-match rate (paired rims)" and `unpaired_share` beside it (definition
-  under "False-match rate" on campaign-live-nav, 5fc6744); a camera record
-  without them says "not in this run's summary". A sampled run shows
-  `wrong_match_rate` (checks). In the first-person box a rim is drawn as on a
-  map crater when `rim_map_m` <= `cam_match_tol_m`, as `rim_matched` counts.
-- Until camera runs exist, `web/make_standin_pipeline.py` writes a
-  stand-in `steps.npz` in exactly that format, with a top-level `standin`
-  string, beside copies of `standin` records in the batch
-  `mission-standin`: one step per pose row, rims placed from the true
-  craters, particles drawn round the logged estimate, the range image
-  ray-marched over the heights. The viewer labels it on every view.
+Reads records, `summary.csv` and `steps.npz` only, through
+`web/collect_campaigns.py` and `web/serve.py` (which turns `poses.npz` into
+`poses.bin` plus `poses.json`). The 3D replay converts one sortie to the run
+shape `web/js/data.js` `Run` reads (`steps`, `rovers` keyed by Scout id).

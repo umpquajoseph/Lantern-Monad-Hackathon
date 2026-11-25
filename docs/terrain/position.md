@@ -1,7 +1,6 @@
 # Terrain position for the paper and the sim
 
-17 Nov 2026, `ground`, branch `lantern-ground`. Brief: `docs/briefs/ground.md`
-(22650c5). Recommendations only. Nothing in `sim/` or `web/` is changed.
+Approved 17 Nov 2026.
 Each recommendation is chosen for fidelity to the Moon and to precedent,
 not for what it does to the Scouts.
 

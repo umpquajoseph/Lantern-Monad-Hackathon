@@ -6,24 +6,10 @@ that uses it. Open-access copies sit in `docs/sources/`.
 
 ## Summary
 
-Since 16 Nov 2026 Lantern simulates the workflow the paper proposes
-(`docs/campaign-spec.md`). One dock and 1 to 5 identical Scouts run sorties
-into a permanently shadowed crater. Each Scout finds its position from
-lamp-lit crater rims (JPL's ShadowNav). It adds what it sees to a shared
-crater map that later sorties navigate on. It logs possible ice finds with
-its position uncertainty, and a second Scout goes back to check each one.
-Lantern runs thousands of seeded worlds and produces the paper's section 4.6
-numbers and Figure 1. A local site replays any run.
-
 The navigation method comes from the two ShadowNav papers. The ground is NASA
 LOLA elevation data with sub-LOLA relief added (`docs/terrain/position.md`).
 The Scouts' numbers come from the PROSPECT brief and the team's draft.
 **The ice deposits and every reading are simulated.**
-
-The hackathon version (15 Nov 2026) had two rovers from two agencies posting
-finds to a contract on Monad. That chain and agency side is history. Its
-sources are kept at the end of this file. Every `file:line` in the
-hackathon-era rows points at the hackathon code and may have moved since.
 
 ## How to read a source tag in `sim/settings.py`
 
@@ -48,14 +34,14 @@ row here.
 
 | Source | What it is | What it sets in the campaign simulator | Hackathon use (history) |
 |---|---|---|---|
-| Cauligi et al., 2023, "ShadowNav: Crater-Based Localization for Nighttime and Permanently Shadowed Region Lunar Navigation", JPL. https://arxiv.org/abs/2301.04630. `docs/sources/ShadowNav-Cauligi-2023.pdf`. Tag `C23`. | The JPL method: find a rover's position in the dark by matching lamp-lit crater rims to an orbital map, with a particle filter. | 2% odometry drift (sec. 1, sec. 6B: `drift_frac`, `pf_drift_sigma`). 3 m 3-sigma start (sec. 1: `pf_sigma0_m`). Fix error and uncertainty by trajectory (Table 2: `fix_err_*`, `fix_sigma_*`). LROC resolves craters "of around 10 m" (sec. 4A: `orbital_resolve_px`). Crater depth ratios (Table 1, `sim/terrain.py C23_TABLE1`). | 100 particles, resample below 50 (sec. 6B, `sim/nav.py:33-35`). The "< 2 m" result set the fix floor (`sim/standins.py:19-24`). Its 0.25 m DEM set the grid (`sim/terrain.py:70`). OpenCV Canny for rims (sec. 3, `sim/vision.py:7-9`, `:75`). Slide hook: without it, a rover drifts past 10 m error after about 500 m (sec. 1). |
+| Cauligi et al., 2023, "ShadowNav: Crater-Based Localization for Nighttime and Permanently Shadowed Region Lunar Navigation", JPL. https://arxiv.org/abs/2301.04630. `docs/sources/ShadowNav-Cauligi-2023.pdf`. Tag `C23`. | The JPL method: find a rover's position in the dark by matching lamp-lit crater rims to an orbital map, with a particle filter. | 2% odometry drift (sec. 1, sec. 6B: `drift_frac`, `pf_drift_sigma`). 3 m 3-sigma start (sec. 1: `pf_sigma0_m`). Fix error and uncertainty by trajectory (Table 2: `fix_err_*`, `fix_sigma_*`). LROC resolves craters "of around 10 m" (sec. 4A: `orbital_resolve_px`). Crater depth ratios (Table 1, `sim/terrain.py C23_TABLE1`). | 100 particles, resample below 50 (sec. 6B, `sim/nav.py:33-35`). Its 0.25 m DEM set the grid (`sim/terrain.py:70`). OpenCV Canny for rims (sec. 3, `sim/vision.py:7-9`, `:75`). Slide hook: without it, a rover drifts past 10 m error after about 500 m (sec. 1). |
 | Atha et al., 2024, "ShadowNav: Autonomous Global Localization for Lunar Navigation in Darkness", JPL. arXiv:2405.01673. `docs/sources/ShadowNav-Atha-2024.pdf`. Tag `A24`. | The follow-up: field tests with a stereo rig and a lamp, and a study of where to put the light. | Lamp 0.2 m below the camera, 0.26 m stereo baseline, 5,120 px, 60° field of view (sec. IV, IV-B: `lamp_below_camera_m`, `stereo_*`). Stereo error by range (Table 1: `stereo_disparity_sigma_px`). Additive particle noise, 2% (sec. III-E1, Table 2: `pf_step_noise_frac`). Heading from the star tracker (sec. III-A: `pf_heading_walk_rad`). Craters 7.5-20 m detected reliably (p.10, sec. V-B: `rim_detect_d_*`, `crater_d_m`). Mean spacing of 10 m craters (sec. I: `crater_n_ge10_per_km2`, being replaced, see terrain row 4). | Camera 2.5 m up with the lamp 0.2 m below it (sec. V, Table 1; `sim/scene.py:61-69`, `web/js/world.js:15`). Rims seen from 5 to 25 m (`sim/vision.py:29`). Slide hook: the lamp sits under the camera so every crater rim throws a shadow line. |
 
 ## Mission
 
 | Source | What it is | What it sets in the campaign simulator | Hackathon use (history) |
 |---|---|---|---|
-| PROSPECT Team Brief, RASC-AL 2027 Theme 3, 13 Oct 2026. `docs/sources/PROSPECT-Team-Brief-RASC-AL-2027-Theme-3-1.pdf`. Tag `brief p.N`. | A student team's internal mission brief for a NASA RASC-AL design competition. Not a NASA publication. | Two to three Scouts on one dock (p.5: `n_scouts`). The sortie cycle: 22 h sortie, ~3 h charge at 1.5 kW, about 31 h a cycle, 16 sorties a month, 1.5 km descent, 4 km survey, 2 drill sites, 11 days without contact (p.6). 7.9 kWh battery, 25% reserve (p.6). 1.6 m mast (p.6: `camera_height_m`). 15° route limit, from VIPER (p.7: `slope_limit_deg`). The ~1 wt% find threshold, which the brief itself calls assumed (p.9). The Power Tower (p.3). | Rover speed 7.4 cm/s (p.3, `sim/rover.py:24-25`). Neutron spectrometer to about 1 m (p.5, `sim/ice.py:24-25`). 1 m drill (p.5, `web/js/science_rig.js:24`). Slide hook: a rover that drives itself goes about 9 times faster than VIPER's 0.8 cm/s (p.3). |
+| PROSPECT Team Brief, RASC-AL 2027 Theme 3, 13 Oct 2026. `docs/sources/PROSPECT-Team-Brief-RASC-AL-2027-Theme-3-1.pdf`. Tag `brief p.N`. | A student team's internal mission brief for a NASA RASC-AL design competition. Not a NASA publication. | Two to three Scouts on one dock (p.5: `n_scouts`). The sortie cycle: 22 h sortie, ~3 h charge at 1.5 kW, about 31 h a cycle, 16 sorties a month, 1.5 km descent, 4 km survey, 2 drill sites, 11 days without contact (p.6). 7.9 kWh battery, 25% reserve (p.6). 1.6 m mast (p.6: `camera_height_m`). 15° route limit, from VIPER (p.7: `slope_limit_deg`). The ~1 wt% find threshold, which the brief itself calls assumed (p.9). The Power Tower (p.3). | Rover speed 7.4 cm/s (p.3, `sim/rover.py:24-25`). Neutron spectrometer to about 1 m (p.5, `Settings.footprint_radius_m`). 1 m drill (p.5, `web/js/science_rig.js:24`). Slide hook: a rover that drives itself goes about 9 times faster than VIPER's 0.8 cm/s (p.3). |
 | Goldberg, Maimone and Matthies, 2002, "Stereo Vision and Rover Navigation Software for Planetary Exploration", IEEE Aerospace Conference, Big Sky. https://robotics.jpl.nasa.gov/media/documents/aero.pdf. `docs/sources/GESTALT-Goldberg-2002.pdf`, text copy beside it. Tag `Goldberg 2002`. | The MER rovers' GESTALT navigator. | Terrain rated by a best-fit plane over a rover-sized patch, pitch hazard from its slope (sec. 4 step 3, p.6): the footprint slope test, `Settings.slope_test`, `sim/footprint.py`, terrain row 9. | none |
 | The team's area 3 draft (unpublished). Tag `draft`. | The paper section the simulator feeds. `docs/sources/area3-navigation-draft.pdf` (16 Nov 2026), text copy `area3-navigation-draft.txt`. | Top speed 15 cm/s and its sweep (4.1). The fix-check policies and the 95th-percentile bound (4.2). Map refinement (4.3). Search and confirm radius (4.4). Average load and the star tracker (4.6). Drill accuracy (Table 1). Its open items are cited by number. Out of date: its lines that Lantern "is not a source of performance figures" (4.6) and "is never a source of numbers" (future-work preamble). The sim's results go in the paper (`docs/campaign-spec.md`, "Two decisions"). | none |
 | Colaprete et al., 2010, "Detection of Water in the LCROSS Ejecta Plume", Science 330, 463. Tag `LCROSS`. | The LCROSS impact result: water measured in a south pole crater. | 5.6% water as the richest deposit, via brief p.12 (`rich_peak_wt`, upper end of `deposit_peak_wt`). | The mix of other volatiles in each find (Table 2, `sim/results.py:26-27`, `:91-92`). |
@@ -108,14 +94,14 @@ cases.
 
 | Source | What it is | What it did |
 |---|---|---|
-| Xu et al., 2020, "Photometric Correction of Chang'E-1 IIM Data with Hapke Model", Remote Sensing 12(22), 3676. `docs/sources/Xu-2020-Hapke-CE1-IIM.pdf` | A fitted Hapke reflectance model: how lunar soil reflects light at each angle. ShadowNav renders with it (C23 sec. 4A, ref. [26]). | The "old highland" parameters from its Table 1 p.3 shade the ground (hackathon: `sim/terrain_display.py:107-114`, `web/js/regolith.js:3-6`, `:23`). Table 1 gives only bounds, so the code uses the bound values. |
+| Xu et al., 2020, "Photometric Correction of Chang'E-1 IIM Data with Hapke Model", Remote Sensing 12(22), 3676. `docs/sources/Xu-2020-Hapke-CE1-IIM.pdf` | A fitted Hapke reflectance model: how lunar soil reflects light at each angle. ShadowNav renders with it (C23 sec. 4A, ref. [26]). | The "old highland" parameters from its Table 1 p.3 shade the ground (`sim/terrain_display.py`, `web/js/regolith.js`). Table 1 gives only bounds, so the code uses the bound values. |
 
 ## Rover models and look
 
 | Source | What it is | What it did |
 |---|---|---|
-| NASA 3D Resources. https://github.com/nasa/NASA-3D-Resources | NASA's free 3D models. | Opportunity and Perseverance stand in for the Scouts in the 3D view (hackathon: `web/js/mission.js:262-269`). Both are Mars rovers, and the page says so (`web/js/mission.js:484`). |
-| NASA "Experience Curiosity" | NASA's web viewer of the Curiosity rover. | The layout idea for Mission Control: full-window 3D scene, small camera and map boxes, one play bar (`web/js/mission.js:3-5`). Design reference only. |
+| NASA 3D Resources. https://github.com/nasa/NASA-3D-Resources | NASA's free 3D models. | Opportunity stands in for the Scouts in the 3D view (`web/js/mission.js`). It is a Mars rover, and the page says so. |
+| NASA "Experience Curiosity" | NASA's web viewer of the Curiosity rover. | The layout idea for Mission Control: full-window 3D scene, small camera and map boxes, one play bar. Design reference only. |
 
 ## Software (what the code imports)
 
@@ -144,45 +130,10 @@ to take for data:
 
 - **All ice deposits and all readings are simulated.** Not NASA data.
 - The 1 wt% ice threshold. The brief calls it "the ~1 wt% ice threshold we assumed" and asks for a source (p.9).
-- Sensor footprint of 1 m and deposit radius 6 m (`sim/ice.py`). The reading noise is sourced since 20 Nov 2026 (VIPER NSS, Mission table).
+- Sensor footprint of 1 m and deposit radii 3-12 m (`sim/settings.py`). The reading noise is sourced (VIPER NSS, Mission table).
 - The roughness amplitude. The approved 0.035 m comes from a comparison with real 1 m ground, not from a measurement in shadow (`docs/terrain/position.md` row 3).
 - Crater rim height and ejecta reach (`docs/terrain/position.md` row 6).
 - The orbital map's position and size errors and its missing share (`WorldRanges.orbital_*`).
 - The 2 m scale of the slope test. No source states a baseline (`docs/terrain/position.md` row 9).
 - No rocks in the run ground (`docs/terrain/position.md` row 11).
-- Mars rover models standing in for the Scouts.
-
-## History: the hackathon chain and agency side (15 Nov 2026)
-
-Lantern on 15 Nov 2026 had two rovers from two agencies post ice finds to a
-contract on Monad testnet and check each other's finds. The hackathon record
-is https://lantern-teal.vercel.app. Never republish it. Chain code is moving
-to `_archive/`. None of these sources sets anything in the campaign
-simulator.
-
-| Source | What it is | What it did for Lantern | Slide hook |
-|---|---|---|---|
-| The Artemis Accords, NASA, 13 Oct 2020. https://www.nasa.gov/wp-content/uploads/2022/11/Artemis-Accords-signed-13Oct2020.pdf | The international agreement on lunar activity. | The policy framing: sec. 8 (share science data) and sec. 11 (notify others). The Accords do not require reporting finds; Lantern was a voluntary way to meet those two commitments (`contracts/src/Lantern.sol:21-24`). | A public, tamper-evident record for what the Accords already ask. |
-| Monad testnet and docs. https://docs.monad.xyz | An EVM blockchain with fast blocks. | The Lantern contract is on chain 10143 at `0x67f9Bedb42C845307cB1Fd6551D07Df64bd3CE98` (`sim/lantern_deployment.json`). The docs set the RPC, chain id and EVM version (`contracts/foundry.toml`). | Every find and check is a Monad transaction. |
-| Foundry. https://getfoundry.sh | Solidity build, test and deploy tools. | Builds and deploys the contract (`contracts/deploy.sh`). 25 tests cover the checking rules (`contracts/test/Lantern.t.sol`). | 25 contract tests on the checking rules. |
-| Sourcify (Monad's instance) | Public source-code verification for contracts. | The deployed source is verified, so explorers decode each call (`contracts/deploy.sh:49-65`). | Anyone can read the exact code that enforces the rules. |
-| Monadscan. https://testnet.monadscan.com | The Monad block explorer. | Where judges saw each transaction (`sim/chain.py:72`, `run_mission.py:475`). | Click any find and see it on chain. |
-
-Hackathon software, history: web3.py, eth-account and python-dotenv (Python
-to Monad, keys in `.env`); ethers 6.13.4 and js-sha3 0.9.3 (the browser read
-the chain and re-hashed reports, `web/js/chain.js:27`); Vercel (hosted the
-record site).
-
-Hackathon-only items the team built, history: the two-agency find-and-check
-contract (only a different agency may check a find, within 3 times the two
-uncertainties added together, disagreements kept on the record,
-`contracts/src/Lantern.sol:5-12`, `:69`); the Surveyor and Prospector roles
-that coordinated only through the chain (`sim/roles.py`, `sim/mission.py`,
-`run_mission.py`).
-
-Hackathon assumptions, history: the LCROSS volatile mix applied to every find;
-about 11,000 small craters stamped on a 1 km Shoemaker window; a navigation
-fix floor of 0.7 m, rim weight 1.5 m and at least 6 rims (`sim/standins.py:24-26`);
-odometry and heading noise and the 2 m step (`sim/rover.py:27-30`); survey
-and drilling durations (`run_mission.py:80-81`); the contract's reading unit,
-hundredths of wt% (`contracts/src/Lantern.sol:17-18`).
+- A Mars rover model standing in for the Scouts.

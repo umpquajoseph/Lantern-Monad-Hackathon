@@ -48,6 +48,7 @@ from scipy.stats import norm
 
 from sim.settings import Settings, WorldRanges, sources
 from sim.orbital_map import orbital_map   # the Scouts' starting map, shared with every camera run
+from sim.footprint import severity, grad_from_slope   # the Scout's slope limits by heading
 
 from sim import crossing as X              # part 2: cross-checks and crater merging
 
@@ -170,7 +171,7 @@ def standin_world(seed: int, s: Settings, ranges: WorldRanges) -> World:
     map_start, in_map, _ = orbital_map(craters, rng, ranges, missing_share_large=draws["missing_share_large"])
 
     # Hidden ice: inside the floor, within survey reach of the descent end.
-    route = descent_route_cached(z, sl, floor, x0, y0, cell, dock, s.slope_limit_deg)
+    route = descent_route_cached(z, sl, floor, x0, y0, cell, dock, s.pitch_limit_deg, s.roll_limit_deg)
     ex, ey = route[-1]
     ice = []
     tries = 0
@@ -207,15 +208,16 @@ def make_world(seed: int, s: Settings, ranges: WorldRanges, site: str | None = N
 _ROUTE_CACHE: dict = {}
 
 
-def descent_route_cached(z, slope, floor, x0, y0, cell, dock, limit_deg):
+def descent_route_cached(z, slope, floor, x0, y0, cell, dock, pitch_deg, roll_deg):
     """Route per (terrain, dock), cached in memory and on disk so batch
     workers load it instead of each building the grid graph (a few hundred
     MB at its peak on a 6 km window)."""
     import hashlib
     h = hashlib.sha1()
-    for arr in (slope, floor):
+    for arr in (slope, floor, z):
         h.update(np.ascontiguousarray(arr).tobytes())
-    h.update(json.dumps([float(x0), float(y0), float(cell), list(map(float, dock)), float(limit_deg)]).encode())
+    h.update(json.dumps(["by_heading", float(x0), float(y0), float(cell), list(map(float, dock)),
+                         float(pitch_deg), float(roll_deg)]).encode())
     key = h.hexdigest()[:16]
     if key in _ROUTE_CACHE:
         return _ROUTE_CACHE[key]
@@ -223,7 +225,7 @@ def descent_route_cached(z, slope, floor, x0, y0, cell, dock, limit_deg):
     if path.exists():
         route = [tuple(p) for p in json.loads(path.read_text(encoding="utf-8"))]
     else:
-        route = descent_route(slope, floor, x0, y0, cell, dock, limit_deg)
+        route = descent_route(slope, z, floor, x0, y0, cell, dock, pitch_deg, roll_deg)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(f".{os.getpid()}.tmp")
         tmp.write_text(json.dumps(route), encoding="utf-8")
@@ -232,16 +234,22 @@ def descent_route_cached(z, slope, floor, x0, y0, cell, dock, limit_deg):
     return route
 
 
-def _slope_graph(slope, cell, limit_deg, force=None):
-    """8-neighbour grid graph over cells under the slope limit (CSR)."""
+def _slope_graph(slope, height, cell, pitch_deg, roll_deg, force=None):
+    """8-neighbour grid graph (CSR): an edge joins two cells when both are
+    within the Scout's slope limits along it (pitch along the edge, roll
+    across it; sim/footprint.py severity). The slope is the product's (LOLA
+    5 m), its direction the height grid's. Pitch and roll are the same both
+    ways along an edge, so the graph stays undirected."""
     from scipy.sparse import coo_matrix
     h, w = slope.shape
-    ok = np.nan_to_num(slope, nan=90.0) < limit_deg
-    if force is not None:
-        ok[force] = True
+    gx, gy = grad_from_slope(slope, height, cell)
+    tp, tr = math.tan(math.radians(pitch_deg)), math.tan(math.radians(roll_deg))
     idx = np.arange(h * w).reshape(h, w)
     rows, cols, wts = [], [], []
     for oi, oj in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        ok = severity(gx, gy, math.atan2(oi, oj), tp, tr) <= 1.0   # rows y, columns x
+        if force is not None:
+            ok[force] = True
         a = idx[max(0, -oi):h - max(0, oi), max(0, -oj):w - max(0, oj)]
         bb = idx[max(0, oi):h - max(0, -oi) if oi <= 0 else h, max(0, oj):w - max(0, -oj) if oj <= 0 else w]
         a_ok = ok[max(0, -oi):h - max(0, oi), max(0, -oj):w - max(0, oj)]
@@ -255,14 +263,16 @@ def _slope_graph(slope, cell, limit_deg, force=None):
     return coo_matrix((wt, (r, c)), shape=(h * w, h * w)).tocsr()
 
 
-def entry_tree_cached(slope, x0, y0, cell, entry, limit_deg):
+def entry_tree_cached(slope, height, x0, y0, cell, entry, pitch_deg, roll_deg):
     """Driving distance (m) and shortest-path predecessor of every cell from
-    the floor entry, under the slope limit. Cached on disk like the route."""
+    the floor entry, within the slope limits by heading. Cached on disk like
+    the route."""
     import hashlib
     from scipy.sparse.csgraph import dijkstra
     hs = hashlib.sha1(np.ascontiguousarray(slope).tobytes())
-    hs.update(json.dumps(["entry_tree", float(x0), float(y0), float(cell), list(map(float, entry)),
-                          float(limit_deg)]).encode())
+    hs.update(np.ascontiguousarray(height).tobytes())
+    hs.update(json.dumps(["entry_tree_by_heading", float(x0), float(y0), float(cell), list(map(float, entry)),
+                          float(pitch_deg), float(roll_deg)]).encode())
     key = hs.hexdigest()[:16]
     if key in _ROUTE_CACHE:
         return _ROUTE_CACHE[key]
@@ -274,7 +284,7 @@ def entry_tree_cached(slope, x0, y0, cell, entry, limit_deg):
         h, w = slope.shape
         ei = min(max(int(round((entry[1] - y0) / cell)), 0), h - 1)
         ej = min(max(int(round((entry[0] - x0) / cell)), 0), w - 1)
-        g = _slope_graph(slope, cell, limit_deg, force=(ei, ej))
+        g = _slope_graph(slope, height, cell, pitch_deg, roll_deg, force=(ei, ej))
         dist, pred = dijkstra(g, directed=False, indices=ei * w + ej, return_predecessors=True)
         del g
         out = (dist.astype(np.float32).reshape(h, w), pred.astype(np.int32))
@@ -286,31 +296,16 @@ def entry_tree_cached(slope, x0, y0, cell, entry, limit_deg):
     return out
 
 
-def descent_route(slope, floor, x0, y0, cell, dock, limit_deg):
+def descent_route(slope, height, floor, x0, y0, cell, dock, pitch_deg, roll_deg):
     """Shortest path on the 5 m grid from the dock to the nearest floor cell,
-    through cells under the slope limit (8-neighbour Dijkstra). Returns the
-    waypoints [(x, y), ...], about every 25 m, dock first, floor entry last."""
-    from scipy.sparse import coo_matrix
+    within the slope limits by heading (8-neighbour Dijkstra, _slope_graph).
+    Returns the waypoints [(x, y), ...], about every 25 m, dock first, floor
+    entry last."""
     from scipy.sparse.csgraph import dijkstra
     h, w = slope.shape
     di, dj = int(round((dock[1] - y0) / cell)), int(round((dock[0] - x0) / cell))
-    ok = np.nan_to_num(slope, nan=90.0) < limit_deg
-    ok[di, dj] = True
     idx = np.arange(h * w).reshape(h, w)
-    rows, cols, wts = [], [], []
-    for oi, oj in ((0, 1), (1, 0), (1, 1), (1, -1)):
-        a = idx[max(0, -oi):h - max(0, oi), max(0, -oj):w - max(0, oj)]
-        bb = idx[max(0, oi):h - max(0, -oi) if oi <= 0 else h, max(0, oj):w - max(0, -oj) if oj <= 0 else w]
-        a_ok = ok[max(0, -oi):h - max(0, oi), max(0, -oj):w - max(0, oj)]
-        b_ok = ok.ravel()[bb.ravel()].reshape(bb.shape)
-        m = a_ok & b_ok
-        rows.append(a[m]); cols.append(bb[m])
-        wts.append(np.full(m.sum(), cell * math.hypot(oi, oj)))
-    r = np.concatenate(rows).astype(np.int32); c = np.concatenate(cols).astype(np.int32)
-    wt = np.concatenate(wts).astype(np.float32)
-    del rows, cols, wts
-    g = coo_matrix((wt, (r, c)), shape=(h * w, h * w)).tocsr()
-    del r, c, wt
+    g = _slope_graph(slope, height, cell, pitch_deg, roll_deg, force=(di, dj))
     dist, pred = dijkstra(g, directed=False, indices=idx[di, dj], return_predecessors=True)
     del g
     dist_f = np.where(floor.ravel() & np.isfinite(dist), dist, np.inf)
@@ -998,7 +993,8 @@ class Campaign:
         self.energy = energy_model(s)
         self.scouts = [f"S{i + 1}" for i in range(s.n_scouts)]
         self.dock_reg = (w.dock[0] + w.draws["dock_reg_err"][0], w.dock[1] + w.draws["dock_reg_err"][1])
-        route = descent_route_cached(w.height, w.slope, w.floor, w.x0, w.y0, w.cell, w.dock, s.slope_limit_deg)
+        route = descent_route_cached(w.height, w.slope, w.floor, w.x0, w.y0, w.cell, w.dock,
+                                     s.pitch_limit_deg, s.roll_limit_deg)
         off = np.array(self.dock_reg) - np.array(w.dock)
         # The dock plans in the map frame from its registered position.
         self.corridor = [(float(x + off[0] * (1 - i / max(len(route) - 1, 1))),
@@ -1007,9 +1003,11 @@ class Campaign:
         self.entry = self.corridor[-1]
         self.corridor_len = float(sum(math.hypot(b[0] - a[0], b[1] - a[1])
                                       for a, b in zip(self.corridor, self.corridor[1:])))
-        self.entry_dist, self.entry_pred = entry_tree_cached(w.slope, w.x0, w.y0, w.cell, self.entry,
-                                                             s.slope_limit_deg)
-        self._drivable = np.nan_to_num(w.slope, nan=90.0) < s.slope_limit_deg
+        self.entry_dist, self.entry_pred = entry_tree_cached(w.slope, w.height, w.x0, w.y0, w.cell, self.entry,
+                                                             s.pitch_limit_deg, s.roll_limit_deg)
+        # The orbital slope's gradient, for straight legs judged by heading (straight_ok).
+        self._grad = grad_from_slope(w.slope, w.height, w.cell)
+        self._tan_lim = (math.tan(math.radians(s.pitch_limit_deg)), math.tan(math.radians(s.roll_limit_deg)))
         self.true_tree = cKDTree(w.craters[:, :2]) if len(w.craters) else None
         # True craters absent from the starting map (crossing.score_added indexes these).
         if w.map_index is not None:
@@ -1068,7 +1066,8 @@ class Campaign:
         cells = [self._cell(a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])) for f in np.linspace(0.0, 1.0, n + 1)]
         ii = [c[0] for c in cells]
         jj = [c[1] for c in cells]
-        return bool(self._drivable[ii, jj].all())
+        hd = math.atan2(b[1] - a[1], b[0] - a[0])
+        return bool((severity(self._grad[0][ii, jj], self._grad[1][ii, jj], hd, *self._tan_lim) <= 1.0).all())
 
     def route(self, a, b):
         """Waypoints from a to b: straight if that line stays under the slope
@@ -1101,7 +1100,8 @@ class Campaign:
         sp, L = s.survey_line_spacing_m, s.lane_segment_m
         reach = s.lane_reach_m
         h, wd = w.floor.shape
-        drivable = np.nan_to_num(w.slope, nan=90.0) < s.slope_limit_deg
+        # Lanes run along x (heading 0 or 180 deg: the same pitch and roll).
+        drivable = severity(self._grad[0], self._grad[1], 0.0, *self._tan_lim) <= 1.0
         good = w.floor & drivable
 
         lanes = []
@@ -1247,6 +1247,9 @@ class Campaign:
             self.sortie_extra[so.sid] = {"steps": int(len(so.arrays[f"{so.sid}.step"])),
                                          "point_turns": so.point_turns, "waypoints_skipped": so.skipped,
                                          "pingpong_blocks": so.rover.pingpong_blocks,
+                                         "reversals": so.rover.reversals,
+                                         "retraces": so.rover.retraces,
+                                         "retrace_steps": so.rover.retrace_steps,
                                          "drive_overhead": rnd(so.overhead(), 3),
                                          "rim_points": so.n_rim_pts, "rim_matched": so.n_rim_matched,
                                          "rim_wrong": so.n_rim_wrong, "rim_unpaired": so.n_rim_unpaired,

@@ -81,6 +81,10 @@ from sim.crossing import R95_2D
 
 CAM = "cam"                  # the scene's one agency: only the sortie being simulated is in it
 LIDAR_KEEP = 2               # steps.npz keeps every 2nd lidar beam row and column (record size, not physics)
+# steps.npz steep_why codes: why the lidar's map missed a step onto true tilt over the
+# limit (sim/lidar.py HazardMemory.why_missed), then what flagged the ones it knew of
+# (sim/rover.py _note_true_steep). docs/handoffs.md, "steps.npz".
+STEEP_WHY = ("never_in_band", "shadow", "too_sparse", "under_read", "judged", "orbital", "lidar_steep", "lidar_crater")
 PROGRESS_M = 0.5             # assumed: "getting closer" to a waypoint means by at least this much (cam_stuck_steps)
 DOCK_SIGHT_M = 25.0          # assumed: the dock is found within this of the Scout's believed area (GATE_RANGE_M's view range)
 PROGRESS_MIN_M = 50.0       # assumed: progress measured before CameraSortie.overhead() replaces 1 (the corridor alone is ~900 m)
@@ -203,13 +207,15 @@ class CameraRig:
             self.display_dir = TD.build_for_ground(self.ground_path)
         self.scene = Scene(h, cr, x0, y0, cell, display=s.cam_display, display_dir=self.display_dir)
         # docs/terrain/position.md row 9: the Scout's footprint tilt, or a test case.
-        self.slope = SlopeMap(h, x0, y0, cell, mode=s.slope_test)
+        self.slope = SlopeMap(h, x0, y0, cell, mode=s.slope_test,
+                              pitch_deg=s.pitch_limit_deg, roll_deg=s.roll_limit_deg)
         if s.plan_slope == "orbital":
             # What the Scout knows of the ground before it sees it: the site's
             # LOLA 5 m slope (Settings.plan_slope; SlopeMap.use_orbital).
             from sim.psr_sites import load_site
             site = load_site(w.site)
-            self.slope.use_orbital(site["slope"], site["x0"], site["y0"], site["cell"])
+            # The slope's direction (limits by heading) from the LOLA heights it was made from.
+            self.slope.use_orbital(site["slope"], site["x0"], site["y0"], site["cell"], height=site["height"])
             del site
         elif s.plan_slope != "truth":
             raise ValueError(f"plan_slope {s.plan_slope!r}: 'orbital' or 'truth'")
@@ -368,6 +374,7 @@ class CameraSortie(Sortie):
         h0 = math.atan2(wy - camp.dock_reg[1], wx - camp.dock_reg[0])
         self.rover = r = Rover(scout, (w.dock[0], w.dock[1], h0), nav, rig.slope, rng_for(camp.seed, 9, si, n))
         r.sensing = True
+        r.retrace_m = s.retrace_track_m
         # The filter's start belief: the dock's registered position, spread to
         # the registration bound the Scouts believe (Settings.dock_reg_bound95_m),
         # not sim/nav.py's 1 m landing sigma. Particles are scaled about their mean.
@@ -392,8 +399,8 @@ class CameraSortie(Sortie):
         self._orb_sum = 0.0
         self.goal_xy = (float(wx), float(wy))
         self.st = {k: [] for k in ("step", "particles", "rims", "rim_map", "rim_map_m", "rim_true", "rim_wrong", "lidar",
-                                   "haz", "haz_kind", "plan")}
-        self.st_o = {k: [0] for k in ("rim", "haz", "plan")}
+                                   "haz", "haz_kind", "plan", "map_ij", "map_v", "steep", "steep_why")}
+        self.st_o = {k: [0] for k in ("rim", "haz", "plan", "map")}
         self.pass_ = None
         self.gap = 0
         self.n_rim_pts = self.n_rim_wrong = self.n_rim_matched = self.n_rim_unpaired = 0
@@ -711,6 +718,7 @@ class CameraSortie(Sortie):
             return True
         r.set_goal((gx, gy))
         best, since = math.hypot(gx - self.ex, gy - self.ey), 0
+        pp = r.pingpong_blocks
         while True:
             if self._blocked(act):
                 return False
@@ -734,6 +742,19 @@ class CameraSortie(Sortie):
                 best, since = nd, 0
             else:
                 since += 1
+            if r.pingpong_blocks > pp and r.goal_blocked():
+                # The Scout drove back to where it was two moves ago (the
+                # back-and-forth guard, Rover._note_move) and its own map puts
+                # the goal on ground it may not enter: it is as close as it
+                # can get. A route planned on the orbital map can put a
+                # waypoint inside a crater too small for LOLA; the Scout's
+                # lidar sees it on arrival. Before 23 Nov 2026 it drove back
+                # and forth at the crater's edge until cam_stuck_steps ran out
+                # (all 4 skipped waypoints of spin-check-1, about 45 steps each).
+                self.event("waypoint_skipped", reason="hazard", goal=[rnd(gx, 2), rnd(gy, 2)])
+                self.skipped += 1
+                return True
+            pp = r.pingpong_blocks
             if since >= s.cam_stuck_steps:
                 self.event("waypoint_skipped", reason="blocked", goal=[rnd(gx, 2), rnd(gy, 2)])
                 self.skipped += 1
@@ -744,6 +765,8 @@ class CameraSortie(Sortie):
         error) and Settings' per-step noise; the filter never sees these."""
         s, rg = self.s, self.rng_odo
         d_o = d * (1.0 + self.drift_true) + (rg.normal(0.0, s.odom_noise_frac * d) if d > 0 else 0.0)
+        if self.rover.last_reverse:
+            d_o = -d_o            # driven backwards: the wheels turned the other way (nav.predict)
         # With a star tracker (Settings.star_tracker, draft 4.6) the Scout's
         # heading is measured, not dead-reckoned (A24 sec. III-A, the filter's
         # pf_heading_walk_rad = 0), as the sampled engine already does
@@ -788,9 +811,14 @@ class CameraSortie(Sortie):
         Scout chose the step). Every unflagged step is also LOLA averaging:
         the orbital slope there was at or under the limit."""
         x = self.extra
+        k = len(self.st["step"])   # the step this move is logged as (_sense_and_log follows)
         for px, py, tdeg, orb, flag in steps:
+            why = flag
             if flag == "none":
                 why = self.lid.memory.why_missed(px, py, getattr(self.lid, "slope_mode", "footprint"))
+            self.st["steep"].append([k, px, py, tdeg, orb])
+            self.st["steep_why"].append(STEEP_WHY.index(why))
+            if flag == "none":
                 x["steep_unflagged"] += 1
                 x["steep_unflagged_by"][why] = x["steep_unflagged_by"].get(why, 0) + 1
                 x["steep_unflagged_true_deg_max"] = rnd(max(x["steep_unflagged_true_deg_max"] or 0.0, tdeg), 2)
@@ -826,8 +854,9 @@ class CameraSortie(Sortie):
         hz, kinds = self.lid.hazards(pts)     # this scan's own verdicts, for the step record
         # The rover drives on the sortie's lidar map, every cell judged afresh as
         # data merges in (sim/lidar.py HazardMemory; GESTALT sec. 4 steps 2-3).
-        mhz, mkinds, clear = self.lid.judge(pts, pose, widen_m=r.slope.widen_m)
-        r.add_hazards(mhz, mkinds, clear=clear)
+        mhz, mkinds, clear, mgrads = self.lid.judge(pts, pose, widen_m=r.slope.widen_m)
+        r.add_hazards(mhz, mkinds, clear=clear, grads=mgrads)
+        map_ij, map_v = self.lid.memory.take_changes()   # for the replay (steps.npz map_*)
         t3 = time.perf_counter()
         if look:
             del img, depth
@@ -910,6 +939,9 @@ class CameraSortie(Sortie):
         self.st["haz"].append(np.asarray(hz, np.float16).reshape(-1, 2))
         self.st["haz_kind"].append(np.array([{"crater": 0, "slope": 1, "rock": 2}[k] for k in kinds], np.uint8))
         self.st_o["haz"].append(self.st_o["haz"][-1] + len(hz))
+        self.st["map_ij"].append(map_ij)
+        self.st["map_v"].append(map_v)
+        self.st_o["map"].append(self.st_o["map"][-1] + len(map_v))
         plan = np.asarray(r.planned_route() if getattr(r, "local_plan", None) else [pose[:2]], np.float32)
         self.st["plan"].append(plan.reshape(-1, 2))
         self.st_o["plan"].append(self.st_o["plan"][-1] + len(plan))
@@ -1052,6 +1084,12 @@ class CameraSortie(Sortie):
             f"{sid}.haz_kind": cat("haz_kind", np.uint8, ()),
             f"{sid}.plan_o": np.asarray(o["plan"], np.int32),
             f"{sid}.plan": cat("plan", np.float32, (2,)),
+            f"{sid}.map_o": np.asarray(o["map"], np.int32),
+            f"{sid}.map_ij": cat("map_ij", np.int32, (2,)),
+            f"{sid}.map_v": cat("map_v", np.uint8, ()),
+            f"{sid}.steep": np.asarray(st["steep"], np.float32).reshape(-1, 5),
+            f"{sid}.steep_why": np.asarray(st["steep_why"], np.uint8),
+            "map_cell_m": np.float32(self.lid.memory.c),
         }
 
     def release(self):

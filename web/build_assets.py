@@ -105,23 +105,39 @@ def add_lips(height, craters, lips, x0, y0, cell, s):
     return h
 
 
-def nogo_png(height, x0, y0, cell, path, mode="footprint"):
-    """The planner's own no-go ground: SlopeMap(height, mode=mode).fine_deg >
-    SLOPE_LIMIT_DEG (sim/rover.py), by the slope test the run used. Written as
-    red on clear, north up, one pixel per sim cell. Returns the meta entry, or
-    None when sim/rover.py has no SlopeMap."""
+def nogo_png(height, x0, y0, cell, path, mode="footprint", plan_slope="truth", site=None):
+    """The planner's own no-go ground, as the run's planner read it: over
+    SLOPE_LIMIT_DEG in SlopeMap(height, mode=mode).at() (sim/rover.py). For a
+    run with Settings.plan_slope "orbital" that is the site's LOLA 5 m slope
+    (SlopeMap.use_orbital); else ("truth", and runs before 20 Nov 2026) the
+    ground's own slope by the slope test the run used. Written as red on
+    clear, north up, one pixel per sim cell. Returns the meta entry, or None
+    when sim/rover.py has no SlopeMap."""
     try:
         from sim.rover import SlopeMap, SLOPE_LIMIT_DEG
     except ImportError as e:
         print(f"no-go layer skipped: {e}")
         return None
-    bad = SlopeMap(height, x0, y0, cell, mode=mode).fine_deg > SLOPE_LIMIT_DEG
+    sm = SlopeMap(height, x0, y0, cell, mode=mode)
+    if plan_slope == "orbital":
+        from sim.psr_sites import load_site
+        d = load_site(site)
+        sm.use_orbital(d["slope"], d["x0"], d["y0"], d["cell"])
+        H, W = height.shape
+        bad = np.zeros((H, W), bool)
+        xs = x0 + cell * np.arange(W)
+        for i in range(H):
+            bad[i] = sm.at(xs, np.full(W, y0 + cell * i)) > SLOPE_LIMIT_DEG
+        src = (f"sim/rover.py SlopeMap.use_orbital: {site}'s LOLA 5 m slope (sim/psr_sites.py 'ldsm'), "
+               f"each sim cell reading the LOLA sample whose 5 m cell holds it, > SLOPE_LIMIT_DEG")
+    else:
+        bad = sm.fine_deg > SLOPE_LIMIT_DEG
+        src = f"sim/rover.py SlopeMap(height, x0, y0, cell, mode={mode!r}).fine_deg > SLOPE_LIMIT_DEG, on the sim grid without display lips"
     rgba = np.zeros(bad.shape + (4,), np.uint8)
     rgba[bad] = (79, 87, 229, 255)          # BGRA for cv2: #e5574f, the page's "disputed" red
     imwrite(path, rgba[::-1])
     return {"file": path.name, "limit_deg": SLOPE_LIMIT_DEG, "fraction": round(float(bad.mean()), 4),
-            "slope_test": mode,
-            "source": f"sim/rover.py SlopeMap(height, x0, y0, cell, mode={mode!r}).fine_deg > SLOPE_LIMIT_DEG, on the sim grid without display lips"}
+            "slope_test": mode, "plan_slope": plan_slope, "source": src}
 
 
 def far_normal(z, cell):
@@ -163,11 +179,12 @@ def main(site=None, run_ground=None):
     # The planner works on the sim grid as is, so the no-go layer does too.
     # The slope test the run used (Settings.slope_test; runs before 18 Nov 2026
     # carry slope_test_widened instead, True = "widened", False = "point").
-    mode = "footprint"
+    mode, plan_slope = "footprint", "truth"
     if ground_rec:
         st = rec.get("settings") or {}
         mode = st.get("slope_test") or ("point" if st.get("slope_test_widened") is False else "widened")
-    nogo = nogo_png(height, x0, y0, cell, OUT / "nogo.png", mode)
+        plan_slope = st.get("plan_slope") or "truth"   # runs before 20 Nov 2026 planned on the ground itself
+    nogo = nogo_png(height, x0, y0, cell, OUT / "nogo.png", mode, plan_slope, site)
     disp = DATA / (f"display_{site}" if site else "display")
     if ground_rec:
         # The camera texture built for this run ground (sim/terrain_display.py

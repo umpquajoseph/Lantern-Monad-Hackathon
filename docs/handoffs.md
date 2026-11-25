@@ -608,7 +608,11 @@ Record changes (additive unless marked):
     end of a pass, in the Scout's estimated frame: `est`, `d_est`,
     `bound95`, `anchor` as above, plus `points`, `fit_rms_m`.
   - `waypoint_skipped`: `reason` `blocked` (no progress for
-    `Settings.cam_stuck_steps` steps) or `off_ground`; `goal` (map frame).
+    `Settings.cam_stuck_steps` steps), `off_ground`, or `hazard` (from
+    23 Nov 2026: the Scout drove back to where it was two moves ago and
+    its own map puts the goal on ground it may not enter, so it is as
+    close as it can get; sim/campaign_camera.py `drive_to`); `goal` (map
+    frame).
   - `search_abandoned` (workflow, 17 Nov 2026; either engine): a search
     that did not finish. `find_id`, `reason`: `unreached` (the drive to
     the find ended with the searcher's estimate outside the search circle,
@@ -640,7 +644,15 @@ Record changes (additive unless marked):
 - Sorties add `steps` (camera steps), `point_turns`, `waypoints_skipped`,
   `pingpong_blocks` (planning cells closed by sim/rover.py's back-and-forth
   guard: a move that ends within 0.5 m of where the move before last
-  ended closes the turnaround's 2 m cell; 17 Nov 2026), `drive_overhead`
+  ended closes the turnaround's 2 m cell; 17 Nov 2026), `reversals`
+  (23 Nov 2026: steps driven backwards out of a dead end, sim/rover.py
+  `_follow_sensing`; the filter moves its particles back, sim/nav.py
+  `predict` with a negative distance), `retraces` and `retrace_steps`
+  (23 Nov 2026: times the Scout's own map closed every way out of where it
+  stood and it drove back along its own track, ignoring the map, and the
+  steps it drove back; sim/rover.py `_start_retrace`, Settings
+  `retrace_track_m`; its steps over the limits are counted as any other),
+  `drive_overhead`
   (sim/campaign_camera.py `CameraSortie.overhead`: drive time over the
   time straight driving at top speed would take for the same progress
   toward its waypoints, measured by the Scout on itself; its turn-back
@@ -649,9 +661,13 @@ Record changes (additive unless marked):
   `orbital`, the Scout plans and steers on the site's LOLA 5 m slope plus
   its lidar map, sim/rover.py `SlopeMap.use_orbital`; `truth`, the test
   case on the ground's own slope) and the steps it drove onto ground
-  whose true footprint tilt is over 15 deg (sim/rover.py
-  `_note_true_steep`; 15 deg is a planning limit, so these are driven, not
-  refused). `steep_unflagged`: steps neither the orbital slope nor the
+  truly over its slope limits for the heading driven (sim/rover.py
+  `_note_true_steep`; from 23 Nov 2026 pitch along the heading against
+  `Settings.pitch_limit_deg` and roll across it against `roll_limit_deg`,
+  sim/footprint.py `severity`; before, the footprint tilt over 15 deg
+  whatever the heading. The limits are planning limits, so these steps
+  are driven, not refused; the record keeps the step's tilt in
+  degrees). `steep_unflagged`: steps neither the orbital slope nor the
   lidar map flagged. `steep_unflagged_by`: why the lidar's map missed
   each one (sim/lidar.py `HazardMemory.why_missed`): `never_in_band`,
   `shadow`, `too_sparse`, `under_read` or `judged`. Every unflagged step
@@ -711,9 +727,12 @@ an offset array `o` of length K+1 (step k owns rows `o[k]:o[k+1]`).
 | `<sid>.lidar` | uint16 (K, 20, 121) | range image, every other beam row and column of sim/lidar.py's 40 x 241 scan (elevations `lidar_el_deg`, azimuths `lidar_az_deg`), centimetres, 0 = no return |
 | `<sid>.haz_o`, `<sid>.haz`, `<sid>.haz_kind` | int32 (K+1), float16 (H, 2), uint8 (H) | lidar hazard cells `[x_forward, y_left]` from the lidar, kind 0 crater, 1 slope, 2 rock |
 | `<sid>.plan_o`, `<sid>.plan` | int32 (K+1), float32 (P, 2) | the route the Scout is about to drive, true frame world xy, from the Scout forward, about 20 m (sim/rover.py `planned_route`) |
+| `<sid>.map_o`, `<sid>.map_ij`, `<sid>.map_v` | int32 (K+1), int32 (C, 2), uint8 (C) | the lidar's merged map (sim/lidar.py `HazardMemory`, what the Scout plans on) as the cells whose verdict changed at each step: world cell `[i, j]` = `floor(x / map_cell_m)`, `floor(y / map_cell_m)`, verdict 0 none, 1 crater, 2 rock, 3 slope. Replaying them in order from an empty map gives the map at any step. From 20 Nov 2026 |
+| `<sid>.steep`, `<sid>.steep_why` | float32 (S, 5), uint8 (S) | each step onto true footprint tilt over 15 deg (sim/rover.py `_note_true_steep`): `[step index, x, y, true deg, orbital deg]`, and why: 0 never_in_band, 1 shadow, 2 too_sparse, 3 under_read, 4 judged (unflagged; sim/lidar.py `why_missed`), 5 orbital, 6 lidar_steep, 7 lidar_crater (flagged). Empty when the Scout plans on the truth. From 20 Nov 2026 |
 | `map_craters` | float32 (M, 3) | every map crater any rim paired with, `[x, y, d]` |
 | `true_craters` | float32 (N, 3) | every true crater any rim lay on, `[x, y, d]` |
 | `lidar_el_deg`, `lidar_az_deg` | float32 | beam angles of the stored range image |
+| `map_cell_m` | float32 | cell side of `map_ij` (sim/lidar.py `HAZ_CELL_M`, 0.5 m) |
 
 
 ### Summary row (part 1)
@@ -866,7 +885,7 @@ the "Run log" shape above (`steps`, `rovers` keyed by scout id), so
   planned route and both lidar views. `web/serve.py` (and
   `collect_campaigns.py convert_steps`) serves it as
   `campaigns/<batch>/<run>/steps/index.json` (`sorties`, `map_craters`,
-  `true_craters`, `lidar_el_deg`, `lidar_az_deg`, `standin`) plus one
+  `true_craters`, `lidar_el_deg`, `lidar_az_deg`, `map_cell_m`, `standin`) plus one
   `steps/<sortie_id>.bin` and `.json` per sortie: each array little-endian,
   4-byte aligned, float16 widened to float32, the .json mapping each name
   to `[dtype, shape, byte offset]`. `campaigns/index.json` marks such runs

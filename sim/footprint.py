@@ -15,6 +15,8 @@ the footprint is taken as square (assumed).
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from scipy.ndimage import correlate
 
@@ -47,14 +49,76 @@ def tilt_kernels(cell: float, side: float = FOOTPRINT_M):
     return _KERNELS[key]
 
 
+def tilt_grad(height, cell: float, side: float = FOOTPRINT_M):
+    """(gx, gy) float32: the gradient (dz/dx, dz/dy) of the footprint plane
+    centred on every grid point. Rows are y, columns x."""
+    h = np.asarray(height, dtype=np.float32)
+    kx, ky = tilt_kernels(cell, side)
+    return correlate(h, kx, mode="nearest"), correlate(h, ky, mode="nearest")
+
+
 def tilt_deg(height, cell: float, side: float = FOOTPRINT_M):
     """Tilt in degrees of the footprint plane centred on every grid point.
     Rows are y, columns x. NaN heights give NaN tilt nearby."""
-    h = np.asarray(height, dtype=np.float32)
-    kx, ky = tilt_kernels(cell, side)
-    gx = correlate(h, kx, mode="nearest")
-    gy = correlate(h, ky, mode="nearest")
+    gx, gy = tilt_grad(height, cell, side)
     return np.degrees(np.arctan(np.hypot(gx, gy)))
+
+
+# ---------------------------------------------------------- pitch and roll
+# A rover's slope limits depend on its heading (ops/HANDOFF.md, 20 Nov
+# evening). On a plane of gradient g = (gx, gy), a rover facing heading h
+# (unit u) sits at
+#     tan(pitch) = |g . u|   the slope along its heading,
+#     tan(roll)  = |g x u|   the slope across it,
+# so on a slope s taken at angle a off the fall line, pitch = atan(tan s cos a)
+# and roll = atan(tan s sin a). Both are the same driving forward or back.
+#
+# A gradient whose direction is not known (an orbital sample with no LOLA
+# height slope, a slope test that keeps only magnitudes) is stored as
+# gx = tan(slope), gy = NaN and judged against the lower of the two limits:
+# the old heading-free rule.
+
+def severity(gx, gy, heading, tan_pitch: float, tan_roll: float):
+    """How far over its limits a rover facing `heading` stands on gradient
+    (gx, gy): max(tan pitch / tan pitch limit, tan roll / tan roll limit).
+    At or under 1 is within both limits. Broadcasts over all arguments."""
+    c, s = np.cos(heading), np.sin(heading)
+    gx = np.asarray(gx, dtype=np.float64)
+    gy = np.asarray(gy, dtype=np.float64)
+    known = np.isfinite(gy)
+    gyk = np.where(known, gy, 0.0)
+    along = np.abs(gx * c + gyk * s) / tan_pitch
+    across = np.abs(gyk * c - gx * s) / tan_roll
+    return np.where(known, np.maximum(along, across), np.abs(gx) / min(tan_pitch, tan_roll))
+
+
+def open_any_heading(gx, gy, tan_pitch: float, tan_roll: float):
+    """True where some heading is within both limits. The best heading puts
+    tan pitch / tan_pitch = tan roll / tan_roll, so the ground is open to
+    some heading when |g| <= hypot(tan_pitch, tan_roll)."""
+    gx = np.asarray(gx, dtype=np.float64)
+    gy = np.asarray(gy, dtype=np.float64)
+    known = np.isfinite(gy)
+    return np.where(known, np.hypot(gx, np.where(known, gy, 0.0)) <= math.hypot(tan_pitch, tan_roll),
+                    np.abs(gx) <= min(tan_pitch, tan_roll))
+
+
+def grad_from_slope(slope_deg, height, cell: float):
+    """(gx, gy) for a slope product (deg, NaN = no data, read as 90 deg) whose
+    direction comes from a height grid on the same samples (rows y, columns
+    x, spacing cell): the product's own magnitude, pointing up the height
+    grid's gradient. Where the height grid gives no direction, gy is NaN."""
+    S = np.asarray(slope_deg, dtype=np.float64)
+    T = np.tan(np.radians(np.where(np.isfinite(S), np.clip(S, 0.0, 89.9), 89.9)))
+    if height is None:
+        return T.astype(np.float32), np.full(T.shape, np.nan, np.float32)
+    dzdy, dzdx = np.gradient(np.asarray(height, dtype=np.float64), cell)
+    n = np.hypot(dzdx, dzdy)
+    ok = np.isfinite(n) & (n > 0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        gx = np.where(ok, T * dzdx / n, T)
+        gy = np.where(ok, T * dzdy / n, np.nan)
+    return gx.astype(np.float32), gy.astype(np.float32)
 
 
 def _square(side: float):

@@ -1,7 +1,7 @@
 # Brief: `sensors` (lidar hazards, and the two unsourced sensor numbers)
 
 Handle `sensors`. Branch `lantern-sensors`, worktree
-`C:\Monad-Hackathon-sensors`, from `lantern-workflow`. Leader: `leader`.
+`.claude\worktrees\sensors`, from `lantern-workflow`. Leader: `leader`.
 Model: Opus.
 
 Read first, in this order: `ops/HANDOFF.md`, `docs/campaign-spec.md`, this

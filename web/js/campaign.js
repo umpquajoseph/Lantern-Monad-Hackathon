@@ -309,7 +309,8 @@ export class FleetRun extends Run {
         const rims = ps ? ps.rims : [];
         rovers[a] = { true_pose: q.tru, estimate: q.est.slice(0, 2), odom_pose: q.est, sigma: q.b, nav_on: true,
           rims: rims.map((p) => [p[0], p[1]]), rimInfo: rims.map((p) => [p[2], p[3]]),
-          particles: ps ? ps.particles : [], plan: ps ? ps.plan : null, lidar: ps ? ps.lidar : null, range: ps ? ps.range : null, pipeT: ps ? ps.t : null };
+          particles: ps ? ps.particles : [], plan: ps ? ps.plan : null, lidar: ps ? ps.lidar : null, range: ps ? ps.range : null, pipeT: ps ? ps.t : null,
+          mapAt: ps ? ps.mapAt : null, steep: ps ? ps.steep : null };
         info[a] = { act: q.act, energy: q.energy, sortie: q.sortie };
         poses.truth[a].push(q.tru);
         poses.believed[a].push(q.est);
@@ -369,6 +370,12 @@ export class FleetRun extends Run {
 // 0 not seen, 1 seen by the lidar with no hazard, 2 crater floor, 3 slope or rock.
 export const HAZ_GRID = { cell_m: 0.5, fwd0_m: 2, half_width_m: 15, nx: 46, ny: 60 };
 const HAZ_KIND_CELL = { 0: 2, 1: 3, 2: 3 };   // steps.npz haz_kind: 0 crater, 1 slope, 2 rock
+const MAP_VERDICT_CELL = { 1: 2, 2: 3, 3: 3 }; // steps.npz map_v: 1 crater, 2 rock, 3 slope
+// steps.npz steep_why codes (sim/campaign_camera.py STEEP_WHY).
+export const STEEP_WHY = ["never_in_band", "shadow", "too_sparse", "under_read", "judged", "orbital", "lidar_steep", "lidar_crater"];
+// One number per merged-map cell [i, j] (world cell floor(x / c), floor(y / c)).
+export const mapKey = (i, j) => (i + 1048576) * 2097152 + (j + 1048576);
+export const mapCell = (key) => [Math.floor(key / 2097152) - 1048576, (key % 2097152) - 1048576];
 const TYPED = { float32: Float32Array, int32: Int32Array, uint16: Uint16Array, uint8: Uint8Array };
 export async function loadPipeline(cr, sortieIds) {
   let index;
@@ -390,6 +397,31 @@ export async function loadPipeline(cr, sortieIds) {
       A[name] = { a: new TYPED[dtype](buf, off, shape.reduce((p, q) => p * q, 1)), shape };
     }
     const K = A.step.shape[0], NP = A.particles.shape[1], [LR, LC] = A.lidar.shape.slice(1);
+    // The lidar's merged map (sim/lidar.py HazardMemory), what the Scout plans on,
+    // rebuilt by replaying its per-step verdict changes (steps.npz map_*). Runs
+    // before 20 Nov 2026 carry none: their cells show each scan's own verdicts.
+    const merged = !!A.map_o, mc = index.map_cell_m ?? 0.5;
+    const apply = (m, k) => {
+      for (let q = A.map_o.a[k]; q < A.map_o.a[k + 1]; q++) {
+        const key = mapKey(A.map_ij.a[2 * q], A.map_ij.a[2 * q + 1]), v = A.map_v.a[q];
+        if (v) m.set(key, v); else m.delete(key);
+      }
+    };
+    const live = new Map();                   // the map as the loop below reaches each step
+    const view = { k: -1, m: new Map() };     // mapAt's own replay, for the satellite map
+    const mapAt = (k) => {
+      if (k < view.k) { view.k = -1; view.m = new Map(); }
+      for (let kk = view.k + 1; kk <= k; kk++) apply(view.m, kk);
+      view.k = k;
+      return view.m;
+    };
+    // Steps onto ground truly over 15 deg (sim/rover.py _note_true_steep), with why.
+    const steep = [];
+    if (A.steep) for (let i = 0; i < A.steep.shape[0]; i++) {
+      const o = 5 * i, k = A.steep.a[o];
+      steep.push({ k, t: A.step.a[k * 12], x: A.steep.a[o + 1], y: A.steep.a[o + 2], deg: A.steep.a[o + 3], lola: A.steep.a[o + 4],
+        why: STEEP_WHY[A.steep_why.a[i]] });
+    }
     const steps = [];
     for (let k = 0; k < K; k++) {
       const S = A.step.a.subarray(k * 12, k * 12 + 12);
@@ -421,11 +453,23 @@ export async function loadPipeline(cr, sortieIds) {
         const f = A.haz.a[2 * i], l = A.haz.a[2 * i + 1], kind = A.haz_kind.a[i];
         haz.push([f, l, kind]);
         const q = cell(f, l);
-        if (q >= 0) cells[q] = Math.max(cells[q], HAZ_KIND_CELL[kind]);
+        if (!merged && q >= 0) cells[q] = Math.max(cells[q], HAZ_KIND_CELL[kind]);
       }
-      steps.push({ t: S[0], est_heading: S[6], goal: [S[10], S[11]], rims, particles, plan, haz, range, lidar: String.fromCharCode(...cells.map((v) => 48 + v)) });
+      if (merged) {
+        // Each grid cell takes the merged map's verdict at its centre, placed from the
+        // step's true pose as the drawing places it.
+        apply(live, k);
+        const x = S[1], y = S[2], c = Math.cos(S[3]), s = Math.sin(S[3]);
+        for (let i = 0; i < g.nx; i++) for (let j = 0; j < g.ny; j++) {
+          const f = g.fwd0_m + (i + 0.5) * g.cell_m, l = -g.half_width_m + (j + 0.5) * g.cell_m;
+          const v = live.get(mapKey(Math.floor((x + f * c - l * s) / mc), Math.floor((y + f * s + l * c) / mc)));
+          if (v) cells[i * g.ny + j] = MAP_VERDICT_CELL[v];
+        }
+      }
+      steps.push({ t: S[0], est_heading: S[6], goal: [S[10], S[11]], rims, particles, plan, haz, range, lidar: String.fromCharCode(...cells.map((v) => 48 + v)),
+        mapAt: merged ? () => mapAt(k) : null, steep });
     }
-    out[sid] = { steps, lidar_grid: { ...g, rows: LR, cols: LC }, standin: index.standin || null };
+    out[sid] = { steps, lidar_grid: { ...g, rows: LR, cols: LC, merged, map_cell_m: mc }, standin: index.standin || null, steep };
   }));
   return out;
 }

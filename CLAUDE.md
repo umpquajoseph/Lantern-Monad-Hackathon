@@ -45,6 +45,9 @@ it, or from old mail.
   parameter with a default, marked `assumed`.
 - **Never trust a remembered summary of a source.** Check claims against
   the paper itself, not against memory or a summary, including the spec.
+- **Worker folders live in `.claude\worktrees\<handle>`**, never beside
+  the repo on `C:\`. The leader removes each one when its branch is merged
+  or the worker is retired, as `ops/PROTOCOL.md`, "Worker folders", says.
 - **Stay inside your hand-off.** Changing a format in `docs/handoffs.md`
   means telling the others first and updating the file in the same commit.
 

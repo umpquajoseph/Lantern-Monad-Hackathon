@@ -161,10 +161,14 @@ class ParticleNav:
 
     # -- Alg. 2 ---------------------------------------------------------------
     def predict(self, d_odom, dh_odom):
-        """Move every particle by the odometry, through its own error model."""
+        """Move every particle by the odometry, through its own error model.
+        d_odom < 0: a step driven backwards (sim/rover.py, out of a dead end):
+        the particles move against their heading by |d_odom|, with the same
+        error model."""
         self.heading += dh_odom
-        if d_odom <= 0:
+        if d_odom == 0:
             return
+        sign, d_odom = (1.0 if d_odom > 0 else -1.0), abs(d_odom)
         h = N_PARTICLES // 2
         nz = self.noise
         if nz.heading_walk_rad > 0:
@@ -175,12 +179,12 @@ class ParticleNav:
         a = self.heading + self.th
         if nz.isotropic:
             # A24 eq. 3: b_k+1 = b_k + s_k+1 + w_k, w_k ~ N(0, (p |s|)^2) in x and y.
-            d = d_odom * (1.0 - self.s)
+            d = sign * d_odom * (1.0 - self.s)
             w = self.rng.normal(0.0, nz.step_noise_frac * d_odom, (h, 2))
             self.p = self.p + np.column_stack([d * np.cos(a), d * np.sin(a)]) + np.concatenate([w, -w])
         else:
             w_d = self.rng.normal(0.0, nz.step_noise_frac * d_odom, h)
-            d = d_odom * (1.0 - self.s) + np.concatenate([w_d, -w_d])
+            d = sign * (d_odom * (1.0 - self.s) + np.concatenate([w_d, -w_d]))
             self.p = self.p + np.column_stack([d * np.cos(a), d * np.sin(a)])
 
     def predict_xy(self, dx, dy, dh_odom):

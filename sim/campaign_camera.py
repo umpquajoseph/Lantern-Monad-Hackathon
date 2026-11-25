@@ -7,8 +7,12 @@ Scout, at every step (sim/rover.py STEP_M: 2 m driven, or one turn in place):
    when a crater rim could be in view (GATE_* below; otherwise no rim exists),
 2. finds crater rims in it (sim/vision.py Vision.rims),
 3. scans with the lidar and marks hazards (sim/lidar.py),
-4. moves its particle filter by its odometry and corrects it on the rims
-   against the dock's crater map as it stood at launch (sim/nav.py),
+4. moves its particle filter by its odometry (sim/nav.py). It corrects the
+   filter on rims only during a scheduled fix, a half survey of one
+   landmark crater from the dock's map as it stood at launch
+   (CameraSortie.check; Settings.cam_fix_mode "scheduled"). Under
+   "opportunistic", the test case, every frame with rims corrects it
+   against the whole map,
 5. plans its next move from its estimate around the hazards (sim/rover.py).
 
 Frames are rendered, used and dropped; nothing is written but what the
@@ -111,6 +115,23 @@ GATE_ON = os.environ.get("LANTERN_CAM_GATE", "1") != "0"   # 0: render every ste
 # gated run is step-for-step identical to an ungated one. Costs ~2.6 ms a step;
 # False saves it and leaves runs statistically the same, not identical.
 GATE_KEEP_STREAM = True
+# Settings.cam_fix_mode and Settings.fix_stop_model (sourced there).
+FIX_MODES = ("preplanned", "straight", "scheduled", "opportunistic")
+# 'preplanned': at most this many fixes are planned on one leg (a guard; a
+# 200 m lane at the 79.3 m spacing holds two or three).
+LEG_FIXES_MAX = 10
+LEG_SAMPLE_M = 5.0           # the leg's route is searched for landmarks at points this far apart (search only)
+FIX_STOP_MODELS = ("exposure", "batch", "draft")
+# A landmark's survey must end where the planned route on to the goal runs
+# about straight: no longer than FIX_ROUTE_RATIO times the straight line plus
+# FIX_ROUTE_SLACK_M (2 m planning cells, short legs). Both assumed: a guard
+# against surveys that leave the Scout behind the crater on its own route.
+FIX_ROUTE_RATIO = 1.5
+FIX_ROUTE_SLACK_M = 10.0
+
+
+def _wrap(a):
+    return (a + math.pi) % (2 * math.pi) - math.pi
 
 
 def _edge_match(tree, craters, pts, tol):
@@ -387,6 +408,18 @@ class CameraSortie(Sortie):
         self.pass_ = None
         self.gap = 0
         self.n_rim_pts = self.n_rim_wrong = self.n_rim_matched = self.n_rim_unpaired = 0
+        if s.cam_fix_mode not in FIX_MODES:
+            raise ValueError(f"cam_fix_mode {s.cam_fix_mode!r}: one of {FIX_MODES}")
+        if s.fix_stop_model not in FIX_STOP_MODELS:
+            raise ValueError(f"fix_stop_model {s.fix_stop_model!r}: one of {FIX_STOP_MODELS}")
+        self.fix_mode = s.cam_fix_mode
+        self.opportunistic = self.fix_mode == "opportunistic"
+        self._fix = None              # the scheduled fix under way (check()), else None
+        self._fix_frame = False       # True while _observe() takes a fix frame
+        self._fix_shift = None        # change in distance to the outer drive_to's goal across a fix
+        self._passed = None           # 'preplanned': (route direction, reach) after a survey (_passed_by_survey)
+        self._phase = None            # 'preplanned': the transit's or lane's waypoints (_leg_ahead)
+        self._return_leg = None       # 'preplanned': the return's waypoints, from the first return drive
         self._sync()
         self._sense_and_log(moved=False)    # the first frame, at the dock
 
@@ -438,29 +471,577 @@ class CameraSortie(Sortie):
         # live-nav-first3 / workflow-first3 returns took 17-20 h against
         # about 4 h of straight driving, and Scouts ran flat on the way home
         # (s89_134e S1-01, S2-01). Scale by the Scout's own measured overhead.
+        # Scheduled fixes continue on the way home (draft 4.2: the limit applies
+        # "along the whole sortie"): their stops at stop power. Their detours
+        # are drive time, already in overhead().
         d = self._return_dist()
-        return d / self.v * self.overhead() * self.em["p_drive_w"] / 3.6e6
+        return (d / self.v * self.overhead() * self.em["p_drive_w"]
+                + d * self._fix_stop_per_m() * self.em["p_stop_w"]) / 3.6e6
 
     def _must_turn_back(self):
         s = self.s
         if self.energy - s.reserve_frac * s.battery_kwh <= self._return_energy():
             return "energy"
-        if self.t - self.t_launch + self._return_dist() / self.v * self.overhead() >= s.sortie_h * 3600:
+        d = self._return_dist()
+        if self.t - self.t_launch + d / self.v * self.overhead() + d * self._fix_stop_per_m() >= s.sortie_h * 3600:
             return "time"
         return None
 
-    # Camera Scouts correct at every step; a crater pass is their "check".
-    def check(self, why):
-        pass
+    # ------------------------------------------------------------ fixes
+    # 'opportunistic': the filter corrects at every frame with rims and a
+    # crater pass is the Scout's "check" (_end_pass); nothing is scheduled.
+    # 'scheduled' (the default): a fix is due by distance driven
+    # (Sortie._check_due, check_policy "fixed", draft Table 1 spacing) and
+    # check() below drives a half survey of one landmark crater.
+    def _map_predicts(self):
+        return not self.opportunistic       # check() looks for its own landmark
 
     def work_check(self, why, force=False):
         pass
 
+    def _fix_stops_s(self, n):
+        """Seconds stopped at each of a fix's n planned observation points, and
+        once at its end (Settings.fix_stop_model)."""
+        s = self.s
+        if s.fix_stop_model == "draft":
+            return s.check_stop_s / max(n, 1), 0.0
+        return s.fix_exposure_stop_s, (s.fix_batch_stop_s if s.fix_stop_model == "batch" else 0.0)
+
+    def _fix_stop_per_m(self):
+        """Expected fix stop time per metre still to drive: one fix per
+        spacing_nominal, on a landmark of the middle of fix_crater_d_m."""
+        s = self.s
+        if self.opportunistic or not self.nav_ok:
+            return 0.0
+        # 'straight' takes at most a half survey's number of exposures too (_straight_tick).
+        d = 0.5 * (s.fix_crater_d_m[0] + s.fix_crater_d_m[1])
+        n = self._n_survey_points(d)
+        each, once = self._fix_stops_s(n)
+        return (n * each + once) / self.spacing_nominal
+
+    def _n_survey_points(self, d):
+        s = self.s
+        return max(2, int(round(math.pi * (d / 2 + s.fix_survey_offset_m) / s.fix_survey_spacing_m)) + 1)
+
+    def _survey_points(self, cx, cy, d):
+        """A24 sec. V-C1's half survey: observation points on a half circle
+        fix_survey_offset_m outside the rim, about fix_survey_spacing_m apart,
+        from the side facing the Scout round the side nearer its current
+        goal. Map frame, as the Scout believes it."""
+        s = self.s
+        R = d / 2 + s.fix_survey_offset_m
+        a0 = math.atan2(self.ey - cy, self.ex - cx)
+        ag = math.atan2(self.goal_xy[1] - cy, self.goal_xy[0] - cx)
+        sgn = 1.0 if abs(_wrap(a0 + math.pi / 2 - ag)) <= abs(_wrap(a0 - math.pi / 2 - ag)) else -1.0
+        n = self._n_survey_points(d)
+        return [(cx + R * math.cos(a0 + sgn * math.pi * k / (n - 1)), cy + R * math.sin(a0 + sgn * math.pi * k / (n - 1)))
+                for k in range(n)]
+
+    def _pick_landmark(self):
+        """The mapped crater, fix_crater_d_m across and ahead of the Scout toward
+        its current goal, whose near rim lies within fix_reach_m of the
+        estimate, whose half survey ends where the planned route on to the goal
+        runs about straight, and which adds the least driving on the way to
+        that goal.
+        (row, cx, cy, d, points) or None."""
+        s, c = self.s, self.c
+        if c.map_tree is None or not len(c.map_arr):
+            return None
+        lo, hi = s.fix_crater_d_m
+        ex, ey = self.ex, self.ey
+        gx, gy = self.goal_xy
+        direct = None                    # planned route from here to the goal, m (computed once needed)
+        best, best_cost = None, None
+        for i in c.map_tree.query_ball_point((ex, ey), s.fix_reach_m + hi / 2):
+            cx, cy, d = (float(v) for v in c.map_arr[i, :3])
+            if not lo <= d <= hi or math.hypot(cx - ex, cy - ey) - d / 2 > s.fix_reach_m:
+                continue
+            # Only a crater ahead, toward the goal: A24 sec. III-E2's landmarks
+            # are craters the "planned trajectory" drives toward, and a half
+            # survey ends opposite where it starts. One already passed would
+            # carry the Scout back past it (nav-fix-check2: one crater
+            # surveyed 11 times, 6 h near it against 0.28 h without fixes).
+            if (cx - ex) * (gx - ex) + (cy - ey) * (gy - ey) <= 0:
+                continue
+            pts = self._survey_points(cx, cy, d)
+            # From the survey's end, the Scout's own planned route to the goal
+            # (sim/rover.py SlopeMap.plan, its believed frame) must run about
+            # straight. Ahead in a straight line is not enough: in
+            # nav-fix-check5 the route from a crater's far side led back round
+            # it, and one crater was surveyed 58 times in 31 h. Requiring the
+            # end to be nearer the goal was too strict (nav-fix-check6: 195
+            # fixes found no landmark): corridor waypoints are 25 m apart, so
+            # a survey overshoots the goal it was due on.
+            after = self._route_m(pts[-1], (gx, gy))
+            if not after <= FIX_ROUTE_RATIO * math.dist(pts[-1], (gx, gy)) + FIX_ROUTE_SLACK_M:
+                continue
+            if direct is None:
+                direct = self._route_m((ex, ey), (gx, gy))
+                if not math.isfinite(direct):
+                    direct = math.hypot(gx - ex, gy - ey)
+            arc = sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
+            cost = math.dist((ex, ey), pts[0]) + arc + after - direct
+            if best_cost is None or cost < best_cost:
+                best, best_cost = (int(i), cx, cy, d, pts), cost
+        return best
+
+    def _route_m(self, a, b):
+        """Length (m) of the global planner's route from a to b, inf when it finds none."""
+        if math.dist(a, b) < 1e-6:
+            return 0.0
+        p = self.rover.slope.plan(a, b)
+        if not p or len(p) == 1 and math.dist(a, b) > 3.0:
+            return math.inf
+        q = [tuple(a)] + [tuple(v) for v in p]
+        return sum(math.dist(q[k], q[k + 1]) for k in range(len(q) - 1))
+
+    def _blocked(self, act):
+        """drive_to stops: lost, or homeward with this drive not the return.
+        A fix that began on the way home drives on (act 'check')."""
+        if self.lost:
+            return True
+        if not self.returning or act == ACT["return"]:
+            return False
+        return not (act == ACT["check"] and self._fix is not None and self._fix["homeward"])
+
+    def check(self, why):
+        """'scheduled' (a test case): when a fix falls due, a half survey of the
+        landmark _pick_landmark finds from where the Scout stands."""
+        if self.fix_mode != "scheduled" or self._fix is not None:
+            return
+        s = self.s
+        lm = self._pick_landmark()
+        if lm is None:
+            # Retried once check_min_spacing_m more is driven; d_fix keeps growing.
+            self.d_chk = 0.0
+            self.event("fix_unavailable", est=[rnd(self.ex, 2), rnd(self.ey, 2)], bound95=rnd(self.bound, 2),
+                       reason="no_landmark", reach_m=s.fix_reach_m, d_since_fix_m=rnd(self.d_fix, 1),
+                       true_err_m=rnd(math.hypot(self.errx, self.erry), 3))
+            return
+        self._survey(*lm, why=why, in_step=True)
+
+    def _survey(self, row, cx, cy, d, pts, why, in_step, **extra):
+        """A half survey of one landmark crater: drive to each observation
+        point, face the crater, take a long exposure, on which the filter
+        updates against that crater alone. in_step: called from inside a
+        drive step ('scheduled'), whose goal and progress this restores."""
+        r = self.rover
+        goal0, act0 = self.goal_xy, self.act
+        g0 = math.hypot(goal0[0] - self.ex, goal0[1] - self.ey)
+        pm, pt, td = self.prog_m, self.prog_t, self.time["drive"]
+        each_s, once_s = self._fix_stops_s(len(pts))
+        f = self._open_fix(row, cx, cy, d)
+        stops = 0
+        try:
+            for px, py in pts:
+                if not self.nav_ok or not self.drive_to(px, py, ACT["check"]):
+                    break
+                self._observe(cx, cy)
+                stops += 1
+                self.stop(each_s, "check", self.em["p_stop_w"], ACT["check"])
+                if self.lost:
+                    break
+            if stops and once_s and not self.lost:
+                self.stop(once_s, "check", self.em["p_stop_w"], ACT["check"])
+        finally:
+            self._fix = None
+        # Progress toward survey points is not progress toward the sortie's
+        # goals, but the survey's drive time is drive time (overhead()). Inside
+        # a step it reaches overhead() through that step's time["drive"]
+        # difference; between drives ('preplanned') it is added here.
+        self.prog_m = pm
+        self.prog_t = pt if in_step else pt + (self.time["drive"] - td)
+        self.act = act0
+        self.goal_xy = goal0
+        if in_step:
+            if not self.lost:
+                r.set_goal(goal0)
+            self._fix_shift = math.hypot(goal0[0] - self.ex, goal0[1] - self.ey) - g0
+        self._close_fix(f, why, stops, len(pts), each_s, once_s, **extra)
+
+    def _open_fix(self, row, cx, cy, d):
+        """Start a fix on one landmark (the state _observe and _sense_and_log read)."""
+        self._fix = f = dict(row=row, arr=np.array([[cx, cy, d]]), homeward=self.returning, frames=0, used=0,
+                             pts=0, wrong=[], trows=set(), matched=0, cx=cx, cy=cy, d=d,
+                             dist0=self.rover.distance, t0=self.t, err_before=math.hypot(self.errx, self.erry),
+                             d_since=self.d_fix)
+        return f
+
+    def _close_fix(self, f, why, stops, planned, each_s, once_s, **extra):
+        """Book a finished fix and log its check event."""
+        r = self.rover
+        fixed = f["used"] > 0
+        wrong = fixed and len(f["wrong"]) > 0.5 * f["pts"]
+        cause = self._wrong_cause(f["wrong"]) if wrong else None
+        self.n_checks += 1
+        # A fix that updated nothing (no rim seen on any exposure: e.g. a
+        # shallow landmark, d/D 0.035 in nav-pre-t2, or one out of view) is
+        # known to the Scout as no fix: the distance since its last fix keeps
+        # counting, so the next one is due at once (after check_min_spacing_m).
+        # Whether an update was a false match it cannot know.
+        self.d_chk = 0.0
+        if fixed:
+            self.d_fix = 0.0
+            self.t_fix = self.t
+            self.n_fixes += 1
+            self.n_wrong += int(wrong)
+            self.anchor = f"{self.sid}#{self.n_fixes}"
+        self.event("check", est=[rnd(self.ex, 2), rnd(self.ey, 2)], bound95=rnd(self.bound, 2),
+                   wrong_match=bool(wrong), wrong_match_cause=cause, craters_in_view=len(f["trows"]),
+                   matched=int(f["matched"] > 0), fixed=bool(fixed), reason=why, mode=self.fix_mode,
+                   landmark=[rnd(f["cx"], 2), rnd(f["cy"], 2), rnd(f["d"], 2)], landmark_row=f["row"], stops=stops,
+                   stops_planned=planned, frames_used=f["used"], points=f["pts"], wrong_points=len(f["wrong"]),
+                   stop_s=rnd(stops * each_s + (once_s if stops else 0.0), 1),
+                   detour_m=rnd(r.distance - f["dist0"], 1), fix_h=rnd((self.t - f["t0"]) / 3600, 3),
+                   d_since_fix_m=rnd(f["d_since"], 1), due_m=rnd(self.spacing_nominal, 1),
+                   true_err_before_m=rnd(f["err_before"], 3), true_err_m=rnd(math.hypot(self.errx, self.erry), 3),
+                   **extra)
+
+    # ------------------------------------------------- 'preplanned' legs
+    def _plan_leg_fix(self, goal, ahead=()):
+        """'preplanned': the landmark for the next fix, chosen along the leg
+        being driven. A leg is one phase of the sortie's plan (the descent
+        corridor, a transit, a lane, the return), which Sortie.run drives as
+        waypoints about 25 m apart (corridor, return) up to 200 m (lanes):
+        its route is Rover.set_goal's route from the estimate to the next
+        waypoint `goal`, then straight on through the phase's later waypoints
+        `ahead` (believed frame).
+
+        The fix falls due `due` metres along it (spacing_nominal less d_fix).
+        Candidates: craters of the Scout's map (the dock's map as it stood at
+        launch: orbital plus what earlier sorties mapped) fix_crater_d_m
+        across, beside the route (projecting inside it, not past an end) with
+        the near rim within fix_reach_m of it. Each one's half survey runs on
+        a half circle fix_survey_offset_m outside its rim, from the point
+        beside it on the way in to the point beside it on the way out (along
+        the route's direction there), round the side that adds less driving
+        and faces the route; every observation point must be open ground on
+        the Scout's own planning map. The survey leaves the route R (the
+        survey radius) before the crater.
+
+        Chosen: among surveys that leave the route within fix_plan_early_m
+        before the due point, the one adding the least driving; else the first
+        one after it (a late fix: the honest result where the map holds no
+        landmark near the due point). The plan's `now` is True when the survey
+        leaves the route before `goal` (drive_to does it on this waypoint);
+        otherwise a later waypoint of the leg plans it again. None when the
+        early stretch lies past the leg or the leg holds no landmark."""
+        s, c, r = self.s, self.c, self.rover
+        if c.map_tree is None or not len(c.map_arr):
+            return None
+        route = [(self.ex, self.ey)] + [tuple(map(float, p)) for p in (r.path or [goal])]
+        n_hop = len(route)
+        route += [tuple(map(float, p)) for p in ahead]
+        P = np.asarray(route, float)
+        seg = np.hypot(*(P[1:] - P[:-1]).T)
+        cum = np.concatenate([[0.0], np.cumsum(seg)])
+        L = float(cum[-1])
+        L_hop = float(cum[n_hop - 1])
+        due = max(0.0, self.spacing_nominal - self.d_fix)
+        lo_s = max(0.0, due - s.fix_plan_early_m)
+        if lo_s > L or L < 1e-6:
+            return None
+        lo, hi = s.fix_crater_d_m
+        n = max(2, int(math.ceil((L - lo_s) / LEG_SAMPLE_M)) + 1)
+        samples = np.array([self._along(P, cum, v) for v in np.linspace(lo_s, L, n)])
+        cand = set()
+        for q in c.map_tree.query_ball_point(samples, s.fix_reach_m + hi / 2 + LEG_SAMPLE_M):
+            cand.update(q)
+        best_in, best_late = None, None
+        for i in sorted(cand):
+            cx, cy, d = (float(v) for v in c.map_arr[i, :3])
+            if not lo <= d <= hi:
+                continue
+            sc, lat = self._project(P, cum, (cx, cy))
+            # Beside the leg only: a crater beyond either end projects onto that
+            # end (nav-pre-t2, planning one waypoint at a time: a crater 20 m
+            # past a 16 m hop's goal was surveyed, and the Scout drove 42 m back
+            # to the goal and past the crater again).
+            if lat - d / 2 > s.fix_reach_m or not 0.0 < sc < L:
+                continue
+            R = d / 2 + s.fix_survey_offset_m
+            sd = sc - R
+            if sd < lo_s or sd > L:
+                continue
+            sr = min(L, sc + R)
+            pd, pr = self._along(P, cum, max(sd, 0.0)), self._along(P, cum, sr)
+            fwd, back = self._along(P, cum, min(L, sc + 1.0)), self._along(P, cum, max(0.0, sc - 1.0))
+            a_in = math.atan2(back[1] - fwd[1], back[0] - fwd[0])     # pointing back along the route
+            got = None
+            for sgn in (1.0, -1.0):
+                pts = self._half_circle(cx, cy, d, a_in, sgn)
+                if not all(r.slope.inside(x, y) and r.slope.open_any(x, y) for x, y in pts):
+                    continue
+                arc = sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
+                cost = math.dist(pd, pts[0]) + arc + math.dist(pts[-1], pr) - (sr - max(sd, 0.0))
+                # The two sides cost the same in straight lines; the one facing
+                # the route (its middle point nearer the route) is the shorter
+                # drive. Before 24 Nov the tie went to the far side.
+                key = (round(cost, 1), self._project(P, cum, pts[len(pts) // 2])[1])
+                if got is None or key < got[0]:
+                    got = (key, pts)
+            if got is None:
+                continue
+            plan = dict(row=int(i), cx=cx, cy=cy, d=d, pts=got[1], depart=pd, s_depart=sd, due=due,
+                        along=(-math.cos(a_in), -math.sin(a_in)), R=R,
+                        cost=got[0][0], late=sd > due, now=sd <= L_hop)
+            if sd <= due:
+                if best_in is None or plan["cost"] < best_in["cost"]:
+                    best_in = plan
+            elif due <= L and (best_late is None or (sd, plan["cost"]) < (best_late["s_depart"], best_late["cost"])):
+                best_late = plan
+        return best_in or best_late
+
+    @staticmethod
+    def _along(P, cum, v):
+        """The point v metres along polyline P (cumulative lengths cum)."""
+        k = int(np.clip(np.searchsorted(cum, v, side="right") - 1, 0, len(P) - 2))
+        L = cum[k + 1] - cum[k]
+        f = 0.0 if L < 1e-9 else (v - cum[k]) / L
+        return (float(P[k, 0] + f * (P[k + 1, 0] - P[k, 0])), float(P[k, 1] + f * (P[k + 1, 1] - P[k, 1])))
+
+    @staticmethod
+    def _project(P, cum, q):
+        """(distance along polyline P of the point nearest q, its distance from q)."""
+        a, b = P[:-1], P[1:]
+        ab = b - a
+        L2 = np.maximum((ab ** 2).sum(axis=1), 1e-12)
+        f = np.clip(((np.asarray(q) - a) * ab).sum(axis=1) / L2, 0.0, 1.0)
+        foot = a + f[:, None] * ab
+        dist = np.hypot(*(foot - np.asarray(q)).T)
+        k = int(dist.argmin())
+        return float(cum[k] + f[k] * math.sqrt(L2[k])), float(dist[k])
+
+    def _half_circle(self, cx, cy, d, a0, sgn):
+        """A24 sec. V-C1's half survey: _n_survey_points(d) observation points on
+        a half circle fix_survey_offset_m outside the rim, from angle a0 round
+        through sgn (+1 counter-clockwise)."""
+        R = d / 2 + self.s.fix_survey_offset_m
+        n = self._n_survey_points(d)
+        return [(cx + R * math.cos(a0 + sgn * math.pi * k / (n - 1)), cy + R * math.sin(a0 + sgn * math.pi * k / (n - 1)))
+                for k in range(n)]
+
+    # ------------------------------------------------- 'straight'
+    def _landmark_in_view(self):
+        """'straight': the nearest mapped crater fix_crater_d_m across whose near
+        rim lies within fix_view_m of the estimate, inside the camera's field
+        of view (sim/scene.py HFOV_DEG, widened by the crater's own angular
+        radius) and ahead toward the current goal. (row, cx, cy, d) or None."""
+        from sim.scene import HFOV_DEG
+        s, c, r = self.s, self.c, self.rover
+        if c.map_tree is None or not len(c.map_arr):
+            return None
+        lo, hi = s.fix_crater_d_m
+        ex, ey = self.ex, self.ey
+        gx, gy = self.goal_xy
+        h = float(r.nav.heading)
+        best = None
+        for i in c.map_tree.query_ball_point((ex, ey), s.fix_view_m + hi / 2):
+            cx, cy, d = (float(v) for v in c.map_arr[i, :3])
+            dc = math.hypot(cx - ex, cy - ey)
+            if not lo <= d <= hi or dc - d / 2 > s.fix_view_m or dc <= d / 2:
+                continue
+            if (cx - ex) * (gx - ex) + (cy - ey) * (gy - ey) <= 0:
+                continue
+            half = math.asin(min(1.0, (d / 2) / dc))
+            if abs(_wrap(math.atan2(cy - ey, cx - ex) - h)) > math.radians(HFOV_DEG / 2) + half:
+                continue
+            if best is None or dc < best[0]:
+                best = (dc, int(i), cx, cy, d)
+        return best[1:] if best else None
+
+    def _straight_tick(self):
+        """'straight', after each drive step. Once a fix is due, the first
+        landmark to come into view starts one. While it lasts the Scout keeps
+        to its route and, every fix_survey_spacing_m driven, stops, faces the
+        landmark and takes an exposure, while the landmark stays within
+        fix_view_m and not behind it, for at most the exposures a half survey
+        of it would take (the same exposure count, so the two modes differ in
+        geometry only). The fix ends when the landmark falls behind or out of
+        range, or the exposures are spent."""
+        s, r = self.s, self.rover
+        f = self._fix
+        if f is None:
+            if not self.nav_ok or self.d_chk < s.check_min_spacing_m or self.d_fix < self.spacing_nominal:
+                return
+            lm = self._landmark_in_view()
+            if lm is None:
+                return
+            row, cx, cy, d = lm
+            f = self._open_fix(row, cx, cy, d)
+            f.update(stops=0, planned=self._n_survey_points(d), next_at=r.distance)
+        cx, cy, d = f["cx"], f["cy"], f["d"]
+        dc = math.hypot(cx - self.ex, cy - self.ey)
+        gx, gy = self.goal_xy
+        ahead = (cx - self.ex) * (gx - self.ex) + (cy - self.ey) * (gy - self.ey) > 0
+        in_range = d / 2 < dc and dc - d / 2 <= s.fix_view_m
+        each_s, once_s = self._fix_stops_s(f["planned"])
+        # Behind: past the crater, and no longer beside it.
+        done = not self.nav_ok or self.lost or f["stops"] >= f["planned"] or not in_range \
+            or (not ahead and dc - d / 2 > s.fix_survey_offset_m)
+        if not done and r.distance >= f["next_at"]:
+            act0 = self.act
+            self._observe(cx, cy)
+            f["stops"] += 1
+            f["next_at"] = r.distance + s.fix_survey_spacing_m
+            self.stop(each_s, "check", self.em["p_stop_w"], ACT["check"])
+            self.act = act0
+            done = self.lost or f["stops"] >= f["planned"]
+        if done:
+            if f["stops"] and once_s and not self.lost:
+                self.stop(once_s, "check", self.em["p_stop_w"], ACT["check"])
+            self._fix = None
+            self._close_fix(f, "straight", f["stops"], f["planned"], each_s, once_s)
+
+    def _observe(self, cx, cy):
+        """At an observation point: turn in place to face the landmark where the
+        Scout believes it is (A24 sec. IV-B: at each stop 'the rig was directed
+        toward large craters'), then take the fix frame."""
+        s, r, f = self.s, self.rover, self._fix
+        dh = _wrap(math.atan2(cy - self.ey, cx - self.ex) - float(r.nav.heading))
+        r.true = np.array([r.true[0], r.true[1], r.true[2] + dh])
+        if abs(dh) > 1e-9:
+            self.point_turns += 1
+        self.k += 1
+        self.err_prev = math.hypot(self.errx, self.erry)
+        self._fix_frame = True
+        try:
+            lab = self._sense_and_log(moved=True, odo=self._odometry(0.0, dh))
+        finally:
+            self._fix_frame = False
+        self._after_move(0.0, abs(dh) / math.radians(s.cam_turn_rate_deg_s), checks=False)
+        f["frames"] += 1
+        f["trows"].update(int(v) for v in lab["trow"] if v >= 0)
+        if lab["used"]:
+            f["used"] += 1
+            f["pts"] += len(lab["mrow"])
+            f["matched"] += int(lab["matched"].sum())
+            f["wrong"] += [(int(lab["mrow"][i]), int(lab["trow"][i])) for i in np.flatnonzero(lab["wrong"])]
+
+    def _wrong_cause(self, pairs):
+        """The most common cause among false matches (mrow, trow): 'missing'
+        (source crater not in the map), 'misplaced:<crater_id>' (paired with an
+        added crater not its source), 'base' (another mapped crater, or no source)."""
+        n0 = len(self.w.map_start)
+        mapped_true = set(int(v) for v in self.map_true if v >= 0)
+        causes = []
+        for mrow, trow in pairs:
+            if trow >= 0 and trow not in mapped_true:
+                causes.append("missing")
+            elif mrow >= n0 and self.map_true[mrow] != trow:
+                causes.append("misplaced:" + self.c.added[mrow - n0]["crater_id"])
+            else:
+                causes.append("base")
+        return max(set(causes), key=causes.count) if causes else None
+
     # ------------------------------------------------------------ motion
     def drive_to(self, gx, gy, act) -> bool:
+        """Drive the estimate to (gx, gy): one leg of the sortie's plan.
+        'preplanned': the leg's route is planned first, the landmark for any
+        fix due on it chosen along it (_plan_leg_fix), and the Scout drives to
+        where the survey leaves the route, surveys, and plans the rest of the
+        leg from there (which may hold the next fix)."""
+        if self.fix_mode != "preplanned" or act == ACT["check"] or self._fix is not None:
+            return self._drive(gx, gy, act)
+        s, r = self.s, self.rover
+        if self._passed_by_survey(gx, gy):
+            return True
+        for _ in range(LEG_FIXES_MAX):
+            self.act = act
+            if self._blocked(act) or not self.nav_ok:
+                break
+            if math.hypot(gx - self.ex, gy - self.ey) < s.cam_arrive_m:
+                return True
+            self.goal_xy = (float(gx), float(gy))
+            r.set_goal((gx, gy))
+            plan = self._plan_leg_fix((gx, gy), self._leg_ahead(gx, gy, act))
+            if plan is not None and not plan["now"]:
+                break                     # the survey leaves the route on a later waypoint of this leg
+            if plan is None:
+                if self.d_fix >= self.spacing_nominal and self.d_chk >= s.check_min_spacing_m:
+                    # Due (or overdue) and this leg holds no landmark: the next leg tries.
+                    self.d_chk = 0.0
+                    self.event("fix_unavailable", est=[rnd(self.ex, 2), rnd(self.ey, 2)], bound95=rnd(self.bound, 2),
+                               reason="no_landmark_on_leg", reach_m=s.fix_reach_m, d_since_fix_m=rnd(self.d_fix, 1),
+                               goal=[rnd(gx, 2), rnd(gy, 2)], true_err_m=rnd(math.hypot(self.errx, self.erry), 3))
+                break
+            if not self._drive(*plan["depart"], act):
+                return False
+            if self.lost or not self.nav_ok:
+                break
+            self._survey(plan["row"], plan["cx"], plan["cy"], plan["d"], plan["pts"], why="preplanned",
+                         in_step=False, late=bool(plan["late"]), detour_planned_m=rnd(plan["cost"], 1),
+                         depart_at_m=rnd(plan["s_depart"], 1), due_at_m=rnd(plan["due"], 1))
+            if self.lost:
+                return False
+            self._passed = (plan["along"], 2 * plan["R"] + s.cam_arrive_m)
+            if self._passed_by_survey(gx, gy):
+                return True
+        return self._drive(gx, gy, act)
+
+    def _leg_ahead(self, gx, gy, act):
+        """The waypoints of the current leg after (gx, gy), as Sortie.run will
+        drive them: the descent corridor, the return (route to the floor entry,
+        then the corridor up, as Sortie.run builds it on turning home), or the
+        transit or lane set by transit_to and lane. [] when (gx, gy) is not on
+        the leg (a search or drill drive)."""
+        c = self.c
+        if act == ACT["descent"]:
+            lst = [tuple(map(float, p)) for p in c.corridor[1:]]
+        elif act == ACT["return"]:
+            if self._return_leg is None:
+                # Sortie.run's own list, from the same estimate (its first drive_to is this call).
+                self._return_leg = [tuple(map(float, p)) for p in c.route((self.ex, self.ey), c.entry)] +                     [tuple(map(float, p)) for p in c.corridor[::-1][1:]]
+            lst = self._return_leg
+        else:
+            lst = self._phase or []
+        for k, (x, y) in enumerate(lst):
+            if abs(x - gx) < 1e-6 and abs(y - gy) < 1e-6:
+                return lst[k + 1:]
+        return []
+
+    def transit_to(self, pts) -> bool:
+        self._phase = [tuple(map(float, p)) for p in pts]
+        try:
+            return super().transit_to(pts)
+        finally:
+            self._phase = None
+
+    def lane(self, ln) -> bool:
+        (ax, ay), (bx, by) = ln["a"], ln["b"]
+        if math.hypot(bx - self.ex, by - self.ey) < math.hypot(ax - self.ex, ay - self.ey):
+            (ax, ay), (bx, by) = (bx, by), (ax, ay)        # Sortie.lane's own order
+        self._phase = [(float(ax), float(ay)), (float(bx), float(by))]
+        try:
+            return super().lane(ln)
+        finally:
+            self._phase = None
+
+    def _passed_by_survey(self, gx, gy):
+        """A half survey ends about one survey radius beyond its landmark along
+        the route, which can be past the end of a short leg (corridor and
+        return waypoints are about 25 m apart). A waypoint the survey carried
+        the Scout past (behind it along the route's direction at the
+        landmark, and within the survey's span) is passed, not driven back
+        to: driving back put the same landmark ahead again on the next leg
+        (nav-pre-t1: 6 of 27 fixes repeated the one before). Logged as
+        waypoint_skipped, reason passed_by_fix. Holds until a waypoint ahead."""
+        if self._passed is None:
+            return False
+        (ux, uy), reach = self._passed
+        dx, dy = gx - self.ex, gy - self.ey
+        behind = -(dx * ux + dy * uy)              # along the route's direction at the landmark
+        if 0.0 < behind <= reach:
+            self.event("waypoint_skipped", reason="passed_by_fix", goal=[rnd(gx, 2), rnd(gy, 2)])
+            self.skipped += 1
+            return True
+        self._passed = None
+        return False
+
+    def _drive(self, gx, gy, act) -> bool:
         s, r = self.s, self.rover
         self.act = act
-        if self.lost or (self.returning and act != ACT["return"]):
+        if self._blocked(act):
             return False
         if math.hypot(gx - self.ex, gy - self.ey) < s.cam_arrive_m:
             return True
@@ -474,7 +1055,7 @@ class CameraSortie(Sortie):
         best, since = math.hypot(gx - self.ex, gy - self.ey), 0
         pp = r.pingpong_blocks
         while True:
-            if self.lost or (self.returning and act != ACT["return"]):
+            if self._blocked(act):
                 return False
             dist = math.hypot(gx - self.ex, gy - self.ey)
             if dist < s.cam_arrive_m or (dist < BLOCKED_ARRIVE_M and r.goal_blocked()):
@@ -484,6 +1065,14 @@ class CameraSortie(Sortie):
             nd = math.hypot(gx - self.ex, gy - self.ey)
             self.prog_m += max(0.0, dist - nd)
             self.prog_t += self.time["drive"] - td
+            if self._fix_shift is not None:
+                # A fix's survey moved the Scout during that step. Its steps
+                # without progress keep counting (a fix falls due about every
+                # cam_stuck_steps steps, so a reset would never let a blocked
+                # waypoint be skipped); the best distance moves by what the
+                # survey added to the distance to this goal.
+                best += self._fix_shift
+                self._fix_shift = None
             if nd < best - PROGRESS_M:
                 best, since = nd, 0
             else:
@@ -546,7 +1135,11 @@ class CameraSortie(Sortie):
         self.err_prev = math.hypot(self.errx, self.erry)
         rims = self._sense_and_log(moved=True, odo=self._odometry(d, dh))
         dt = d / self.v if d > 0 else abs(dh) / math.radians(s.cam_turn_rate_deg_s)
-        self._after_move(d, dt, checks=False)
+        # 'scheduled' fixes (check()) fall due here, never inside one. 'preplanned'
+        # fixes are planned with each leg (drive_to); 'straight' ones start here.
+        self._after_move(d, dt, checks=self.fix_mode == "scheduled" and self._fix is None)
+        if self.fix_mode == "straight" and not self.lost:
+            self._straight_tick()
         self._pass_update(rims)
 
     def _tally_steep(self, steps):
@@ -608,16 +1201,34 @@ class CameraSortie(Sortie):
         # The filter step (sim/nav.py ParticleNav.step, spelled out): predict,
         # pair each rim with a map crater at the filter's mean before the
         # update (sim/calibrate.py's false-match rule, Alg. 1 line 4), correct.
+        # 'scheduled' (Settings.cam_fix_mode): only a fix frame (_observe)
+        # updates, scored against that fix's landmark alone (A24 sec. III-E2:
+        # only landmark craters are labelled); every rim point pairs with it.
         nav = r.nav
         if odo is not None:
             nav.predict(*odo)
         mu, _ = nav.belief()
         hd = float(nav.heading + nav._normalised() @ nav.th)
-        used = odo is not None and nav.fixes_on and len(rims) > 0
+        fix = self._fix if self._fix_frame else None
+        used = odo is not None and nav.fixes_on and len(rims) > 0 and (self.opportunistic or fix is not None)
         if len(rims):
-            mrow, mdist = _edge_pair(self.c.map_tree, self.c.map_arr, _to_world(rims, mu[0], mu[1], hd))
+            if fix is not None:
+                lw = _to_world(rims, mu[0], mu[1], hd)
+                cx, cy, d = fix["arr"][0]
+                mrow = np.full(len(rims), fix["row"])
+                mdist = np.abs(np.hypot(lw[:, 0] - cx, lw[:, 1] - cy) - d / 2)
+            else:
+                mrow, mdist = _edge_pair(self.c.map_tree, self.c.map_arr, _to_world(rims, mu[0], mu[1], hd))
         if used:
-            used = nav.correct(rims)      # False: A24's 20 m gate skipped the update (sim/nav.py)
+            if fix is not None:
+                full = nav.craters
+                nav.set_map(fix["arr"])
+                try:
+                    used = nav.correct(rims)
+                finally:
+                    nav.set_map(full)
+            else:
+                used = nav.correct(rims)      # False: A24's 20 m gate skipped the update (sim/nav.py)
         if odo is not None:
             est, r.sigma = nav.belief()
             r.estimate = np.asarray(est, dtype=np.float64)
@@ -678,7 +1289,7 @@ class CameraSortie(Sortie):
             self.n_rim_unpaired += int((~paired).sum())  # no map crater in reach (an empty map)
             self.n_rim_wrong += int((wrong & paired).sum())
         self.n_rim_matched += int(matched.sum())
-        return dict(pw=pw, mrow=mrow, trow=trow, wrong=wrong, matched=matched)
+        return dict(pw=pw, mrow=mrow, trow=trow, wrong=wrong, matched=matched, used=bool(used))
 
     # ------------------------------------------------------------ passes
     def _pass_update(self, lab):
@@ -735,24 +1346,17 @@ class CameraSortie(Sortie):
         return {"reason": "battery"}
 
     def _end_pass(self):
-        s, c = self.s, self.c
         p, self.pass_, self.gap = self.pass_, None, 0
+        if not self.opportunistic:
+            # Scheduled fixes: a pass corrects nothing and is no check; its
+            # unmatched rims still feed map refinement (draft 4.3).
+            if p["free"]:
+                self._sightings(np.concatenate(p["free"]))
+            return
         matched = len(p["mrows"])
         fixed = matched >= 1
         wrong = fixed and len(p["wrong"]) > 0.5 * p["pts"]
-        cause = None
-        if wrong:
-            causes = []
-            n0 = len(self.w.map_start)
-            mapped_true = set(int(v) for v in self.map_true if v >= 0)
-            for mrow, trow in p["wrong"]:
-                if trow >= 0 and trow not in mapped_true:
-                    causes.append("missing")
-                elif mrow >= n0 and self.map_true[mrow] != trow:
-                    causes.append("misplaced:" + c.added[mrow - n0]["crater_id"])
-                else:
-                    causes.append("base")
-            cause = max(set(causes), key=causes.count)
+        cause = self._wrong_cause(p["wrong"]) if wrong else None
         self.n_checks += 1
         if fixed:
             self.n_fixes += 1

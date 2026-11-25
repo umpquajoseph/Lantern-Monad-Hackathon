@@ -18,7 +18,7 @@ the planner's 15 deg limit:
 Shares: "fine" is every grid point, slope as a central difference across
 2 m (docs/handoffs.md step 2); "cells" is sim/rover.py SlopeMap's 2 m
 planning cells, the fine slope widened by the rover's half width
-(ROVER_HALF_WIDTH_M = 0.83 m on live-nav's branch) and sampled at the
+(ROVER_HALF_WIDTH_M) and sampled at the
 cell centres, as the run's planner sees them.
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ from sim.terrain import Params, _fractal_noise, _world_rng, stamp_craters, upsam
 
 LIMIT_DEG = 15.0
 BASELINE_M = 2.0
-ROVER_HALF_WIDTH_M = 0.83      # live-nav's sim/rover.py
+ROVER_HALF_WIDTH_M = 0.83      # sim/rover.py ROVER_HALF_WIDTH_M
 
 
 def fine_slope(h, cell):

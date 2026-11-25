@@ -1,6 +1,6 @@
 """Drive check: replay a stretch of a camera run's drive in seconds, without the camera.
 
-    python -m sim.drive_check data/campaigns/spin-check-2/w00003-77e2cab8 --step 2650 --steps 300
+    python -m sim.drive_check data/campaigns/<batch>/<run_id> --step 2650 --steps 300
 
 A full camera sortie takes 20-60 min, most of it rendering the camera
 (sim/scene.py first_person, 0.13-0.45 s a step). Steering does not use the

@@ -95,9 +95,9 @@ class PFNoise:
     isotropic: bool = True
 
 
-# The model nav.py used before 16 Nov 2026: its noise copied the truth's
+# A test case: the filter's noise copies the truth's
 # odometer (sim/rover.py odom_noise_frac, odom_heading_noise_rad), along the
-# track only. Kept for sim/calibrate.py's before/after numbers; never a default.
+# track only. For sim/calibrate.py; never a default.
 PF_NOISE_COPIED_TRUTH = PFNoise(drift_sigma=_S.drift_frac, step_noise_frac=_S.odom_noise_frac,
                                 heading_walk_rad=_S.odom_heading_noise_rad, scale_walk=0.001,
                                 isotropic=False)

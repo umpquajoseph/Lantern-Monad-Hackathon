@@ -780,11 +780,9 @@ class Sortie:
             return False
         # A camera Scout gives up on a waypoint it cannot reach (event
         # waypoint_skipped) and drive_to still returns. Searching from there
-        # would centre the grid on a spot the Scout never reached: on
-        # live-nav-first3 haynes S2-03 the search began 246 m from the find.
-        # By its own estimate, outside the search circle is not at the find:
-        # log it and leave the find open for another sortie. The sampled
-        # engine always arrives, so its runs are unchanged.
+        # would centre the grid on a spot the Scout never reached. By its own
+        # estimate, outside the search circle is not at the find: log it and
+        # leave the find open for another sortie.
         gap = math.hypot(f["est"][0] - self.ex, f["est"][1] - self.ey)
         reach = X.search_area(f, self.bound, s)
         if gap > reach:
@@ -1345,10 +1343,7 @@ class Campaign:
         drill_sites_max sites it did not drill, fits in sortie_h and in the
         energy above the reserve. A sortie with nothing to drill is charged
         for the drill slots, so fixes that eat the stop budget show up even
-        before any find is confirmed. Until 24 Nov 2026 the survey counted
-        as done at survey_m - lane_segment_m driven, which ignored the drive
-        to the next lane: drive-full-s2 stopped by the lane rule at 3,765 m
-        and read not done.
+        before any find is confirmed.
         """
         s = self.s
         survey_done = so.survey_end in ("lanes", "budget")

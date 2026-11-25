@@ -61,7 +61,6 @@ LOCAL_PLAN_MAX_CELLS = 3000     # assumed: local A* search budget (2 m cells)
 # its start on run 1 (it turned back at step 42).
 STEEP_CELL_FRAC = 0.01     # assumed: any steep point closes its cell, as the fine check would refuse it
 CRATER_COST = 4.0          # assumed: a crater cell costs 1 + 4 x its crater share to cross
-HAZARD_CELL_FRAC = STEEP_CELL_FRAC   # old name, kept for readers of this module
 
 # Assumed: how a sensing rover steers. A real rover
 # drives arcs and turns at a bounded rate; here it turns by at most
@@ -84,7 +83,7 @@ PLAN_DISPLAY_M = 20.0
 # Assumed: how far the rover turns in place when no way forward is clear.
 STUCK_TURN_DEG = 60.0
 
-# Retrace (decided 23 Nov 2026, assumed, no source): when the Scout's own map
+# Retrace (assumed, no source): when the Scout's own map
 # closes every way out of where it stands, it drives back along its own recent
 # track, ignoring the map, until its map leaves a way out. The track's length
 # is Settings.retrace_track_m (Rover.retrace_m). The check that every way out
@@ -92,7 +91,7 @@ STUCK_TURN_DEG = 60.0
 # ENCLOSE_HALF_M each side at ENCLOSE_CELL_M; it is closed when the flood
 # never reaches the box's edge. It runs only after a turn in place or a
 # back-and-forth block, at most once every ENCLOSE_EVERY steps.
-ENCLOSE_HALF_M = 30.0    # assumed: about twice spin-check-4's trap crater (14.2 m across)
+ENCLOSE_HALF_M = 30.0    # assumed: about twice a 14 m trap crater
 ENCLOSE_CELL_M = 0.5     # the lidar map's cell (sim/lidar.py HAZ_CELL_M)
 ENCLOSE_EVERY = 5        # assumed: steps between checks (speed only)
 LOOP_ERASE_M = 1.0       # assumed: track points this close are one place (the route back skips loops)
@@ -117,7 +116,7 @@ class SlopeMap:
     point (sim/footprint.py: least-squares plane over a 1.55 m square, brief
     p.6), not widened. A rover rests on its wheels, so the tilt of the plane
     under it is what the 15 deg limit bounds.
-    "widened" (the earlier main case, a test case): slope across 2 m as a
+    "widened" (a test case): slope across 2 m as a
     central difference (docs/handoffs.md, step 2), widened by the rover's half
     width, so a point is blocked if any spot under the rover is over the limit.
     "point": the 2 m slope at the point, no widening, for the planner and the
@@ -126,9 +125,8 @@ class SlopeMap:
     INTERPOLATED: the grid is 5 m LOLA upsampled, plus stamped craters and
     roughness (sim/site_ground.py), so its slope is not a measurement. The
     measured slope is LOLA's own at 5 m (ldsm), which the campaign batch uses
-    (sim/psr_sites.py). Every grid point is judged, not one sample per 2 m:
-    sampling only every 2 m (an earlier version) missed crater walls between
-    samples, so the rover drove into craters steeper than 15 deg.
+    (sim/psr_sites.py). Every grid point is judged, not one sample per 2 m,
+    which would miss crater walls between samples.
     """
 
     def __init__(self, height, x0, y0, cell, widen_m=None, mode="footprint",
@@ -623,13 +621,9 @@ class Rover:
             # (Goldberg et al. 2002, Table 1, num-backward-arcs 23). The body
             # keeps facing the aim, within the turn limit; the step is judged
             # on its direction of travel (pitch and roll are the same either
-            # way). Before 23 Nov 2026 the Scout turned 180 deg in place here,
-            # drove 2 m, turned again, until its waypoint timed out: about 11
-            # full turns per stuck spell (spin-check-1).
-            # Once per dead end: back at the spot it backed out of, it turns
-            # in place instead, so it faces new ground. Backing out every
-            # time kept its heading, so it drove forward into the same dead
-            # end and back again for 12 h (spin-check-2).
+            # way). Once per dead end: back at the spot it backed out of, it
+            # turns in place instead, so it faces new ground rather than the
+            # same dead end.
             self._backed_from = (x, y)
             travel = h + turn
             body = (turn - math.pi + math.pi) % (2 * math.pi) - math.pi
@@ -817,9 +811,7 @@ class Rover:
         them is a dead end the fine check refuses and the 2 m planner does
         not see (the planner reads one widened slope per cell, the fine check
         every 0.125 m). Close the planning cell of the turnaround so the next
-        local plan goes another way. Without it a camera Scout drove 2 m,
-        turned 180 deg, drove back, turned again, for up to 2,741 steps (19 h;
-        live-nav-first3, 7-88% of every sortie's steps)."""
+        local plan goes another way."""
         self._track.append(self.true[:2].copy())
         self._trim_track()
         self._moves = (self._moves + [self.true[:2].copy()])[-3:]
@@ -889,9 +881,7 @@ class Rover:
         believed frame and the hazard grids in the true frame (the lidar's
         relative geometry placed at the true pose), so the goal is placed
         where the rover's estimate puts it relative to itself: true + (goal -
-        estimate), as _waypoint_target does. Indexing the grids with the
-        believed-frame goal looked up ground as far off as the estimate's
-        error (10 m and more in live-nav-first3)."""
+        estimate), as _waypoint_target does."""
         if self.goal is None:
             return False
         gx = self.true[0] + self.goal[0] - self.estimate[0]

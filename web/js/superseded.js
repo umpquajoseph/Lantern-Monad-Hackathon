@@ -1,15 +1,14 @@
 // Batches the site still serves but that a later fix superseded, with every
-// reason. The one place for these labels (leader's reply 20261117-132716):
-// a newly found bug adds a reason here, one line per batch. The run records
+// reason. The one place for these labels: a newly found bug adds a reason here, one line per batch. The run records
 // carry no field for these, so they are keyed on batch id.
 //
 // Every page shows a batch's reasons: Mission Control's picker, run panel and
 // banner, run.html, runs.html and replay.html. Mission Control's default run
 // never comes from a batch with more reasons than another camera batch.
 
-const HOMING = "homing used the old free last hop: a Scout shown reaching the dock may never have found its way home (workflow fyi 20261117-130402)";
+const HOMING = "homing used the old free last hop: a Scout shown reaching the dock may never have found its way home";
 
-const HEADING = "heading drifted from the truth: the camera odometer added heading noise with the star tracker on, about doubling survey error (workflow fyi 20261117-132516)";
+const HEADING = "heading drifted from the truth: the camera odometer added heading noise with the star tracker on, about doubling survey error";
 
 export const SUPERSEDED = {
   "live-nav": [HOMING, HEADING],

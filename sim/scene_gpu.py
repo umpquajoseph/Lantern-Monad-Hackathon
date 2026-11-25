@@ -4,7 +4,7 @@ The same formulas and number types as the numpy path in scene.py (first_person
 881-1023, _Grid, _Horizon, _Lamp.irradiance, _albedo_at, _tone_lin), in two CUDA
 kernels: horizon maps (one thread per azimuth ray, running max) and the
 per-pixel shade. Sensor noise is drawn on the CPU from the same pose seed, so a
-frame matches the numpy frame: on 50 check-2 poses Vision.rims was identical on
+frame matches the numpy frame: on 50 test poses Vision.rims was identical on
 every frame, pixels within 1 DN, depth exact.
 Needs CuPy and an NVIDIA GPU; Scene falls back to numpy without them.
 """

@@ -116,8 +116,7 @@ function pickRun(index, batch, run) {
   const n = (v) => Number(v) || 0;
   const reach = (r) => [n(r.confirmed), n(r.searches), n(r.finds), n(r.sorties_ok)];
   // Fewest superseded reasons first, then the default world over a sensitivity case, then
-  // fleets that can corroborate (2+ Scouts), then the newest batch (leader's
-  // reply 20261117-131552: "the newest honest batch"), then reach.
+  // fleets that can corroborate (2+ Scouts), then the newest batch, then reach.
   const key = (x) => [-reasonsOf(x.batch).length, sensitivityOf(x.r) ? 0 : 1, n(x.r.n_scouts) >= 2 ? 1 : 0, n(Date.parse(x.made) || x.made), ...reach(x.r)];
   const cmp = (p, q) => { const a = key(p), b = key(q); for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] - a[i]; return 0; };
   const cam = withMap.filter((x) => x.r.pipeline === "camera" && !x.standin).sort(cmp), piped = withMap.filter((x) => x.r.pipeline);
@@ -532,7 +531,7 @@ const STOP_WHY = { time: "turned back for time", energy: "turned back on energy"
 const PARTIAL_WHY = { no_readings: "no readings so far", no_match: "no reading matched so far", bound_too_large: "the combined position bound was too large to judge" };
 // event `lost` reason (docs/handoffs.md): a flat battery, the route ended far
 // from the dock, or the battery ran flat while the Scout was held in place
-// (`stuck`, workflow fyi 20261117-142431; earlier records call those `battery`).
+// (`stuck`; older records call those `battery`).
 const LOST_WHY = { battery: "battery flat before the dock", stranded: "stranded, its route ended far from the dock", stuck: "stuck in place until its battery ran flat" };
 const searchEnds = new Map();
 function searchEnd(start) {
@@ -961,7 +960,7 @@ function drawFpOverlay(cv, k, pose, camZ, small) {
 // The logged scan of the followed Scout at the shown step. Top-down: the
 // hazard grid, forward up, rings every 5 m: grey where this scan's returns
 // fell, hazards from the Scout's merged lidar map (sim/lidar.py HazardMemory;
-// runs before 20 Nov 2026: this scan's own verdicts).
+// older runs: this scan's own verdicts).
 // First person: the logged range image, shaded by range, hazard cells coloured.
 let lidarKey = null, fpLidarCache = null;
 function drawLidar(k) {

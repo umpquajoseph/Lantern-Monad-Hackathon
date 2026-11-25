@@ -51,7 +51,7 @@ class Settings:
     site: str = S("s89_134e", "sim/psr_sites.py SITES: 'haynes', 's89_014e', 's89_134e' (real LOLA 5 m PSR "
                               "windows), 'nobile' (LOLA 10 m, 84.5-87 S; docs/handoffs.md Part 3), or 'shoemaker' (engine stand-in, not PSR "
                               "floor). Swept for the site table. Default: the site whose median sortie had 100% of its "
-                              "survey poses on PSR floor (measured 16 Nov 2026: the sampled Campaign, 3 Scouts x "
+                              "survey poses on PSR floor (measured on the sampled Campaign, 3 Scouts x "
                               "16 sorties on each site)")
 
     # ---------------------------------------------------------------- fleet
@@ -113,28 +113,17 @@ class Settings:
                                            "A24 sec. V-C1: observation points 7-13 m from the rim")
     fix_min_craters: int = S(2, ASSUMED + "; A24 Table 2 traverses used 2-3 landmarks")
     # A camera Scout's scheduled fix (sim/campaign_camera.py CameraSortie.check).
-    cam_fix_mode: str = S("preplanned", "How a camera Scout takes its position fixes. In every mode but "
-                                        "'opportunistic' the filter's measurement update runs only on a fix's "
-                                        "exposures, against the one landmark crater chosen for it; between fixes, "
-                                        "odometry alone (draft 4.2 'e(d) = efix + 0.02d'; A24 sec. I, contribution 2, "
-                                        "'intermittent localization wherein only specific landmark craters are used "
-                                        "and other craters that may appear along a trajectory are ignored'), and a "
-                                        "fix falls due by distance driven (draft 4.2, 'schedule fixes by distance "
-                                        "driven'). 'preplanned' (the default, product owner 24 Nov 2026): when a leg "
-                                        "is planned, the landmark for the fix that falls due on it is chosen along "
-                                        "the leg's route and the route drives a half survey of it (A24 sec. III-E2, "
-                                        "landmarks 'require a planned trajectory to drive towards'; A24 Table 2, "
-                                        "'Localization accuracy is optimal when a half survey around the landmark "
-                                        "crater occurs'). 'straight' (the comparison case): no landmark is planned; "
-                                        "once a fix is due the Scout drives on along its route and fixes on the "
-                                        "first landmark-sized mapped crater that comes into its camera's view, "
-                                        "stopping every fix_survey_spacing_m to face it for an exposure (A24 sec. "
-                                        "V-C1's straight trajectory, 'stops every 10 m and travels directly past the "
-                                        "crater'; A24 sec. IV-B field tests, 'the rig was directed toward large "
-                                        "craters if any were present'). Labelled test cases: 'scheduled' (the 20 Nov "
-                                        "reactive choice: the nearest landmark ahead when a fix falls due), "
-                                        "'opportunistic' (every frame with rims corrects against the whole map, no "
-                                        "scheduled fixes; the main case until 20 Nov 2026)")
+    cam_fix_mode: str = S("preplanned", "How a camera Scout takes its position fixes. Except in "
+                                        "'opportunistic', the filter updates only on a fix's exposures, against "
+                                        "that fix's landmark, and odometry carries it between fixes (draft 4.2; "
+                                        "A24 sec. I, contribution 2). A fix falls due by distance driven (draft "
+                                        "4.2). 'preplanned' (default): the landmark is chosen along the leg's "
+                                        "route when the leg is planned, and the route drives a half survey of it "
+                                        "(A24 sec. III-E2; A24 Table 2). 'straight' (the comparison case): fix on "
+                                        "the first landmark-sized mapped crater that comes into view, stopping "
+                                        "every fix_survey_spacing_m to face it (A24 sec. V-C1, sec. IV-B). Test "
+                                        "cases: 'scheduled' (the nearest landmark ahead when a fix falls due), "
+                                        "'opportunistic' (every frame with rims corrects against the whole map)")
     fix_plan_early_m: float = S(40.0, ASSUMED + "; 'preplanned': a landmark's survey may begin up to this far "
                                                 "before the fix falls due (the draft's spacing is a maximum, draft "
                                                 "4.2); with none in that stretch of the leg, the first one after it")
@@ -187,7 +176,7 @@ class Settings:
     # Hydrogen in dry polar regolith: every reading is this plus the deposits'
     # concentration (sim/campaign.py read_here). It is not ice to be found: a find is
     # scored on the deposits alone (sim/crossing.py deposit_at). Test case 0.0: dry
-    # ground reads zero, as before 20 Nov 2026.
+    # ground reads zero.
     background_weh_wt: float = S(0.13, "Livengood et al., LEND polar hydrogen (NTRS 20180004020), abstract "
                                        "p.2: 'Above 88 deg north or south, the concentration increases to "
                                        "~140 ppmw, or 0.13+/-0.02 wt% water-equivalent hydrogen'; every "
@@ -208,12 +197,12 @@ class Settings:
                                     "'adjustable chassis ground clearance (7-42 cm), pitch (+/-20 deg), and roll "
                                     "(+/-15 deg)'. Read as the cross slope the chassis can be held level on; "
                                     "no source gives VIPER a roll limit for routes")
-    # Decided 23 Nov 2026 (product owner): when the Scout's own map closes
+    # When the Scout's own map closes
     # every way out of where it stands, it retraces its own track, ignoring
     # the map, until its map leaves a way out (sim/rover.py _start_retrace).
     # Its steps over the limits are still counted.
     retrace_track_m: float = S(50.0, ASSUMED + "; how much of its own recent track a Scout keeps to retrace. "
-                                              "Over three times the width of spin-check-4's trap crater (14.2 m)")
+                                              "Over three times the width of a 14 m trap crater")
 
     # --------------------------------------------------------- cross-checks
     search_radius_k: float = S(1.0, ASSUMED + "; search radius = k * hypot(both 95th-pct bounds) "
@@ -292,14 +281,14 @@ class Settings:
                                      "tilt of the Scout's 1.55 m footprint plane (brief p.6 width; sim/footprint.py, "
                                      "GESTALT's rover-sized plane fit, Goldberg 2002 sec. 4 step 3, p.6), for the planner "
                                      "and the lidar hazards. Labelled test cases: 'widened' (slope across 2 m, "
-                                     "widened by the 0.83 m half width; the main case until 18 Nov 2026) and "
+                                     "widened by the 0.83 m half width) and "
                                      "'point' (2 m slope, no widening)")
     plan_slope: str = S("orbital", "sim/rover.py SlopeMap.use_orbital: the slope camera Scouts plan and steer on. "
                                    "'orbital' = the site's LOLA 5 m slope product as the site file holds it "
                                    "(sim/psr_sites.py 'ldsm'), the orbital map VIPER's strategic plans use "
                                    "(Shirley and Balaban 2022; Ennico-Smith 2023), plus the lidar's map. "
                                    "Labelled test case 'truth': the ground's own 0.25 m footprint tilt, which "
-                                   "no Scout has (the main case until 20 Nov 2026)")
+                                   "no Scout has")
     crater_n_ge10_per_km2: float = S(336.0, "Minton 2019 sec. 1.2, Fit 1 (Apollo 15): docs/terrain/position.md "
                                             "row 4. A single run's density (camera runs); drawn batches draw "
                                             "WorldRanges.crater_n_ge10_per_km2. 106 and 1,540 are labelled test cases")
@@ -347,7 +336,7 @@ class Settings:
     # the last two (RMS 3.13 / 6.67 m against 1.48 / 2.34): SGBM leaves the pixels it
     # cannot match as holes, and the rest stay good. So from stereo_law_max_m out, the
     # range error is Gaussian with the band's RMS (sim/vision.py noisy_range). Checked on
-    # the ground pixels of 29 calibration frames, 20 Nov 2026 (sensors report of 12:44).
+    # the ground pixels of 29 calibration frames.
     stereo_law_max_m: float = S(20.0, "A24 Table 1 band edge: the z^2 law reproduces the 0-10 and 10-20 m "
                                       "bands of the row above and not the 20-30 and 30-40 m bands")
     stereo_band_rms_m: tuple = S((0.22, 1.15, 1.48, 2.34), "A24 Table 1 row (SGBM, 1.5 m, -0.2 m, med), RMS (m) "
@@ -377,20 +366,18 @@ class Settings:
     pf_heading_walk_rad: float = S(0.0, "A24 sec. III-A: heading from the star tracker, the filter "
                                         "estimates '2D position' only; so no heading spread")
     pf_scale_walk: float = S(0.0, "A24 sec. III-E1 eqs. (3)-(6): particles move by the odometry plus zero-mean "
-                                  "additive noise, with no walk in scale. 0.001 per step (the earlier default, "
-                                  "assumed) is a labelled test case")
+                                  "additive noise, with no walk in scale. 0.001 per step (assumed) is a labelled test case")
     pf_sigma0_m: float = S(1.0, "C23 sec. 1 'initial 3-sigma uncertainty of 3 m'. C23 sec. 6B ran "
                                 "Table 2 with sigma_0 = 3 m; sim/calibrate.py uses that")
     pf_match: str = S("front_half", "A24 sec. III-E2: 'only the front half of a crater is used as ground truth', "
                                     "'determined dynamically based on the heading of camera', because 'using the "
                                     "entire crater rim for matching could lead to false positives'. Each rim point's "
                                     "Q-Score distance is to the near half of a mapped rim, as seen along the "
-                                    "particle's heading. 'full_circle' (the whole rim; the main case until 20 Nov "
-                                    "2026) is a labelled test case")
+                                    "particle's heading. 'full_circle' (the whole rim) is a labelled test case")
     pf_gate_m: float = S(20.0, "A24 sec. III-E2: 'When the estimated particle filter position was not within 20 m "
                                "of the ground truth rim, the particle filter was not run' and odometry alone moved "
                                "it. Here: no update when the filter's mean is over this far from every mapped rim. "
-                               "0 (no gate; the main case until 20 Nov 2026) is a labelled test case")
+                               "0 (no gate) is a labelled test case")
 
     # -------------------------------------------------------------- logging
     log_spacing_m: float = S(10.0, ASSUMED + " (record size, not physics)")

@@ -838,7 +838,7 @@ class Scene:
 
         self.poses = {}     # agency -> (x, y, heading), world
         self.bodies = {}    # agency -> body_frame() of its pose: (ground point, body axes), local frame
-        self.body_tilt = True   # the body rests on the footprint plane; False: level, as before 18 Nov 2026
+        self.body_tilt = True   # the body rests on the footprint plane; False: level (test case)
         self.lamps = {}     # agency -> _Lamp (local frame), built lazily
         self.blocks = {}    # agency -> fine mesh block
         self.near = {}      # agency -> 5 cm near _Grid (display on)
@@ -1178,7 +1178,7 @@ class Scene:
         frame. The body rests on the least-squares plane of the ground under
         its footprint (sim/footprint.py, the plane the slope test judges), so
         it pitches and rolls with the ground. body_tilt False: a level body on
-        the ground under the pose, as before 18 Nov 2026."""
+        the ground under the pose."""
         x, y, hd = (float(v) for v in pose)
         lx, ly = x - self.origin[0], y - self.origin[1]
         if not self.body_tilt:

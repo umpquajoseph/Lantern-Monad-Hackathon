@@ -95,8 +95,8 @@ STEREO_HOLE_MODELS = ("pixel", "block", "none")
 def stereo_band(r):
     """Index of A24 Table 1's 10 m band of true range r (beyond 40 m: the last band's)."""
     return np.clip((np.asarray(r, float) // STEREO_BAND_M).astype(int), 0, len(STEREO_HOLE_SHARE) - 1)
-# The model before 16 Nov 2026: range noise a fixed 0.5% of range. Kept for
-# sim/calibrate.py's before/after numbers; never a default.
+# A test case: range noise a fixed 0.5% of range. For sim/calibrate.py;
+# never a default.
 DEPTH_NOISE_FRAC_OLD = 0.005
 
 
@@ -176,7 +176,7 @@ class Vision:
 
     def __init__(self, scene, rng: np.random.Generator, depth_model: str = "stereo",
                  contour_filter: bool = True, far_side: bool = True, holes: str | None = None):
-        """depth_model: "stereo" (the default) or "old" (0.5% of range, before 16 Nov 2026).
+        """depth_model: "stereo" (the default) or "old" (0.5% of range, a test case).
         contour_filter: A24 sec. III-D's contour filter (default on; off only for sim/calibrate.py).
         far_side: C23 sec. 3A's positive-obstacle rejection (far_side_ok; default on).
         holes: stereo holes, "pixel" / "block" / "none" (default Settings.stereo_hole_model;

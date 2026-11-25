@@ -410,12 +410,10 @@ def _judge_moments(base, c, slope_mode="footprint"):
     # any tilted plane each pair averages to the cell's own height, so
     # plain slopes do not read as rocks or dips. A ring cut off on one
     # side (the near edge of the scan, its sides, a shadow) would
-    # otherwise lean uphill or downhill: on a 10 deg ramp the half ring
-    # at the near edge sat 2 m uphill and read 0.35-0.43 m "deep"
-    # (20 Nov 2026). Pairs carry no slope bias however few there are, so
-    # a ring is judged from RING_MIN_PAIRS complete pairs: the far side
-    # of a crater's ring hides behind its far rim, leaving its floor 4-13
-    # of 24 pairs, and the old rule (half the ring) is not needed for bias.
+    # otherwise lean uphill or downhill. Pairs carry no slope bias however
+    # few there are, so a ring is judged from RING_MIN_PAIRS complete pairs:
+    # the far side of a crater's ring hides behind its far rim, leaving its
+    # floor 4-13 of 24 pairs.
     def ring_mean(rad):
         pairs = [(di, dj) for di in range(-rad, rad + 1) for dj in range(-rad, rad + 1)
                  if max(abs(di), abs(dj)) == rad and (di, dj) > (0, 0)]   # one of each mirrored pair
@@ -440,11 +438,7 @@ def _judge_moments(base, c, slope_mode="footprint"):
             # fit the best plane, and judge it "as long as there is enough
             # data ... at least half the cells have more than 1 point". The
             # patch is FOOTPRINT_CELLS square, the nearest whole-cell patch
-            # to the 1.55 m footprint. Before 20 Nov 2026 the lidar fitted
-            # the plane to cell means with sim/footprint.tilt_deg, which
-            # judged nothing where any cell of its 3.5 m window lacked
-            # returns: it flagged 18-28% of the truly steep ground it had
-            # returns on in tilt-check, and showed the rest as safe.
+            # to the 1.55 m footprint.
             slope, gx, gy = _patch_tilt_deg(base, c, grad=True)
         else:
             gx = np.full((nx, ny), np.nan)
@@ -456,10 +450,7 @@ def _judge_moments(base, c, slope_mode="footprint"):
     # GESTALT judges the pitch hazard on every cell's plane (Goldberg et al.
     # 2002 sec. 4 step 3); "crater" is Lantern's own class, a cost for gentle
     # ground below its ring. So a crater cell over the limit is a slope cell,
-    # judged by heading like any other. Before 23 Nov 2026 a crater cell was
-    # never a slope cell: a Scout drove 200 steps on 16-23 deg crater walls
-    # the lidar had measured, and could not tell the walls it could leave by
-    # from those it could not (spin-check-4, steps 2716-3000).
+    # judged by heading like any other.
     over = known & (slope > SLOPE_LIMIT_DEG)
     is_crater = known & (depr > DEPRESSION_M) & ~over
     is_rock = known & ~is_crater & (rock > ROCK_STEP_M) & DETECT_ROCKS
@@ -527,9 +518,7 @@ class HazardMemory:
     - Step 2, "moment statistics are collected about all the range points in a
       given cell": world-frame cells of HAZ_CELL_M hold the 10 sums of every point
       that has fallen in them, from every scan; a new scan's points are added to
-      the sums (add). Until 20 Nov 2026 each scan was judged alone and its hazards
-      ORed into the rover's grids for good, so one scan's misjudgement of a
-      near-limit ramp, seen from far off, closed it for the rest of the sortie.
+      the sums (add).
     - Step 3, traversability "found by merging the moment statistics from a
       rover-sized patch of surrounding cells and finding the best-fit plane": after
       each scan every cell whose verdict the new points can change (within

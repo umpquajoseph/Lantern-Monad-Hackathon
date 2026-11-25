@@ -18,7 +18,7 @@ The expected wall time is the planned driving distance divided by the step
 (sim/rover.py STEP_M), times Scout-steps per planned step and wall seconds
 per Scout-step, both measured on the newest finished camera runs under
 data/campaigns (measured_rates), as they ran (several at once). With none
-finished it falls back to the 16 Nov check run's numbers below.
+finished it falls back to the check run's numbers below.
 """
 from __future__ import annotations
 
@@ -37,13 +37,13 @@ SITES = ("s89_134e", "s89_014e", "haynes")
 # World seed per site. Chosen, not drawn: the lowest seed whose world, run
 # with the sampled engine on this same plan (3 Scouts x 3 sorties, full
 # survey, density 336), makes at least 2 finds and at least 2 searches by a
-# second Scout (scan of seeds 1-120 per site, 16 Nov 2026). With 9 sorties
+# second Scout (scan of seeds 1-120 per site). With 9 sorties
 # a run surveys about 0.6 km2, and most seeds' deposits lie elsewhere. The
 # camera runs drive their own paths, so finds are likely, not certain.
 SEEDS = {"s89_134e": 6, "s89_014e": 9, "haynes": 3}
 SEED_RULE = ("the lowest seed whose world, run with the sampled engine on the same plan, makes at least 2 finds "
              "and 2 searches by a second Scout (sim/live_runs.py SEEDS)")
-# Product owner, 16 Nov 2026: these runs are chosen, not drawn, so they show
+# These runs are chosen, not drawn, so they show
 # the workflow on the site and in the video and stay out of the paper's
 # statistics (section 4.6 numbers and Figure 1 come from drawn seeds).
 PAPER_NOTE = ("These runs are for the site and the video and are excluded from the paper's statistics "
@@ -52,8 +52,7 @@ BATCH_ID = "live-nav-first3"
 # Measured on the test campaign (docs in the commit that sets them): wall
 # seconds per Scout-step with one run alone on the machine, and Scout-steps
 # taken per planned 2 m of driving.
-# Check run live-nav-check2 w00003-c44d133e, 16 Nov 19:52 (realism 139f8c7,
-# dock clear zone be88151): haynes, 1 Scout x 1 sortie, 2,149 Scout-steps in
+# Check run live-nav-check2/w00003-c44d133e: haynes, 1 Scout x 1 sortie, 2,149 Scout-steps in
 # 436 s (render 0.178, lidar 0.014, planner 0.006, vision 0.003, filter
 # 0.0002 s a step), for 1,817 m planned = 909 planned 2 m steps.
 S_PER_STEP_FALLBACK = 0.20
@@ -95,7 +94,7 @@ def measured_rates(n=RATE_RUNS):
         if len(used) >= n:
             break
     if not used or planned <= 0:
-        return S_PER_STEP_FALLBACK, STEPS_PER_PLANNED_FALLBACK, "no finished camera run: 16 Nov check-run constants"
+        return S_PER_STEP_FALLBACK, STEPS_PER_PLANNED_FALLBACK, "no finished camera run: check-run constants"
     return wall / steps, steps / planned, f"measured on the {len(used)} newest finished runs ({used[0]} first)"
 
 

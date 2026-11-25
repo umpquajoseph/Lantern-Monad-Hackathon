@@ -103,11 +103,11 @@ PROGRESS_EVERY = int(os.environ.get("LANTERN_CAM_PROGRESS", "0"))   # print a li
 # Render gate: a step renders and runs vision only when some true crater's rim
 # could be in the camera's view. Otherwise the frame holds no rim, and a frame
 # without rims leaves the filter unchanged (nav.correct runs only on rims), so
-# skipping it changes nothing but Vision's random stream. Measured on check 2
-# (live-nav-check2 w00003-c44d133e): 990 frames
+# skipping it changes nothing but Vision's random stream. Measured on run
+# live-nav-check2/w00003-c44d133e: 990 frames
 # outside a narrower gate (craters >= 10 m within 15 m) rendered, 0 with rims;
 # kept rims reached 19.7 m. Every crater counts here, out to 25 m.
-GATE_RANGE_M = 25.0          # assumed: rims are kept to 19.7 m on check 2; 5 m spare
+GATE_RANGE_M = 25.0          # assumed: kept rims reach 19.7 m (above); 5 m spare
 GATE_MARGIN_DEG = 5.0        # assumed: beyond the 30 deg half view (sim/scene.py HFOV_DEG)
 GATE_ON = os.environ.get("LANTERN_CAM_GATE", "1") != "0"   # 0: render every step (to check the gate)
 # A skipped frame still draws the frame's depth noise (Vision.noisy_depth: one
@@ -466,11 +466,8 @@ class CameraSortie(Sortie):
         return max(1.0, self.prog_t / (self.prog_m / self.v))
 
     def _return_energy(self):
-        # The sampled engine drives the route straight, so route length over
-        # top speed is its real cost. A camera Scout does not: on
-        # live-nav-first3 / workflow-first3 returns took 17-20 h against
-        # about 4 h of straight driving, and Scouts ran flat on the way home
-        # (s89_134e S1-01, S2-01). Scale by the Scout's own measured overhead.
+        # A camera Scout does not drive its route straight, so scale route
+        # length over top speed by the Scout's own measured overhead.
         # Scheduled fixes continue on the way home (draft 4.2: the limit applies
         # "along the whole sortie"): their stops at stop power. Their detours
         # are drive time, already in overhead().
@@ -674,8 +671,8 @@ class CameraSortie(Sortie):
         wrong = fixed and len(f["wrong"]) > 0.5 * f["pts"]
         cause = self._wrong_cause(f["wrong"]) if wrong else None
         self.n_checks += 1
-        # A fix that updated nothing (no rim seen on any exposure: e.g. a
-        # shallow landmark, d/D 0.035 in nav-pre-t2, or one out of view) is
+        # A fix that updated nothing (no rim seen on any exposure: a shallow
+        # landmark, or one out of view) is
         # known to the Scout as no fix: the distance since its last fix keeps
         # counting, so the next one is due at once (after check_min_spacing_m).
         # Whether an update was a false match it cannot know.
@@ -754,9 +751,7 @@ class CameraSortie(Sortie):
                 continue
             sc, lat = self._project(P, cum, (cx, cy))
             # Beside the leg only: a crater beyond either end projects onto that
-            # end (nav-pre-t2, planning one waypoint at a time: a crater 20 m
-            # past a 16 m hop's goal was surveyed, and the Scout drove 42 m back
-            # to the goal and past the crater again).
+            # end, and surveying it would drive the Scout past the goal and back.
             if lat - d / 2 > s.fix_reach_m or not 0.0 < sc < L:
                 continue
             R = d / 2 + s.fix_survey_offset_m
@@ -776,7 +771,7 @@ class CameraSortie(Sortie):
                 cost = math.dist(pd, pts[0]) + arc + math.dist(pts[-1], pr) - (sr - max(sd, 0.0))
                 # The two sides cost the same in straight lines; the one facing
                 # the route (its middle point nearer the route) is the shorter
-                # drive. Before 24 Nov the tie went to the far side.
+                # drive.
                 key = (round(cost, 1), self._project(P, cum, pts[len(pts) // 2])[1])
                 if got is None or key < got[0]:
                     got = (key, pts)
@@ -1023,8 +1018,7 @@ class CameraSortie(Sortie):
         return waypoints are about 25 m apart). A waypoint the survey carried
         the Scout past (behind it along the route's direction at the
         landmark, and within the survey's span) is passed, not driven back
-        to: driving back put the same landmark ahead again on the next leg
-        (nav-pre-t1: 6 of 27 fixes repeated the one before). Logged as
+        to: driving back puts the same landmark ahead again on the next leg. Logged as
         waypoint_skipped, reason passed_by_fix. Holds until a waypoint ahead."""
         if self._passed is None:
             return False
@@ -1083,9 +1077,7 @@ class CameraSortie(Sortie):
                 # the goal on ground it may not enter: it is as close as it
                 # can get. A route planned on the orbital map can put a
                 # waypoint inside a crater too small for LOLA; the Scout's
-                # lidar sees it on arrival. Before 23 Nov 2026 it drove back
-                # and forth at the crater's edge until cam_stuck_steps ran out
-                # (all 4 skipped waypoints of spin-check-1, about 45 steps each).
+                # lidar sees it on arrival.
                 self.event("waypoint_skipped", reason="hazard", goal=[rnd(gx, 2), rnd(gy, 2)])
                 self.skipped += 1
                 return True
@@ -1323,9 +1315,7 @@ class CameraSortie(Sortie):
 
     def _can_home(self, d_home):
         """A camera Scout skips return waypoints it cannot reach, so the end
-        of its route is not the dock: on live-nav-first3 and
-        workflow-first3b the last hop, driven free, was up to 2,355 m. It
-        finds the dock (lit) when the dock lies inside the area it believes
+        of its route is not the dock. It finds the dock (lit) when the dock lies inside the area it believes
         it is in, widened by what its lamp-lit camera sees."""
         return d_home <= self.bound + DOCK_SIGHT_M
 

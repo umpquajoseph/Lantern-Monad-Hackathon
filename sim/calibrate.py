@@ -20,7 +20,7 @@ What it measures (Cauligi et al. 2023, docs/sources/ShadowNav-Cauligi-2023.*):
   does per particle. A point from a crater missing from the map is always
   a false match.
 
-The ground (from 20 Nov 2026, --ground run): a run ground of the approved
+The ground (--ground run): a run ground of the approved
 recipe (docs/terrain/position.md) over the same 1 km window of s89_134e,
 built as every camera run builds it (sim/site_ground.py build_ground: 1 m,
 roughness Settings.ground_rough_rms_m, the world's craters 7.5-20 m at
@@ -61,14 +61,14 @@ Configs, cumulative, the same seeds in each (common random numbers):
   after     depth: stereo (vision.py, A24 rig and Table 1); all three fixes
   odometry  after, with fixes off (dead reckoning), for scale
   all-mapped  after, with every true crater in the map (a control, not a map)
-From 16 Nov 2026 17:00 (the table the paper uses):
+The table the paper uses:
   no-filter after, plus an orbital pixel's map error (sim/orbital_map.py)
   filter    no-filter, plus A24 sec. III-D's contour filter (sim/vision.py) with C23's
             80% arc share (width >= 8 m)
   filter-measured  the same filter with Lantern's measured arc share (Settings.rim_arc_share_headon)
-From 20 Nov 2026, 12:40, the noisy-depth configs (noisy_detect) also run C23 sec. 3A's
+The noisy-depth configs (noisy_detect) also run C23 sec. 3A's
 far-side test after the contour filter, as sim/vision.py detect() does (far_side=False: off).
-From 20 Nov 2026, 13:00, depth follows A24 Table 1 in every 10 m band, with stereo holes
+Depth follows A24 Table 1 in every 10 m band, with stereo holes
 (sim/vision.py noisy_range), and detection steps over the holes (Vision.column_tests).
   filter-route-nd-block    holes in squares of pixels (Settings.stereo_hole_block_px)
   filter-route-nd-noholes  no holes (the band noise alone)
@@ -112,7 +112,7 @@ DISPLAY_DIR = DATA / "terrain" / f"display_{SITE}"
 OUT = DATA / "campaigns" / "calibration"
 
 SIGMA0_C23 = 3.0              # C23 sec. 6B: "initial belief distribution with sigma_0 = 3 m"
-MATCH_TOL_M = 1.0             # live-nav Settings.cam_match_tol_m (assumed there): a rim point is paired with a
+MATCH_TOL_M = 1.0             # Settings.cam_match_tol_m, assumed: a rim point is paired with a
                               # map crater whose edge lies this close; for the second false-match column
 SOURCE_TOL_M = 1.0            # assumed: a rim point comes from a crater if it lies this close to its edge
                               # (one 640 px row spans ~0.45 m of ground at 20 m)
@@ -486,17 +486,17 @@ CONFIGS = {
     "after":    dict(map="new", noise="own", depth="stereo", fixes=True),
     "odometry": dict(map="new", noise="own", depth="stereo", fixes=False),
     "all-mapped": dict(map="all", noise="own", depth="stereo", fixes=True),
-    # From 16 Nov 2026 17:00: the map also carries an orbital pixel's error (sim/orbital_map.py).
+    # The map also carries an orbital pixel's error (sim/orbital_map.py).
     "no-filter": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour=False),
     "filter":    dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="c23"),
     # The same filter with Lantern's own measured arc share (Settings.rim_arc_share_headon).
     "filter-measured": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True, contour="headon"),
     # The same, with every depth step reading one noisy stereo depth per frame: the
-    # depth-jump test and the contour width as well as placement (16 Nov 2026, 20:00).
+    # depth-jump test and the contour width as well as placement.
     "filter-measured-nd": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
                                contour="headon", noisy_detect=True),
     # The route arc share (Settings.rim_arc_share_route), with noisy-depth detection as the runs use it.
-    # The same with the filter's matching as before 20 Nov 2026: the whole rim of the
+    # The same with full-circle matching: the whole rim of the
     # nearest mapped craters, every frame (Settings.pf_match, pf_gate_m test cases).
     "filter-route-nd-full": dict(map="new", noise="own", depth="stereo", fixes=True, map_err=True,
                                  contour="route", noisy_detect=True, match="full_circle", gate_m=0.0),
@@ -581,7 +581,7 @@ def run_one(task):
     far_side = noisy_detect and cfg.get("far_side", True)
     if noisy_detect and not ("fc" in D and "bc" in D):
         raise ValueError("noisy_detect reads each candidate's column (stereo holes, C23's far-side test): "
-                         "render again (detections from 20 Nov 2026, 13:00 on)")
+                         "render again")
     g_sd = np.random.default_rng([seed, ti, 4])     # one stereo noise field per frame, common to configs
     Hc, Wc = det["camera_model"]["height"], det["camera_model"]["width"]
     nav.start(poses[0, :2] + start_err, poses[0, 2])
@@ -590,7 +590,7 @@ def run_one(task):
     counts = dict(right=0, wrong_mapped=0, unmapped=0, spurious=0)
     tolc = dict(tol_right=0, tol_wrong=0, tol_unpaired=0)
     frames_used = 0
-    AX = D.get("axes")                # per-frame attitude (detections from before 20 Nov 2026: level)
+    AX = D.get("axes")                # per-frame attitude (older detections: level)
     for k in range(1, n):
         if AX is not None:
             vis.axes = axes_from_row(AX[k])
@@ -858,13 +858,13 @@ def main():
     ap.add_argument("--ground", choices=("run", "grid"), default="run",
                     help="run (default): a run ground of the approved recipe (sim/site_ground.py build_ground, "
                          "docs/terrain/position.md) over GROUND_BOX, with its own camera texture "
-                         "(sim/terrain_display.py build_for_ground). grid: the 0.25 m --terrain grid, as before 20 Nov 2026")
+                         "(sim/terrain_display.py build_for_ground). grid: the 0.25 m --terrain grid")
     ap.add_argument("--ground-seed", type=int, default=GROUND_SEED, help="world seed of the run ground's craters")
     ap.add_argument("--truth", choices=TRUTHS, default="a24",
-                    help="the true odometer: a24 (default, from 20 Nov 2026): A24 eqs. 4-6, 2%% bias in one random "
+                    help="the true odometer: a24 (default): A24 eqs. 4-6, 2%% bias in one random "
                          "direction, heading known, as ShadowNav's tests; lantern: WorldRanges.drift_frac (1-4%%) "
                          "along the track plus Settings odom_* noise, as campaign runs")
-    ap.add_argument("--level", action="store_true", help="keep the body level (test case; as before 20 Nov 2026)")
+    ap.add_argument("--level", action="store_true", help="keep the body level (test case)")
     ap.add_argument("--workers", type=int, default=3)
     ap.add_argument("--configs", default=",".join(CONFIGS))
     ap.add_argument("--max-render", type=int, default=None,

@@ -19,14 +19,14 @@ edge (rows run north), as in docs/handoffs.md.
 
     python web/build_assets.py                   # Shoemaker drive area -> web/assets/terrain/
     python web/build_assets.py --site s89_134e   # a PSR site -> web/assets/terrain/s89_134e/
-    python web/build_assets.py --run-ground live-nav/w00001-bcce1993
+    python web/build_assets.py --run-ground <batch>/<run_id>
                                                  # a camera run's own ground -> web/assets/terrain/runs/<run_id>/
 
 For a PSR site (terrain's sim/psr_sites.py) the grid is data/terrain/<site>.npz,
 the display layer data/terrain/display_<site>/, and the backdrops come from
 the site's own 5 m LOLA window (data/terrain/psr_sites/<site>.npz): native as
 backdrop_near, averaged to 20 m as backdrop. Its display layer's own
-backdrops, if any, are not used (terrain: cut from the wrong tile).
+backdrops, if any, are not used: they are cut from the wrong tile.
 
 A camera run's record names the ground its cameras and lidar saw
 (`ground.file`, docs/handoffs.md "Camera navigation"): a 1 m grid built by
@@ -109,7 +109,7 @@ def nogo_png(height, x0, y0, cell, path, mode="footprint", plan_slope="truth", s
     """The planner's own no-go ground, as the run's planner read it: over
     SLOPE_LIMIT_DEG in SlopeMap(height, mode=mode).at() (sim/rover.py). For a
     run with Settings.plan_slope "orbital" that is the site's LOLA 5 m slope
-    (SlopeMap.use_orbital); else ("truth", and runs before 20 Nov 2026) the
+    (SlopeMap.use_orbital); else ("truth", and older runs) the
     ground's own slope by the slope test the run used. Written as red on
     clear, north up, one pixel per sim cell. Returns the meta entry, or None
     when sim/rover.py has no SlopeMap."""
@@ -177,13 +177,13 @@ def main(site=None, run_ground=None):
     height, craters, x0, y0, cell = load_terrain(src)
     H, W = height.shape
     # The planner works on the sim grid as is, so the no-go layer does too.
-    # The slope test the run used (Settings.slope_test; runs before 18 Nov 2026
+    # The slope test the run used (Settings.slope_test; older runs
     # carry slope_test_widened instead, True = "widened", False = "point").
     mode, plan_slope = "footprint", "truth"
     if ground_rec:
         st = rec.get("settings") or {}
         mode = st.get("slope_test") or ("point" if st.get("slope_test_widened") is False else "widened")
-        plan_slope = st.get("plan_slope") or "truth"   # runs before 20 Nov 2026 planned on the ground itself
+        plan_slope = st.get("plan_slope") or "truth"   # older runs planned on the ground itself
     nogo = nogo_png(height, x0, y0, cell, OUT / "nogo.png", mode, plan_slope, site)
     disp = DATA / (f"display_{site}" if site else "display")
     if ground_rec:

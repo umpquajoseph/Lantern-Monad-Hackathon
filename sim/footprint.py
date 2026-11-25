@@ -65,8 +65,7 @@ def tilt_deg(height, cell: float, side: float = FOOTPRINT_M):
 
 
 # ---------------------------------------------------------- pitch and roll
-# A rover's slope limits depend on its heading (ops/HANDOFF.md, 20 Nov
-# evening). On a plane of gradient g = (gx, gy), a rover facing heading h
+# A rover's slope limits depend on its heading. On a plane of gradient g = (gx, gy), a rover facing heading h
 # (unit u) sits at
 #     tan(pitch) = |g . u|   the slope along its heading,
 #     tan(roll)  = |g x u|   the slope across it,

@@ -210,7 +210,7 @@ export function bannersOf(rec, batch = null) {
   return standinBanner(rec.showcase, "Showcase") + standinBanner(standinOf(rec)) + supersededBanner(batch) + standinBanner(sensitivityOf(rec.settings), "Sensitivity");
 }
 
-// Settings.ground_roughness false (workflow fyi 20261117-132516): the labelled
+// Settings.ground_roughness false: the labelled
 // sensitivity case, run ground without its roughness layer. `s` is a record's
 // settings or a summary row; the column may be absent (older runs: roughness on).
 export const NO_ROUGH_NOTE = "sensitivity case: the run ground has no roughness layer (ground_roughness off), not the default world";
@@ -398,8 +398,8 @@ export async function loadPipeline(cr, sortieIds) {
     }
     const K = A.step.shape[0], NP = A.particles.shape[1], [LR, LC] = A.lidar.shape.slice(1);
     // The lidar's merged map (sim/lidar.py HazardMemory), what the Scout plans on,
-    // rebuilt by replaying its per-step verdict changes (steps.npz map_*). Runs
-    // before 20 Nov 2026 carry none: their cells show each scan's own verdicts.
+    // rebuilt by replaying its per-step verdict changes (steps.npz map_*). Older
+    // runs carry none: their cells show each scan's own verdicts.
     const merged = !!A.map_o, mc = index.map_cell_m ?? 0.5;
     const apply = (m, k) => {
       for (let q = A.map_o.a[k]; q < A.map_o.a[k + 1]; q++) {

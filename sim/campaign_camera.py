@@ -751,12 +751,16 @@ class CameraSortie(Sortie):
                     continue
                 arc = sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
                 cost = math.dist(pd, pts[0]) + arc + math.dist(pts[-1], pr) - (sr - max(sd, 0.0))
-                if got is None or cost < got[0]:
-                    got = (cost, pts)
+                # The two sides cost the same in straight lines; the one facing
+                # the route (its middle point nearer the route) is the shorter
+                # drive. Before 24 Nov the tie went to the far side.
+                key = (round(cost, 1), self._project(P, cum, pts[len(pts) // 2])[1])
+                if got is None or key < got[0]:
+                    got = (key, pts)
             if got is None:
                 continue
             plan = dict(row=int(i), cx=cx, cy=cy, d=d, pts=got[1], depart=pd, s_depart=sd, due=due,
-                        cost=got[0], late=sd > due)
+                        cost=got[0][0], late=sd > due)
             if sd <= due:
                 if best_in is None or plan["cost"] < best_in["cost"]:
                     best_in = plan

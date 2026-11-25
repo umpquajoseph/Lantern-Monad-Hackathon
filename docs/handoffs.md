@@ -628,8 +628,10 @@ Record changes (additive unless marked):
     `Settings.cam_stuck_steps` steps), `off_ground`, or `hazard` (from
     23 Nov 2026: the Scout drove back to where it was two moves ago and
     its own map puts the goal on ground it may not enter, so it is as
-    close as it can get; sim/campaign_camera.py `drive_to`); `goal` (map
-    frame).
+    close as it can get; sim/campaign_camera.py `drive_to`), or
+    `passed_by_fix` (from 24 Nov 2026, "preplanned": a half survey carried
+    the Scout past this waypoint, so it is not driven back to;
+    `_passed_by_survey`); `goal` (map frame).
   - `search_abandoned` (workflow, 17 Nov 2026; either engine): a search
     that did not finish. `find_id`, `reason`: `unreached` (the drive to
     the find ended with the searcher's estimate outside the search circle,

@@ -417,6 +417,7 @@ class CameraSortie(Sortie):
         self._fix = None              # the scheduled fix under way (check()), else None
         self._fix_frame = False       # True while _observe() takes a fix frame
         self._fix_shift = None        # change in distance to the outer drive_to's goal across a fix
+        self._passed = None           # 'preplanned': (route direction, reach) after a survey (_passed_by_survey)
         self._sync()
         self._sense_and_log(moved=False)    # the first frame, at the dock
 
@@ -760,6 +761,7 @@ class CameraSortie(Sortie):
             if got is None:
                 continue
             plan = dict(row=int(i), cx=cx, cy=cy, d=d, pts=got[1], depart=pd, s_depart=sd, due=due,
+                        along=(-math.cos(a_in), -math.sin(a_in)), R=R,
                         cost=got[0][0], late=sd > due)
             if sd <= due:
                 if best_in is None or plan["cost"] < best_in["cost"]:
@@ -920,6 +922,8 @@ class CameraSortie(Sortie):
         if self.fix_mode != "preplanned" or act == ACT["check"] or self._fix is not None:
             return self._drive(gx, gy, act)
         s, r = self.s, self.rover
+        if self._passed_by_survey(gx, gy):
+            return True
         for _ in range(LEG_FIXES_MAX):
             self.act = act
             if self._blocked(act) or not self.nav_ok:
@@ -946,7 +950,30 @@ class CameraSortie(Sortie):
                          depart_at_m=rnd(plan["s_depart"], 1), due_at_m=rnd(plan["due"], 1))
             if self.lost:
                 return False
+            self._passed = (plan["along"], 2 * plan["R"] + s.cam_arrive_m)
+            if self._passed_by_survey(gx, gy):
+                return True
         return self._drive(gx, gy, act)
+
+    def _passed_by_survey(self, gx, gy):
+        """A half survey ends about one survey radius beyond its landmark along
+        the route, which can be past the end of a short leg (corridor and
+        return waypoints are about 25 m apart). A waypoint the survey carried
+        the Scout past (behind it along the route's direction at the
+        landmark, and within the survey's span) is passed, not driven back
+        to: driving back put the same landmark ahead again on the next leg
+        (nav-pre-t1: 6 of 27 fixes repeated the one before). Logged as
+        waypoint_skipped, reason passed_by_fix. Holds until a waypoint ahead."""
+        if self._passed is None:
+            return False
+        (ux, uy), reach = self._passed
+        dx, dy = gx - self.ex, gy - self.ey
+        if dx * ux + dy * uy < 0 and math.hypot(dx, dy) <= reach:
+            self.event("waypoint_skipped", reason="passed_by_fix", goal=[rnd(gx, 2), rnd(gy, 2)])
+            self.skipped += 1
+            return True
+        self._passed = None
+        return False
 
     def _drive(self, gx, gy, act) -> bool:
         s, r = self.s, self.rover

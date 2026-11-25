@@ -418,6 +418,8 @@ class CameraSortie(Sortie):
         self._fix_frame = False       # True while _observe() takes a fix frame
         self._fix_shift = None        # change in distance to the outer drive_to's goal across a fix
         self._passed = None           # 'preplanned': (route direction, reach) after a survey (_passed_by_survey)
+        self._phase = None            # 'preplanned': the transit's or lane's waypoints (_leg_ahead)
+        self._return_leg = None       # 'preplanned': the return's waypoints, from the first return drive
         self._sync()
         self._sense_and_log(moved=False)    # the first frame, at the dock
 
@@ -672,9 +674,15 @@ class CameraSortie(Sortie):
         wrong = fixed and len(f["wrong"]) > 0.5 * f["pts"]
         cause = self._wrong_cause(f["wrong"]) if wrong else None
         self.n_checks += 1
-        self.d_fix = self.d_chk = 0.0
-        self.t_fix = self.t
+        # A fix that updated nothing (no rim seen on any exposure: e.g. a
+        # shallow landmark, d/D 0.035 in nav-pre-t2, or one out of view) is
+        # known to the Scout as no fix: the distance since its last fix keeps
+        # counting, so the next one is due at once (after check_min_spacing_m).
+        # Whether an update was a false match it cannot know.
+        self.d_chk = 0.0
         if fixed:
+            self.d_fix = 0.0
+            self.t_fix = self.t
             self.n_fixes += 1
             self.n_wrong += int(wrong)
             self.anchor = f"{self.sid}#{self.n_fixes}"
@@ -690,35 +698,45 @@ class CameraSortie(Sortie):
                    **extra)
 
     # ------------------------------------------------- 'preplanned' legs
-    def _plan_leg_fix(self, goal):
-        """'preplanned': the landmark for the next fix on the leg just planned
-        (Rover.set_goal's route from the estimate to goal, believed frame).
+    def _plan_leg_fix(self, goal, ahead=()):
+        """'preplanned': the landmark for the next fix, chosen along the leg
+        being driven. A leg is one phase of the sortie's plan (the descent
+        corridor, a transit, a lane, the return), which Sortie.run drives as
+        waypoints about 25 m apart (corridor, return) up to 200 m (lanes):
+        its route is Rover.set_goal's route from the estimate to the next
+        waypoint `goal`, then straight on through the phase's later waypoints
+        `ahead` (believed frame).
 
-        The fix falls due `due` metres along the route (spacing_nominal less
-        d_fix). Candidates: craters of the Scout's map (the dock's map as it
-        stood at launch: orbital plus what earlier sorties mapped)
-        fix_crater_d_m across, whose near rim lies within fix_reach_m of the
-        route. Each one's half survey runs on a half circle
-        fix_survey_offset_m outside its rim, from the point beside it on the
-        way in to the point beside it on the way out (along the route's
-        direction there), round whichever side adds less driving; every
-        observation point must be open ground on the Scout's own planning map.
-        The survey leaves the route R (the survey radius) before the crater.
+        The fix falls due `due` metres along it (spacing_nominal less d_fix).
+        Candidates: craters of the Scout's map (the dock's map as it stood at
+        launch: orbital plus what earlier sorties mapped) fix_crater_d_m
+        across, beside the route (projecting inside it, not past an end) with
+        the near rim within fix_reach_m of it. Each one's half survey runs on
+        a half circle fix_survey_offset_m outside its rim, from the point
+        beside it on the way in to the point beside it on the way out (along
+        the route's direction there), round the side that adds less driving
+        and faces the route; every observation point must be open ground on
+        the Scout's own planning map. The survey leaves the route R (the
+        survey radius) before the crater.
 
         Chosen: among surveys that leave the route within fix_plan_early_m
         before the due point, the one adding the least driving; else the first
-        one after it on this leg (a late fix: the honest result where the map
-        holds no landmark near the due point). None when the due point's early
-        stretch lies past this leg (a later leg plans it) or the leg holds no
-        landmark."""
+        one after it (a late fix: the honest result where the map holds no
+        landmark near the due point). The plan's `now` is True when the survey
+        leaves the route before `goal` (drive_to does it on this waypoint);
+        otherwise a later waypoint of the leg plans it again. None when the
+        early stretch lies past the leg or the leg holds no landmark."""
         s, c, r = self.s, self.c, self.rover
         if c.map_tree is None or not len(c.map_arr):
             return None
         route = [(self.ex, self.ey)] + [tuple(map(float, p)) for p in (r.path or [goal])]
+        n_hop = len(route)
+        route += [tuple(map(float, p)) for p in ahead]
         P = np.asarray(route, float)
         seg = np.hypot(*(P[1:] - P[:-1]).T)
         cum = np.concatenate([[0.0], np.cumsum(seg)])
         L = float(cum[-1])
+        L_hop = float(cum[n_hop - 1])
         due = max(0.0, self.spacing_nominal - self.d_fix)
         lo_s = max(0.0, due - s.fix_plan_early_m)
         if lo_s > L or L < 1e-6:
@@ -735,7 +753,11 @@ class CameraSortie(Sortie):
             if not lo <= d <= hi:
                 continue
             sc, lat = self._project(P, cum, (cx, cy))
-            if lat - d / 2 > s.fix_reach_m:
+            # Beside the leg only: a crater beyond either end projects onto that
+            # end (nav-pre-t2, planning one waypoint at a time: a crater 20 m
+            # past a 16 m hop's goal was surveyed, and the Scout drove 42 m back
+            # to the goal and past the crater again).
+            if lat - d / 2 > s.fix_reach_m or not 0.0 < sc < L:
                 continue
             R = d / 2 + s.fix_survey_offset_m
             sd = sc - R
@@ -762,7 +784,7 @@ class CameraSortie(Sortie):
                 continue
             plan = dict(row=int(i), cx=cx, cy=cy, d=d, pts=got[1], depart=pd, s_depart=sd, due=due,
                         along=(-math.cos(a_in), -math.sin(a_in)), R=R,
-                        cost=got[0][0], late=sd > due)
+                        cost=got[0][0], late=sd > due, now=sd <= L_hop)
             if sd <= due:
                 if best_in is None or plan["cost"] < best_in["cost"]:
                     best_in = plan
@@ -932,7 +954,9 @@ class CameraSortie(Sortie):
                 return True
             self.goal_xy = (float(gx), float(gy))
             r.set_goal((gx, gy))
-            plan = self._plan_leg_fix((gx, gy))
+            plan = self._plan_leg_fix((gx, gy), self._leg_ahead(gx, gy, act))
+            if plan is not None and not plan["now"]:
+                break                     # the survey leaves the route on a later waypoint of this leg
             if plan is None:
                 if self.d_fix >= self.spacing_nominal and self.d_chk >= s.check_min_spacing_m:
                     # Due (or overdue) and this leg holds no landmark: the next leg tries.
@@ -955,6 +979,44 @@ class CameraSortie(Sortie):
                 return True
         return self._drive(gx, gy, act)
 
+    def _leg_ahead(self, gx, gy, act):
+        """The waypoints of the current leg after (gx, gy), as Sortie.run will
+        drive them: the descent corridor, the return (route to the floor entry,
+        then the corridor up, as Sortie.run builds it on turning home), or the
+        transit or lane set by transit_to and lane. [] when (gx, gy) is not on
+        the leg (a search or drill drive)."""
+        c = self.c
+        if act == ACT["descent"]:
+            lst = [tuple(map(float, p)) for p in c.corridor[1:]]
+        elif act == ACT["return"]:
+            if self._return_leg is None:
+                # Sortie.run's own list, from the same estimate (its first drive_to is this call).
+                self._return_leg = [tuple(map(float, p)) for p in c.route((self.ex, self.ey), c.entry)] +                     [tuple(map(float, p)) for p in c.corridor[::-1][1:]]
+            lst = self._return_leg
+        else:
+            lst = self._phase or []
+        for k, (x, y) in enumerate(lst):
+            if abs(x - gx) < 1e-6 and abs(y - gy) < 1e-6:
+                return lst[k + 1:]
+        return []
+
+    def transit_to(self, pts) -> bool:
+        self._phase = [tuple(map(float, p)) for p in pts]
+        try:
+            return super().transit_to(pts)
+        finally:
+            self._phase = None
+
+    def lane(self, ln) -> bool:
+        (ax, ay), (bx, by) = ln["a"], ln["b"]
+        if math.hypot(bx - self.ex, by - self.ey) < math.hypot(ax - self.ex, ay - self.ey):
+            (ax, ay), (bx, by) = (bx, by), (ax, ay)        # Sortie.lane's own order
+        self._phase = [(float(ax), float(ay)), (float(bx), float(by))]
+        try:
+            return super().lane(ln)
+        finally:
+            self._phase = None
+
     def _passed_by_survey(self, gx, gy):
         """A half survey ends about one survey radius beyond its landmark along
         the route, which can be past the end of a short leg (corridor and
@@ -968,7 +1030,8 @@ class CameraSortie(Sortie):
             return False
         (ux, uy), reach = self._passed
         dx, dy = gx - self.ex, gy - self.ey
-        if dx * ux + dy * uy < 0 and math.hypot(dx, dy) <= reach:
+        behind = -(dx * ux + dy * uy)              # along the route's direction at the landmark
+        if 0.0 < behind <= reach:
             self.event("waypoint_skipped", reason="passed_by_fix", goal=[rnd(gx, 2), rnd(gy, 2)])
             self.skipped += 1
             return True

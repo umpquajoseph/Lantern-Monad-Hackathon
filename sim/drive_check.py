@@ -10,7 +10,12 @@ alone, from any step of a finished run:
 
 - the run's own ground (record "ground"), slope test, slope limits and
   orbital slope (record "settings"), as sim/campaign_camera.py CameraRig;
-- the Scout starts at the run's true pose at --step, its lidar map empty;
+- the Scout starts at the run's true pose at --step. Its lidar map is empty,
+  or with --warm W holds the scans taken from the run's own true poses at
+  the W steps before --step (the ground the Scout had seen on its way in;
+  the lidar's range noise is drawn afresh, so cells near a verdict's edge
+  can differ), and the Scout's track (sim/rover.py retrace) starts with
+  those poses;
 - its estimate is the truth plus the run's error at --step, held fixed: no
   camera, so no rim fixes and no drift;
 - it steers for the waypoints the run steered for from --step on (steps.npz
@@ -65,6 +70,8 @@ def main(argv=None):
     ap.add_argument("--sortie", default=None, help="sortie id (default: the first in steps.npz)")
     ap.add_argument("--step", type=int, required=True, help="start at this step of the sortie")
     ap.add_argument("--steps", type=int, default=300, help="drive at most this many steps")
+    ap.add_argument("--warm", type=int, default=0, help="scan from the run's own poses at the W steps before --step first")
+    ap.add_argument("--trace", action="store_true", help="print every step: true pose, distance, turn, goal")
     ap.add_argument("--png", default=None)
     a = ap.parse_args(argv)
 
@@ -101,6 +108,7 @@ def main(argv=None):
     err = (ex - tx, ey - ty)
     r = Rover("S", (tx, ty, th), _FixedOffsetNav(err), slope, np.random.default_rng(0))
     r.sensing = True
+    r.retrace_m = s.retrace_track_m
     lid = Lidar(scene, np.random.default_rng(1))
     lid.slope_mode = "footprint" if s.slope_test == "footprint" else "2m"
     t_setup = time.perf_counter() - t0
@@ -115,6 +123,13 @@ def main(argv=None):
         r.estimate = r.true[:2] + np.asarray(err)
         return float(r.estimate[0]), float(r.estimate[1])
 
+    for kw in range(max(k0 - a.warm, 0), k0):   # the map the Scout had built on its way in
+        pose = tuple(float(v) for v in steps[kw, 1:4])
+        pts, _ = lid.scan(pose)
+        hz, kinds, clear, grads = lid.judge(pts, pose, widen_m=r.slope.widen_m)
+        r.add_hazards(hz, kinds, clear=clear, grads=grads)
+    if a.warm:   # the Scout's own track on its way in (sim/rover.py retrace)
+        r.seed_track(steps[max(k0 - a.warm, 0):k0 + 1, 1:3])
     goals = _goals_from(steps, k0)
     path = [tuple(r.true[:2])]
     log = {"steps": 0, "turns_in_place": 0, "reversals": 0, "arrived": 0, "skipped": {}, "deg_turned_in_place": 0.0}
@@ -136,7 +151,7 @@ def main(argv=None):
             if dist < s.cam_arrive_m or (dist < CC.BLOCKED_ARRIVE_M and r.goal_blocked()):
                 why = "arrived"
                 break
-            rev0 = r.reversals
+            rev0, rt0 = r.reversals, r.retrace_steps
             d, dh = r.follow()
             log["steps"] += 1
             if d == 0.0:
@@ -144,6 +159,10 @@ def main(argv=None):
                 log["deg_turned_in_place"] += abs(math.degrees(dh))
             log["reversals"] += r.reversals - rev0
             path.append(tuple(r.true[:2]))
+            if a.trace:
+                print(f"{k0 + log['steps']:6d}{' RT' if r.retrace_steps > rt0 else '   '} true ({r.true[0]:.2f}, {r.true[1]:.2f}) h {math.degrees(r.true[2]) % 360:5.1f}"
+                      f" d {d:.2f} dh {math.degrees(dh):6.1f}{' REV' if r.reversals > rev0 else ''}"
+                      f" goal ({gx:.1f}, {gy:.1f}) steep {len(r.steep_steps)}")
             sense()
             ex_, ey_ = est()
             nd = math.hypot(gx - ex_, gy - ey_)
@@ -164,6 +183,7 @@ def main(argv=None):
             log["skipped"][why] = log["skipped"].get(why, 0) + 1
     t_drive = time.perf_counter() - t1
     log["pingpong_blocks"] = r.pingpong_blocks
+    log["retraces"], log["retrace_steps"] = r.retraces, r.retrace_steps
     log["steps_over_limits"] = len(r.steep_steps)
     log["goals_tried"] = log["arrived"] + sum(log["skipped"].values())
     log["seconds"] = {"setup": round(t_setup, 1), "drive": round(t_drive, 1),
@@ -178,9 +198,9 @@ def main(argv=None):
     import matplotlib.pyplot as plt
     P = np.array(path)
     G = np.array(goals[:max(log["goals_tried"] + 1, 1)])
-    pad = 25.0
-    xa, xb = min(P[:, 0].min(), (G[:, 0] - err[0]).min()) - pad, max(P[:, 0].max(), (G[:, 0] - err[0]).max()) + pad
-    ya, yb = min(P[:, 1].min(), (G[:, 1] - err[1]).min()) - pad, max(P[:, 1].max(), (G[:, 1] - err[1]).max()) + pad
+    pad = 15.0   # framed on the path; goals outside it are not drawn
+    xa, xb = P[:, 0].min() - pad, P[:, 0].max() + pad
+    ya, yb = P[:, 1].min() - pad, P[:, 1].max() + pad
     if xb - xa > 400 or yb - ya > 400:   # keep the picture on the start
         xa, xb, ya, yb = P[0, 0] - 200, P[0, 0] + 200, P[0, 1] - 200, P[0, 1] + 200
     c = slope.cell

@@ -1248,6 +1248,8 @@ class Campaign:
                                          "point_turns": so.point_turns, "waypoints_skipped": so.skipped,
                                          "pingpong_blocks": so.rover.pingpong_blocks,
                                          "reversals": so.rover.reversals,
+                                         "retraces": so.rover.retraces,
+                                         "retrace_steps": so.rover.retrace_steps,
                                          "drive_overhead": rnd(so.overhead(), 3),
                                          "rim_points": so.n_rim_pts, "rim_matched": so.n_rim_matched,
                                          "rim_wrong": so.n_rim_wrong, "rim_unpaired": so.n_rim_unpaired,

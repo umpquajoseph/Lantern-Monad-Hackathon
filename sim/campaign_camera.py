@@ -357,6 +357,7 @@ class CameraSortie(Sortie):
         h0 = math.atan2(wy - camp.dock_reg[1], wx - camp.dock_reg[0])
         self.rover = r = Rover(scout, (w.dock[0], w.dock[1], h0), nav, rig.slope, rng_for(camp.seed, 9, si, n))
         r.sensing = True
+        r.retrace_m = s.retrace_track_m
         # The filter's start belief: the dock's registered position, spread to
         # the registration bound the Scouts believe (Settings.dock_reg_bound95_m),
         # not sim/nav.py's 1 m landing sigma. Particles are scaled about their mean.

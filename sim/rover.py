@@ -84,6 +84,19 @@ PLAN_DISPLAY_M = 20.0
 # Assumed: how far the rover turns in place when no way forward is clear.
 STUCK_TURN_DEG = 60.0
 
+# Retrace (decided 23 Nov 2026, assumed, no source): when the Scout's own map
+# closes every way out of where it stands, it drives back along its own recent
+# track, ignoring the map, until its map leaves a way out. The track's length
+# is Settings.retrace_track_m (Rover.retrace_m). The check that every way out
+# is closed (Rover._enclosed) floods the map from the Scout over a box
+# ENCLOSE_HALF_M each side at ENCLOSE_CELL_M; it is closed when the flood
+# never reaches the box's edge. It runs only after a turn in place or a
+# back-and-forth block, at most once every ENCLOSE_EVERY steps.
+ENCLOSE_HALF_M = 30.0    # assumed: about twice spin-check-4's trap crater (14.2 m across)
+ENCLOSE_CELL_M = 0.5     # the lidar map's cell (sim/lidar.py HAZ_CELL_M)
+ENCLOSE_EVERY = 5        # assumed: steps between checks (speed only)
+LOOP_ERASE_M = 1.0       # assumed: track points this close are one place (the route back skips loops)
+
 # Assumed: half the rover's width, from the rover model in sim/scene.py
 # (wheels at y = +-0.72 m, 0.22 m wide).
 ROVER_HALF_WIDTH_M = 0.83
@@ -447,6 +460,17 @@ class Rover:
         self.reversals = 0        # sensing runs: steps driven backwards out of a dead end
         self._backed_from = None  # where the last reversal started (one reversal per dead end)
         self.last_reverse = False # the last step was driven backwards (odometry reads it)
+        # Retrace (the note at ENCLOSE_HALF_M): the true xy after each move, newest last, at
+        # most retrace_m long; the route back while retracing; counts.
+        self.retrace_m = _Settings().retrace_track_m
+        self._track = []
+        self._retrace = []
+        self._retrace_failed = None   # where a retrace ran out of track still enclosed
+        self._steps = 0
+        self._check_due = False
+        self._checked_at = -ENCLOSE_EVERY
+        self.retraces = 0         # retraces started (the map closed every way out)
+        self.retrace_steps = 0    # steps driven back along the track
         # Steps a sensing rover planning on the orbital map drove onto ground truly
         # over the limit (_note_true_steep): (x, y, true deg, orbital deg, flag).
         self.steep_steps = []
@@ -538,6 +562,11 @@ class Rover:
         MAX_TURN_DEG toward the plan AIM_M ahead, or a turn in place."""
         est = self.estimate
         self.last_reverse = False
+        self._steps += 1
+        if self._retrace:
+            return self._retrace_step()
+        if self._check_due and self._start_retrace():
+            return self._retrace_step()
         tgt = self._waypoint_target()
         x, y = self.true[0], self.true[1]
         local = self.slope.plan((x, y), tgt, max_expand=LOCAL_PLAN_MAX_CELLS, blocked=self.haz_2m, cost=self.cost_2m)
@@ -614,9 +643,143 @@ class Rover:
         if turn is None:
             turn = math.radians(POINT_TURN_DEG)
         self.true = np.array([x, y, h + turn])
+        self._check_due = True    # a turn in place: is every way out closed? (next step)
         self.point_turns += 1
         self.stuck_turns += 1
         return 0.0, turn
+
+    # ------------------------------------------------ retrace (the note at ENCLOSE_HALF_M)
+    def _trim_track(self):
+        """Keep the track to its newest retrace_m metres."""
+        T = self._track
+        total, k = 0.0, len(T) - 1
+        while k > 0:
+            total += float(np.hypot(*(T[k] - T[k - 1])))
+            if total > self.retrace_m:
+                del T[:k]
+                return
+            k -= 1
+
+    def seed_track(self, points):
+        """Start the track from points (true xy, oldest first), e.g. a replay's
+        run poses before its first step (sim/drive_check.py --warm)."""
+        for p in points:
+            p = np.asarray(p, float)
+            if not self._track or np.hypot(*(p - self._track[-1])) > 0.5:
+                self._track.append(p.copy())
+        self._trim_track()
+
+    def _enclosed(self, x, y):
+        return self._flood(x, y)[0]
+
+    def _flood(self, x, y):
+        """(enclosed, reach, (x0, y0, cell)). Enclosed: the Scout's own map
+        closes every way out of (x, y), that is a flood from it over the cells
+        its map lets it drive into, each judged for the heading it is entered
+        on as _feasible_many judges a step
+        (lidar no-go cells, lidar slope cells and the planner's slope, both
+        by heading), never reaches the edge of a box ENCLOSE_HALF_M each side.
+        Cells are ENCLOSE_CELL_M, each closed to a heading when any 0.25 m
+        cell in it is."""
+        sm, c = self.slope, self.slope.cell
+        k = max(1, int(round(ENCLOSE_CELL_M / c)))
+        n = int(round(ENCLOSE_HALF_M / (k * c)))
+        H, W = self.haz_steep.shape
+        ic, jc = int(round((y - sm.y0) / c)), int(round((x - sm.x0) / c))
+        i0, j0 = ic - n * k, jc - n * k
+        m = 2 * n + 1
+        if i0 < 0 or j0 < 0 or i0 + m * k > H or j0 + m * k > W:
+            return False, None, None    # at the ground's edge: the map margin, not a trap
+        win = (slice(i0, i0 + m * k), slice(j0, j0 + m * k))
+        steep = self.haz_steep[win].reshape(m, k, m, k).any(axis=(1, 3))
+        ii, jj = np.mgrid[i0:i0 + m * k, j0:j0 + m * k]
+        px, py = sm.x0 + jj * c, sm.y0 + ii * c
+        ok = []
+        for di, dj in MOVES:
+            hd = math.atan2(di, dj)
+            sev = np.maximum(sm.sev(px, py, hd), self._lidar_sev(px, py, hd))
+            ok.append(~steep & ~(sev > 1.0).reshape(m, k, m, k).any(axis=(1, 3)))
+        reach = np.zeros((m, m), bool)
+        reach[n, n] = True
+        for _ in range(4 * m * m):
+            new = reach.copy()
+            for (di, dj), okt in zip(MOVES, ok):
+                sh = np.zeros_like(reach)   # cells entered from a reached cell by move (di, dj)
+                dst = (slice(max(di, 0), m + min(di, 0)), slice(max(dj, 0), m + min(dj, 0)))
+                sh[dst] = reach[max(-di, 0):m + min(-di, 0), max(-dj, 0):m + min(-dj, 0)]
+                new |= sh & okt
+            if new[0].any() or new[-1].any() or new[:, 0].any() or new[:, -1].any():
+                return False, new, (sm.x0 + j0 * c, sm.y0 + i0 * c, k * c)
+            if (new == reach).all():
+                return True, new, (sm.x0 + j0 * c, sm.y0 + i0 * c, k * c)
+            reach = new
+        return True, reach, (sm.x0 + j0 * c, sm.y0 + i0 * c, k * c)
+
+    def _start_retrace(self):
+        """After a turn in place or a back-and-forth block: when the map closes
+        every way out, set the route back along the track (loop-erased, newest
+        first) and return True."""
+        self._check_due = False
+        if self._steps - self._checked_at < ENCLOSE_EVERY or len(self._track) < 2:
+            return False
+        x, y = float(self.true[0]), float(self.true[1])
+        if self._retrace_failed is not None and math.hypot(x - self._retrace_failed[0], y - self._retrace_failed[1]) < 3.0:
+            return False    # a retrace from here already ran out of track
+        self._checked_at = self._steps
+        if not self._enclosed(x, y):
+            return False
+        route = []          # loop-erased: a return to a place drops the loop between
+        for p in self._track:
+            q = next((i for i, r in enumerate(route) if math.hypot(*(p - r)) < LOOP_ERASE_M), None)
+            if q is not None:
+                del route[q + 1:]
+            else:
+                route.append(p.copy())
+        while route and math.hypot(route[-1][0] - x, route[-1][1] - y) < LOOP_ERASE_M:
+            route.pop()     # where it stands now
+        if not route:
+            return False
+        self._retrace = route[::-1]
+        self.retraces += 1
+        return True
+
+    def _retrace_step(self):
+        """One step back along the track toward its next point, ignoring the
+        map: backed out, the body facing the way it came in (as _follow_sensing
+        backs out, so the filter moves its particles back). Ends when the map
+        leaves a way out, or when the track runs out still enclosed."""
+        x, y, h = (float(v) for v in self.true)
+        while len(self._retrace) > 1 and math.hypot(self._retrace[0][0] - x, self._retrace[0][1] - y) < 0.1:
+            self._retrace.pop(0)    # a track point where it already stands
+        p = self._retrace[0]
+        dist = math.hypot(p[0] - x, p[1] - y)
+        d = min(STEP_M, dist)
+        travel = math.atan2(p[1] - y, p[0] - x)
+        body = travel + math.pi
+        dh = (body - h + math.pi) % (2 * math.pi) - math.pi
+        if abs(dh) > math.radians(MAX_TURN_DEG):
+            # Its back not yet to the track: turn in place first, as a
+            # skid-steer rover does, then back along it.
+            self.true = np.array([x, y, h + dh])
+            self.point_turns += 1
+            return 0.0, dh
+        self.true = np.array([x + d * math.cos(travel), y + d * math.sin(travel), h + dh])
+        self._note_true_steep(x, y, travel, d)
+        self.last_reverse = True
+        self.retrace_steps += 1
+        if d >= dist - 1e-6:
+            self._retrace.pop(0)
+        nx_, ny_ = float(self.true[0]), float(self.true[1])
+        if not self._enclosed(nx_, ny_):
+            self._retrace = []
+            # The track now ends here: what it drove back over is not a way out.
+            keep = [i for i, q in enumerate(self._track) if math.hypot(q[0] - nx_, q[1] - ny_) < LOOP_ERASE_M]
+            if keep:
+                del self._track[keep[0] + 1:]
+            self._moves = []
+        elif not self._retrace:
+            self._retrace_failed = (nx_, ny_)
+        return d, dh
 
     def _note_true_steep(self, x, y, h, d):
         """Record a step onto ground truly over the limits for the heading it
@@ -658,6 +821,8 @@ class Rover:
         local plan goes another way. Without it a camera Scout drove 2 m,
         turned 180 deg, drove back, turned again, for up to 2,741 steps (19 h;
         live-nav-first3, 7-88% of every sortie's steps)."""
+        self._track.append(self.true[:2].copy())
+        self._trim_track()
         self._moves = (self._moves + [self.true[:2].copy()])[-3:]
         if len(self._moves) == 3 and np.hypot(*(self._moves[2] - self._moves[0])) < 0.5:
             sm = self.slope
@@ -667,6 +832,7 @@ class Rover:
             self.pingpong_2m[bi, bj] = True
             self.haz_2m[bi, bj] = True
             self.pingpong_blocks += 1
+            self._check_due = True    # rocking: is every way out closed? (next step)
             self._moves = []
 
     @staticmethod
